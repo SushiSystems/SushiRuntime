@@ -270,8 +270,8 @@ three nodes in recording order with predecessor counts 0, 1 and 1, and each node
 The file covers what the recorder's words mean: a rule against a node, a name, a move, a region
 access and a liveness observer. `add_increment` adds one rule that adds a step to every word of a
 buffer, so a wrong plan shows as a wrong sum. `record_three_node_rule` records three such kernels
-inside one `Recorder::rule()` scope. Every fixture derives from `RecorderTest`, which clears the
-placement rules after each test, since the tests share the program's runtime.
+inside one `Recorder::rule()` scope. A `Small_` fixture derives from `RecorderHostTest` (a host runtime per test) and a `Medium_` fixture from
+`RecorderTest` (the program's runtime); both clear the placement rules after each test.
 
 | Test | What it proves |
 | --- | --- |
@@ -338,7 +338,7 @@ second node into a rule the recorder has already dropped.
 
 ### The parameter limit of a named rule
 
-`Medium_RecorderParameterLimit` has two rows, `add(count, Reads, Writes, kernel, options)` and
+`Small_RecorderParameterLimit` has two rows, `add(count, Reads, Writes, kernel, options)` and
 `add_rule(state, kernel, options)`. In each, a rule with an operation and nine parameters in its
 `NodeOptions` is refused with `InvalidGraph` (`NineParametersAreRefusedAndRecordNothing`): the
 message holds `9 parameters` and `at most 8`, and the rule is not recorded. The same entry records

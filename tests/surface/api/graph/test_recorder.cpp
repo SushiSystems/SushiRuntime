@@ -49,6 +49,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "run_recorder.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 /** @brief Fixture base of the recorder tests: the program's runtime, with the placement rules cleared after each test. */
@@ -59,6 +60,17 @@ class RecorderTest : public TestSupport::RuntimeTest
         void TearDown() override { (void)runtime().clear_placement_rules(); }
 };
 
+/** @brief Gives each small recorder test a host runtime and clears its placement rules afterwards. */
+class RecorderHostTest : public TestSupport::HostRuntimeTest
+{
+    protected:
+        /** @brief Clears the rules, so no later test places a node by this test's rule. */
+        void TearDown() override
+        {
+            (void)runtime().clear_placement_rules();
+        }
+};
+
 /** @brief The entry points that take the parameters of a named rule, as the rows of one test. */
 enum class ParameterEntry
 {
@@ -67,8 +79,8 @@ enum class ParameterEntry
 };
 
 /** @brief Fixture of the rows over the entry points that take parameters. */
-class Medium_RecorderParameterLimit : public RecorderTest,
-                                      public ::testing::WithParamInterface<ParameterEntry>
+class Small_RecorderParameterLimit : public RecorderHostTest,
+                                     public ::testing::WithParamInterface<ParameterEntry>
 {
 };
 
@@ -80,8 +92,8 @@ enum class Verb
 };
 
 /** @brief Fixture of the rows over the untracked verbs. */
-class Medium_RecorderPlacementScopeVerb : public RecorderTest,
-                                          public ::testing::WithParamInterface<Verb>
+class Small_RecorderPlacementScopeVerb : public RecorderHostTest,
+                                         public ::testing::WithParamInterface<Verb>
 {
 };
 
@@ -171,12 +183,17 @@ namespace RecorderSemanticsTests
         }
     } // namespace
 
-    /** @brief Fixture of the RecorderSemantics tests, which run on the program's runtime. */
+    /** @brief Runs the RecorderSemantics tests on a host runtime. */
+    class Small_RecorderSemantics : public RecorderHostTest
+    {
+    };
+
+    /** @brief Runs the RecorderSemantics test whose task body needs a device queue. */
     class Medium_RecorderSemantics : public RecorderTest
     {
     };
 
-    TEST_F(Medium_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
+    TEST_F(Small_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -194,7 +211,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 2u);
     }
 
-    TEST_F(Medium_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
+    TEST_F(Small_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -211,7 +228,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 12u) << "the second run must execute both rules";
     }
 
-    TEST_F(Medium_RecorderSemantics, ClearingARegionReplacesItsWork)
+    TEST_F(Small_RecorderSemantics, ClearingARegionReplacesItsWork)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -230,7 +247,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 101u) << "the cleared rule must not run again";
     }
 
-    TEST_F(Medium_RecorderSemantics, ADropBetweenRunsRecomposes)
+    TEST_F(Small_RecorderSemantics, ADropBetweenRunsRecomposes)
     {
         const Runtime& rt = runtime();
         auto kept = zeroed(rt);
@@ -248,7 +265,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(gone[0], 1u) << "a dropped region must not run again";
     }
 
-    TEST_F(Medium_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
+    TEST_F(Small_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -276,7 +293,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], static_cast<std::uint32_t>(K_RULE_NODES));
     }
 
-    TEST_F(Medium_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
+    TEST_F(Small_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -303,7 +320,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(world.rule_registration(K_CELL + 2, 0), DynamicGraph::K_NO_REGISTRATION);
     }
 
-    TEST_F(Medium_RecorderSemantics, NameLastOwnsItsText)
+    TEST_F(Small_RecorderSemantics, NameLastOwnsItsText)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -332,7 +349,7 @@ namespace RecorderSemanticsTests
             << "a temporary must be a valid argument, and the last name given wins";
     }
 
-    TEST_F(Medium_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
+    TEST_F(Small_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -359,7 +376,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a moved-from graph is empty and refuses a run. */
-    TEST_F(Medium_RecorderSemantics, MovedFromGraphIsEmpty)
+    TEST_F(Small_RecorderSemantics, MovedFromGraphIsEmpty)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -380,7 +397,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that the compiled plan moves with the graph that took it. */
-    TEST_F(Medium_RecorderSemantics, ThePlanMovesWithTheTakenGraph)
+    TEST_F(Small_RecorderSemantics, ThePlanMovesWithTheTakenGraph)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -398,7 +415,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a moved-from graph records and runs again. */
-    TEST_F(Medium_RecorderSemantics, AMovedFromGraphRecordsAndRunsAgain)
+    TEST_F(Small_RecorderSemantics, AMovedFromGraphRecordsAndRunsAgain)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -415,7 +432,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a moved-from dynamic graph has no regions and refuses a run. */
-    TEST_F(Medium_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
+    TEST_F(Small_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -432,7 +449,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that the composed plan moves with the dynamic graph that took it, and its regions still report to it. */
-    TEST_F(Medium_RecorderSemantics, TheComposedPlanMovesWithTheTakenDynamicGraph)
+    TEST_F(Small_RecorderSemantics, TheComposedPlanMovesWithTheTakenDynamicGraph)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -454,7 +471,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a moved-from dynamic graph takes regions and runs again. */
-    TEST_F(Medium_RecorderSemantics, AMovedFromDynamicGraphTakesRegionsAndRunsAgain)
+    TEST_F(Small_RecorderSemantics, AMovedFromDynamicGraphTakesRegionsAndRunsAgain)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -470,7 +487,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that many nodes over one buffer, and a node over another, all run and add up. */
-    TEST_F(Medium_RecorderSemantics, ManyNodesOverOneBufferAddUp)
+    TEST_F(Small_RecorderSemantics, ManyNodesOverOneBufferAddUp)
     {
         constexpr std::size_t NODES = 16;
 
@@ -488,7 +505,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(other[0], 1u);
     }
 
-    TEST_F(Medium_RecorderSemantics, ADroppedBufferIsStillDetected)
+    TEST_F(Small_RecorderSemantics, ADroppedBufferIsStillDetected)
     {
         const Runtime& rt = runtime();
         auto kept = zeroed(rt);
@@ -507,7 +524,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
     }
 
-    TEST_F(Medium_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
+    TEST_F(Small_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
     {
         const Runtime& rt = runtime();
         auto kept = zeroed(rt);
@@ -526,7 +543,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that the work a graph moved out keeps the generation it had. */
-    TEST_F(Medium_RecorderSemantics, TheMovedWorkKeepsItsGeneration)
+    TEST_F(Small_RecorderSemantics, TheMovedWorkKeepsItsGeneration)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -542,7 +559,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a generation the plan was built at never names a rule recorded later on the moved-from graph. */
-    TEST_F(Medium_RecorderSemantics, AGenerationThePlanWasBuiltAtNeverNamesANewRule)
+    TEST_F(Small_RecorderSemantics, AGenerationThePlanWasBuiltAtNeverNamesANewRule)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -564,7 +581,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a move assignment does not step the generation of the target back. */
-    TEST_F(Medium_RecorderSemantics, AMoveAssignmentDoesNotStepTheGenerationBack)
+    TEST_F(Small_RecorderSemantics, AMoveAssignmentDoesNotStepTheGenerationBack)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -582,7 +599,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that Graph::clear() forgets the rules and their registrations. */
-    TEST_F(Medium_RecorderSemantics, GraphClearForgetsTheRulesAndTheirRegistration)
+    TEST_F(Small_RecorderSemantics, GraphClearForgetsTheRulesAndTheirRegistration)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -598,7 +615,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a cleared graph refuses an empty run. */
-    TEST_F(Medium_RecorderSemantics, AClearedGraphRefusesAnEmptyRun)
+    TEST_F(Small_RecorderSemantics, AClearedGraphRefusesAnEmptyRun)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -614,7 +631,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that the rule a clear forgot does not run again and a new rule does. */
-    TEST_F(Medium_RecorderSemantics, AClearedRuleDoesNotRunAgainAndANewOneDoes)
+    TEST_F(Small_RecorderSemantics, AClearedRuleDoesNotRunAgainAndANewOneDoes)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -630,7 +647,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that Graph::clear() frees what the task bodies of its compiled plan hold. */
-    TEST_F(Medium_RecorderSemantics, Regression_GraphClearFreesWhatItsCompiledPlanCaptured)
+    TEST_F(Small_RecorderSemantics, Regression_GraphClearFreesWhatItsCompiledPlanCaptured)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -649,7 +666,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */
-    TEST_F(Medium_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
+    TEST_F(Small_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -715,7 +732,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a rule that names an operation is refused nine parameters and records nothing. */
-    TEST_P(Medium_RecorderParameterLimit, NineParametersAreRefusedAndRecordNothing)
+    TEST_P(Small_RecorderParameterLimit, NineParametersAreRefusedAndRecordNothing)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -749,7 +766,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a rule that names an operation keeps eight parameters. */
-    TEST_P(Medium_RecorderParameterLimit, EightParametersAreKept)
+    TEST_P(Small_RecorderParameterLimit, EightParametersAreKept)
     {
         const Runtime& rt = runtime();
         auto values = zeroed(rt);
@@ -775,10 +792,10 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(graph.size(), 1u);
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_RecorderParameterLimit,
+    INSTANTIATE_TEST_SUITE_P(Rows, Small_RecorderParameterLimit,
                              ::testing::Values(ParameterEntry::Add, ParameterEntry::AddRule));
 
-    TEST_F(Medium_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
+    TEST_F(Small_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -844,13 +861,13 @@ namespace RecorderScratchTests
         }
     } // namespace
 
-    /** @brief Fixture of the RecorderScratch tests, which run on the program's runtime. */
-    class Medium_RecorderScratch : public RecorderTest
+    /** @brief Runs the RecorderScratch tests on a host runtime. */
+    class Small_RecorderScratch : public RecorderHostTest
     {
     };
 
     /** @brief Tests that a consumer of a rule's output sees what passed through its scratch. */
-    TEST_F(Medium_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
+    TEST_F(Small_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
     {
         const Runtime& rt = runtime();
         auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -878,7 +895,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that each run of a replayed rule reads its input as it stands. */
-    TEST_F(Medium_RecorderScratch, EachRunReadsItsInputAsItStands)
+    TEST_F(Small_RecorderScratch, EachRunReadsItsInputAsItStands)
     {
         const Runtime& rt = runtime();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -897,7 +914,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that a replayed rule compiles once. */
-    TEST_F(Medium_RecorderScratch, AReplayedRuleCompilesOnce)
+    TEST_F(Small_RecorderScratch, AReplayedRuleCompilesOnce)
     {
         const Runtime& rt = runtime();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -912,7 +929,7 @@ namespace RecorderScratchTests
         EXPECT_EQ(g.compile_count(), 1u);
     }
 
-    TEST_F(Medium_RecorderScratch, ScratchSurvivesARecompile)
+    TEST_F(Small_RecorderScratch, ScratchSurvivesARecompile)
     {
         const Runtime& rt = runtime();
         auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -942,7 +959,7 @@ namespace RecorderScratchTests
 
 
     /** @brief Tests that regions record rules with scratch and pass values through it across rounds. */
-    TEST_F(Medium_RecorderScratch, RegionsRecordRulesWithScratch)
+    TEST_F(Small_RecorderScratch, RegionsRecordRulesWithScratch)
     {
         const Runtime& rt = runtime();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -969,7 +986,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that renaming a region's rule rebuilds that region once. */
-    TEST_F(Medium_RecorderScratch, RenamingARegionsRuleRebuildsThatRegionOnce)
+    TEST_F(Small_RecorderScratch, RenamingARegionsRuleRebuildsThatRegionOnce)
     {
         const Runtime& rt = runtime();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -990,7 +1007,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that scratch no device can hold comes back as AllocationFailed. */
-    TEST_F(Medium_RecorderScratch, AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed)
+    TEST_F(Small_RecorderScratch, AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed)
     {
         auto graph = runtime().graph();
         // Half the address space in bytes: the count fits std::size_t and no device has the room.
@@ -1003,7 +1020,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that a small scratch request is granted on a recorder that refused a large one. */
-    TEST_F(Medium_RecorderScratch, ASmallScratchRequestIsGrantedAfterALargeOneFailed)
+    TEST_F(Small_RecorderScratch, ASmallScratchRequestIsGrantedAfterALargeOneFailed)
     {
         auto graph = runtime().graph();
         const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
@@ -1115,26 +1132,34 @@ namespace RegistrationIndexTests
         }
     } // namespace
 
-    /** @brief Fixture of the rows that group one kind of rule. */
-    class Medium_RegistrationIndex : public RecorderTest, public ::testing::WithParamInterface<RuleKind>
+    /** @brief Runs the registration-index test of the plain rule on a host runtime. */
+    class Small_RegistrationIndex : public RecorderHostTest
     {
     };
 
-    /** @brief Fixture of the registration-index tests of the plain rule. */
-    class Medium_RegistrationIndexRebuild : public RecorderTest
+    /** @brief Runs the registration-index test of the late-bound rule, whose device-sized kernel needs a device. */
+    class Medium_RegistrationIndex : public RecorderTest
     {
     };
 
-    /** @brief Tests that a rule scope groups every node recorded in it under one index, between two single-node rules. */
-    TEST_P(Medium_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
+    /** @brief Runs the registration-index tests of the plain rule after a rebuild on a host runtime. */
+    class Small_RegistrationIndexRebuild : public RecorderHostTest
     {
-        const Runtime& rt = runtime();
+    };
+
+    /**
+     * @brief Expects that a rule scope groups its nodes under one index, between two single-node rules.
+     * @param rt   The runtime that runs the graph.
+     * @param kind The kind of rule the scope records.
+     */
+    void expect_rule_scope_groups_its_nodes_under_one_index(const Runtime& rt, RuleKind kind)
+    {
         Stages stages = make_stages(rt);
         Testing::RunRecorder observed(rt);
 
         auto g = rt.graph();
         g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("before");
-        record_rule(g.recorder(), stages, GetParam());
+        record_rule(g.recorder(), stages, kind);
         g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("after");
         g.run().value();
 
@@ -1154,11 +1179,20 @@ namespace RegistrationIndexTests
         EXPECT_EQ(rule->multiplicity, K_RULE_NODES);
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_RegistrationIndex,
-                             ::testing::Values(RuleKind::Plain, RuleKind::LateBound));
+    /** @brief Tests that a plain rule scope groups every node recorded in it under one index. */
+    TEST_F(Small_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
+    {
+        expect_rule_scope_groups_its_nodes_under_one_index(runtime(), RuleKind::Plain);
+    }
+
+    /** @brief Tests that a late-bound rule scope groups every node recorded in it under one index. */
+    TEST_F(Medium_RegistrationIndex, LateBoundRuleScopeGroupsItsNodesUnderOneIndex)
+    {
+        expect_rule_scope_groups_its_nodes_under_one_index(runtime(), RuleKind::LateBound);
+    }
 
     /** @brief Tests that a rule scope's group survives a rebuild and the indices stay dense. */
-    TEST_F(Medium_RegistrationIndexRebuild, RuleScopeGroupSurvivesRebuild)
+    TEST_F(Small_RegistrationIndexRebuild, RuleScopeGroupSurvivesRebuild)
     {
         const Runtime& rt = runtime();
         Stages stages = make_stages(rt);
@@ -1258,12 +1292,12 @@ namespace RuleRegistrationTests
         }
     } // namespace
 
-    /** @brief Fixture of the RuleRegistration tests, which run on the program's runtime. */
-    class Medium_RuleRegistration : public RecorderTest
+    /** @brief Runs the RuleRegistration tests on a host runtime. */
+    class Small_RuleRegistration : public RecorderHostTest
     {
     };
 
-    TEST_F(Medium_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
+    TEST_F(Small_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
     {
         const Runtime& rt = runtime();
         Recorded r = record(rt);
@@ -1275,7 +1309,7 @@ namespace RuleRegistrationTests
                 << "rule " << rule << " reported an index before the first run";
     }
 
-    TEST_F(Medium_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
+    TEST_F(Small_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -1307,7 +1341,7 @@ namespace RuleRegistrationTests
         EXPECT_EQ(reported, K_RULE_NODES) << "every node of the rule scope must report its one index";
     }
 
-    TEST_F(Medium_RuleRegistration, EveryNodeEventNamesARecordedRule)
+    TEST_F(Small_RuleRegistration, EveryNodeEventNamesARecordedRule)
     {
         const Runtime& rt = runtime();
         Testing::RunRecorder observed(rt);
@@ -1328,7 +1362,7 @@ namespace RuleRegistrationTests
                 << "node event " << event.node_index << " matches no rule the caller recorded";
     }
 
-    TEST_F(Medium_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
+    TEST_F(Small_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
     {
         constexpr std::size_t STEPS = 4;
 
@@ -1358,7 +1392,7 @@ namespace RuleRegistrationTests
     }
 
     /** @brief Tests that the position a Recorder verb returns is the one rule_registration() takes. */
-    TEST_F(Medium_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
+    TEST_F(Small_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
     {
         constexpr std::uint32_t K_SCALE_MARK = 11;
         constexpr std::uint32_t K_COPY_MARK = 22;
@@ -1459,13 +1493,13 @@ namespace PlacementScopeRecordingTests
         record_idle(recorder);
     }
 
-    /** @brief Fixture of the RecorderPlacementScope tests, which run on the program's runtime. */
-    class Medium_RecorderPlacementScope : public RecorderTest
+    /** @brief Runs the RecorderPlacementScope tests on a host runtime. */
+    class Small_RecorderPlacementScope : public RecorderHostTest
     {
     };
 
     /** @brief Tests that nodes take the innermost open scope, and none outside every scope. */
-    TEST_F(Medium_RecorderPlacementScope, NestedScopesStampTheInnermostClassAndKey)
+    TEST_F(Small_RecorderPlacementScope, NestedScopesStampTheInnermostClassAndKey)
     {
         auto graph = runtime().graph();
         record_nested_scopes(runtime(), graph);
@@ -1490,7 +1524,7 @@ namespace PlacementScopeRecordingTests
     }
 
     /** @brief Tests that a node's own class and key beat the scope's. */
-    TEST_F(Medium_RecorderPlacementScope, ANodesOwnClassAndKeyBeatTheScopes)
+    TEST_F(Small_RecorderPlacementScope, ANodesOwnClassAndKeyBeatTheScopes)
     {
         auto graph = runtime().graph();
         record_nested_scopes(runtime(), graph);
@@ -1509,7 +1543,7 @@ namespace PlacementScopeRecordingTests
     }
 
     /** @brief Tests that closing an inner scope restores the outer one. */
-    TEST_F(Medium_RecorderPlacementScope, ClosingAScopeRestoresTheOuterOne)
+    TEST_F(Small_RecorderPlacementScope, ClosingAScopeRestoresTheOuterOne)
     {
         auto graph = runtime().graph();
         record_nested_scopes(runtime(), graph);
@@ -1525,7 +1559,7 @@ namespace PlacementScopeRecordingTests
     }
 
     /** @brief Tests that within() returns the callable result. */
-    TEST_F(Medium_RecorderPlacementScope, WithinReturnsWhatTheCallableReturns)
+    TEST_F(Small_RecorderPlacementScope, WithinReturnsWhatTheCallableReturns)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -1542,7 +1576,7 @@ namespace PlacementScopeRecordingTests
     }
 
     /** @brief Tests that a callable that throws leaves no scope open on the recorder. */
-    TEST_F(Medium_RecorderPlacementScope, AThrowingCallableClosesItsScope)
+    TEST_F(Small_RecorderPlacementScope, AThrowingCallableClosesItsScope)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -1585,13 +1619,18 @@ namespace PlacementScopeDeviceRecordingTests
         }
     } // namespace
 
-    /** @brief Fixture of the RecorderPlacementScopeDevice tests, which run on the program's runtime. */
+    /** @brief Runs the RecorderPlacementScopeDevice tests on a host runtime. */
+    class Small_RecorderPlacementScopeDevice : public RecorderHostTest
+    {
+    };
+
+    /** @brief Runs the RecorderPlacementScopeDevice test that needs a second device. */
     class Medium_RecorderPlacementScopeDevice : public RecorderTest
     {
     };
 
     /** @brief Tests that On(scope) runs an untracked verb on device 0 when Local resolves it. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, OnAScopeRunsAnUntrackedVerbOnTheLocalDevice)
+    TEST_F(Small_RecorderPlacementScopeDevice, OnAScopeRunsAnUntrackedVerbOnTheLocalDevice)
     {
         const Runtime& rt = runtime();
         ASSERT_TRUE(rt.set_placement_rules(
@@ -1613,7 +1652,7 @@ namespace PlacementScopeDeviceRecordingTests
     }
 
     /** @brief Tests that a scope with no matching rule records the verb without a refusal. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, OnAScopeNoRuleMatchesRecordsTheVerb)
+    TEST_F(Small_RecorderPlacementScopeDevice, OnAScopeNoRuleMatchesRecordsTheVerb)
     {
         auto graph = runtime().graph();
         Recorder& recorder = graph.recorder();
@@ -1625,7 +1664,7 @@ namespace PlacementScopeDeviceRecordingTests
     }
 
     /** @brief Tests that a scope with no matching rule places its buffers on device 0. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, AScopeNoRuleMatchesPlacesItsBufferOnDeviceZero)
+    TEST_F(Small_RecorderPlacementScopeDevice, AScopeNoRuleMatchesPlacesItsBufferOnDeviceZero)
     {
         const PlacementScope scope = runtime().placement_scope(K_CLASS);
 
@@ -1635,7 +1674,7 @@ namespace PlacementScopeDeviceRecordingTests
     }
 
     /** @brief Tests that a Fail rule leaves a refusal naming the rule and the device, and records no node. */
-    TEST_P(Medium_RecorderPlacementScopeVerb, OnAScopeThatFailsRefusesTheVerb)
+    TEST_P(Small_RecorderPlacementScopeVerb, OnAScopeThatFailsRefusesTheVerb)
     {
         const Runtime& rt = runtime();
         const std::size_t absent = rt.advanced().device_count();
@@ -1658,11 +1697,11 @@ namespace PlacementScopeDeviceRecordingTests
         EXPECT_EQ(recorder.rule_count(), 0u) << "a refused verb records no node";
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_RecorderPlacementScopeVerb,
+    INSTANTIATE_TEST_SUITE_P(Rows, Small_RecorderPlacementScopeVerb,
                              ::testing::Values(Verb::CountKernel, Verb::RawKernel));
 
     /** @brief Tests that a kept refusal ends the run with its error. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, ARefusedScopeEndsTheRun)
+    TEST_F(Small_RecorderPlacementScopeDevice, ARefusedScopeEndsTheRun)
     {
         const Runtime& rt = runtime();
         ASSERT_TRUE(rt.set_placement_rules(
@@ -1678,7 +1717,7 @@ namespace PlacementScopeDeviceRecordingTests
     }
 
     /** @brief Tests that a scope opened before a rule set is read against the new set at record time. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, AScopeOpenedBeforeTheRulesFollowsTheNewSet)
+    TEST_F(Small_RecorderPlacementScopeDevice, AScopeOpenedBeforeTheRulesFollowsTheNewSet)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -1692,7 +1731,7 @@ namespace PlacementScopeDeviceRecordingTests
     }
 
     /** @brief Tests that a cleared rule set leaves nothing to refuse. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, AClearedSetLeavesNothingToRefuse)
+    TEST_F(Small_RecorderPlacementScopeDevice, AClearedSetLeavesNothingToRefuse)
     {
         const Runtime& rt = runtime();
         auto graph = rt.graph();
@@ -1898,8 +1937,13 @@ namespace PlacedTaskTests
                                 { in_scope.task(Access(), noting_body(ran_on)); });
     }
 
-    /** @brief Fixture of the RecorderRuledTask tests, which run on the program's runtime. */
+    /** @brief Runs the RecorderRuledTask tests whose task body runs on a device. */
     class Medium_RecorderRuledTask : public RecorderTest
+    {
+    };
+
+    /** @brief Runs the RecorderRuledTask test whose run is refused before any body runs, on a host runtime. */
+    class Small_RecorderRuledTask : public RecorderHostTest
     {
     };
 
@@ -1936,7 +1980,7 @@ namespace PlacedTaskTests
     }
 
     /** @brief Tests that a rule naming a device this machine lacks refuses its run when it says Fail. */
-    TEST_F(Medium_RecorderRuledTask, Regression_ARuleNamingAnAbsentDeviceRefusesWhenItSaysFail)
+    TEST_F(Small_RecorderRuledTask, Regression_ARuleNamingAnAbsentDeviceRefusesWhenItSaysFail)
     {
         const Runtime& rt = runtime();
         const std::size_t absent = rt.advanced().device_count();
