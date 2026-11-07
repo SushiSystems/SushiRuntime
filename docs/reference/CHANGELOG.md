@@ -49,6 +49,10 @@
 - 2026-11-05 — tools: Took the shared checkers of 2026-11-05 with a baseline of the findings they meet, which RW-80 clears.
 - 2026-10-30 — build: Fixed a `tsan` build failing under `-Werror` on every unit compiled without `-fsycl`, which has no device pass for the TSan opt-out to apply to (`cmake/Sanitizers.cmake`).
 - 2026-10-30 — cli: Made `sr build --type tsan` link SushiLog and SushiProfiler packages built with `--sanitize thread`, as RelWithDebInfo packages; it linked Release ones (`library_packages.py`).
+- 2026-11-07 — distributed_layer: Ran the TransportContract suite small against InProcessTransport (RW-87, `c40854ec`).
+- 2026-11-07 — memory: Made `EpochManager` an ordinary object that its guard and the dependency tracker take, with no process-wide instance (`754279e7`).
+
+
 ## v0.5.1 — 2026-10-30
 
 - 2026-10-29 — ci: Gave the sanitizer job 90 minutes and the SushiBLAS job 150; both ran out of time building their packages (`.github/workflows/ci.yml`).

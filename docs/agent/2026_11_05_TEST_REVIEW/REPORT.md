@@ -3573,3 +3573,63 @@ check_device_sources: collect returns a unit tree only for a repository that has
 check_naming: collect skips files under third_party, build, build-asan, build-tsan, venv, node_modules and __pycache__ folders | contract | medium
 check_naming: main checks modules when no path is named | contract | medium
 ```
+
+## Cases per module and size, 2026-11-07
+
+Counted statically from the source, no test run: one case for each `TEST`, `TEST_F`, `TEST_P`, `TYPED_TEST` and `TYPED_TEST_P` under `tests/`, by the prefix of its suite name (`Small_`, `Medium_`, `Large_`). A parametrised case counts once, not once per row. "Other" holds `Benchmark_`, `Performance_` and `Stress_` suites and suites with no size prefix. The Python rows count `def test_` by the file-level size marker, so a class-level marker reads as other. The share is a reading, never a target (testing skill, "Suite shape"); a module with a low small share holds a boundary or a seam still to build.
+
+| Module | Small | Medium | Large | Other | Total | Small share |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `applications/examples` | 4 | 2 | 0 | 0 | 6 | 67% |
+| `cli (python)` | 13 | 81 | 0 | 39 | 133 | 10% |
+| `engine/dependency_tracking` | 12 | 0 | 0 | 0 | 12 | 100% |
+| `engine/execution` | 50 | 22 | 10 | 8 | 90 | 56% |
+| `engine/graph` | 26 | 2 | 0 | 0 | 28 | 93% |
+| `engine/probe_tasks` | 0 | 3 | 0 | 0 | 3 | 0% |
+| `engine/region_boundary` | 4 | 0 | 0 | 0 | 4 | 100% |
+| `engine/runtime_assembly` | 0 | 2 | 0 | 0 | 2 | 0% |
+| `engine/scheduler` | 64 | 33 | 0 | 0 | 97 | 66% |
+| `engine/task` | 74 | 9 | 0 | 0 | 83 | 89% |
+| `engine/work_stealing` | 2 | 1 | 0 | 0 | 3 | 67% |
+| `extension/buffer_exchange` | 33 | 0 | 0 | 0 | 33 | 100% |
+| `extension/cluster_load` | 9 | 0 | 0 | 0 | 9 | 100% |
+| `extension/dispatch_deduplication` | 3 | 0 | 0 | 0 | 3 | 100% |
+| `extension/distributed` | 22 | 122 | 0 | 2 | 146 | 15% |
+| `extension/frame_transport` | 14 | 0 | 0 | 0 | 14 | 100% |
+| `extension/in_process_transport` | 17 | 1 | 0 | 0 | 18 | 94% |
+| `extension/link_security` | 12 | 2 | 0 | 0 | 14 | 86% |
+| `extension/network_socket` | 0 | 16 | 0 | 0 | 16 | 0% |
+| `extension/offload_coordination` | 107 | 2 | 0 | 0 | 109 | 98% |
+| `extension/pending_tasks` | 24 | 1 | 0 | 0 | 25 | 96% |
+| `extension/process_environment` | 4 | 2 | 0 | 0 | 6 | 67% |
+| `extension/transport` | 13 | 0 | 0 | 0 | 13 | 100% |
+| `extension/wire` | 39 | 0 | 0 | 0 | 39 | 100% |
+| `foundation/core` | 89 | 17 | 0 | 0 | 106 | 84% |
+| `foundation/device_probe` | 0 | 1 | 0 | 0 | 1 | 0% |
+| `foundation/log` | 5 | 2 | 0 | 0 | 7 | 71% |
+| `foundation/machine` | 6 | 0 | 0 | 0 | 6 | 100% |
+| `foundation/measurement` | 9 | 1 | 0 | 0 | 10 | 90% |
+| `foundation/placement` | 26 | 0 | 0 | 0 | 26 | 100% |
+| `foundation/profile` | 13 | 1 | 0 | 0 | 14 | 93% |
+| `foundation/region` | 9 | 0 | 0 | 0 | 9 | 100% |
+| `foundation/report` | 19 | 1 | 0 | 0 | 20 | 95% |
+| `foundation/sycl` | 5 | 1 | 0 | 0 | 6 | 83% |
+| `foundation/test_runner` | 2 | 0 | 0 | 0 | 2 | 100% |
+| `foundation/thread_barrier` | 1 | 1 | 0 | 0 | 2 | 50% |
+| `foundation/usm_guard` | 0 | 3 | 0 | 0 | 3 | 0% |
+| `platform/device` | 15 | 15 | 0 | 0 | 30 | 50% |
+| `platform/memory` | 40 | 12 | 2 | 0 | 54 | 74% |
+| `platform/numa_lookup` | 3 | 0 | 0 | 0 | 3 | 100% |
+| `platform/observability` | 31 | 2 | 0 | 0 | 33 | 94% |
+| `platform/topology` | 27 | 16 | 0 | 0 | 43 | 63% |
+| `surface/api` | 421 | 123 | 0 | 4 | 548 | 77% |
+| `surface/context` | 1 | 0 | 0 | 0 | 1 | 100% |
+| `surface/engine_handles` | 2 | 0 | 0 | 0 | 2 | 100% |
+| `surface/interop` | 6 | 0 | 0 | 0 | 6 | 100% |
+| `surface/memory_exchange` | 9 | 4 | 0 | 0 | 13 | 69% |
+| `surface/profiling` | 112 | 51 | 2 | 1 | 166 | 67% |
+| `tools (python)` | 746 | 86 | 0 | 0 | 832 | 90% |
+| **all** | 2143 | 638 | 14 | 54 | 2849 | 75% |
+
+Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (RW-127), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
+
