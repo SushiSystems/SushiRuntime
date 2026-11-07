@@ -33,7 +33,9 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <exception>
 #include <mutex>
@@ -45,6 +47,8 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport_log_category.hpp>
 #include <SushiRuntime/frame_transport/outbox.hpp>
@@ -233,17 +237,50 @@ namespace SushiRuntime
                 Stopped, /**< stop() has begun, or start() failed. */
             };
 
-            /** @brief The clock the worker's connection attempts are timed on. */
-            using Clock = std::chrono::steady_clock;
-
             /** @brief Builds an endpoint that is not started. */
             Impl(std::shared_ptr<InProcessFabric::Impl> shared, Side endpoint_side,
                  std::size_t index, std::size_t control_capacity,
-                 const InProcessWorkerOptions& options)
+                 const InProcessWorkerOptions& options,
+                 std::shared_ptr<SushiRuntime::SeededExecutor> drive,
+                 std::shared_ptr<const SushiRuntime::Clock> drive_clock)
                 : fabric(std::move(shared)), side(endpoint_side), worker_index(index),
-                  control_queue_frames(control_capacity), worker_options(options)
+                  control_queue_frames(control_capacity), worker_options(options),
+                  executor(std::move(drive)),
+                  clock(executor != nullptr && drive_clock != nullptr
+                            ? std::move(drive_clock)
+                            : std::shared_ptr<const SushiRuntime::Clock>(
+                                  std::make_shared<SushiRuntime::SteadyClock>()))
             {
 
+            }
+
+            /** @brief Returns the clock's reading, in nanoseconds. */
+            [[nodiscard]] std::uint64_t now() const noexcept { return clock->now_ns(); }
+
+            /** @brief Returns a duration in nanoseconds. */
+            [[nodiscard]] static std::uint64_t nanoseconds_of(std::chrono::milliseconds span) noexcept
+            {
+                return static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(span).count());
+            }
+
+            /** @brief Posts one pump round to the executor of a threadless endpoint, one at a time. */
+            void post_round()
+            {
+                if (executor == nullptr)
+                    return;
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    if (is_round_posted || !is_accepting)
+                        return;
+                    is_round_posted = true;
+                }
+                const std::weak_ptr<Impl> endpoint = weak_from_this();
+                executor->post([endpoint]()
+                {
+                    if (const std::shared_ptr<Impl> held = endpoint.lock())
+                        held->pump_round();
+                });
             }
 
             /** @brief Returns the open connection of a peer, or null. */
@@ -262,6 +299,7 @@ namespace SushiRuntime
                     has_work = true;
                 }
                 wake_signal.notify_one();
+                post_round();
             }
 
             /** @brief Puts an entry in the inbox; an endpoint that does not run discards it. */
@@ -277,6 +315,7 @@ namespace SushiRuntime
                     has_work = true;
                 }
                 wake_signal.notify_one();
+                post_round();
             }
 
             /** @brief Puts an entry in the inbox of one side of a link, if that endpoint lives. */
@@ -331,6 +370,7 @@ namespace SushiRuntime
                     has_work = true;
                 }
                 wake_signal.notify_one();
+                post_round();
                 return true;
             }
 
@@ -408,7 +448,7 @@ namespace SushiRuntime
                 if (side != Side::Worker)
                     return;
                 if (worker_options.reconnect)
-                    next_attempt = Clock::now() + worker_options.reconnect_delay;
+                    next_attempt = now() + nanoseconds_of(worker_options.reconnect_delay);
                 else
                     abandon("the in-process master was lost and reconnecting is off");
             }
@@ -664,7 +704,7 @@ namespace SushiRuntime
              */
             void keep_connected()
             {
-                if (!local_peers.empty() || is_abandoned || Clock::now() < next_attempt)
+                if (!local_peers.empty() || is_abandoned || now() < next_attempt)
                     return;
                 if (connect_to_master())
                 {
@@ -674,14 +714,14 @@ namespace SushiRuntime
 
                 const bool has_deadline = worker_options.connect_timeout.count() > 0;
                 if (!was_connected && has_deadline &&
-                    Clock::now() - started >= worker_options.connect_timeout)
+                    now() - started >= nanoseconds_of(worker_options.connect_timeout))
                 {
                     abandon("in-process worker " + std::to_string(worker_index) +
                             " found no running master endpoint in " +
                             std::to_string(worker_options.connect_timeout.count()) + " ms");
                     return;
                 }
-                next_attempt = Clock::now() + worker_options.reconnect_delay;
+                next_attempt = now() + nanoseconds_of(worker_options.reconnect_delay);
             }
 
             /** @brief Returns whether a worker's pump has a connection attempt to wake for. */
@@ -693,7 +733,7 @@ namespace SushiRuntime
             /** @brief Runs the pump: deliver the inbox, move outbound frames, keep connected. */
             void run()
             {
-                started = Clock::now();
+                started = now();
                 next_attempt = started;
 
                 std::deque<Inbound> batch;
@@ -702,8 +742,13 @@ namespace SushiRuntime
                     {
                         std::unique_lock<std::mutex> lock(mutex);
                         const auto is_due = [this] { return !is_accepting || has_work; };
+                        // A threaded endpoint reads the steady clock, so a reading is steady time.
                         if (awaits_attempt())
-                            wake_signal.wait_until(lock, next_attempt, is_due);
+                            wake_signal.wait_until(
+                                lock,
+                                std::chrono::steady_clock::time_point(
+                                    std::chrono::nanoseconds(next_attempt)),
+                                is_due);
                         else
                             wake_signal.wait(lock, is_due);
                         if (!is_accepting)
@@ -727,6 +772,33 @@ namespace SushiRuntime
                 }
             }
 
+            /**
+             * @brief Runs one pass of the pump of a threadless endpoint: deliver the inbox, move
+             *        outbound frames, make a due connection attempt.
+             */
+            void pump_round()
+            {
+                std::deque<Inbound> batch;
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    is_round_posted = false;
+                    if (!is_accepting)
+                        return;
+                    has_work = false;
+                    batch.swap(inbox);
+                }
+                for (Inbound& item : batch)
+                {
+                    if (phase.load() != Phase::Running)
+                        return;
+                    deliver(item);
+                }
+                if (flush_round())
+                    post_round();
+                if (side == Side::Worker)
+                    keep_connected();
+            }
+
             /// @brief The fabric's shared state.
             const std::shared_ptr<InProcessFabric::Impl> fabric;
 
@@ -741,6 +813,15 @@ namespace SushiRuntime
 
             /// @brief The settings of a worker endpoint.
             const InProcessWorkerOptions worker_options;
+
+            /// @brief Runs the pump rounds of a threadless endpoint; null runs a pump thread.
+            const std::shared_ptr<SushiRuntime::SeededExecutor> executor;
+
+            /// @brief Times the connection attempts: the options' clock when threadless, else steady.
+            const std::shared_ptr<const SushiRuntime::Clock> clock;
+
+            /// @brief Set while a pump round waits in the executor; guarded by mutex.
+            bool is_round_posted = false;
 
             /// @brief Receives the events; set by start().
             TransportEvents* events = nullptr;
@@ -793,11 +874,11 @@ namespace SushiRuntime
             /// @brief The frame flush_round() pops into; the pump's own.
             OutboundFrame scratch;
 
-            /// @brief When the pump began; the pump's own.
-            Clock::time_point started;
+            /// @brief When the pump began, in clock nanoseconds; the pump's own.
+            std::uint64_t started = 0;
 
-            /// @brief When a worker tries to connect next; the pump's own.
-            Clock::time_point next_attempt;
+            /// @brief When a worker tries to connect next, in clock nanoseconds; the pump's own.
+            std::uint64_t next_attempt = 0;
 
             /// @brief Set once a worker connected; the pump's own.
             bool was_connected = false;
@@ -826,6 +907,21 @@ namespace SushiRuntime
                 shared = std::make_shared<const FaultPolicy>(std::move(policy));
             std::lock_guard<std::mutex> lock(impl_->mutex);
             impl_->policy.swap(shared);
+        }
+
+        void InProcessFabric::wake_all()
+        {
+            std::vector<std::shared_ptr<InProcessTransport::Impl>> endpoints;
+            {
+                std::lock_guard<std::mutex> lock(impl_->mutex);
+                if (const std::shared_ptr<InProcessTransport::Impl> master = impl_->master.lock())
+                    endpoints.push_back(master);
+                for (const std::weak_ptr<InProcessTransport::Impl>& worker : impl_->workers)
+                    if (const std::shared_ptr<InProcessTransport::Impl> held = worker.lock())
+                        endpoints.push_back(held);
+            }
+            for (const std::shared_ptr<InProcessTransport::Impl>& endpoint : endpoints)
+                endpoint->post_round();
         }
 
         void InProcessFabric::flush_held(std::uint64_t shuffle_seed)
@@ -874,7 +970,7 @@ namespace SushiRuntime
         {
             std::shared_ptr<Impl> impl = std::make_shared<Impl>(
                 fabric.impl_, Side::Master, 0, options.control_queue_frames,
-                InProcessWorkerOptions());
+                InProcessWorkerOptions(), options.executor, options.clock);
             {
                 std::lock_guard<std::mutex> lock(fabric.impl_->mutex);
                 fabric.impl_->master = impl;
@@ -890,7 +986,8 @@ namespace SushiRuntime
                 std::lock_guard<std::mutex> lock(fabric.impl_->mutex);
                 impl = std::make_shared<Impl>(fabric.impl_, Side::Worker,
                                               fabric.impl_->workers.size(),
-                                              options.control_queue_frames, options);
+                                              options.control_queue_frames, options,
+                                              options.executor, options.clock);
                 fabric.impl_->workers.push_back(impl);
                 fabric.impl_->is_partitioned.push_back(false);
             }
@@ -931,6 +1028,13 @@ namespace SushiRuntime
             impl.phase.store(Impl::Phase::Running);
             if (impl.side == Side::Master)
                 result.message = K_MASTER_ENDPOINT_NAME;
+            if (impl.executor != nullptr)
+            {
+                impl.started = impl.now();
+                impl.next_attempt = impl.started;
+                impl.post_round();
+                return result;
+            }
             try
             {
                 impl.pump = std::thread([&impl] { impl.run(); });

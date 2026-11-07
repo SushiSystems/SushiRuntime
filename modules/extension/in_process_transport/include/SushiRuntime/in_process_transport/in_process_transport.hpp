@@ -36,6 +36,8 @@
 #include <functional>
 #include <memory>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -129,6 +131,13 @@ namespace SushiRuntime
                  */
                 void flush_held(std::uint64_t shuffle_seed = 0);
 
+                /**
+                 * @brief Posts a pump round of every threadless endpoint to its executor.
+                 *
+                 * A test calls it after advancing the clock, so a due connection attempt runs.
+                 */
+                void wake_all();
+
                 /** @brief Returns the number of frames the policy has parked. */
                 [[nodiscard]] std::size_t held_count() const;
 
@@ -161,6 +170,12 @@ namespace SushiRuntime
              * A cap of 0 refuses every control frame.
              */
             std::size_t control_queue_frames = 4096;
+
+            /** @brief Runs the pump rounds as jobs, in place of a pump thread; null starts the thread. */
+            std::shared_ptr<SeededExecutor> executor;
+
+            /** @brief Times a threadless endpoint; null, or a threaded one, reads the steady clock. */
+            std::shared_ptr<const Clock> clock;
         };
 
         /**
@@ -183,6 +198,12 @@ namespace SushiRuntime
              * A cap of 0 refuses every control frame.
              */
             std::size_t control_queue_frames = 4096;
+
+            /** @brief Runs the pump rounds as jobs, in place of a pump thread; null starts the thread. */
+            std::shared_ptr<SeededExecutor> executor;
+
+            /** @brief Times a threadless endpoint's attempts; null, or a threaded one, reads the steady clock. */
+            std::shared_ptr<const Clock> clock;
         };
 
         /**

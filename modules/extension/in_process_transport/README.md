@@ -31,3 +31,14 @@ liveness check closes the peer.
 `control_queue_frames` in `InProcessMasterOptions` and `InProcessWorkerOptions` bounds the control
 frames queued per peer; a `send()` past the bound returns `QueueFull`. A bound of 0 refuses every
 control frame, which is how a test makes the link refuse a send.
+
+### Threadless endpoints
+
+An endpoint whose options carry an `executor` starts no pump thread. Each time the endpoint has
+work (a frame in its inbox, a queued send, a new connection) it posts one pump round to that
+`SeededExecutor`, never two at once, and the round delivers the inbox, moves outbound frames and,
+on a worker, makes a due connection attempt. Events are made inside the executor's jobs, on the
+thread that steps it, so a test of the distributed layer runs small and replays its interleaving
+from the seed. The options' `clock` times the worker's reconnect delay and connect timeout; a test
+advances its `ManualClock` and calls `InProcessFabric::wake_all()` to run an attempt that came due.
+An endpoint with no executor reads the steady clock and ignores the option's clock.
