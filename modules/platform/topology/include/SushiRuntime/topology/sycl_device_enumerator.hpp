@@ -32,6 +32,8 @@
 
 #include <vector>
 
+#include <sycl/sycl.hpp>
+
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/topology/device_enumerator.hpp>
@@ -40,6 +42,14 @@ namespace SushiRuntime
 {
     namespace Internal::Topology
     {
+        /**
+         * @brief Returns every SYCL device, in the order SYCLDeviceEnumerator gives its ids.
+         *
+         * Entry i is the device whose DeviceDescriptor has id i.
+         * @throws sycl::exception When the device runtime cannot list the devices.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<sycl::device> sycl_devices();
+
         /**
          * @brief Lists the devices of every SYCL platform.
          *
@@ -50,7 +60,7 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API SYCLDeviceEnumerator final : public DeviceEnumerator
         {
             public:
-                [[nodiscard]] Result<std::vector<EnumeratedDevice>> enumerate() override;
+                [[nodiscard]] Result<std::vector<DeviceDescriptor>> enumerate() override;
         };
     } // namespace Internal::Topology
 } // namespace SushiRuntime

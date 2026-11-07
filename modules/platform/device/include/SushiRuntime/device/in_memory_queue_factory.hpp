@@ -53,11 +53,11 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Builds every queue on the SYCL host device and records each build.
+         * @brief Builds every queue on the SYCL CPU device and records each build.
          *
-         * Each call returns a queue of its own, so the queues of two devices differ; no
-         * accelerator is touched. A device needs an in-order plain queue when the list
-         * given at construction says so.
+         * It holds no device: each make() builds a queue of its own on the SYCL CPU device,
+         * or on the first device of a given context, so the queues of two devices differ. A
+         * device needs an in-order plain queue when the list given at construction says so.
          * @see modules/platform/device/README.md
          */
         class InMemoryQueueFactory final : public QueueFactory
@@ -70,8 +70,7 @@ namespace SushiRuntime
                  */
                 explicit InMemoryQueueFactory(std::size_t device_count,
                                               std::vector<bool> in_order = {})
-                    : device_count_(device_count), in_order_(std::move(in_order)),
-                      host_(sycl::cpu_selector_v)
+                    : device_count_(device_count), in_order_(std::move(in_order))
                 {
                 }
 
@@ -96,8 +95,8 @@ namespace SushiRuntime
                     }
                     const sycl::property_list properties = properties_of(flavour);
                     if (shared_context)
-                        return sycl::queue(*shared_context, host_, properties);
-                    return sycl::queue(host_, properties);
+                        return sycl::queue(*shared_context, shared_context->get_devices().front(), properties);
+                    return sycl::queue(sycl::cpu_selector_v, properties);
                 }
 
                 /** @brief Returns every build so far, in the order they ran. */
@@ -112,8 +111,6 @@ namespace SushiRuntime
                 std::size_t device_count_;
                 /// @brief Entry i true: device i needs an in-order plain queue.
                 std::vector<bool> in_order_;
-                /// @brief The host device every queue is built on.
-                sycl::device host_;
                 /// @brief Guards builds_.
                 mutable std::mutex mutex_;
                 /// @brief Every build so far.

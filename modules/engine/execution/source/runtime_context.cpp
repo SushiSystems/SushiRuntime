@@ -59,6 +59,7 @@
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/host_topology.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
@@ -75,27 +76,22 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Converts a discovered hardware node to the descriptor a device set takes. */
-            Internal::Device::DeviceDescriptor describe_device(const Internal::Topology::HardwareNode& node)
+            /**
+             * @brief Converts a discovered hardware node to the descriptor a device set takes.
+             * @param listed Every SYCL device, in the order the enumerator gave the node's id.
+             */
+            Internal::Device::DeviceDescriptor describe_device(const Internal::Topology::HardwareNode& node,
+                                                               const std::vector<sycl::device>& listed)
             {
                 Internal::Device::DeviceDescriptor descriptor;
-                descriptor.device = node.sycl_dev;
+                descriptor.device = listed.at(node.device_id);
                 descriptor.info.name = node.name;
-                descriptor.info.backend = node.sycl_dev.get_backend();
+                descriptor.info.backend = descriptor.device.get_backend();
                 descriptor.info.numa_node = node.numa_node_id;
                 descriptor.info.memory_bytes = node.global_mem_size;
                 descriptor.info.compute_units = node.max_compute_units;
-
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
-                if (node.is_gpu)
-                    descriptor.info.kind = DeviceKind::GPU;
-                else if (node.sycl_dev.is_cpu())
-                    descriptor.info.kind = DeviceKind::CPU;
-                else if (node.sycl_dev.is_accelerator())
-                    descriptor.info.kind = DeviceKind::Accelerator;
-                else
-                    descriptor.info.kind = DeviceKind::Other;
-
+                descriptor.info.kind = node.is_gpu ? DeviceKind::GPU : node.kind;
                 return descriptor;
             }
 
@@ -135,10 +131,26 @@ namespace SushiRuntime
                 if (nodes->empty())
                     return make_error(no_device_error(config));
 
+                // The SYCL adapter maps each node's id back to its device.
+                std::vector<sycl::device> listed;
+                try
+                {
+                    listed = Internal::Topology::sycl_devices();
+                }
+                catch (const sycl::exception& error)
+                {
+                    return make_error(Error{ErrorCode::Unsupported, error.what()});
+                }
+
                 std::vector<Internal::Device::DeviceDescriptor> descriptors;
                 descriptors.reserve(nodes->size());
                 for (const Internal::Topology::HardwareNode& node : *nodes)
-                    descriptors.push_back(describe_device(node));
+                {
+                    if (node.device_id >= listed.size())
+                        return make_error(Error{ErrorCode::Unsupported,
+                                                "A discovered device has no SYCL device behind its id."});
+                    descriptors.push_back(describe_device(node, listed));
+                }
                 return descriptors;
             }
 

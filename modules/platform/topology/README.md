@@ -68,10 +68,13 @@ every stored node.
 `HardwareDiscovery` is built over two ports and holds the decisions alone: the filter, one CPU
 per NUMA node, one GPU or accelerator per PCI address, and the logical ids.
 
-`DeviceEnumerator::enumerate()` lists every device as an `EnumeratedDevice`: the SYCL device,
-its name, class, fp64 flag, memory, compute units and the PCI address text its driver reports.
+`DeviceEnumerator::enumerate()` lists every device as a `DeviceDescriptor`, a plain value: its
+id in the enumeration, its name, class, fp64 flag, memory, compute units and the PCI address text its driver reports.
 It returns `ErrorCode::Unsupported` with the device runtime's text when it cannot list them.
-`SYCLDeviceEnumerator` (`sycl_device_enumerator.hpp`) lists every SYCL platform;
+No SYCL type is in it, and a `HardwareNode` carries the id and the class, not a SYCL device.
+`SYCLDeviceEnumerator` (`sycl_device_enumerator.hpp`) lists every SYCL platform, and
+`sycl_devices()` returns the SYCL devices in the same order, so entry i is the device of id i;
+it is the one place an id maps back to a SYCL device.
 `InMemoryDeviceEnumerator` (`in_memory_device_enumerator.hpp`) returns the list it was built
 with, or, built by `failing()`, a fixed error.
 

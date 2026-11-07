@@ -46,15 +46,15 @@ namespace
         /** @brief Returns the adapter under test. */
         static std::unique_ptr<SushiRuntime::Internal::Topology::DeviceEnumerator> make()
         {
-            SushiRuntime::Internal::Topology::EnumeratedDevice cpu;
+            SushiRuntime::Internal::Topology::DeviceDescriptor cpu;
             cpu.name = "cpu";
             cpu.kind = SushiRuntime::DeviceKind::CPU;
-            SushiRuntime::Internal::Topology::EnumeratedDevice gpu;
+            SushiRuntime::Internal::Topology::DeviceDescriptor gpu;
             gpu.name = "gpu";
             gpu.kind = SushiRuntime::DeviceKind::GPU;
             gpu.pci_text = "0000:01:00.0";
             return std::make_unique<SushiRuntime::Internal::Topology::InMemoryDeviceEnumerator>(
-                std::vector<SushiRuntime::Internal::Topology::EnumeratedDevice>{cpu, gpu});
+                std::vector<SushiRuntime::Internal::Topology::DeviceDescriptor>{cpu, gpu});
         }
     };
 } // namespace

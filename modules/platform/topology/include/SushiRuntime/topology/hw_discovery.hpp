@@ -34,10 +34,10 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/topology/device_enumerator.hpp>
 #include <SushiRuntime/topology/numa_reader.hpp>
 
@@ -74,7 +74,8 @@ namespace SushiRuntime
         {
             std::size_t logical_id = 0; /**< Logical ID within SushiRuntime. */
             int numa_node_id = -1;      /**< ID of the NUMA node from hwloc; -1 until mapped. */
-            sycl::device sycl_dev{};    /**< SYCL device object. */
+            std::size_t device_id = 0;  /**< Id the enumerator gave the device. */
+            DeviceKind kind = DeviceKind::Other; /**< The class the device reports. */
             std::string name{};         /**< Name of the device. */
             bool is_gpu = false;        /**< True if the device is a GPU. */
 

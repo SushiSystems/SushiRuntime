@@ -175,9 +175,9 @@ TEST(Small_HwDiscovery, AnAddressThatDoesNotParseLogsOneDebugLineNamingTheTextAn
 namespace
 {
     /** @brief Returns one enumerated device of a class, named, with its fp64 flag and PCI text. */
-    EnumeratedDevice listed(const char* name, DeviceKind kind, std::string pci_text = {}, bool fp64 = true)
+    DeviceDescriptor listed(const char* name, DeviceKind kind, std::string pci_text = {}, bool fp64 = true)
     {
-        EnumeratedDevice device;
+        DeviceDescriptor device;
         device.name = name;
         device.kind = kind;
         device.fp64 = fp64;
@@ -188,7 +188,7 @@ namespace
     }
 
     /** @brief Probes an in-memory list through @p reader. */
-    std::vector<HardwareNode> probe(std::vector<EnumeratedDevice> devices, const DeviceFilter& config = {},
+    std::vector<HardwareNode> probe(std::vector<DeviceDescriptor> devices, const DeviceFilter& config = {},
                                     InMemoryNUMAReader reader = InMemoryNUMAReader(0))
     {
         InMemoryDeviceEnumerator enumerator(std::move(devices));
@@ -211,6 +211,21 @@ TEST(Small_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDevice)
 {
     EXPECT_TRUE(probe({listed("cpu", DeviceKind::CPU), listed("gpu", DeviceKind::GPU)},
                       filter_admitting_nothing()).empty());
+}
+
+/** @brief Tests that a kept node carries the enumerator's id and class of its device. */
+TEST(Small_HardwareDiscovery, AKeptNodeCarriesTheIdAndClassItWasListedWith)
+{
+    DeviceDescriptor cpu = listed("cpu", DeviceKind::CPU);
+    cpu.id = 0;
+    DeviceDescriptor accelerator = listed("fpga", DeviceKind::Accelerator);
+    accelerator.id = 7;
+
+    const std::vector<HardwareNode> nodes = probe({cpu, accelerator});
+
+    ASSERT_EQ(nodes.size(), 2U);
+    EXPECT_EQ(nodes[1].device_id, 7U);
+    EXPECT_EQ(nodes[1].kind, DeviceKind::Accelerator);
 }
 
 /** @brief Tests that the GPU-only filter keeps the GPUs of a mixed list and nothing else. */

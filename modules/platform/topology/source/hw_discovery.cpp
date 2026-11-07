@@ -130,7 +130,7 @@ namespace SushiRuntime
         HardwareDiscovery::probe_all_devices(const DeviceFilter& config)
         {
             SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Starting expanded hardware probe...");
-            Result<std::vector<EnumeratedDevice>> listed = enumerator_.enumerate();
+            Result<std::vector<DeviceDescriptor>> listed = enumerator_.enumerate();
             if (!listed)
                 return make_error(enumeration_error(config, listed.error().message.c_str()));
             if (!reader_.loaded())
@@ -145,7 +145,7 @@ namespace SushiRuntime
             // At most one GPU or accelerator is kept per PCI address (modules/platform/topology/README.md).
             std::set<PCIKey> seen_pci;
 
-            for (EnumeratedDevice& entry : *listed)
+            for (DeviceDescriptor& entry : *listed)
             {
                 if (!admits_class(config, entry.kind)) continue;
 
@@ -159,7 +159,8 @@ namespace SushiRuntime
 
                 HardwareNode node;
                 node.logical_id = nodes.size();
-                node.sycl_dev = entry.device;
+                node.device_id = entry.id;
+                node.kind = entry.kind;
                 node.name = std::move(entry.name);
                 node.is_gpu = entry.kind == DeviceKind::GPU;
                 node.global_mem_size = entry.global_mem_size;

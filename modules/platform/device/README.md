@@ -81,8 +81,10 @@ device's plain queue on first use.
 
 `SYCLQueueFactory` builds on the SYCL devices it was given; a device that is neither a CPU nor a
 GPU needs an in-order plain queue, and every queue rethrows its asynchronous errors when asked.
-`InMemoryQueueFactory` builds every queue on the SYCL host device (`sycl::cpu_selector_v`), so
-the queues of two devices are two different queues and no accelerator is touched. Which devices
+`InMemoryQueueFactory` holds no device: each `make()` builds a queue on the SYCL CPU device
+(`sycl::cpu_selector_v`), or on the first device of a given context, so the queues of two
+devices are two different queues and no accelerator is touched. A queue is a device, so a test
+that builds one through this factory is a medium boundary test. Which devices
 need an in-order queue is a list given at construction, the driver of device i is
 `in-memory i`, and `builds()` returns every build with its device, flavour and whether it was
 built in a given context. Both pass `QueueFactoryContract` (`tests/support/queue_factory_contract.hpp`).

@@ -54,9 +54,9 @@ namespace TestSupport
             void SetUp() override { enumerator_ = Maker::make(); }
 
             /** @brief Returns what the enumerator lists; fails the case on an error. */
-            [[nodiscard]] std::vector<SushiRuntime::Internal::Topology::EnumeratedDevice> listed()
+            [[nodiscard]] std::vector<SushiRuntime::Internal::Topology::DeviceDescriptor> listed()
             {
-                SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::EnumeratedDevice>>
+                SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::DeviceDescriptor>>
                     devices = enumerator_->enumerate();
                 EXPECT_TRUE(devices.has_value()) << devices.error().message;
                 if (!devices.has_value())

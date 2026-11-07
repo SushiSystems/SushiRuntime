@@ -9,6 +9,7 @@
 | RW-125 | P1 | open | Move every logic test that only a device or a thread could reach onto its seam as small | Every Medium_ case the 2026-11-07 audit rules LOGIC runs small on its seam, one medium case is kept per boundary |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-128 | P2 | open | Profiling tests reach the process-wide SushiProfiler Collector | Session::start takes an injected Collector, and the 41 profiling LOGIC cases that record periods or plan zones run small on one |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-129 | P2 | open | TaskScheduler, ChainRun and queue-taking task bodies have no host seam | TaskScheduler runs on a SeededExecutor, ChainRun and execute_host take a queue port, and the engine LOGIC cases left medium run small |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-131 | P2 | open | Run placement and the device set on DeviceDescriptor values without building a queue | Small_NodePlacement, Small_SchedulerFactory and Small_DeviceQueueSet build no sycl::queue; only the queue-building path is a Medium_ test |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 

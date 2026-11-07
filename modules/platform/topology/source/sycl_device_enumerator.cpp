@@ -99,15 +99,20 @@ namespace SushiRuntime
             }
         } // namespace
 
-        Result<std::vector<EnumeratedDevice>> SYCLDeviceEnumerator::enumerate()
+        std::vector<sycl::device> sycl_devices()
+        {
+            return sycl::device::get_devices(sycl::info::device_type::all);
+        }
+
+        Result<std::vector<DeviceDescriptor>> SYCLDeviceEnumerator::enumerate()
         {
             try
             {
-                std::vector<EnumeratedDevice> listed;
-                for (const sycl::device& device : sycl::device::get_devices(sycl::info::device_type::all))
+                std::vector<DeviceDescriptor> listed;
+                for (const sycl::device& device : sycl_devices())
                 {
-                    EnumeratedDevice entry;
-                    entry.device = device;
+                    DeviceDescriptor entry;
+                    entry.id = listed.size();
                     entry.name = device.get_info<sycl::info::device::name>();
                     entry.kind = kind_of(device);
                     entry.fp64 = device.has(sycl::aspect::fp64);

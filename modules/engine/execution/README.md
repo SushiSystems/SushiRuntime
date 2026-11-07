@@ -712,7 +712,9 @@ keeps no queue of its own. `devices().queue(i, {false, true})` asks the set for 
 `{in_order = true, profiling}`. The context builds the set with plain queues only.
 
 `describe_device()` turns each `Internal::Topology::HardwareNode` into a `Internal::Device::DeviceDescriptor`, so
-the device module includes no topology header. A node whose `is_gpu` flag is set becomes
+the device module includes no topology header. The node carries the enumerator's id, and
+`Internal::Topology::sycl_devices()` maps it back to its SYCL device; a node whose id has no
+device behind it fails the probe with `ErrorCode::Unsupported`. A node whose `is_gpu` flag is set becomes
 `DeviceKind::GPU` whatever SYCL reports, which keeps `devices().is_gpu()` answering from the flag
 discovery recorded. Descriptors are built by walking the node list in order, one per node
 with no skips, so a node and its queue share an index.

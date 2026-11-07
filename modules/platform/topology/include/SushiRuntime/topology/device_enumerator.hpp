@@ -34,7 +34,6 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
@@ -43,10 +42,14 @@ namespace SushiRuntime
 {
     namespace Internal::Topology
     {
-        /** @brief One device as the enumeration reports it, before any filter or NUMA mapping. */
-        struct EnumeratedDevice
+        /**
+         * @brief One device as the enumeration reports it, before any filter or NUMA mapping.
+         *
+         * A plain value: only a SYCL adapter maps an id to and from a SYCL device.
+         */
+        struct DeviceDescriptor
         {
-            sycl::device device{};               /**< The SYCL device; the default one for a listed device. */
+            std::size_t id = 0;                  /**< Position of the device in the enumeration. */
             std::string name{};                  /**< Name of the device. */
             DeviceKind kind = DeviceKind::Other; /**< The class the device reports. */
             bool fp64 = false;                   /**< True when the device runs double precision. */
@@ -69,7 +72,7 @@ namespace SushiRuntime
                  * @brief Returns every device, or an Unsupported error whose message is the
                  *        text the device runtime gave when it could not list them.
                  */
-                [[nodiscard]] virtual Result<std::vector<EnumeratedDevice>> enumerate() = 0;
+                [[nodiscard]] virtual Result<std::vector<DeviceDescriptor>> enumerate() = 0;
 
             protected:
                 DeviceEnumerator() = default;

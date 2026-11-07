@@ -51,7 +51,7 @@ namespace SushiRuntime
         {
             public:
                 /** @param devices The list every enumerate() call returns. */
-                explicit InMemoryDeviceEnumerator(std::vector<EnumeratedDevice> devices)
+                explicit InMemoryDeviceEnumerator(std::vector<DeviceDescriptor> devices)
                     : devices_(std::move(devices))
                 {
                 }
@@ -62,12 +62,12 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] static InMemoryDeviceEnumerator failing(std::string runtime_text)
                 {
-                    InMemoryDeviceEnumerator enumerator{std::vector<EnumeratedDevice>{}};
+                    InMemoryDeviceEnumerator enumerator{std::vector<DeviceDescriptor>{}};
                     enumerator.failure_ = std::move(runtime_text);
                     return enumerator;
                 }
 
-                [[nodiscard]] Result<std::vector<EnumeratedDevice>> enumerate() override
+                [[nodiscard]] Result<std::vector<DeviceDescriptor>> enumerate() override
                 {
                     if (failure_.has_value())
                         return make_error(Error{ErrorCode::Unsupported, *failure_});
@@ -76,7 +76,7 @@ namespace SushiRuntime
 
             private:
                 /// @brief The list enumerate() returns.
-                std::vector<EnumeratedDevice> devices_;
+                std::vector<DeviceDescriptor> devices_;
                 /// @brief The error text of a failing enumerator; empty for one that lists.
                 std::optional<std::string> failure_;
         };
