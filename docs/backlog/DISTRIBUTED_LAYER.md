@@ -16,7 +16,6 @@
 | RW-65 | P2 | open | Carry out the runtime's share of layered execution | tasks R1 to R13 of `docs/design/LAYERED_EXECUTION/README.md` are closed |  | `docs/design/LAYERED_EXECUTION/README.md` | 2026-10-20 |
 | RW-120 | P3 | open | Move the distributed tests off Internal::ContextAccess onto the public runtime | No file under tests/extension/distributed names Internal::ContextAccess |  | `tests/extension/distributed/test_distributed.cpp` | 2026-11-07 |
 | RW-121 | P3 | open | Make the TCP transport refuse every send when its control queue bound is 0 | A transport contract row shows the TCP endpoint refuses a send with a bound of 0, as the in-process one does |  | `modules/extension/in_process_transport/README.md` | 2026-11-07 |
-| RW-130 | P1 | open | Stop a threadless WorkerAgent without waiting 2 s for a loss | WorkerAgent::stop() with own_threads false ends the link at once; the step fixture has no close-first workaround |  | `modules/extension/distributed/source/worker_agent.cpp` | 2026-11-07 |
 
 ## Known issues
 

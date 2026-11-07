@@ -46,6 +46,8 @@
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "support/single_frame.hpp"
+
 namespace TestSupport
 {
     /**
@@ -213,46 +215,11 @@ namespace TestSupport
             void deliver_flagged(SushiRuntime::Distributed::MessageType type, std::uint8_t flags,
                                  std::vector<std::byte> payload)
             {
-                class OneFrame final : public SushiRuntime::Distributed::FrameSource
-                {
-                    public:
-                        /** @brief Takes the frame the stream yields. */
-                        OneFrame(SushiRuntime::Distributed::MessageType type, std::uint8_t flags,
-                                 std::vector<std::byte> payload) noexcept
-                            : type_(type), flags_(flags), payload_(std::move(payload))
-                        {
-
-                        }
-
-                        /** @brief Hands over the frame on the first call and nothing after. */
-                        [[nodiscard]] SushiRuntime::Distributed::FrameSourceStatus next(
-                            SushiRuntime::Distributed::OutboundFrame& frame) noexcept override
-                        {
-                            if (is_sent_)
-                                return SushiRuntime::Distributed::FrameSourceStatus::Finished;
-                            is_sent_ = true;
-                            frame.type = type_;
-                            frame.flags = flags_;
-                            frame.payload.swap(payload_);
-                            return SushiRuntime::Distributed::FrameSourceStatus::FinalFrame;
-                        }
-
-                    private:
-                        /// @brief The frame's type.
-                        SushiRuntime::Distributed::MessageType type_;
-
-                        /// @brief The frame's flag byte.
-                        std::uint8_t flags_;
-
-                        /// @brief The frame's payload.
-                        std::vector<std::byte> payload_;
-
-                        /// @brief Whether next() handed the frame over.
-                        bool is_sent_ = false;
-                };
-
-                EXPECT_EQ(master_->send_stream(master_peer(), std::make_unique<OneFrame>(
-                                                                  type, flags, std::move(payload))),
+                SushiRuntime::Distributed::OutboundFrame frame;
+                frame.type = type;
+                frame.flags = flags;
+                frame.payload = std::move(payload);
+                EXPECT_EQ(master_->send_stream(master_peer(), std::make_unique<SingleFrame>(std::move(frame))),
                           SushiRuntime::Distributed::SendStatus::Queued);
             }
 

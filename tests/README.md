@@ -40,7 +40,7 @@ scope, `accepting_offload_coordinator.hpp` takes every node it is offered and co
 owns, `nd_kernel_math.hpp` holds the index math and arithmetic of the `NdRange` test kernels as host functions
 of plain ids, so a small test calls them and the launch test passes them values out of `sycl::nd_item`, `worker_wire.hpp` holds the frames and handshake builders a test of a worker plays its master with,
 `heap_cache_allocator.hpp` is the heap adapter of the worker cache's allocator port,
-and `executor_fabric.hpp` joins a master and a worker endpoint of an `InProcessFabric` on `ExecutorDrive`s that a test steps: the unit under test takes one endpoint and the test reads what it sent, and the peers it closed, in the events the other endpoint records, `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
+and `executor_fabric.hpp` joins a master and a worker endpoint of an `InProcessFabric` on `ExecutorDrive`s that a test steps: the unit under test takes one endpoint and the test reads what it sent, and the peers it closed, in the events the other endpoint records, `single_frame.hpp` yields one frame with any flag byte as a stream, `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
 SHA-256 digest as hexadecimal text.
 
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every

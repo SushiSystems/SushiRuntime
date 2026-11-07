@@ -63,6 +63,7 @@
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "support/single_frame.hpp"
 #include "support/worker_wire.hpp"
 
 using namespace SushiRuntime;
@@ -76,37 +77,6 @@ namespace
 
     /** @brief Holds the connection most tests register the master on. */
     constexpr PeerID K_MASTER{1};
-
-    /** @brief Yields one frame, with the flag byte a control frame cannot carry, as a stream. */
-    class SingleFrame final : public FrameSource
-    {
-        public:
-            /** @brief Takes the frame the stream yields. */
-            explicit SingleFrame(OutboundFrame frame) noexcept : frame_(std::move(frame))
-            {
-
-            }
-
-            /** @brief Hands over the frame on the first call and nothing after. */
-            [[nodiscard]] FrameSourceStatus next(OutboundFrame& frame) noexcept override
-            {
-                if (is_sent_)
-                    return FrameSourceStatus::Finished;
-
-                is_sent_ = true;
-                frame.type = frame_.type;
-                frame.flags = frame_.flags;
-                frame.payload.swap(frame_.payload);
-                return FrameSourceStatus::FinalFrame;
-            }
-
-        private:
-            /// @brief The frame to hand over.
-            OutboundFrame frame_;
-
-            /// @brief Whether next() handed it over.
-            bool is_sent_ = false;
-    };
 
     /**
      * @brief Plays the master of a worker agent over an in-process fabric.
@@ -175,7 +145,7 @@ namespace
                 frame.flags = flags;
                 frame.payload = std::move(payload);
                 EXPECT_EQ(master_->send_stream(
-                              peer, std::make_unique<SingleFrame>(std::move(frame))),
+                              peer, std::make_unique<TestSupport::SingleFrame>(std::move(frame))),
                           SendStatus::Queued);
             }
 

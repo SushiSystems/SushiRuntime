@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-07 — distributed: Made `WorkerAgent::stop()` of an agent with `own_threads` false close the master's connection at once, in place of waiting up to 2 s for a loss (RW-130, `df27871c`).
 - 2026-11-07 — worker_types: Added `KernelRegistry::register_host_kernel()` and `find_host()`, a kernel that needs no queue, which a worker on a host runtime runs; `register_kernel()` behaves as before (RW-127, `4310f909`).
 - 2026-11-07 — api: Added `Recorder::task(access, body, host_form, placement)`, a queue task that also has a host form the host runtime runs (RW-127, `4310f909`).
 - 2026-11-07 — device: Added `DeviceQueueSet::shares_context()` and `free_memory()`, which answer a host set without a queue (RW-127, `4310f909`).
