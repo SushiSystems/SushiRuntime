@@ -217,13 +217,14 @@ TEST_F(Small_WorkerAgentStep, Regression_StopEndsTheLinkAtOnceWhenTheAgentOwnsNo
     start();
     register_master(7);
     const std::size_t losses = fabric_.master_events().losses().size();
-    const auto before = std::chrono::steady_clock::now();
+    const std::uint64_t clock_before = fabric_.clock().now_ns();
 
     agent_->stop();
-    fabric_.settle();
 
-    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::milliseconds(1000))
-        << "stop() waited on wall time for a loss nothing delivers";
+    EXPECT_EQ(fabric_.master_events().losses().size(), losses)
+        << "the loss reached the master before settle(), so a thread other than the test ran";
+    EXPECT_EQ(fabric_.clock().now_ns(), clock_before) << "stop() waited on the clock";
+    fabric_.settle();
     EXPECT_GT(fabric_.master_events().losses().size(), losses) << "the master never saw the link end";
 }
 
