@@ -987,6 +987,9 @@ namespace SushiRuntime
             const std::shared_ptr<Connection> connection = impl_->find(peer);
             if (connection == nullptr)
                 return SendStatus::UnknownPeer;
+            // The Outbox holds at least one frame, so a bound of 0 is kept here.
+            if (impl_->control_queue_frames == 0)
+                return SendStatus::QueueFull;
             const SendStatus status = connection->outbox.push_control(type, payload);
             if (status == SendStatus::Queued)
                 impl_->wake();

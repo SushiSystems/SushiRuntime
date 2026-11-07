@@ -359,10 +359,11 @@ class Medium_TransportContract : public ::testing::Test
         /**
          * @brief Starts both endpoints and waits until each has seen the other connect.
          * @param reconnect Whether the worker connects again after a loss.
+         * @param master_options The settings of the master endpoint.
          */
-        void connect(bool reconnect)
+        void connect(bool reconnect, InProcessMasterOptions master_options = InProcessMasterOptions())
         {
-            master_ = InProcessTransport::make_master(fabric_);
+            master_ = InProcessTransport::make_master(fabric_, master_options);
             const TransportResult master_started = master_->start(master_events_);
             ASSERT_TRUE(master_started.is_ok()) << master_started.message;
 
@@ -544,6 +545,16 @@ TEST_F(Medium_TransportContract, AnEventMaySendFromTheConnectionCallback)
     const std::vector<Event> seen = worker_events_.events();
     EXPECT_EQ(seen.back().type, MessageType::Ping);
     EXPECT_EQ(refused_sends.load(), 0u);
+}
+
+/** @brief Checks that a master whose control queue holds no frame refuses a send to a connected worker. */
+TEST_F(Medium_TransportContract, AControlQueueOfNoFramesRefusesEverySend)
+{
+    InProcessMasterOptions no_queue;
+    no_queue.control_queue_frames = 0;
+    connect(false, no_queue);
+
+    EXPECT_EQ(master_->send(worker_peer_, MessageType::Ping, {}), SendStatus::QueueFull);
 }
 
 /** @brief Checks that a transport that was never started refuses a send as Stopped. */

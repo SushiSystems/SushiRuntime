@@ -27,3 +27,7 @@ A `FaultPolicy` sees every frame as it enters the fabric, control or stream, as 
 direction, worker index, type, flags and payload. A partition discards frames in both directions
 and tells neither side, which is a half-open link; the connection ends only when the master's
 liveness check closes the peer.
+
+`control_queue_frames` in `InProcessMasterOptions` and `InProcessWorkerOptions` bounds the control
+frames queued per peer; a `send()` past the bound returns `QueueFull`. A bound of 0 refuses every
+control frame, which is how a test makes the link refuse a send.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-07 — in_process_transport: Made an endpoint whose `control_queue_frames` is 0 refuse every control frame with `QueueFull`; any other bound behaves as before (RW-119, `in_process_transport.hpp`).
 - 2026-11-07 — device: Moved the NUMA routing of `DeviceQueueSet` into `NUMARouteTable`, which is built from NUMA ids alone; the set routes every request as before (RW-103, `numa_route_table.hpp`).
 - 2026-11-07 — machine: Added `admits_class()` and `admits()`, which decide whether a `DeviceFilter` accepts one device; discovery calls them and keeps the same devices as before (RW-103, `device_filter.hpp`).
 - 2026-11-07 — api: Added `AdvancedControls::install_offload()`, which installs or removes the coordinator the runs of a runtime offer their nodes to; a runtime starts with none, as before (RW-107, `advanced_controls.hpp`).

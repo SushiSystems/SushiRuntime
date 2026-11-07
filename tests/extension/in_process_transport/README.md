@@ -28,6 +28,7 @@ on recorded events with a 10 s limit and never on a sleep. The same promises ove
 | `NoEventIsMadeAfterStopReturns` | While the worker floods the master with heartbeats, the master stops; the master's event list then stops growing although the worker keeps sending. |
 | `AnEventMayAnswerTheFramesItReceives` | The master answers each of 64 frames from inside the callback with a `PONG` carrying the same counter; no send is refused, and the worker sees the counters in order. |
 | `AnEventMaySendFromTheConnectionCallback` | The master sends a `PING` from the callback that announces the worker; the worker receives it. |
+| `AControlQueueOfNoFramesRefusesEverySend` | A master whose `control_queue_frames` is 0 refuses a send to a connected worker as `QueueFull`. The `Outbox` under it holds at least one frame, so the bound is kept by the endpoint. |
 | `ASendBeforeStartReturnsStopped` | A transport that was never started refuses a send as `Stopped`. |
 | `ASendToAnUnknownPeerReturnsUnknownPeer` | A started transport refuses a send to a peer it never saw as `UnknownPeer`. |
 | `ASecondStartReturnsAlreadyStarted` | A second `start()` returns `AlreadyStarted` with a message. |

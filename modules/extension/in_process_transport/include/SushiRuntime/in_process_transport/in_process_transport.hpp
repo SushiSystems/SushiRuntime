@@ -155,7 +155,11 @@ namespace SushiRuntime
          */
         struct InProcessMasterOptions
         {
-            /** @brief Caps the control frames queued per peer; send() then returns QueueFull. */
+            /**
+             * @brief Caps the control frames queued per peer; send() then returns QueueFull.
+             *
+             * A cap of 0 refuses every control frame.
+             */
             std::size_t control_queue_frames = 4096;
         };
 
@@ -173,7 +177,11 @@ namespace SushiRuntime
             /** @brief Bounds the wait for a started master; 0 waits without a limit. */
             std::chrono::milliseconds connect_timeout{0};
 
-            /** @brief Caps the control frames queued for the master. */
+            /**
+             * @brief Caps the control frames queued for the master; send() then returns QueueFull.
+             *
+             * A cap of 0 refuses every control frame.
+             */
             std::size_t control_queue_frames = 4096;
         };
 
