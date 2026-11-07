@@ -14,7 +14,7 @@
 | RW-24 | P2 | open | Offer an op recorded on a dynamic-graph region to a worker | the dynamic composer stamps offloadable nodes as `TaskGraph::compile` does |  |  | 2026-10-19 |
 | RW-25 | P2 | open | Release the stopped coordinator at `detach()` | a `detach()` during a run leaves no coordinator installed (QC-84) |  |  | 2026-10-19 |
 | RW-65 | P2 | open | Carry out the runtime's share of layered execution | tasks R1 to R13 of `docs/design/LAYERED_EXECUTION/README.md` are closed |  | `docs/design/LAYERED_EXECUTION/README.md` | 2026-10-20 |
-| RW-87 | P2 | open | Run the TransportContract suite small against InProcessTransport | a TransportContract suite in tests/extension/transport runs Small_ on InProcessTransport through an injected executor and clock, and Medium_ on TCP |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-87 | P2 | open | Run the TransportContract suite small against InProcessTransport | a TransportContract suite in tests/extension/transport runs Small_ on InProcessTransport through an injected executor and clock, and Medium_ on TCP |  | `tests/extension/transport` | 2026-11-06 |
 
 ## Known issues
 

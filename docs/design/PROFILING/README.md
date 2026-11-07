@@ -38,6 +38,7 @@ the outside through a `RunObserver` and through the profiler's zones, values and
 - The profiler parts add their observers behind the profiler's gate, so a session that is paused or not open costs no device timing; an observer added through `Runtime::add_run_observer()` always wants timing.
 - Zones sit in exported sources only, never in header templates a consumer compiles. The level is compiled: `SR_PROFILE_LEVEL` 2 by default, with the spin and steal sites at 3.
 - The removal is breaking and made at once, before 1.0, with no deprecation release. A changelog entry names each removed member and its replacement.
+- `register_profiler_parts()` has a form that takes a `ProfiledRuntime`, the interface it uses; the `Runtime` form wraps its runtime and forwards to it, so the parts register on an in-memory runtime in a small test. Ruled on 2026-11-07 in the test review.
 - Where the runtime recovers, falls back or drops a status it logs, under its own category per module, once and with the values. A counter that SushiLog does not yet offer is local to the runtime.
 
 ## Design

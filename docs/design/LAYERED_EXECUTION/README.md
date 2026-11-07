@@ -73,8 +73,6 @@ below is placement and transport.
 
 Made on 2026-10-19.
 
-Made on 2026-10-19.
-
 | # | Subject | Ruling |
 | --- | --- | --- |
 | 1 | Rule format | The runtime offers the rule model and an API that builds it. It reads no rule file; each application reads its own format and builds the rules through the API |
@@ -87,6 +85,14 @@ Made on 2026-10-19.
 | 8 | Protocol | The wire moves to version 4 |
 | 9 | Local devices | Rules choose among the devices of one machine as well, from the first phase |
 | 10 | Order | This document's work comes first; SushiBLAS follows, then SushiAI. SushiEngine moves in parallel |
+
+Made on 2026-11-07, in the test review.
+
+| # | Subject | Ruling |
+| --- | --- | --- |
+| 11 | Installing an offload coordinator | A runtime starts with no coordinator. `AdvancedControls::install_offload()` installs one or removes it between runs and forwards to the context; the next compile of each graph follows the change |
+| 12 | Seams for tests | A seam a test needs is a constructor or function parameter, or an overload, whose default keeps today's behaviour, so existing callers compile unchanged |
+| 13 | Adapters of the ports | The in-memory adapter of a port ships beside the port: `InMemoryOffloadCoordinator` and `RefusingOffloadSink` in `task`. A coordinator that completes nodes on a thread of its own is test code, in `tests/support/` |
 
 ### Out of scope
 

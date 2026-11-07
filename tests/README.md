@@ -74,6 +74,18 @@ where they never gate. The two `Package.*` tests are plain CTest tests and carry
 
 The `sr_<module>_benchmarks` programs are not registered with CTest. `sr bench` runs them.
 
+## What a test may reach
+
+- A test reaches a module through its public headers. A promise only a private header or a
+  surface module's internal name could show is a backlog entry, not a test.
+- A port is tested through its in-memory adapter, which ships beside the port; no test writes a
+  stand-in of a type the repository owns.
+- A test's size follows what it touches: a bridge test that touches no device is small, and a
+  death test is medium, since it starts a child process.
+- A header whose promises are all compile-time has a `compile_<name>.cpp` beside its test path,
+  which includes it alone and is never run.
+- Trivial code, such as an empty default or a one-line comparison, has no test.
+
 ## Source comments
 
 A source comment keeps one line. The `@see` line in a file's header gives the path of its module's
