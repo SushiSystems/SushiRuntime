@@ -28,11 +28,16 @@
  * @author Mustafa Garip
  */
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 
 #include <SushiRuntime/scheduler/in_memory_telemetry.hpp>
 #include <SushiRuntime/scheduler/manual_heartbeat_clock.hpp>
@@ -118,6 +123,81 @@ TEST(Small_WorkloadCoordinator, ABeatWithNoStrategyMigratesNothing)
     coordinator.beat();
 
     EXPECT_TRUE(migrator.requests().empty());
+}
+
+namespace
+{
+    /** @brief The heartbeat interval in clock nanoseconds. */
+    constexpr std::uint64_t K_INTERVAL_NS = static_cast<std::uint64_t>(
+        std::chrono::nanoseconds(WorkloadCoordinator::K_HEARTBEAT_INTERVAL).count());
+
+    /** @brief Runs @p jobs jobs of @p executor, one at a time. */
+    void run_jobs(SushiRuntime::SeededExecutor& executor, int jobs)
+    {
+        for (int job = 0; job < jobs; ++job)
+            static_cast<void>(executor.run_one());
+    }
+} // namespace
+
+/** @brief Tests that the heartbeat job beats once, then once more for each interval the clock moves on. */
+TEST(Small_WorkloadCoordinator, TheJobEvaluatesOnceForEachIntervalTheClockMoves)
+{
+    const InMemoryTelemetry telemetry = one_idle_worker();
+    RecordingTaskMigrator migrator;
+    SushiRuntime::SeededExecutor executor;
+    SushiRuntime::ManualClock clock;
+    auto strategy = std::make_unique<RecordingRebalanceStrategy>();
+    const RecordingRebalanceStrategy& evaluations = *strategy;
+    WorkloadCoordinator coordinator(telemetry, migrator, std::move(strategy), executor, clock);
+
+    coordinator.start();
+    run_jobs(executor, 3);
+    EXPECT_EQ(evaluations.evaluations(), 1u) << "no interval has passed after the first beat";
+
+    clock.advance(K_INTERVAL_NS);
+    run_jobs(executor, 3);
+    EXPECT_EQ(evaluations.evaluations(), 2u);
+    coordinator.stop();
+}
+
+/** @brief Tests that the heartbeat job neither beats nor posts itself again after stop(). */
+TEST(Small_WorkloadCoordinator, NoBeatFollowsStop)
+{
+    const InMemoryTelemetry telemetry = one_idle_worker();
+    RecordingTaskMigrator migrator;
+    SushiRuntime::SeededExecutor executor;
+    SushiRuntime::ManualClock clock;
+    auto strategy = std::make_unique<RecordingRebalanceStrategy>();
+    const RecordingRebalanceStrategy& evaluations = *strategy;
+    WorkloadCoordinator coordinator(telemetry, migrator, std::move(strategy), executor, clock);
+
+    coordinator.start();
+    coordinator.stop();
+    clock.advance(10 * K_INTERVAL_NS);
+    run_jobs(executor, 3);
+
+    EXPECT_EQ(evaluations.evaluations(), 0u);
+    EXPECT_EQ(executor.pending(), 0u);
+}
+
+/** @brief Tests that a second start() leaves one heartbeat job posted. */
+TEST(Small_WorkloadCoordinator, ASecondStartLeavesOneHeartbeatJob)
+{
+    const InMemoryTelemetry telemetry = one_idle_worker();
+    RecordingTaskMigrator migrator;
+    SushiRuntime::SeededExecutor executor;
+    SushiRuntime::ManualClock clock;
+    WorkloadCoordinator coordinator(telemetry, migrator, std::make_unique<RecordingRebalanceStrategy>(), executor,
+                                    clock);
+
+    coordinator.start();
+    coordinator.start();
+    EXPECT_EQ(executor.pending(), 1u);
+
+    coordinator.stop();
+    coordinator.start();
+    EXPECT_EQ(executor.pending(), 1u) << "a restart reuses the job still posted";
+    coordinator.stop();
 }
 
 /** @brief Tests that the started thread evaluates once, then once more for each beat the clock grants. */

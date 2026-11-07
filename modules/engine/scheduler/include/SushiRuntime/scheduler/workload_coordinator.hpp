@@ -29,12 +29,15 @@
  */
 
 #pragma once
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/scheduler/heartbeat_clock.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <memory>
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 
 namespace SushiRuntime
@@ -45,7 +48,8 @@ namespace SushiRuntime
          * @brief Drives an RebalanceStrategy from a background thread on a 5 ms heartbeat.
          *
          * The pause between two beats is made on a HeartbeatClock, the system clock unless the caller
-         * passes another.
+         * passes another. Built over an Executor and a Clock, it starts no thread: the heartbeat is
+         * one executor job that beats when the clock reaches the next beat and posts itself again.
          * @see modules/engine/scheduler/README.md
          */
         class WorkloadCoordinator
@@ -67,6 +71,35 @@ namespace SushiRuntime
 
                 std::atomic<bool> running_{false};
                 std::thread coordinator_thread_;
+
+                /** @brief The executor the heartbeat job runs on; null for the thread. */
+                Executor* executor_ = nullptr;
+                /** @brief The clock the heartbeat job reads; null for the thread. */
+                const Clock* tick_clock_ = nullptr;
+                /** @brief The clock time of the next beat of the heartbeat job. */
+                std::uint64_t next_beat_ns_ = 0;
+                /** @brief True while a heartbeat job is posted and not yet run. */
+                bool job_posted_ = false;
+
+                /** @brief Posts the heartbeat job, which beats when due and posts itself again while running. */
+                void post_heartbeat()
+                {
+                    job_posted_ = true;
+                    executor_->post([this]()
+                    {
+                        job_posted_ = false;
+                        if (!running_.load(std::memory_order_relaxed))
+                            return;
+                        const std::uint64_t now = tick_clock_->now_ns();
+                        if (now >= next_beat_ns_)
+                        {
+                            beat();
+                            next_beat_ns_ = now + static_cast<std::uint64_t>(
+                                std::chrono::nanoseconds(K_HEARTBEAT_INTERVAL).count());
+                        }
+                        post_heartbeat();
+                    });
+                }
 
                 void monitor_loop()
                 {
@@ -101,6 +134,19 @@ namespace SushiRuntime
                                     HeartbeatClock& clock)
                     : telemetry_(t), migrator_(m), clock_(&clock), strategy_(std::move(s)) {}
 
+                /**
+                 * @brief Constructs a coordinator whose heartbeat is a job on @p executor; starts nothing.
+                 * @param t        Telemetry source (must outlive this object).
+                 * @param m        Migration actuator (must outlive this object).
+                 * @param s        Initial rebalance strategy.
+                 * @param executor Runs the heartbeat job (must outlive this object and run no job after it).
+                 * @param clock    The clock the job reads the time of the next beat from (must outlive this object).
+                 */
+                WorkloadCoordinator(const TelemetryProvider& t, TaskMigrator& m, std::unique_ptr<RebalanceStrategy> s,
+                                    Executor& executor, const Clock& clock)
+                    : telemetry_(t), migrator_(m), clock_(&system_clock_), strategy_(std::move(s)),
+                      executor_(&executor), tick_clock_(&clock) {}
+
                 /** @brief Calls stop() if the coordinator thread is still running. */
                 ~WorkloadCoordinator() { stop(); }
 
@@ -117,16 +163,28 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Starts the coordinator thread. No-op if already running.
+                 * @brief Starts the coordinator thread, or posts the heartbeat job. No-op if already running.
+                 *
+                 * The job beats on its first run and then each time the clock has moved one interval on.
                  */
                 void start()
                 {
-                    if (!running_.exchange(true))
+                    if (running_.exchange(true))
+                        return;
+                    if (executor_ == nullptr)
+                    {
                         coordinator_thread_ = std::thread(&WorkloadCoordinator::monitor_loop, this);
+                        return;
+                    }
+                    next_beat_ns_ = tick_clock_->now_ns();
+                    if (!job_posted_)
+                        post_heartbeat();
                 }
 
                 /**
                  * @brief Signals the coordinator to stop and joins its thread. No-op if not running.
+                 *
+                 * A posted heartbeat job that runs after it returns without beating.
                  */
                 void stop()
                 {

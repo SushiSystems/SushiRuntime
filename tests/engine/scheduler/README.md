@@ -276,7 +276,9 @@ The file covers the heartbeat of `WorkloadCoordinator` on `InMemoryTelemetry`, `
 `RecordingRebalanceStrategy` and a `ManualHeartbeatClock`, so no test sleeps, polls or loops. The four
 `Small_` tests call `beat()`, the evaluation one heartbeat makes, on the test's own thread. The three
 `Medium_` tests start the heartbeat thread and step it with the clock: `advance()` ends one pause and
-`wait_for_pauses()` returns when the thread has entered the pause that follows its beat.
+`wait_for_pauses()` returns when the thread has entered the pause that follows its beat. Three more
+`Small_` tests build the coordinator over a `SeededExecutor` and a `ManualClock`, where the heartbeat
+is one job that beats when the clock reaches the next beat and posts itself again.
 
 | Test | Promise |
 | --- | --- |
@@ -284,6 +286,9 @@ The file covers the heartbeat of `WorkloadCoordinator` on `InMemoryTelemetry`, `
 | `AMigrationTheStrategyRequestsReachesTheMigrator` | A migration the strategy asks for during a beat reaches the migrator. |
 | `SetStrategyHandsTheNextBeatToTheNewStrategy` | After `set_strategy()` the next beat evaluates the new strategy and not the old one. |
 | `ABeatWithNoStrategyMigratesNothing` | A beat with no strategy set migrates nothing. |
+| `TheJobEvaluatesOnceForEachIntervalTheClockMoves` | The heartbeat job beats on its first run, and again only once the clock moves one interval on. |
+| `NoBeatFollowsStop` | A job that runs after `stop()` neither beats nor posts itself again. |
+| `ASecondStartLeavesOneHeartbeatJob` | Two `start()` calls, or a restart before the job ran, leave one job posted. |
 | `TheThreadEvaluatesOnceForEachBeatTheClockGrants` | The started thread evaluates once, then once more for each beat the clock grants. |
 | `NoEvaluationFollowsStop` | After `stop()` returns, advancing the clock evaluates nothing. |
 | `ASecondStartLeavesOneHeartbeatThread` | Two `start()` calls leave one thread, which evaluates once per granted beat. |
