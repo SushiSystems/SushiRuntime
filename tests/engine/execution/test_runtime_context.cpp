@@ -60,6 +60,8 @@
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/hwloc_numa_reader.hpp>
+#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
@@ -556,7 +558,9 @@ namespace NvidiaTopologyTests
      */
     TEST_F(Large_RuntimeContextNvidia, NvidiaGPUDiscovered)
     {
-        HardwareDiscovery discovery;
+        SYCLDeviceEnumerator enumerator;
+        HwlocNUMAReader reader;
+        HardwareDiscovery discovery(enumerator, reader);
         DeviceFilter config;
         config.include_cpu = true;
         config.include_gpu = true;
@@ -580,7 +584,9 @@ namespace NvidiaTopologyTests
         if (running_under_wsl())
             GTEST_SKIP() << "WSL gives hwloc no PCI devices, so the GPU maps to the fallback node.";
 
-        HardwareDiscovery discovery;
+        SYCLDeviceEnumerator enumerator;
+        HwlocNUMAReader reader;
+        HardwareDiscovery discovery(enumerator, reader);
         DeviceFilter config;
         config.include_gpu = true;
         auto nodes = discovery.probe_all_devices(config).value();

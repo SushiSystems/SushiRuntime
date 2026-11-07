@@ -12,9 +12,11 @@ sushiruntime_add_module(
         host_identity_posix.cpp
         host_identity_windows.cpp
         hw_discovery.cpp
+        hwloc_numa_reader.cpp
         hwloc_topology_provider.cpp
         numa_mapper.cpp
         remapping_topology_provider.cpp
+        sycl_device_enumerator.cpp
         topology_view.cpp
     DEPENDS core log machine
     PRIVATE_DEPENDS numa_lookup

@@ -36,6 +36,8 @@
 #include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/hwloc_numa_reader.hpp>
+#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
@@ -51,7 +53,9 @@ namespace SushiRuntime
         Result<std::vector<HardwareNode>>
         HwlocTopologyProvider::enumerate(const DeviceFilter& config)
         {
-            HardwareDiscovery discovery;
+            SYCLDeviceEnumerator enumerator;
+            HwlocNUMAReader reader;
+            HardwareDiscovery discovery(enumerator, reader);
             Result<std::vector<HardwareNode>> nodes = discovery.probe_all_devices(config);
             if (!nodes)
                 return nodes;

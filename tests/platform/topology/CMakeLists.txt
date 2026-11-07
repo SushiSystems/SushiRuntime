@@ -6,16 +6,22 @@
 sushiruntime_add_module_tests(
     MODULE topology
     SOURCES
+        compile_device_enumerator.cpp
+        compile_numa_reader.cpp
         compile_topology_log_category.cpp
         test_affinity.cpp
         test_host_topology.cpp
         test_host_identity.cpp
         test_hw_discovery.cpp
+        test_hwloc_numa_reader.cpp
         test_hwloc_topology_provider.cpp
+        test_in_memory_device_enumerator.cpp
+        test_in_memory_numa_reader.cpp
         test_in_memory_topology_provider.cpp
         test_matrix_distance_model.cpp
         test_numa_mapper.cpp
         test_remapping_topology_provider.cpp
+        test_sycl_device_enumerator.cpp
         test_topology_provider.cpp
         test_topology_view.cpp)
 

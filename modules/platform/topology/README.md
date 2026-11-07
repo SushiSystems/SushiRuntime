@@ -63,6 +63,26 @@ in memory, with no hwloc and no device query, so placement logic is tested on an
 `failing()` form returns the error it was given. It does not apply the DeviceFilter: every call returns
 every stored node.
 
+## device_enumerator.hpp and numa_reader.hpp
+
+`HardwareDiscovery` is built over two ports and holds the decisions alone: the filter, one CPU
+per NUMA node, one GPU or accelerator per PCI address, and the logical ids.
+
+`DeviceEnumerator::enumerate()` lists every device as an `EnumeratedDevice`: the SYCL device,
+its name, class, fp64 flag, memory, compute units and the PCI address text its driver reports.
+It returns `ErrorCode::Unsupported` with the device runtime's text when it cannot list them.
+`SYCLDeviceEnumerator` (`sycl_device_enumerator.hpp`) lists every SYCL platform;
+`InMemoryDeviceEnumerator` (`in_memory_device_enumerator.hpp`) returns the list it was built
+with, or, built by `failing()`, a fixed error.
+
+`NUMAReader` answers whether it holds a topology, the NUMA node of the first processing unit,
+and the PCI address text of the first GPU it lists whose name a device's name holds.
+`HwlocNUMAReader` (`hwloc_numa_reader.hpp`) loads the machine's hwloc topology with its I/O
+devices; `InMemoryNUMAReader` (`in_memory_numa_reader.hpp`) answers a fixed node and a fixed
+list of `ListedGPU`. `HwlocTopologyProvider::enumerate()` builds the SYCL enumerator and the
+hwloc reader. `DeviceEnumeratorContract` and `NUMAReaderContract` (`tests/support/`) run small
+on the in-memory adapters and medium on the machine.
+
 ## matrix_distance_model.hpp
 
 ### MatrixDistanceModel
@@ -119,14 +139,14 @@ Some backends expose the same physical CPU twice. Under AdaptiveCpp the host CPU
 both through the OpenCL backend and as the native "OpenMP host device", which also reports a
 bogus `global_mem_size`. Discovery keeps at most one CPU per NUMA node, so the scheduler
 does not build duplicate queues for one processor. The second CPU seen on a NUMA node is
-logged and dropped, and its logical id is given back.
+logged and dropped, and takes no logical id.
 
 #### One GPU or accelerator per PCI address
 
 A GPU that two backends expose is enumerated twice, and every entry of the device list gets its
 own queues, so the second entry would give one physical device two queue sets. Discovery keeps
 the first GPU or accelerator enumerated at a resolved PCI address; a later one at the same
-address is logged and dropped, and its logical id is given back. A device with no resolved PCI
+address is logged and dropped, and takes no logical id. A device with no resolved PCI
 address is never dropped, because nothing tells it apart from a second physical device.
 
 #### fp64 is checked at discovery
@@ -141,13 +161,13 @@ The address of a GPU or accelerator is looked up in three steps.
 
 1. The Intel device-info extension, which covers Intel GPUs and the Codeplay NVIDIA backend.
    The code is guarded on `SYCL_EXT_INTEL_DEVICE_INFO >= 5`, because AdaptiveCpp and other
-   SYCL implementations do not expose the aspect; there discovery goes straight to the
-   fallbacks.
+   SYCL implementations do not expose the aspect; there the enumerator goes straight to the
+   vendor string.
 2. A regex scan of the vendor string, which catches some Codeplay and NVIDIA combinations.
-3. An hwloc OS-device scan that matches the GPU name against hwloc's PCI tree and walks up
-   to the PCI object for the bus address. This works for NVIDIA GPUs exposed through the
-   CUDA backend; the comment this page replaces gives "GTX 1060 = GeForce GTX 1060" as the
-   observed match.
+   These two are the `pci_text` the enumerator reports.
+3. When the text is empty, the reader's GPU scan: hwloc's OS devices are matched by GPU name
+   and the walk goes up to the PCI object for the bus address. This works for NVIDIA GPUs
+   exposed through the CUDA backend; "GTX 1060 = GeForce GTX 1060" is the observed match.
 
 When none of them yields an address, NUMA affinity is estimated and a warning says so.
 

@@ -38,6 +38,8 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
+#include <SushiRuntime/topology/device_enumerator.hpp>
+#include <SushiRuntime/topology/numa_reader.hpp>
 
 namespace SushiRuntime
 {
@@ -84,7 +86,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Enumerates available SYCL compute devices and maps each to its NUMA node.
+         * @brief Filters the devices an enumerator lists and maps each to its NUMA node.
          *
          * Used once at RuntimeContext construction to build the device list. At most one
          * CPU is kept per NUMA node, and at most one GPU or accelerator per resolved PCI
@@ -93,24 +95,27 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API HardwareDiscovery
         {
             public:
-                HardwareDiscovery() = default;
+                /**
+                 * @brief Builds a discovery over an enumeration and a NUMA reader.
+                 * @param enumerator Lists the devices; must outlive the discovery.
+                 * @param reader Places the CPU and finds a GPU's PCI address; must outlive it.
+                 */
+                HardwareDiscovery(DeviceEnumerator& enumerator, NUMAReader& reader) noexcept;
 
                 /**
-                 * @brief Scans all SYCL platforms and returns matching hardware nodes.
+                 * @brief Lists the devices and returns those the filter admits as hardware nodes.
                  * @param config Device-class filter; defaults to including all classes.
                  * @return The devices kept, with logical IDs and NUMA assignments, or
-                 *         Unsupported when SYCL could not list its devices.
+                 *         Unsupported when the enumerator could not list the devices.
                  */
                 [[nodiscard]] Result<std::vector<HardwareNode>>
                 probe_all_devices(const DeviceFilter& config = {});
 
             private:
-                /**
-                 * @brief Scans SYCL platforms to find devices.
-                 * @return Nothing, or Unsupported when SYCL could not list its devices.
-                 */
-                [[nodiscard]] Result<void> discover_sycl_devices(std::vector<HardwareNode>& nodes,
-                                                                 const DeviceFilter& config);
+                /// @brief Lists the devices.
+                DeviceEnumerator& enumerator_;
+                /// @brief Places the CPU and finds a GPU's PCI address.
+                NUMAReader& reader_;
         };
 
     } // namespace Topology

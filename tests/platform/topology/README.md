@@ -45,40 +45,38 @@ Windows, Linux, or Unknown elsewhere.
 
 ## test_hw_discovery.cpp
 
-The file covers what `HardwareDiscovery` returns for a filter and what `parse_pci_address` reads. The
-discovery tests enumerate the SYCL devices of the machine they run on.
+The file covers what `HardwareDiscovery` returns for a filter and what `parse_pci_address` reads.
 
-### `AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThrow`
+### The small discovery tests
 
-A filter that excludes every device class gives an empty vector from both `probe_all_devices` and
-`enumerate`. In this module an empty result is a value: `DeviceQueueSet` accepts it and stays empty.
-The failure for it, `ErrorCode::Unsupported`, is returned by `RuntimeContext::create()`, and
-`tests/surface/api/runtime/test_runtime_config.cpp` covers it. Which device a filter admits is
-decided by `admits_class()` and `admits()` of `machine`, tested small in
-`tests/foundation/machine/test_device_filter.cpp`; this test stays medium as the wiring check of
-both accessors over the real devices.
+`Small_HardwareDiscovery` runs discovery over an `InMemoryDeviceEnumerator` and an
+`InMemoryNUMAReader`: a filter that admits no class gives an empty vector and no error; the
+GPU-only filter keeps the GPUs of a mixed list; the kept devices are numbered 0, 1, 2 with no gap
+where a duplicate CPU was dropped; a CPU takes the reader's node, or -1; a second device at one
+PCI address is dropped; a GPU whose driver names no address takes the one the reader lists; a
+device without fp64 is dropped when the filter requires it; and a failed enumeration is
+`ErrorCode::Unsupported` naming the runtime's text.
 
-Discovery itself returns `ErrorCode::Unsupported` only when SYCL enumeration
-throws. No test reaches that path, because a test cannot make `sycl::device::get_devices` fail.
+### `NoTwoNodesShareAPCIAddress` and `EveryDeviceIsNamed`
 
-### `NoTwoNodesShareAPCIAddress` and `EveryNodeTheGPUOnlyFilterAdmitsIsAGPU`
-
-Both read the real devices. The first probes every device without a filter and asserts that no PCI
-address repeats; nodes without one are skipped. The second asserts that every node the GPU-only filter
-admits is a GPU. The class decision is `admits_class()`, tested small in `machine`; the module has no
-function that deduplicates a list of nodes, so the first does not run over fabricated nodes.
-
-### `LogicalIDsAreSequential` and `EveryDeviceIsNamed`
-
-Discovery over every device class finds at least one device. The first test asserts that the devices
-are numbered 0, 1, 2 in order, and the second that each has a name. A helper returns the first
-defect, and the test compares it with an empty text.
+Medium, over the SYCL enumerator and the hwloc reader of the machine. The first asserts that no
+PCI address the machine's backends report repeats after discovery, and the second that every
+device found is named. The dropping rules themselves are the small tests.
 
 ### The PCI address tests
 
 `parse_pci_address` reads `0001:02:03.4` into its four fields, and a valid address writes no log record.
 A string that holds no address returns nothing, and logs one `DEBUG` in the `topology` module with the
 string and the device name.
+
+## The adapter tests
+
+`compile_device_enumerator.cpp` and `compile_numa_reader.cpp` compile each port header alone.
+`Small_InMemoryDeviceEnumerator` and `Small_InMemoryNUMAReader` run `DeviceEnumeratorContract`
+and `NUMAReaderContract` on the in-memory adapters; `Medium_SYCLDeviceEnumerator` and
+`Medium_HwlocNUMAReader` run them on the machine, the boundary the in-memory adapters stand in
+for. The files are `test_in_memory_device_enumerator.cpp`, `test_sycl_device_enumerator.cpp`,
+`test_in_memory_numa_reader.cpp` and `test_hwloc_numa_reader.cpp`.
 
 ## test_in_memory_topology_provider.cpp
 

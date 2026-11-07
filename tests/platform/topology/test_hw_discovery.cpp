@@ -33,16 +33,22 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/hwloc_numa_reader.hpp>
+#include <SushiRuntime/topology/in_memory_device_enumerator.hpp>
+#include <SushiRuntime/topology/in_memory_numa_reader.hpp>
+#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
 using SushiRuntime::DeviceFilter;
+using SushiRuntime::DeviceKind;
 
 namespace
 {
@@ -59,7 +65,9 @@ namespace
     /** @brief Probes every device class and returns the nodes found. */
     std::vector<HardwareNode> probe_every_class()
     {
-        HardwareDiscovery discovery;
+        SYCLDeviceEnumerator enumerator;
+        HwlocNUMAReader reader;
+        HardwareDiscovery discovery(enumerator, reader);
         DeviceFilter config;
         config.include_cpu = true;
         config.include_gpu = true;
@@ -90,26 +98,14 @@ namespace
     }
 } // namespace
 
-// An empty result is a value at this tier, not a failure; see README.md.
-TEST(Medium_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThrow)
-{
-    HardwareDiscovery discovery;
-    const auto probed = discovery.probe_all_devices(filter_admitting_nothing());
-    ASSERT_TRUE(probed.has_value()) << probed.error().message;
-    EXPECT_TRUE(probed->empty());
-
-    HwlocTopologyProvider provider;
-    const auto enumerated = provider.enumerate(filter_admitting_nothing());
-    ASSERT_TRUE(enumerated.has_value()) << enumerated.error().message;
-    EXPECT_TRUE(enumerated->empty());
-}
-
 // Holds on any machine; it can fail only where two backends expose one GPU.
 TEST(Medium_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
 {
     using PCIKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
 
-    HardwareDiscovery discovery;
+    SYCLDeviceEnumerator enumerator;
+    HwlocNUMAReader reader;
+    HardwareDiscovery discovery(enumerator, reader);
     std::set<PCIKey> seen;
     const auto probed = discovery.probe_all_devices();
     ASSERT_TRUE(probed.has_value()) << probed.error().message;
@@ -122,26 +118,6 @@ TEST(Medium_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
                                        address.function}).second)
             << "device [" << node.name << "] repeats a PCI address already returned";
     }
-}
-
-TEST(Medium_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
-{
-    DeviceFilter config;
-    config.include_cpu = false;
-    config.include_accelerator = false;
-
-    HardwareDiscovery discovery;
-    for (const HardwareNode& node : discovery.probe_all_devices(config).value())
-        EXPECT_TRUE(node.sycl_dev.is_gpu()) << "device [" << node.name << "] is not a GPU";
-}
-
-/** @brief Tests that discovery finds a device, numbers the devices from zero in order. */
-TEST(Medium_HardwareDiscovery, LogicalIDsAreSequential)
-{
-    const std::vector<HardwareNode> nodes = probe_every_class();
-    ASSERT_FALSE(nodes.empty()) << "hardware discovery found no device";
-
-    EXPECT_EQ(first_unsequential_id(nodes), "");
 }
 
 /** @brief Tests that every device discovery returns is named. */
@@ -194,4 +170,128 @@ TEST(Small_HwDiscovery, AnAddressThatDoesNotParseLogsOneDebugLineNamingTheTextAn
     EXPECT_EQ(capture.count_in("topology"), 1u);
     EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "no address here"));
     EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "gpu0"));
+}
+
+namespace
+{
+    /** @brief Returns one enumerated device of a class, named, with its fp64 flag and PCI text. */
+    EnumeratedDevice listed(const char* name, DeviceKind kind, std::string pci_text = {}, bool fp64 = true)
+    {
+        EnumeratedDevice device;
+        device.name = name;
+        device.kind = kind;
+        device.fp64 = fp64;
+        device.global_mem_size = 1024;
+        device.max_compute_units = 4;
+        device.pci_text = std::move(pci_text);
+        return device;
+    }
+
+    /** @brief Probes an in-memory list through @p reader. */
+    std::vector<HardwareNode> probe(std::vector<EnumeratedDevice> devices, const DeviceFilter& config = {},
+                                    InMemoryNUMAReader reader = InMemoryNUMAReader(0))
+    {
+        InMemoryDeviceEnumerator enumerator(std::move(devices));
+        HardwareDiscovery discovery(enumerator, reader);
+        return discovery.probe_all_devices(config).value();
+    }
+
+    /** @brief Returns the names of the nodes, in order. */
+    std::vector<std::string> names_of(const std::vector<HardwareNode>& nodes)
+    {
+        std::vector<std::string> names;
+        for (const HardwareNode& node : nodes)
+            names.push_back(node.name);
+        return names;
+    }
+} // namespace
+
+/** @brief Tests that a filter that admits no class yields no device and no error. */
+TEST(Small_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDevice)
+{
+    EXPECT_TRUE(probe({listed("cpu", DeviceKind::CPU), listed("gpu", DeviceKind::GPU)},
+                      filter_admitting_nothing()).empty());
+}
+
+/** @brief Tests that the GPU-only filter keeps the GPUs of a mixed list and nothing else. */
+TEST(Small_HardwareDiscovery, TheGPUOnlyFilterKeepsOnlyTheGPUs)
+{
+    DeviceFilter config;
+    config.include_cpu = false;
+    config.include_accelerator = false;
+
+    const std::vector<HardwareNode> nodes =
+        probe({listed("cpu", DeviceKind::CPU), listed("gpu a", DeviceKind::GPU),
+               listed("fpga", DeviceKind::Accelerator), listed("gpu b", DeviceKind::GPU)},
+              config);
+
+    EXPECT_EQ(names_of(nodes), (std::vector<std::string>{"gpu a", "gpu b"}));
+    for (const HardwareNode& node : nodes)
+        EXPECT_TRUE(node.is_gpu);
+}
+
+/** @brief Tests that the kept devices are numbered from zero in order, a dropped one leaving no gap. */
+TEST(Small_HardwareDiscovery, LogicalIDsAreSequentialOverTheKeptDevices)
+{
+    const std::vector<HardwareNode> nodes =
+        probe({listed("cpu a", DeviceKind::CPU), listed("cpu b", DeviceKind::CPU),
+               listed("gpu", DeviceKind::GPU, "0000:01:00.0")});
+
+    EXPECT_EQ(names_of(nodes), (std::vector<std::string>{"cpu a", "gpu"}));
+    EXPECT_EQ(first_unsequential_id(nodes), "");
+}
+
+/** @brief Tests that a CPU takes the reader's node, and a reader that names none leaves it at -1. */
+TEST(Small_HardwareDiscovery, ACPUTakesTheReadersNode)
+{
+    EXPECT_EQ(probe({listed("cpu", DeviceKind::CPU)}, {}, InMemoryNUMAReader(3))[0].numa_node_id, 3);
+    EXPECT_EQ(probe({listed("cpu", DeviceKind::CPU)}, {}, InMemoryNUMAReader())[0].numa_node_id, -1);
+}
+
+/** @brief Tests that a second device at one PCI address is dropped. */
+TEST(Small_HardwareDiscovery, ASecondDeviceAtOnePCIAddressIsDropped)
+{
+    const std::vector<HardwareNode> nodes =
+        probe({listed("gpu cuda", DeviceKind::GPU, "0000:01:00.0"),
+               listed("gpu opencl", DeviceKind::GPU, "0000:01:00.0"),
+               listed("gpu other", DeviceKind::GPU, "0000:02:00.0")});
+
+    EXPECT_EQ(names_of(nodes), (std::vector<std::string>{"gpu cuda", "gpu other"}));
+}
+
+/** @brief Tests that a GPU whose driver names no address takes the one the reader lists for its name. */
+TEST(Small_HardwareDiscovery, AGPUWithNoDriverAddressTakesTheReadersAddress)
+{
+    const std::vector<HardwareNode> nodes =
+        probe({listed("NVIDIA RTX 4090", DeviceKind::GPU)}, {},
+              InMemoryNUMAReader(0, {ListedGPU{"RTX", "0000:0a:00.0"}}));
+
+    ASSERT_TRUE(nodes[0].pci_address.has_value());
+    EXPECT_EQ(nodes[0].pci_address->bus, 0x0au);
+}
+
+/** @brief Tests that a device without fp64 is dropped when the filter requires it. */
+TEST(Small_HardwareDiscovery, ADeviceWithoutFP64IsDroppedWhenRequired)
+{
+    DeviceFilter config;
+    config.require_fp64 = true;
+
+    const std::vector<HardwareNode> nodes =
+        probe({listed("gpu single", DeviceKind::GPU, "", false), listed("gpu double", DeviceKind::GPU)}, config);
+
+    EXPECT_EQ(names_of(nodes), (std::vector<std::string>{"gpu double"}));
+}
+
+/** @brief Tests that an enumeration that fails is an Unsupported error naming the runtime's text. */
+TEST(Small_HardwareDiscovery, AFailedEnumerationIsUnsupported)
+{
+    InMemoryDeviceEnumerator enumerator = InMemoryDeviceEnumerator::failing("no platform");
+    InMemoryNUMAReader reader(0);
+    HardwareDiscovery discovery(enumerator, reader);
+
+    const auto probed = discovery.probe_all_devices();
+
+    ASSERT_FALSE(probed.has_value());
+    EXPECT_EQ(probed.error().code, SushiRuntime::ErrorCode::Unsupported);
+    EXPECT_NE(probed.error().message.find("no platform"), std::string::npos);
 }

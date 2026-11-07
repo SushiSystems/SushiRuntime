@@ -23,7 +23,7 @@
 
 /**
  * @file hw_discovery.cpp
- * @brief Enumerates SYCL devices and resolves each one's NUMA node or PCI address.
+ * @brief Filters the enumerated devices and resolves each one's NUMA node or PCI address.
  * @author Mustafa Garip
  */
 
@@ -32,11 +32,10 @@
 #endif
 #include <cstdint>
 #include <cstdio>
-#include <hwloc.h>
 #include <optional>
-#include <exception>
 #include <regex>
 #include <set>
+#include <utility>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -46,7 +45,6 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
-#include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
 namespace SushiRuntime
 {
@@ -54,59 +52,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Loads the machine's hwloc topology and destroys it on scope exit. */
-            class LoadedHWLOCTopology final
-            {
-                public:
-                    /** @brief Loads the topology; get() returns null when hwloc refuses. */
-                    LoadedHWLOCTopology() noexcept
-                    {
-                        if (hwloc_topology_init(&topology_) < 0)
-                        {
-                            topology_ = nullptr;
-                            return;
-                        }
-                        hwloc_topology_set_flags(topology_, HWLOC_TOPOLOGY_FLAG_INCLUDE_DISALLOWED);
-                        hwloc_topology_set_io_types_filter(topology_, HWLOC_TYPE_FILTER_KEEP_ALL);
-                        if (hwloc_topology_load(topology_) < 0)
-                        {
-                            hwloc_topology_destroy(topology_);
-                            topology_ = nullptr;
-                        }
-                    }
-
-                    /** @brief Destroys the topology, if one was loaded. */
-                    ~LoadedHWLOCTopology()
-                    {
-                        if (topology_ != nullptr)
-                            hwloc_topology_destroy(topology_);
-                    }
-
-                    LoadedHWLOCTopology(const LoadedHWLOCTopology&) = delete;
-                    LoadedHWLOCTopology& operator=(const LoadedHWLOCTopology&) = delete;
-                    LoadedHWLOCTopology(LoadedHWLOCTopology&&) = delete;
-                    LoadedHWLOCTopology& operator=(LoadedHWLOCTopology&&) = delete;
-
-                    /** @brief Returns the loaded topology, or null when hwloc refused. */
-                    [[nodiscard]] hwloc_topology_t get() const noexcept { return topology_; }
-
-                private:
-                    /** @brief Holds the loaded topology, or null. */
-                    hwloc_topology_t topology_ = nullptr;
-            };
-
-            /** @brief Returns the class SYCL reports for a device. */
-            DeviceKind kind_of(const sycl::device& device)
-            {
-                if (device.is_cpu())
-                    return DeviceKind::CPU;
-                if (device.is_gpu())
-                    return DeviceKind::GPU;
-                if (device.is_accelerator())
-                    return DeviceKind::Accelerator;
-                return DeviceKind::Other;
-            }
-
             /** @brief Spells a filter as "cpu=yes, gpu=no, accelerator=no, require_fp64=no". */
             std::string describe(const DeviceFilter& config)
             {
@@ -176,202 +121,92 @@ namespace SushiRuntime
             return address;
         }
 
-        /**
-         * @brief Discovers the SYCL devices that pass config and returns them as hardware nodes.
-         * @param config The filter configuration to use during the probe.
-         * @return The discovered hardware nodes, or Unsupported when SYCL could not list them.
-         */
+        HardwareDiscovery::HardwareDiscovery(DeviceEnumerator& enumerator, NUMAReader& reader) noexcept
+            : enumerator_(enumerator), reader_(reader)
+        {
+        }
+
         Result<std::vector<HardwareNode>>
         HardwareDiscovery::probe_all_devices(const DeviceFilter& config)
         {
             SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Starting expanded hardware probe...");
-            std::vector<HardwareNode> discovered_nodes;
-
-            Result<void> discovered = discover_sycl_devices(discovered_nodes, config);
-            if (!discovered)
-                return make_error(std::move(discovered.error()));
-
-            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Expanded probe complete. {} nodes found.", discovered_nodes.size());
-            return discovered_nodes;
-        }
-
-        /**
-         * @brief Scans all SYCL devices and extracts their physical and capability details.
-         * @param nodes The vector to populate with discovered devices.
-         * @param config The filter configuration specifying which device types to include.
-         * @return Nothing, or Unsupported when SYCL could not list its devices.
-         */
-        Result<void> HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes,
-                                                              const DeviceFilter& config)
-        {
-            const LoadedHWLOCTopology loaded_topology;
-            const hwloc_topology_t topology = loaded_topology.get();
-            if (topology == nullptr)
+            Result<std::vector<EnumeratedDevice>> listed = enumerator_.enumerate();
+            if (!listed)
+                return make_error(enumeration_error(config, listed.error().message.c_str()));
+            if (!reader_.loaded())
                 SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "hwloc could not load the machine topology; CPU devices keep NUMA -1 "
                             "and a GPU's PCI address comes from SYCL alone.");
 
-            try
+            std::vector<HardwareNode> nodes;
+
+            // At most one CPU is kept per NUMA node (modules/platform/topology/README.md).
+            std::unordered_set<int> seen_cpu_numa;
+
+            // At most one GPU or accelerator is kept per PCI address (modules/platform/topology/README.md).
+            std::set<PCIKey> seen_pci;
+
+            for (EnumeratedDevice& entry : *listed)
             {
-                size_t logical_id_counter = 0;
+                if (!admits_class(config, entry.kind)) continue;
 
-                // At most one CPU is kept per NUMA node (modules/platform/topology/README.md).
-                std::unordered_set<int> seen_cpu_numa;
-
-                // At most one GPU or accelerator is kept per PCI address (modules/platform/topology/README.md).
-                std::set<PCIKey> seen_pci;
-
-                for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
+                // fp64 is checked at discovery, not at kernel launch (modules/platform/topology/README.md).
+                if (!admits(config, entry.kind, entry.fp64))
                 {
-                    const DeviceKind kind = kind_of(dev);
-                    if (!admits_class(config, kind)) continue;
-
-                    // fp64 is checked at discovery, not at kernel launch (modules/platform/topology/README.md).
-                    if (!admits(config, kind, dev.has(sycl::aspect::fp64)))
-                    {
-                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping device [{}]: no fp64 support and require_fp64 is set.",
-                                    dev.get_info<sycl::info::device::name>());
-                        continue;
-                    }
-
-                    HardwareNode node;
-                    node.logical_id = logical_id_counter++;
-                    node.sycl_dev = dev;
-                    node.name = dev.get_info<sycl::info::device::name>();
-                    node.is_gpu = dev.is_gpu();
-                    node.numa_node_id = -1;
-
-                    /** @brief Retrieve capacity and memory info. */
-                    node.global_mem_size = dev.get_info<sycl::info::device::global_mem_size>();
-                    node.max_compute_units = dev.get_info<sycl::info::device::max_compute_units>();
-
-                    if (dev.is_cpu())
-                    {
-                        // The CPU device takes the node of the first PU; -1 stays when hwloc names none.
-                        if (topology != nullptr)
-                        {
-                            const std::optional<unsigned> local_node = local_numa_os_index(
-                                topology, hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0));
-                            if (local_node.has_value())
-                                node.numa_node_id = static_cast<int>(*local_node);
-                        }
-
-                        // A second CPU on one NUMA node is dropped (modules/platform/topology/README.md).
-                        if (!seen_cpu_numa.insert(node.numa_node_id).second)
-                        {
-                            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
-                                        node.name, node.numa_node_id);
-                            --logical_id_counter;
-                            continue;
-                        }
-                    }
-                    else if (node.is_gpu || dev.is_accelerator())
-                    {
-                        try
-                        {
-                            std::string pci_str = "";
-
-                            // Primary source: Intel device-info extension (modules/platform/topology/README.md).
-#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
-                            const bool has_intel_pci = dev.has(sycl::aspect::ext_intel_pci_address);
-#else
-                            constexpr bool has_intel_pci = false;
-#endif
-                            if (has_intel_pci)
-                            {
-#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
-                                pci_str = dev.get_info<sycl::ext::intel::info::device::pci_address>();
-#endif
-                            }
-                            else
-                            {
-                                // Fallback 1: regex scan in vendor string (catches some Codeplay/NVIDIA combos)
-                                try
-                                {
-                                    std::string vendor = dev.get_info<sycl::info::device::vendor>();
-                                    std::regex pci_regex("([0-9a-fA-F]{4}):([0-9a-fA-F]{2}):([0-9a-fA-F]{2})\\.([0-9a-fA-F])");
-                                    std::smatch match;
-                                    if (std::regex_search(vendor, match, pci_regex))
-                                        pci_str = match.str();
-                                }
-                                catch (const std::exception& error)
-                                {
-                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY,
-                                                 "reading the vendor of device '{}' threw '{}'; "
-                                                 "looking for its PCI address in hwloc instead",
-                                                 node.name, error.what());
-                                }
-
-                                // Fallback 2: hwloc PCI tree, by GPU name (modules/platform/topology/README.md).
-                                if (pci_str.empty() && topology != nullptr)
-                                {
-                                    std::string dev_name = node.name;
-                                    hwloc_obj_t osdev = nullptr;
-                                    while ((osdev = hwloc_get_next_osdev(topology, osdev)) != nullptr)
-                                    {
-                                        if (osdev->attr->osdev.type != HWLOC_OBJ_OSDEV_GPU)
-                                            continue;
-                                        if (osdev->name && dev_name.find(osdev->name) != std::string::npos)
-                                        {
-                                            // Walk up to the PCI object to get the BDF address
-                                            hwloc_obj_t pci_obj = hwloc_get_non_io_ancestor_obj(topology, osdev);
-                                            hwloc_obj_t io = osdev->parent;
-                                            while (io && io->type != HWLOC_OBJ_PCI_DEVICE)
-                                                io = io->parent;
-                                            if (io && io->type == HWLOC_OBJ_PCI_DEVICE)
-                                            {
-                                                char buf[32];
-                                                std::snprintf(buf, sizeof(buf), "%04x:%02x:%02x.%x",
-                                                    io->attr->pcidev.domain,
-                                                    io->attr->pcidev.bus,
-                                                    io->attr->pcidev.dev,
-                                                    io->attr->pcidev.func);
-                                                pci_str = buf;
-                                                (void)pci_obj;
-                                                SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} found via hwloc osdev scan: {}", dev_name, pci_str);
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (!pci_str.empty())
-                            {
-                                const std::optional<PCIDomainAddress> address =
-                                    parse_pci_address(pci_str, node.name);
-                                if (address.has_value())
-                                {
-                                    // The node takes the address only once all four fields parsed.
-                                    node.pci_address = address;
-                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} PCI: {}", node.name, describe(*address));
-                                }
-                            }
-                        }
-                        catch (...)
-                        {
-                            SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
-                            node.pci_address.reset();
-                        }
-                    }
-
-                    // A second device at one PCI address is dropped (modules/platform/topology/README.md).
-                    if (node.pci_address.has_value() &&
-                        !seen_pci.insert(pci_key(*node.pci_address)).second)
-                    {
-                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate device [{}] at PCI {} (already mapped).",
-                                    node.name, describe(*node.pci_address));
-                        --logical_id_counter;
-                        continue;
-                    }
-
-                    nodes.push_back(node);
+                    SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping device [{}]: no fp64 support and require_fp64 is set.",
+                                entry.name);
+                    continue;
                 }
+
+                HardwareNode node;
+                node.logical_id = nodes.size();
+                node.sycl_dev = entry.device;
+                node.name = std::move(entry.name);
+                node.is_gpu = entry.kind == DeviceKind::GPU;
+                node.global_mem_size = entry.global_mem_size;
+                node.max_compute_units = entry.max_compute_units;
+
+                if (entry.kind == DeviceKind::CPU)
+                {
+                    // The CPU device takes the node of the first PU; -1 stays when none is named.
+                    node.numa_node_id = reader_.cpu_numa_node().value_or(-1);
+
+                    // A second CPU on one NUMA node is dropped (modules/platform/topology/README.md).
+                    if (!seen_cpu_numa.insert(node.numa_node_id).second)
+                    {
+                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
+                                    node.name, node.numa_node_id);
+                        continue;
+                    }
+                }
+                else if (entry.kind == DeviceKind::GPU || entry.kind == DeviceKind::Accelerator)
+                {
+                    // The hwloc PCI tree, by GPU name, when the driver names no address (README.md).
+                    std::string pci_text = std::move(entry.pci_text);
+                    if (pci_text.empty())
+                        pci_text = reader_.gpu_pci_address(node.name);
+                    if (!pci_text.empty())
+                    {
+                        node.pci_address = parse_pci_address(pci_text, node.name);
+                        if (node.pci_address.has_value())
+                            SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} PCI: {}", node.name,
+                                         describe(*node.pci_address));
+                    }
+                }
+
+                // A second device at one PCI address is dropped (modules/platform/topology/README.md).
+                if (node.pci_address.has_value() &&
+                    !seen_pci.insert(pci_key(*node.pci_address)).second)
+                {
+                    SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate device [{}] at PCI {} (already mapped).",
+                                node.name, describe(*node.pci_address));
+                    continue;
+                }
+
+                nodes.push_back(std::move(node));
             }
-            catch (const sycl::exception& e)
-            {
-                return make_error(enumeration_error(config, e.what()));
-            }
-            return {};
+
+            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Expanded probe complete. {} nodes found.", nodes.size());
+            return nodes;
         }
 
     } // namespace Topology
