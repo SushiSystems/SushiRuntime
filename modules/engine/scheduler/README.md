@@ -3,15 +3,15 @@
 The work-stealing scheduler, its deque, the event poller and the rebalancer.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
-The sections below record why the code is the way it is. Each one is named after a header and the
-symbol or passage it explains, and that header's file block cites this page.
+Each section below says why the code is the way it is, named after the header it explains.
 
 ## event_polling.hpp
 
-### Header and source
+### Event readiness
 
-`source/event_polling.cpp` holds every member that is not a template or a per-event inline member.
-
+Every poll asks an `EventReadiness` whether an event is complete and waits through it: the SYCL
+adapter by default, or the one `set_event_readiness()` names. `source/event_polling.cpp` holds
+every member that is not a template or a per-event inline member.
 ### PolledEvent::ready
 
 A host task whose execute_host() runs inline returns a default event, which is complete: nothing to wait on.

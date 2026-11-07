@@ -6,6 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE scheduler
     SOURCES
+        compile_event_readiness.cpp
         compile_heartbeat_clock.cpp
         compile_rebalancer_interfaces.cpp
         compile_scheduler_log_category.cpp
@@ -13,6 +14,7 @@ sushiruntime_add_module_tests(
         test_dispatch_record.cpp
         test_event_polling.cpp
         test_failure_naming.cpp
+        test_in_memory_event_readiness.cpp
         test_in_memory_telemetry.cpp
         test_manual_heartbeat_clock.cpp
         test_offload_gate.cpp
@@ -21,6 +23,7 @@ sushiruntime_add_module_tests(
         test_recording_rebalance_strategy.cpp
         test_recording_task_migrator.cpp
         test_run_outcome.cpp
+        test_sycl_event_readiness.cpp
         test_task_scheduler.cpp
         test_thermal_proxy_strategy.cpp
         test_workload_coordinator.cpp)

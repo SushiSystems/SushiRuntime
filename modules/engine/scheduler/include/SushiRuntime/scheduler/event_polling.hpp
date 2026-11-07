@@ -43,7 +43,9 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
+#include <SushiRuntime/scheduler/event_readiness.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
+#include <SushiRuntime/scheduler/sycl_event_readiness.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
@@ -203,6 +205,16 @@ namespace SushiRuntime
                  */
                 void set_inflight_tracker(QuiescenceLatch* latch) noexcept;
 
+                /**
+                 * @brief Names the port every poll asks whether an event is complete through.
+                 * @pre No worker is polling.
+                 * @param readiness Not owned; null restores the SYCL runtime.
+                 */
+                void set_event_readiness(EventReadiness* readiness) noexcept
+                {
+                    readiness_ = readiness != nullptr ? readiness : &sycl_readiness_;
+                }
+
             private:
                 /**
                  * @brief Turns an entry whose query or wait threw into what a skipped task is:
@@ -244,6 +256,10 @@ namespace SushiRuntime
                 std::atomic<bool> profiling_{false};
                 /** @brief The armed round's event ledger, or null when it does not profile. */
                 std::atomic<Internal::Observability::ProfilingLedger*> ledger_{nullptr};
+                /** @brief The SYCL runtime, the port a poller asks by default. */
+                SYCLEventReadiness sycl_readiness_;
+                /** @brief The port every poll asks; never null. */
+                EventReadiness* readiness_ = &sycl_readiness_;
                 /** @brief Counts polls that waited on their oldest event, across workers. */
                 std::atomic<std::uint64_t> stall_drives_{0};
                 /** @brief Maximum value for the backoff counter. */
@@ -300,17 +316,15 @@ namespace SushiRuntime
                     {
                         PolledEvent& entry = active_events[i];
                         bool done = entry.ready;
-                        Result<void> polled = SYCL::translate_exceptions([&entry, &done]()
+                        EventReadiness& readiness = *readiness_;
+                        Result<void> polled = SYCL::translate_exceptions([&entry, &done, &readiness]()
                         {
                             if (!done)
-                            {
-                                auto status = entry.event.get_info<sycl::info::event::command_execution_status>();
-                                done = (status == sycl::info::event_command_status::complete);
-                            }
+                                done = readiness.is_complete(entry.event);
 
                             // wait() on a complete event makes the runtime flush USM visibility.
                             if (done && entry.has_event)
-                                entry.event.wait();
+                                readiness.wait(entry.event);
                         });
                         if (!polled)
                         {
@@ -361,8 +375,9 @@ namespace SushiRuntime
                             auto& oldest = active_events[0];
                             if (oldest.has_event)
                             {
+                                EventReadiness& readiness = *readiness_;
                                 Result<void> waited = SYCL::translate_exceptions(
-                                    [&oldest]() { oldest.event.wait(); });
+                                    [&oldest, &readiness]() { readiness.wait(oldest.event); });
                                 if (!waited)
                                 {
                                     keep_first_failure(first_failure, std::move(waited.error()));

@@ -1,0 +1,83 @@
+/**************************************************************************/
+/* in_memory_event_readiness.hpp                                         */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file in_memory_event_readiness.hpp
+ * @brief Declares InMemoryEventReadiness, an EventReadiness whose events complete when told.
+ * @author Mustafa Garip
+ * @see modules/engine/scheduler/README.md
+ */
+
+#pragma once
+
+#include <cstddef>
+
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/scheduler/event_readiness.hpp>
+
+namespace SushiRuntime
+{
+    namespace Internal::Scheduler
+    {
+        /**
+         * @brief Reports every event pending until it is completed or waited on, and counts the waits.
+         *
+         * It reads nothing of the event it is given, so a default-built event stands for any dispatch.
+         * @see modules/engine/scheduler/README.md
+         */
+        class InMemoryEventReadiness final : public EventReadiness
+        {
+            public:
+                [[nodiscard]] bool is_complete(const sycl::event&) override
+                {
+                    return complete_;
+                }
+
+                /** @brief Completes every event; it counts as no wait. */
+                void complete() noexcept
+                {
+                    complete_ = true;
+                }
+
+                void wait(sycl::event&) override
+                {
+                    ++waits_;
+                    complete_ = true;
+                }
+
+                /** @brief Returns the number of wait() calls so far. */
+                [[nodiscard]] std::size_t waits() const noexcept
+                {
+                    return waits_;
+                }
+
+            private:
+                /// @brief True once complete() or wait() ran.
+                bool complete_ = false;
+
+                /// @brief The number of wait() calls.
+                std::size_t waits_ = 0;
+        };
+    } // namespace Internal::Scheduler
+} // namespace SushiRuntime

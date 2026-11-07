@@ -9,7 +9,7 @@ A test's prefix names what it touches: `Small_` touches no device, thread, file 
 `Medium_` touches a device or a thread. The medium tests that need a device take the fixture base of
 `tests/support/runtime_environment.hpp`, so the program holds one runtime and one queue.
 
-## compile_heartbeat_clock.cpp, compile_rebalancer_interfaces.cpp, compile_scheduler_log_category.cpp and compile_worker_pool_settings.cpp
+## compile_event_readiness.cpp, compile_heartbeat_clock.cpp, compile_rebalancer_interfaces.cpp, compile_scheduler_log_category.cpp and compile_worker_pool_settings.cpp
 
 Each file includes one header alone, so the header carries every include it needs. The headers hold
 interfaces, the system heartbeat clock (a sleep), a constant and a plain struct, which have no behaviour of their own to test.
@@ -58,10 +58,18 @@ between inline and spilled storage. A task is a tag in the pointer slot; the lis
 | `AnEventThatCompletesIsNotAStallDrive` | A poll that finds progress counts no stall drive. |
 | `AReapedTaskReleasesItsSuccessors` | A reaped task puts the successors it freed on the queue it was polled with. |
 | `AReapedTaskRetiresItsOwnUnitOfTheLatch` | A reaped task counts its successor before it retires its own unit, so the latch drains only after the successor retires. |
-| `Medium_EventPolling.CountsAStallDrive` | A poll that stalls waits on its oldest event once and counts the stall. |
+| `CountsAStallDrive` | Over an `InMemoryEventReadiness` that never completes on its own, the stall waits on the oldest event once and counts one stall drive. |
+| `ACompleteEventIsReapedWithoutAStall` | An event the port reports complete is reaped on the first poll, flushed once, with no stall drive. |
 
 The polls take a real `Deque`, the queue type the scheduler passes. The log lines go through
 `LogCapture`, which installs a process-wide sink; an injected sink would let them run with no shared state.
+
+## test_in_memory_event_readiness.cpp and test_sycl_event_readiness.cpp
+
+`EventReadinessContract` (`tests/support/event_readiness_contract.hpp`) runs small on
+`InMemoryEventReadiness` over a default event and medium on `SYCLEventReadiness` over an empty
+host task of the program's queue: an event the adapter waited on is complete. Two small cases
+beside it check that the in-memory event is pending until `complete()` and that every wait counts.
 
 ## test_failure_naming.cpp
 

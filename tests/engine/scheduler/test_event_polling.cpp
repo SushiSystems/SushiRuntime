@@ -30,11 +30,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <future>
 #include <optional>
 #include <set>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -43,19 +41,19 @@
 #include <SushiLog/log/log_level.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
+#include <SushiRuntime/scheduler/in_memory_event_readiness.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
-#include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/work_stealing/work_stealing_deque.hpp>
 
-#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Scheduler::Deque;
 using SushiRuntime::Internal::Scheduler::EventPolling;
+using SushiRuntime::Internal::Scheduler::InMemoryEventReadiness;
 using SushiRuntime::Internal::Scheduler::QuiescenceLatch;
 using SushiRuntime::Internal::Scheduler::Task;
 
@@ -118,17 +116,6 @@ namespace
         return polls;
     }
 
-    /** @brief Starts a thread that opens @p gate once @p poller has counted its first stall drive. */
-    std::thread open_gate_on_first_stall(EventPolling& poller, std::promise<void>& gate)
-    {
-        return std::thread([&poller, &gate]()
-        {
-            while (poller.stall_drives() == 0)
-                std::this_thread::yield();
-            gate.set_value();
-        });
-    }
-
     /** @brief Builds an entry that is ready, for a task the list holds one reference of. */
     EventPolling::PolledEvent ready_entry_for(Internal::Graph::Node& node)
     {
@@ -139,11 +126,6 @@ namespace
     /** @brief Bounds the polls a test makes, so a defect fails the test and does not hang it. */
     constexpr std::size_t K_MAX_POLLS = 5'000'000;
 } // namespace
-
-/** @brief Fixture of the tests that poll an event of the program's queue. */
-class Medium_EventPolling : public TestSupport::RuntimeTest
-{
-};
 
 /** @brief Tests that ActiveEventList keeps every pushed event, in push order, across inline and spill storage. */
 TEST(Small_EventPolling, PushNeverDropsBeyondInlineCapacity)
@@ -292,30 +274,43 @@ TEST(Small_EventPolling, AnEventThatCompletesIsNotAStallDrive)
 }
 
 /** @brief Tests that a poll that stalls waits on its oldest event once and counts the stall. */
-TEST_F(Medium_EventPolling, CountsAStallDrive)
+TEST(Small_EventPolling, CountsAStallDrive)
 {
+    InMemoryEventReadiness readiness;
     EventPolling poller;
+    poller.set_event_readiness(&readiness);
     EventPolling::ActiveEventList list;
     Deque local_queue;
-    std::promise<void> gate;
-    std::shared_future<void> opened = gate.get_future().share();
     EventPolling::PolledEvent entry = polled(nullptr, false);
     entry.has_event = true;
-    entry.event = RuntimeTest::queue().submit([opened](sycl::handler& handler)
-    {
-        SushiRuntime::Detail::enqueue_host_task(handler, [opened]() { opened.wait(); });
-    });
     list.push(entry);
 
-    // The poll that stalls counts itself before it waits, so the helper opens the gate once it sees the count.
-    std::thread release = open_gate_on_first_stall(poller, gate);
     poll_until_empty(poller, list, local_queue, K_MAX_POLLS);
-    release.join();
-    RuntimeTest::queue().wait();
 
     EXPECT_TRUE(list.is_empty()) << "the event completed and was reaped";
+    EXPECT_EQ(readiness.waits(), 2u) << "the stall waits once, the reap flushes once";
     EXPECT_EQ(poller.take_stall_drives(), 1u);
     EXPECT_EQ(poller.take_stall_drives(), 0u) << "taking the count starts it again";
+}
+
+/** @brief Tests that an event the port reports complete is reaped without a stall. */
+TEST(Small_EventPolling, ACompleteEventIsReapedWithoutAStall)
+{
+    InMemoryEventReadiness readiness;
+    readiness.complete();
+    EventPolling poller;
+    poller.set_event_readiness(&readiness);
+    EventPolling::ActiveEventList list;
+    Deque local_queue;
+    EventPolling::PolledEvent entry = polled(nullptr, false);
+    entry.has_event = true;
+    list.push(entry);
+
+    static_cast<void>(poller.poll_events(list, local_queue));
+
+    EXPECT_TRUE(list.is_empty());
+    EXPECT_EQ(readiness.waits(), 1u) << "the reap flushes the event once";
+    EXPECT_EQ(poller.stall_drives(), 0u);
 }
 
 /** @brief Tests that a reaped task releases its successors to the queue. */
