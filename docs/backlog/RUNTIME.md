@@ -6,8 +6,6 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | RW-79 | P2 | open | Build the global handle design, phases H0 to H9 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
 | RW-93 | P2 | open | Use the non-deprecated parallel_for overload in distributed_kernels.hpp | test_distributed_kernels.cpp compiles under -Werror with SR_ENABLE_DISTRIBUTED on |  | `applications/examples/distributed_kernels.hpp` | 2026-11-06 |
-| RW-122 | P1 | open | Give the runtime a Clock port with a steady and a manual adapter | Clock, SteadyClock and ManualClock in core pass ClockContract, small on ManualClock and medium on SteadyClock |  | `modules/foundation/core/include/SushiRuntime/core/clock.hpp` | 2026-11-07 |
-| RW-123 | P1 | open | Put USMAllocator on a USMSource port with a SYCL and a host adapter | USMAllocator allocates through USMSource; HostUSMSource and SYCLUSMSource pass USMSourceContract, small and medium |  | `modules/platform/memory/include/SushiRuntime/memory/usm_source.hpp` | 2026-11-07 |
 | RW-124 | P1 | open | Build the host runtime: a Runtime that runs graphs with no device and no thread | Runtime::create_host runs host nodes and index launches on a seeded HostExecutor; a RuntimeContract suite runs small on it and medium on a device |  | `docs/design/LAYERED_EXECUTION/README.md` | 2026-11-07 |
 | RW-125 | P1 | open | Move every logic test that only a device or a thread could reach onto its seam as small | Every Medium_ case the 2026-11-07 audit rules LOGIC runs small on its seam, one medium case is kept per boundary |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 

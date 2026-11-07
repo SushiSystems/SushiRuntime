@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-07 — core: Added `Clock`, the port a timed part reads, with a steady and a manual adapter a test advances (RW-122, `ce70e55b`).
+- 2026-11-07 — memory: Made the allocator take its memory from a `USMSource`, a SYCL one or the host-heap one a small test uses (RW-123, `da4525a5`).
+- 2026-11-07 — device: Gave `DeviceQueueSet` a host form that holds devices and no queue (RW-123, `da4525a5`).
 - 2026-11-07 — tests: Applied the test review's verdict to every test, which kept, rewrote, resized or deleted each, and wrote down what a test may reach (`tests/README.md`).
 - 2026-11-07 — in_process_transport: Made an endpoint whose `control_queue_frames` is 0 refuse every control frame with `QueueFull`; any other bound behaves as before (RW-119, `in_process_transport.hpp`).
 - 2026-11-07 — device: Moved the NUMA routing of `DeviceQueueSet` into `NUMARouteTable`, which is built from NUMA ids alone; the set routes every request as before (RW-103, `numa_route_table.hpp`).
