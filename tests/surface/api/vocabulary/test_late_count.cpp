@@ -43,6 +43,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 #include "support/slot_buffers.hpp"
 
@@ -171,8 +172,8 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the tests of where Recorder::resolve() takes a LateCount's live value from, on the program's runtime. */
-class Medium_LateCount : public TestSupport::RuntimeTest
+/** @brief Fixture of the tests of where Recorder::resolve() takes a LateCount's live value from, on a host runtime. */
+class Small_LateCountResolved : public TestSupport::HostRuntimeTest
 {
     protected:
         /** @brief Allocates a one-word output buffer that holds the canary. */
@@ -185,7 +186,7 @@ class Medium_LateCount : public TestSupport::RuntimeTest
 };
 
 /** @brief Tests that a host count that changes between runs keeps one compile. */
-TEST_F(Medium_LateCount, ChangingHostCountKeepsOneCompile)
+TEST_F(Small_LateCountResolved, ChangingHostCountKeepsOneCompile)
 {
     auto out = canary_output();
     std::size_t live = 1000;
@@ -199,7 +200,7 @@ TEST_F(Medium_LateCount, ChangingHostCountKeepsOneCompile)
 }
 
 /** @brief Tests that a host count above its capacity fails the run with InvalidGraph naming both numbers. */
-TEST_F(Medium_LateCount, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
+TEST_F(Small_LateCountResolved, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
 {
     auto out = canary_output();
     std::size_t live = 101;
@@ -216,7 +217,7 @@ TEST_F(Medium_LateCount, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
 }
 
 /** @brief Tests that the same graph runs once the provider returns a count that fits. */
-TEST_F(Medium_LateCount, ARunGoesOnOnceTheHostCountFitsAgain)
+TEST_F(Small_LateCountResolved, ARunGoesOnOnceTheHostCountFitsAgain)
 {
     auto out = canary_output();
     std::size_t live = 101;
@@ -233,7 +234,7 @@ TEST_F(Medium_LateCount, ARunGoesOnOnceTheHostCountFitsAgain)
 }
 
 /** @brief Tests that a Residency::Host device slot resolves to the value written there. */
-TEST_F(Medium_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
+TEST_F(Small_LateCountResolved, DeviceSlotResolvesFromHostResidentBuffer)
 {
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
     auto out = canary_output();
@@ -246,14 +247,14 @@ TEST_F(Medium_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
     EXPECT_EQ(out[0], 700000u);
 }
 
-/** @brief Fixture of the over-capacity tests; the parameter is whether the runtime is forced onto the scheduler. */
-class Medium_LateCountLayers : public TestSupport::LayerRuntimeTest
+/** @brief Fixture of the over-capacity tests, which run on a host runtime. */
+class Small_LateCountOverCapacity : public TestSupport::HostRuntimeTest
 {
     protected:
-        /** @brief Chooses the runtime of the row and builds the buffers of the tests. */
+        /** @brief Builds the buffers of the tests. */
         void SetUp() override
         {
-            TestSupport::LayerRuntimeTest::SetUp();
+            TestSupport::HostRuntimeTest::SetUp();
             counter_.emplace(runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value());
             out_.emplace(runtime().buffer<std::uint32_t>(1).value());
             (*counter_)[0] = 101;
@@ -275,7 +276,7 @@ class Medium_LateCountLayers : public TestSupport::LayerRuntimeTest
 };
 
 /** @brief Tests that a device count above its capacity fails the run. */
-TEST_P(Medium_LateCountLayers, DeviceCountAboveCapacityFailsTheRun)
+TEST_F(Small_LateCountOverCapacity, DeviceCountAboveCapacityFailsTheRun)
 {
     auto g = runtime().graph();
     record_live_count_copy(g.recorder(), device_count(*counter_, 100), *out_);
@@ -284,7 +285,7 @@ TEST_P(Medium_LateCountLayers, DeviceCountAboveCapacityFailsTheRun)
 }
 
 /** @brief Tests that a later graph with a count inside the capacity runs clean after a failed run. */
-TEST_P(Medium_LateCountLayers, ALaterGraphRunsCleanAfterAFailedRun)
+TEST_F(Small_LateCountOverCapacity, ALaterGraphRunsCleanAfterAFailedRun)
 {
     auto failing = runtime().graph();
     record_live_count_copy(failing.recorder(), device_count(*counter_, 100), *out_);
@@ -299,12 +300,6 @@ TEST_P(Medium_LateCountLayers, ALaterGraphRunsCleanAfterAFailedRun)
     EXPECT_EQ((*out_)[0], 100u);
 }
 
-INSTANTIATE_TEST_SUITE_P(Layers, Medium_LateCountLayers, ::testing::Values(false, true),
-                         [](const ::testing::TestParamInfo<bool>& info)
-                         {
-                             return info.param ? "Scheduler" : "Chain";
-                         });
-
 /** @brief Holds the first and the next count a predecessor writes. */
 struct ProducedCounts
 {
@@ -313,13 +308,13 @@ struct ProducedCounts
 };
 
 /** @brief Fixture of the predecessor test; the parameter is the two counts. */
-class Medium_LateCountProducer : public TestSupport::RuntimeTest,
+class Small_LateCountProducer : public TestSupport::HostRuntimeTest,
                                  public ::testing::WithParamInterface<ProducedCounts>
 {
 };
 
 /** @brief Tests that the resolver sees the count its predecessor wrote in the same run, not one run late. */
-TEST_P(Medium_LateCountProducer, ResolverSeesTheCountItsPredecessorJustWrote)
+TEST_P(Small_LateCountProducer, ResolverSeesTheCountItsPredecessorJustWrote)
 {
     constexpr std::size_t CAPACITY = 1000;
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -343,7 +338,7 @@ TEST_P(Medium_LateCountProducer, ResolverSeesTheCountItsPredecessorJustWrote)
     EXPECT_EQ(out[0], GetParam().second) << "a changed count must take effect the same run, not one run late";
 }
 
-INSTANTIATE_TEST_SUITE_P(Counts, Medium_LateCountProducer,
+INSTANTIATE_TEST_SUITE_P(Counts, Small_LateCountProducer,
                          ::testing::Values(ProducedCounts{300, 700}, ProducedCounts{700, 0}));
 
 /** @brief Holds one call that must stop the process because of its slot or index, and the text the stop names. */
@@ -396,8 +391,13 @@ INSTANTIATE_TEST_SUITE_P(
                          "LateCount::from_device: index 4 is out of range for a buffer of 4 elements"}),
     [](const ::testing::TestParamInfo<StoppedCountCall>& info) { return std::string(info.param.name); });
 
+/** @brief Fixture of the from_device factory test, which allocates its slot on a host runtime. */
+class Small_LateCountFromDevice : public TestSupport::HostRuntimeTest
+{
+};
+
 /** @brief Tests that from_device accepts the last index of its slot and keeps its capacity. */
-TEST_F(Medium_LateCount, FromDeviceAcceptsTheLastIndexOfItsSlot)
+TEST_F(Small_LateCountFromDevice, AcceptsTheLastIndexOfItsSlot)
 {
     constexpr std::size_t CAPACITY = 64;
     auto slot = runtime().buffer<std::uint32_t>(3, DeviceIndex{0}, Residency::Host).value();
@@ -488,13 +488,13 @@ TEST(Small_LateCount, FixedAcceptsTheLargestCapacityAUint32Holds)
     EXPECT_EQ(LateCount::fixed(limit).capacity(), limit);
 }
 
-/** @brief Fixture of the vocabulary tests, which run on the program's runtime. */
-class Medium_LateBoundVocabulary : public TestSupport::RuntimeTest
+/** @brief Fixture of the vocabulary tests, which run on a host runtime. */
+class Small_LateBoundVocabulary : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that a recorded copy still polls the provider after the original is destroyed. */
-TEST_F(Medium_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
+TEST_F(Small_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
 {
     auto out = runtime().buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
@@ -515,7 +515,7 @@ TEST_F(Medium_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
 }
 
 /** @brief Tests that from_device reads the word its index names, not the first word. */
-TEST_F(Medium_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
+TEST_F(Small_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
 {
     auto slot = runtime().buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
     auto out  = runtime().buffer<std::uint32_t>(1).value();
@@ -530,7 +530,7 @@ TEST_F(Medium_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
 }
 
 /** @brief Tests that sized() set after sized_from_device() decides the live size. */
-TEST_F(Medium_LateBoundVocabulary, ASizeSetAfterADeviceSizeWins)
+TEST_F(Small_LateBoundVocabulary, ASizeSetAfterADeviceSizeWins)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::uint32_t DEVICE_COUNT = 3;
@@ -547,7 +547,7 @@ TEST_F(Medium_LateBoundVocabulary, ASizeSetAfterADeviceSizeWins)
 }
 
 /** @brief Tests that sized_from_device() set after sized() decides the live size. */
-TEST_F(Medium_LateBoundVocabulary, ADeviceSizeSetAfterASizeWins)
+TEST_F(Small_LateBoundVocabulary, ADeviceSizeSetAfterASizeWins)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::uint32_t DEVICE_COUNT = 3;
@@ -564,7 +564,7 @@ TEST_F(Medium_LateBoundVocabulary, ADeviceSizeSetAfterASizeWins)
 }
 
 /** @brief Tests that the members chain on a named Dynamic and carry all three controls. */
-TEST_F(Medium_LateBoundVocabulary, MembersChainOnANamedDynamic)
+TEST_F(Small_LateBoundVocabulary, MembersChainOnANamedDynamic)
 {
     constexpr std::size_t CAPACITY = 32;
     auto buf = runtime().buffer<int>(CAPACITY).value();
@@ -583,7 +583,7 @@ TEST_F(Medium_LateBoundVocabulary, MembersChainOnANamedDynamic)
 }
 
 /** @brief Tests that a Dynamic disabled through its member runs no element. */
-TEST_F(Medium_LateBoundVocabulary, ADisabledNamedDynamicRunsNoElement)
+TEST_F(Small_LateBoundVocabulary, ADisabledNamedDynamicRunsNoElement)
 {
     constexpr std::size_t CAPACITY = 32;
     auto buf = runtime().buffer<int>(CAPACITY).value();

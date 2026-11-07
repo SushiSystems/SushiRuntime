@@ -37,12 +37,12 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the dependency tests that name a Buffer or a State, which allocate on the program's runtime. */
-class Medium_Dependencies : public TestSupport::RuntimeTest
+/** @brief Fixture of the dependency tests that name a Buffer or a State, which allocate on a host runtime. */
+class Small_DependenciesOfHandles : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -60,7 +60,7 @@ TEST(Small_Dependencies, ARegionIsItsOwnKeyAndHasNoObserver)
 }
 
 /** @brief Tests that a buffer reads and writes one key, the address of its data. */
-TEST_F(Medium_Dependencies, ABufferReadsAndWritesTheSameKey)
+TEST_F(Small_DependenciesOfHandles, ABufferReadsAndWritesTheSameKey)
 {
     auto buffer = runtime().buffer<int>(4).value();
 
@@ -73,7 +73,7 @@ TEST_F(Medium_Dependencies, ABufferReadsAndWritesTheSameKey)
 }
 
 /** @brief Tests that a state reads its current field and writes its next field. */
-TEST_F(Medium_Dependencies, AStateReadsCurrentAndWritesNext)
+TEST_F(Small_DependenciesOfHandles, AStateReadsCurrentAndWritesNext)
 {
     auto state = runtime().state<int>(4).value();
 
@@ -87,7 +87,7 @@ TEST_F(Medium_Dependencies, AStateReadsCurrentAndWritesNext)
 }
 
 /** @brief Tests that a typed handle is observed, so the graph can tell when it is destroyed. */
-TEST_F(Medium_Dependencies, ATypedHandleIsObserved)
+TEST_F(Small_DependenciesOfHandles, ATypedHandleIsObserved)
 {
     auto buffer = runtime().buffer<int>(4).value();
 
@@ -98,7 +98,7 @@ TEST_F(Medium_Dependencies, ATypedHandleIsObserved)
 }
 
 /** @brief Tests that Reads collects one key per handle, in argument order. */
-TEST_F(Medium_Dependencies, ReadsAndWritesCollectOneKeyEach)
+TEST_F(Small_DependenciesOfHandles, ReadsAndWritesCollectOneKeyEach)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();

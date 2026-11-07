@@ -6,7 +6,7 @@ The tests of importing and exporting memory. They are part of `sr_surface_tests`
 ## test_interop.cpp
 
 The file covers what `import_device` refuses, what `capabilities()` reports and what `borrow()`
-keeps. Its tests run on the program's runtime. No test imports a real allocation: the descriptors
+keeps. Its small tests run on a host runtime and its medium tests on the program's runtime. No test imports a real allocation: the descriptors
 hold a placeholder handle of 1, the refusal tests expect a refusal, and the zero-element test
 requests no elements. A test that needs a device the machine may lack skips in its fixture, not in its
 body.
@@ -16,10 +16,11 @@ body.
 | Fixture | What it holds |
 | --- | --- |
 | `Medium_InteropCapabilities` | Rows of device index 0 to 3; a row past the machine's last device skips. `Medium_InteropImportingDevice` also skips a device that does not import. |
-| `Medium_InteropExportAsCount` | Skips on a machine whose device 0 offers no host USM. |
+| `Small_InteropExportAsCount` | Runs on a host runtime. |
 | `Medium_InteropImportOnADeviceWithoutImport` | Finds the first device that does not import, and skips when every device imports or the toolchain has no bindless images, since it then refuses before it reads a device. |
 | `Medium_InteropImport` | Finds the first device that imports, and skips when none does. `acceptable_descriptor` builds a descriptor with this platform's handle kind, the placeholder handle 1, an allocation of 64 bytes and the UUID of that device; a test then breaks one field, so the refusal it sees can only come from that field. |
-| `Medium_InteropBorrow`, `Medium_InteropBorrowHostUSM` | The borrow tests; the second skips where device 0 offers no host USM. |
+| `Small_InteropBorrow` | The borrow tests over memory the host runtime allocated as `Residency::Host`, whose kind its allocator records. `lent_memory` allocates it. |
+| `Medium_InteropBorrow`, `Medium_InteropBorrowHostUSM` | The borrow tests over memory SYCL allocated, on the program's runtime; the second skips where device 0 offers no host USM. |
 
 ### Capabilities and exports
 

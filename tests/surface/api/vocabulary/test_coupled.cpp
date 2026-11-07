@@ -38,7 +38,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -48,12 +48,12 @@ static_assert(std::is_same_v<decltype(Coupled(std::declval<State<int>&>(), std::
               "the element types of the states are deduced");
 
 /** @brief Fixture of the Coupled test, which allocates on the program's runtime. */
-class Medium_Coupled : public TestSupport::RuntimeTest
+class Small_Coupled : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that Coupled refers to the states it was given, in order. */
-TEST_F(Medium_Coupled, NamesTheStatesItWasGiven)
+TEST_F(Small_Coupled, NamesTheStatesItWasGiven)
 {
     auto out = runtime().state<int>(4).value();
     auto first = runtime().state<int>(4).value();

@@ -38,6 +38,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -54,8 +55,13 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the host export tests, which run on the program's runtime. */
+/** @brief Fixture of the host export tests that need a device, which run on the program's runtime. */
 class Medium_InteropHostExport : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the host export tests that need no kernel, which run on a host runtime. */
+class Small_InteropHostExport : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -87,7 +93,7 @@ TEST_F(Medium_InteropHostExport, AlignsAndRoundsTheRegion)
 }
 
 /** @brief Tests that a range written to an exported buffer reads back, routed to the device that owns it. */
-TEST_F(Medium_InteropHostExport, ARangeWrittenToAnExportReadsBack)
+TEST_F(Small_InteropHostExport, ARangeWrittenToAnExportReadsBack)
 {
     auto shared = runtime().interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
     const std::vector<float> written = TestSupport::ramp<float>(16, 0.5f);
@@ -143,7 +149,7 @@ TEST_F(Medium_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
 }
 
 /** @brief Tests that an export no device can hold returns AllocationFailed. */
-TEST_F(Medium_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
+TEST_F(Small_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
 {
     // Half the address space in bytes: it rounds without overflow and no device has the room.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
@@ -155,7 +161,7 @@ TEST_F(Medium_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFail
 }
 
 /** @brief Tests that an export that failed for want of room leaves the runtime able to export again. */
-TEST_F(Medium_InteropHostExport, AnExportAfterAFailedOneSucceeds)
+TEST_F(Small_InteropHostExport, AnExportAfterAFailedOneSucceeds)
 {
     const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
     static_cast<void>(runtime().interop().export_host<std::uint8_t>(count, DeviceIndex{0}, 4096));

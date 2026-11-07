@@ -37,7 +37,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -45,13 +45,13 @@ static_assert(In<int>::reads && !In<int>::writes, "In reads only");
 static_assert(Out<int>::writes && !Out<int>::reads, "Out writes only");
 static_assert(InOut<float>::reads && InOut<float>::writes, "InOut reads and writes");
 
-/** @brief Fixture of the capture tests, which allocate on the program's runtime. */
-class Medium_Captures : public TestSupport::RuntimeTest
+/** @brief Fixture of the capture tests, which allocate on a host runtime. */
+class Small_Captures : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that In and Out point at the buffer they name and In observes it. */
-TEST_F(Medium_Captures, EachCaptureNamesItsBuffer)
+TEST_F(Small_Captures, EachCaptureNamesItsBuffer)
 {
     auto in = runtime().buffer<int>(4).value();
     auto out = runtime().buffer<int>(4).value();

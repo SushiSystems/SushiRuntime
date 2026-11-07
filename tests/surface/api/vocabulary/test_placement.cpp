@@ -37,17 +37,17 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
 /** @brief Fixture of the On test, which allocates on the program's runtime. */
-class Medium_Placement : public TestSupport::RuntimeTest
+class Small_Placement : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that a buffer names its own device and is observed. */
-TEST_F(Medium_Placement, ABufferNamesItsDevice)
+TEST_F(Small_Placement, ABufferNamesItsDevice)
 {
     auto buffer = runtime().buffer<int>(4).value();
 

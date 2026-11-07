@@ -39,6 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 #include "support/slot_buffers.hpp"
 
@@ -106,13 +107,13 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the late-binding tests, which run on the program's runtime. */
-class Medium_LateBindings : public TestSupport::RuntimeTest
+/** @brief Fixture of the late-binding tests, which run on a host runtime. */
+class Small_LateBindings : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
-TEST_F(Medium_LateBindings, DynamicSizePerElement)
+TEST_F(Small_LateBindings, DynamicSizePerElement)
 {
     constexpr std::size_t CAP = 8;
     auto buf = runtime().buffer<int>(CAP).value();
@@ -133,7 +134,7 @@ TEST_F(Medium_LateBindings, DynamicSizePerElement)
 }
 
 /** @brief Tests that when() runs the node only on the enabled steps. */
-TEST_F(Medium_LateBindings, EnableTogglePerElement)
+TEST_F(Small_LateBindings, EnableTogglePerElement)
 {
     constexpr std::size_t N     = 16;
     constexpr std::size_t STEPS = 10;
@@ -152,7 +153,7 @@ TEST_F(Medium_LateBindings, EnableTogglePerElement)
 }
 
 /** @brief Tests that a disabled node still releases its successors. */
-TEST_F(Medium_LateBindings, DisabledNodeStillReleasesSuccessors)
+TEST_F(Small_LateBindings, DisabledNodeStillReleasesSuccessors)
 {
     constexpr std::size_t N     = 8;
     constexpr std::size_t STEPS = 6;
@@ -177,7 +178,7 @@ TEST_F(Medium_LateBindings, DisabledNodeStillReleasesSuccessors)
 }
 
 /** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
-TEST_F(Medium_LateBindings, DynamicSizeState)
+TEST_F(Small_LateBindings, DynamicSizeState)
 {
     constexpr std::size_t CAP   = 8;
     constexpr std::size_t STEPS = 4;
@@ -197,7 +198,7 @@ TEST_F(Medium_LateBindings, DynamicSizeState)
 }
 
 /** @brief Tests that when() and sized() compose on one node. */
-TEST_F(Medium_LateBindings, ComposedWhenAndSized)
+TEST_F(Small_LateBindings, ComposedWhenAndSized)
 {
     constexpr std::size_t CAP   = 4;
     constexpr std::size_t STEPS = 8;
@@ -224,13 +225,13 @@ struct SliceWindow
 };
 
 /** @brief Fixture of the slice tests; the parameter is the window. */
-class Medium_LateBindingsSlice : public TestSupport::RuntimeTest,
+class Small_LateBindingsSlice : public TestSupport::HostRuntimeTest,
                                  public ::testing::WithParamInterface<SliceWindow>
 {
 };
 
 /** @brief Tests that based_at() with sized() runs exactly the window, passing absolute indices. */
-TEST_P(Medium_LateBindingsSlice, BaseOffsetIteratesASlice)
+TEST_P(Small_LateBindingsSlice, BaseOffsetIteratesASlice)
 {
     constexpr std::size_t CAPACITY = 64;
     auto buf = runtime().buffer<int>(CAPACITY).value();
@@ -247,12 +248,12 @@ TEST_P(Medium_LateBindingsSlice, BaseOffsetIteratesASlice)
     EXPECT_EQ(TestSupport::contents(buf), absolute_window(CAPACITY, window.base, window.count, 1000));
 }
 
-INSTANTIATE_TEST_SUITE_P(Windows, Medium_LateBindingsSlice,
+INSTANTIATE_TEST_SUITE_P(Windows, Small_LateBindingsSlice,
                          ::testing::Values(SliceWindow{0, 4}, SliceWindow{8, 16}, SliceWindow{40, 20},
                                            SliceWindow{63, 1}));
 
 /** @brief Tests that moving the window between runs does not recompile. */
-TEST_F(Medium_LateBindings, MovingTheWindowDoesNotRecompile)
+TEST_F(Small_LateBindings, MovingTheWindowDoesNotRecompile)
 {
     constexpr std::size_t CAPACITY = 64;
     auto buf = runtime().buffer<int>(CAPACITY).value();
@@ -275,7 +276,7 @@ TEST_F(Medium_LateBindings, MovingTheWindowDoesNotRecompile)
  * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
  *        predecessor wrote.
  */
-TEST_F(Medium_LateBindings, BaseAndSizeBothFromTheDevice)
+TEST_F(Small_LateBindings, BaseAndSizeBothFromTheDevice)
 {
     constexpr std::size_t CAPACITY = 128;
     // slice[0] is the base and slice[1] the count.
@@ -295,7 +296,7 @@ TEST_F(Medium_LateBindings, BaseAndSizeBothFromTheDevice)
 }
 
 /** @brief Tests that a window that fits runs after a run whose window ran past the capacity failed. */
-TEST_F(Medium_LateBindings, ALaterWindowThatFitsRunsAfterOnePastTheCapacityFailed)
+TEST_F(Small_LateBindings, ALaterWindowThatFitsRunsAfterOnePastTheCapacityFailed)
 {
     constexpr std::size_t CAPACITY = 16;
     auto buf = runtime().buffer<int>(CAPACITY).value();
@@ -387,8 +388,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "based_at_device: index 4 is out of range"}),
     [](const ::testing::TestParamInfo<StoppedSlotCall>& info) { return std::string(info.param.name); });
 
-/** @brief Fixture of the device count tests, which run on the program's runtime. */
-class Medium_DeviceCount : public TestSupport::RuntimeTest
+/** @brief Fixture of the device count tests, which run on a host runtime. */
+class Small_DeviceCount : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -399,13 +400,13 @@ struct CountMultiplier
 };
 
 /** @brief Fixture of the producer-consumer tests; the parameter is the multiplier. */
-class Medium_DeviceCountProducer : public TestSupport::RuntimeTest,
+class Small_DeviceCountProducer : public TestSupport::HostRuntimeTest,
                                    public ::testing::WithParamInterface<CountMultiplier>
 {
 };
 
 /** @brief Tests that a consumer iterates exactly the count the producer wrote in the same run(). */
-TEST_P(Medium_DeviceCountProducer, ConsumerIteratesTheCountTheProducerJustWrote)
+TEST_P(Small_DeviceCountProducer, ConsumerIteratesTheCountTheProducerJustWrote)
 {
     constexpr std::size_t CAPACITY = 4096;
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -435,12 +436,12 @@ TEST_P(Medium_DeviceCountProducer, ConsumerIteratesTheCountTheProducerJustWrote)
     EXPECT_EQ(g.compile_count(), 1u) << "a device-driven count must not force a recompile";
 }
 
-INSTANTIATE_TEST_SUITE_P(Multipliers, Medium_DeviceCountProducer,
+INSTANTIATE_TEST_SUITE_P(Multipliers, Small_DeviceCountProducer,
                          ::testing::Values(CountMultiplier{5}, CountMultiplier{200}, CountMultiplier{1},
                                            CountMultiplier{0}, CountMultiplier{1000}));
 
 /** @brief Tests that a count that changes between runs does not recompile. */
-TEST_F(Medium_DeviceCount, ChangingTheDeviceCountKeepsOneCompile)
+TEST_F(Small_DeviceCount, ChangingTheDeviceCountKeepsOneCompile)
 {
     constexpr std::size_t CAPACITY = 64;
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -458,7 +459,7 @@ TEST_F(Medium_DeviceCount, ChangingTheDeviceCountKeepsOneCompile)
 }
 
 /** @brief Tests a three-stage chain where each stage's output count sizes the next stage. */
-TEST_F(Medium_DeviceCount, ChainedProducerCountsInOneComposition)
+TEST_F(Small_DeviceCount, ChainedProducerCountsInOneComposition)
 {
     constexpr std::size_t CAPACITY = 1024;
     auto first  = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -492,7 +493,7 @@ TEST_F(Medium_DeviceCount, ChainedProducerCountsInOneComposition)
 }
 
 /** @brief Fixture of the when() with device size tests: a producer writes 100 and the consumer adds one per live element. */
-class Medium_DeviceCountWhen : public TestSupport::RuntimeTest
+class Small_DeviceCountWhen : public TestSupport::HostRuntimeTest
 {
     protected:
         /** @brief Records the producer and the consumer gated by enabled_. */
@@ -542,7 +543,7 @@ class Medium_DeviceCountWhen : public TestSupport::RuntimeTest
 };
 
 /** @brief Tests that an enabled step runs the live count. */
-TEST_F(Medium_DeviceCountWhen, AnEnabledStepRunsTheLiveCount)
+TEST_F(Small_DeviceCountWhen, AnEnabledStepRunsTheLiveCount)
 {
     run_once(true);
 
@@ -550,7 +551,7 @@ TEST_F(Medium_DeviceCountWhen, AnEnabledStepRunsTheLiveCount)
 }
 
 /** @brief Tests that a disabled step runs no element whatever the counter says. */
-TEST_F(Medium_DeviceCountWhen, ADisabledStepRunsNoElement)
+TEST_F(Small_DeviceCountWhen, ADisabledStepRunsNoElement)
 {
     run_once(false);
 
@@ -558,7 +559,7 @@ TEST_F(Medium_DeviceCountWhen, ADisabledStepRunsNoElement)
 }
 
 /** @brief Tests that a step enabled again after a disabled one runs the live count again. */
-TEST_F(Medium_DeviceCountWhen, AStepEnabledAgainRunsTheLiveCount)
+TEST_F(Small_DeviceCountWhen, AStepEnabledAgainRunsTheLiveCount)
 {
     run_once(true);
     run_once(false);
@@ -569,7 +570,7 @@ TEST_F(Medium_DeviceCountWhen, AStepEnabledAgainRunsTheLiveCount)
 }
 
 /** @brief Tests that a count above the compiled capacity fails the run. */
-TEST_F(Medium_DeviceCount, CountOverCapacityFailsTheRun)
+TEST_F(Small_DeviceCount, CountOverCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 64;
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -585,7 +586,7 @@ TEST_F(Medium_DeviceCount, CountOverCapacityFailsTheRun)
 }
 
 /** @brief Tests that a clean graph runs on the same runtime after a run failed for a count over the capacity. */
-TEST_F(Medium_DeviceCount, ACleanGraphRunsAfterACountOverCapacityFailedARun)
+TEST_F(Small_DeviceCount, ACleanGraphRunsAfterACountOverCapacityFailedARun)
 {
     constexpr std::size_t CAPACITY = 64;
     auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -606,7 +607,7 @@ TEST_F(Medium_DeviceCount, ACleanGraphRunsAfterACountOverCapacityFailedARun)
 }
 
 /** @brief Tests that a count is read from the element the index names, not from element zero. */
-TEST_F(Medium_DeviceCount, ReadsTheCountAtTheGivenIndex)
+TEST_F(Small_DeviceCount, ReadsTheCountAtTheGivenIndex)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 5;
@@ -625,7 +626,7 @@ TEST_F(Medium_DeviceCount, ReadsTheCountAtTheGivenIndex)
 }
 
 /** @brief Tests that a base is read from the element the index names, and the node runs from there to the end. */
-TEST_F(Medium_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
+TEST_F(Small_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
 {
     constexpr std::size_t CAPACITY = 16;
     constexpr std::size_t SLOT     = 3;
@@ -658,7 +659,7 @@ enum class WatchedSlot : std::uint8_t
 };
 
 /** @brief Fixture of the slot liveness tests; the parameter names the slot. */
-class Medium_DeviceSlotLiveness : public TestSupport::RuntimeTest,
+class Small_DeviceSlotLiveness : public TestSupport::HostRuntimeTest,
                                   public ::testing::WithParamInterface<WatchedSlot>
 {
     protected:
@@ -690,7 +691,7 @@ class Medium_DeviceSlotLiveness : public TestSupport::RuntimeTest,
 };
 
 /** @brief Tests that a run is refused with DanglingResource once the slot buffer is destroyed. */
-TEST_P(Medium_DeviceSlotLiveness, ADestroyedSlotBufferRefusesTheRun)
+TEST_P(Small_DeviceSlotLiveness, ADestroyedSlotBufferRefusesTheRun)
 {
     auto target = runtime().buffer<Word>(K_WIDTH).value();
     auto field = runtime().state<Word>(K_WIDTH).value();
@@ -706,7 +707,7 @@ TEST_P(Medium_DeviceSlotLiveness, ADestroyedSlotBufferRefusesTheRun)
     EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
-INSTANTIATE_TEST_SUITE_P(Slots, Medium_DeviceSlotLiveness,
+INSTANTIATE_TEST_SUITE_P(Slots, Small_DeviceSlotLiveness,
                          ::testing::Values(WatchedSlot::CountOfATask, WatchedSlot::BaseOfATask,
                                            WatchedSlot::CountOfAState),
                          [](const ::testing::TestParamInfo<WatchedSlot>& info)
@@ -720,13 +721,13 @@ INSTANTIATE_TEST_SUITE_P(Slots, Medium_DeviceSlotLiveness,
                              return std::string("Unknown");
                          });
 
-/** @brief Fixture of the recorder test, which runs on the program's runtime. */
-class Medium_DeviceSlotRecorder : public TestSupport::RuntimeTest
+/** @brief Fixture of the recorder test, which runs on a host runtime. */
+class Small_DeviceSlotRecorder : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that the recorder watches the target and the counter of a dynamic task. */
-TEST_F(Medium_DeviceSlotRecorder, TheRecorderWatchesTheTargetAndTheCounter)
+TEST_F(Small_DeviceSlotRecorder, TheRecorderWatchesTheTargetAndTheCounter)
 {
     constexpr std::size_t K_WIDTH = 64;
     auto target = runtime().buffer<Word>(K_WIDTH).value();

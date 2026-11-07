@@ -41,6 +41,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -149,20 +150,13 @@ INSTANTIATE_TEST_SUITE_P(Devices, Medium_InteropCapabilities,
 INSTANTIATE_TEST_SUITE_P(Devices, Medium_InteropImportingDevice,
                          ::testing::Range<std::size_t>(0, K_DEVICE_ROWS));
 
-/** @brief Fixture of the tests that export host memory, which need device 0 to offer host USM. */
-class Medium_InteropExportAsCount : public TestSupport::RuntimeTest
+/** @brief Fixture of the tests that export host memory, which run on a host runtime. */
+class Small_InteropExportAsCount : public TestSupport::HostRuntimeTest
 {
-    protected:
-        /** @brief Skips the test on a machine whose device 0 offers no host USM. */
-        void SetUp() override
-        {
-            if (!runtime().interop().capabilities(DeviceIndex{0}).value().host_export)
-                GTEST_SKIP() << "device 0 offers no host USM";
-        }
 };
 
 /** @brief Tests that an export is host resident and its address is its data. */
-TEST_F(Medium_InteropExportAsCount, AnExportIsHostResident)
+TEST_F(Small_InteropExportAsCount, AnExportIsHostResident)
 {
     const auto exported =
         runtime().interop().export_host<std::uint32_t>(4, DeviceIndex{0}, 64).value();
@@ -172,7 +166,7 @@ TEST_F(Medium_InteropExportAsCount, AnExportIsHostResident)
 }
 
 /** @brief Tests that sized_from_device takes an export as its count and the task runs that many elements. */
-TEST_F(Medium_InteropExportAsCount, ALateCountTakesAnExportAsItsCounter)
+TEST_F(Small_InteropExportAsCount, ALateCountTakesAnExportAsItsCounter)
 {
     constexpr std::size_t CAPACITY = 8;
     const auto exported =
@@ -332,15 +326,24 @@ INSTANTIATE_TEST_SUITE_P(Fields, Medium_InteropImportRefusedDescriptor,
                              return std::string(info.param.name);
                          });
 
-/** @brief Fixture of the borrow tests, which run on the program's runtime. */
-class Medium_InteropBorrow : public TestSupport::RuntimeTest
+/** @brief Fixture of the borrow tests; the memory they borrow is a Residency::Host buffer of the runtime, which records its kind. */
+class Small_InteropBorrow : public TestSupport::HostRuntimeTest
 {
+    protected:
+        /** @brief Allocates @p count zeroed words of Residency::Host memory on device 0 to lend to borrow(). */
+        Buffer<std::uint32_t> lent_memory(std::size_t count)
+        {
+            auto memory = runtime().buffer<std::uint32_t>(count, DeviceIndex{0}, Residency::Host).value();
+            TestSupport::fill_with(memory, 0u);
+            return memory;
+        }
 };
 
 /** @brief Tests that a borrowed buffer reports the memory, size, device and residency it was given. */
-TEST_F(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
+TEST_F(Small_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
 {
-    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    auto memory = lent_memory(3);
+    TestSupport::assign_from(memory, std::vector<std::uint32_t>{3u, 5u, 7u});
     const LivenessToken owner = make_liveness();
 
     const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
@@ -354,22 +357,23 @@ TEST_F(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
 }
 
 /** @brief Tests that a write through a borrowed buffer reaches the caller's memory. */
-TEST_F(Medium_InteropBorrow, AWriteThroughABorrowedBufferReachesTheCallersMemory)
+TEST_F(Small_InteropBorrow, AWriteThroughABorrowedBufferReachesTheCallersMemory)
 {
-    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    auto memory = lent_memory(3);
+    TestSupport::assign_from(memory, std::vector<std::uint32_t>{3u, 5u, 7u});
     const LivenessToken owner = make_liveness();
     const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
 
     borrowed[1] = 11u;
 
-    EXPECT_EQ(memory, (std::vector<std::uint32_t>{3u, 11u, 7u}));
+    EXPECT_EQ(TestSupport::contents(memory), (std::vector<std::uint32_t>{3u, 11u, 7u}));
 }
 
 /** @brief Tests that a borrowed buffer, once destroyed, holds no share of its owner. */
-TEST_F(Medium_InteropBorrow, ADestroyedBorrowedBufferReleasesItsShareOfTheOwner)
+TEST_F(Small_InteropBorrow, ADestroyedBorrowedBufferReleasesItsShareOfTheOwner)
 {
-    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    auto memory = lent_memory(3);
     const LivenessToken owner = make_liveness();
 
     {
@@ -382,14 +386,15 @@ TEST_F(Medium_InteropBorrow, ADestroyedBorrowedBufferReleasesItsShareOfTheOwner)
 }
 
 /** @brief Tests that a run naming a borrowed buffer executes while the owner lives. */
-TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferRunsWhileTheOwnerLives)
+TEST_F(Small_InteropBorrow, ARunNamingABorrowedBufferRunsWhileTheOwnerLives)
 {
-    std::vector<std::uint32_t> memory(4, 0u);
+    auto memory = lent_memory(4);
+    std::uint32_t* words = memory.data();
     const LivenessToken owner = make_liveness();
     const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
     auto graph = runtime().graph();
-    graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
+    graph.recorder().host(Access(Reads(), Writes(borrowed)), [words]() { ++words[0]; });
 
     ASSERT_TRUE(graph.run());
 
@@ -397,14 +402,15 @@ TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferRunsWhileTheOwnerLives)
 }
 
 /** @brief Tests that a run naming a borrowed buffer whose owner let go is refused and runs nothing. */
-TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
+TEST_F(Small_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
 {
-    std::vector<std::uint32_t> memory(4, 0u);
+    auto memory = lent_memory(4);
+    std::uint32_t* words = memory.data();
     LivenessToken owner = make_liveness();
     const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
     auto graph = runtime().graph();
-    graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
+    graph.recorder().host(Access(Reads(), Writes(borrowed)), [words]() { ++words[0]; });
     owner.reset();
 
     auto refused = graph.run();
@@ -415,20 +421,52 @@ TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
 }
 
 /** @brief Tests that a run whose borrowed handle was dropped after recording still executes. */
-TEST_F(Medium_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
+TEST_F(Small_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
 {
-    std::vector<std::uint32_t> memory(4, 0u);
+    auto memory = lent_memory(4);
+    std::uint32_t* words = memory.data();
     const LivenessToken owner = make_liveness();
     std::optional<Buffer<std::uint32_t>> borrowed(runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value());
     auto graph = runtime().graph();
-    graph.recorder().host(Access(Reads(), Writes(*borrowed)), [&memory]() { ++memory[0]; });
+    graph.recorder().host(Access(Reads(), Writes(*borrowed)), [words]() { ++words[0]; });
     borrowed.reset();
 
     ASSERT_TRUE(graph.run());
 
     EXPECT_EQ(memory[0], 1u);
 }
+
+/** @brief Tests that a runtime buffer borrowed under another residency is refused by its record. */
+TEST_F(Small_InteropBorrow, ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord)
+{
+    const Buffer<std::uint32_t> owned = lent_memory(4);
+    const LivenessToken owner = make_liveness();
+
+    const Result<Buffer<std::uint32_t>> refused = runtime().interop().borrow(
+        owned.data(), 4, DeviceIndex{0}, Residency::Shared, owner);
+
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    expect_message_holds(refused.error().message, {"Residency::Host"});
+}
+
+/** @brief Tests that a runtime buffer borrowed under its own residency is accepted. */
+TEST_F(Small_InteropBorrow, ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted)
+{
+    const Buffer<std::uint32_t> owned = lent_memory(4);
+    const LivenessToken owner = make_liveness();
+
+    const Result<Buffer<std::uint32_t>> agreed = runtime().interop().borrow(
+        owned.data(), 4, DeviceIndex{0}, Residency::Host, owner);
+
+    EXPECT_TRUE(agreed);
+}
+
+/** @brief Fixture of the borrow tests that borrow memory SYCL allocated, which run on the program's runtime. */
+class Medium_InteropBorrow : public TestSupport::RuntimeTest
+{
+};
 
 /** @brief Tests that a range write and read reach shared memory the runtime did not allocate. */
 TEST_F(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate)
@@ -480,32 +518,4 @@ TEST_F(Medium_InteropBorrowHostUSM, AMismatchedResidencyIsRefusedWithBothNames)
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
     expect_message_holds(refused.error().message, {"Residency::Host", "Residency::Shared"});
-}
-
-/** @brief Tests that a runtime buffer borrowed under another residency is refused by its record. */
-TEST_F(Medium_InteropBorrowHostUSM, ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord)
-{
-    const Buffer<std::uint32_t> owned =
-        runtime().buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
-    const LivenessToken owner = make_liveness();
-
-    const Result<Buffer<std::uint32_t>> refused = runtime().interop().borrow(
-        owned.data(), 4, DeviceIndex{0}, Residency::Shared, owner);
-
-    ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
-    expect_message_holds(refused.error().message, {"Residency::Host"});
-}
-
-/** @brief Tests that a runtime buffer borrowed under its own residency is accepted. */
-TEST_F(Medium_InteropBorrowHostUSM, ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted)
-{
-    const Buffer<std::uint32_t> owned =
-        runtime().buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
-    const LivenessToken owner = make_liveness();
-
-    const Result<Buffer<std::uint32_t>> agreed = runtime().interop().borrow(
-        owned.data(), 4, DeviceIndex{0}, Residency::Host, owner);
-
-    EXPECT_TRUE(agreed);
 }
