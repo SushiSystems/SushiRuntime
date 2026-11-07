@@ -107,7 +107,6 @@ namespace SushiRuntime
                        std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
                        const RuntimeSettings& settings = {});
 
-                /** @brief Stops the engine, then waits for every device queue. */
                 /**
                  * @brief Builds a host context: host devices, host USM and a HostExecutionEngine.
                  *
@@ -117,6 +116,7 @@ namespace SushiRuntime
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
                 create_host(const HostContextParts& parts);
 
+                /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
 
                 /** @brief Copy and move are disabled to keep state integrity. */

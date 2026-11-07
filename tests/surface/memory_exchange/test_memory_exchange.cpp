@@ -49,6 +49,7 @@
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/memory_exchange/scripted_capability_probe.hpp>
 
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -67,6 +68,23 @@ class Medium_MemoryExchange : public TestSupport::RuntimeTest
             return Internal::ContextAccess::shared(runtime());
         }
 };
+
+/** @brief Runs the host export test on a host runtime, which makes no device. */
+class Small_MemoryExchange : public TestSupport::HostRuntimeTest
+{
+};
+
+/** @brief Tests that a host export gives an allocation of the size asked. */
+TEST_F(Small_MemoryExchange, AHostExportGivesTheSizeAsked)
+{
+    const auto context = Internal::ContextAccess::shared(runtime());
+
+    const Result<Detail::Allocation> exported =
+        Internal::MemoryExchange::export_host_memory(context, 4096, 0, 4096);
+
+    ASSERT_TRUE(exported.has_value()) << exported.error().message;
+    EXPECT_EQ(exported.value().bytes(), 4096u);
+}
 
 /**
  * @brief Runs the import tests on the program's one runtime. A device that is not a GPU refuses
@@ -107,18 +125,6 @@ TEST_F(Medium_MemoryExchange, CapabilitiesOfDeviceZero)
 
     ASSERT_TRUE(capabilities.has_value());
     EXPECT_TRUE(capabilities.value().host_export);
-}
-
-/** @brief Tests that a host export gives an allocation of the size asked. */
-TEST_F(Medium_MemoryExchange, AHostExportGivesTheSizeAsked)
-{
-    const auto context = shared_context();
-
-    const Result<Detail::Allocation> exported =
-        Internal::MemoryExchange::export_host_memory(context, 4096, 0, 4096);
-
-    ASSERT_TRUE(exported.has_value()) << exported.error().message;
-    EXPECT_EQ(exported.value().bytes(), 4096u);
 }
 
 /** @brief Tests that an import runs the descriptor checks: one naming no handle kind is refused with InvalidAccess. */

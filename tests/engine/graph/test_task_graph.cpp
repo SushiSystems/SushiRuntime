@@ -329,7 +329,7 @@ namespace TaskGraphTests
         EXPECT_EQ(found, 2u);
     }
 
-    TEST(Medium_TaskGraph, CompileWithNoRootReturnsInvalidGraphNamingANode)
+    TEST(Small_TaskGraph, CompileWithNoRootReturnsInvalidGraphNamingANode)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());
@@ -349,7 +349,7 @@ namespace TaskGraphTests
             << failure->message;
     }
 
-    TEST(Medium_TaskGraph, CompileWithACycleBehindARootReturnsInvalidGraphNamingANode)
+    TEST(Small_TaskGraph, CompileWithACycleBehindARootReturnsInvalidGraphNamingANode)
     {
         TaskGraph graph;
         Node& root = graph.add_node(idle_work());
@@ -372,7 +372,7 @@ namespace TaskGraphTests
         EXPECT_FALSE(contains(failure->message, "node 'root'")) << failure->message;
     }
 
-    TEST(Medium_TaskGraph, AGraphCompilesAfterAFailedCompile)
+    TEST(Small_TaskGraph, AGraphCompilesAfterAFailedCompile)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());

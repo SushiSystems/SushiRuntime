@@ -28,9 +28,7 @@
  * @author Mustafa Garip
  */
 
-#include <atomic>
 #include <cstddef>
-#include <future>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -39,6 +37,8 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -50,6 +50,8 @@
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
+
+#include "support/host_runtime.hpp"
 
 namespace
 {
@@ -89,6 +91,25 @@ namespace
                            return {};
                        });
         return graph.compile().value();
+    }
+
+    /** @brief Compiles a graph of one host node that runs @p work, which has a host form. */
+    template <class Work>
+    CompiledGraph compile_native_task(Work work)
+    {
+        TaskGraph graph;
+        graph.add_native({}, {}, work);
+        return graph.compile().value();
+    }
+
+    /** @brief Builds a host context on a seeded executor and a manual clock. */
+    std::shared_ptr<RuntimeContext> make_host_context()
+    {
+        SushiRuntime::Internal::Execution::HostContextParts parts;
+        parts.executor =
+            std::make_shared<SushiRuntime::SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
+        parts.clock = std::make_shared<SushiRuntime::ManualClock>();
+        return RuntimeContext::create_host(parts).value();
     }
 
     /** @brief Owns one float array of shared USM on device 0 of a context. */
@@ -157,53 +178,46 @@ TEST(Small_RunInProgress, TheInterfaceDefaultReportsNoRun)
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Medium_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
+/** @brief Tests that a blocking run is in progress for a node of the run, and not after execute() returns. */
+TEST(Small_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 {
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
+    const auto context_owner = make_host_context();
+    ExecutionEngine& engine = context_owner->execution_engine();
 
-    std::atomic<bool> seen_inside{false};
-    CompiledGraph plan = compile_host_task([&engine, &seen_inside]
+    bool seen_inside = false;
+    CompiledGraph plan = compile_native_task([&engine, &seen_inside]
     {
-        seen_inside.store(engine.run_in_progress(), std::memory_order_relaxed);
+        seen_inside = engine.run_in_progress();
     });
 
     engine.execute(plan).value();
 
-    EXPECT_TRUE(seen_inside.load(std::memory_order_relaxed))
-        << "a host task of the run saw no run in progress";
+    EXPECT_TRUE(seen_inside) << "a host task of the run saw no run in progress";
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Medium_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
+/** @brief Tests that a submitted run is in progress until complete() returns. */
+TEST(Small_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 {
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
+    const auto context_owner = make_host_context();
+    ExecutionEngine& engine = context_owner->execution_engine();
     ASSERT_TRUE(engine.supports_asynchronous_run());
-
-    // The task waits on the gate, so the run cannot finish before the first check.
-    std::promise<void> gate;
-    const std::shared_future<void> opened = gate.get_future().share();
-    CompiledGraph plan = compile_host_task([opened] { opened.wait(); });
+    CompiledGraph plan = compile_native_task([] {});
 
     engine.submit(plan).value();
     EXPECT_TRUE(engine.run_in_progress());
 
-    gate.set_value();
     engine.complete().value();
     EXPECT_FALSE(engine.run_in_progress());
 }
 
 /** @brief Tests that a blocking run whose task throws returns KernelFailed and leaves no run in progress. */
-TEST(Medium_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
+TEST(Small_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
 {
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
+    const auto context_owner = make_host_context();
+    ExecutionEngine& engine = context_owner->execution_engine();
 
-    CompiledGraph blocking = compile_host_task([] { throw std::runtime_error("probe failure"); });
+    CompiledGraph blocking = compile_native_task([] { throw std::runtime_error("probe failure"); });
     const SushiRuntime::Result<void> blocked = engine.execute(blocking);
 
     ASSERT_FALSE(blocked.has_value());
@@ -214,13 +228,12 @@ TEST(Medium_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
 }
 
 /** @brief Tests that an asynchronous run whose task throws returns KernelFailed from complete(). */
-TEST(Medium_RunInProgress, AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete)
+TEST(Small_RunInProgress, AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete)
 {
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
+    const auto context_owner = make_host_context();
+    ExecutionEngine& engine = context_owner->execution_engine();
     CompiledGraph asynchronous =
-        compile_host_task([] { throw std::runtime_error("probe failure"); });
+        compile_native_task([] { throw std::runtime_error("probe failure"); });
     engine.submit(asynchronous).value();
 
     const SushiRuntime::Result<void> completed = engine.complete();

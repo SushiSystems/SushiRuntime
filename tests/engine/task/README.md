@@ -52,7 +52,7 @@ The file tests the InMemoryOffloadSink adapter against the OffloadSink contract.
 `PlacementMemory` is a port with two implementations. The checks every implementation must pass are
 `expect_*` helpers in `tests/support/placement_memory_contract.hpp`. `test_placement_memory.cpp` runs
 them on `InMemoryPlacementMemory` as `Small_PlacementMemoryContract`. `test_usm_placement_memory.cpp` runs them on `USMPlacementMemory` over a `USMAllocator` of two
-entries that share the program queue, as `Medium_USMPlacementMemoryContract`. `compile_usm_placement_memory.cpp`
+host devices over a `HostUSMSource`, as `Small_USMPlacementMemoryContract`. `compile_usm_placement_memory.cpp`
 includes the adapter header alone.
 
 | Test | What it proves |

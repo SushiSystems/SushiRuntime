@@ -49,6 +49,8 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -70,7 +72,21 @@
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
+#include "support/host_runtime.hpp"
+
 using namespace SushiRuntime;
+
+namespace
+{
+    /** @brief Builds a host context on a seeded executor and a manual clock. */
+    std::shared_ptr<Internal::Execution::RuntimeContext> make_host_context()
+    {
+        Internal::Execution::HostContextParts parts;
+        parts.executor = std::make_shared<SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
+        parts.clock = std::make_shared<ManualClock>();
+        return Internal::Execution::RuntimeContext::create_host(parts).value();
+    }
+} // namespace
 
 /** @brief Tests the profiling queue RuntimeContext::devices() builds against the plain queue. */
 namespace ProfilingQueueTests
@@ -269,6 +285,23 @@ namespace TopologyTests
                 std::shared_ptr<RuntimeContext> context_owner_; /**< The context of the test. */
         };
 
+        /** @brief Holds a host context for the tests of the allocator that need no device. */
+        class HostContextFixture : public ::testing::Test
+        {
+            protected:
+                /** @brief Builds the host context. */
+                void SetUp() override
+                {
+                    context_owner_ = make_host_context();
+                }
+
+                /** @brief Returns the context. */
+                RuntimeContext& context() { return *context_owner_; }
+
+            private:
+                std::shared_ptr<RuntimeContext> context_owner_; /**< The context of the test. */
+        };
+
         /** @brief Names a USM kind and an alignment in the byte count, for the parameter tables. */
         using AlignedRequest = std::tuple<Internal::Memory::USMKind, std::size_t, std::size_t>;
     } // namespace
@@ -295,7 +328,7 @@ namespace TopologyTests
     INSTANTIATE_TEST_SUITE_P(Rows, Medium_InvalidNUMAQueue, ::testing::Values(999, -5));
 
     /** @brief Fixture of the tests that allocate on an id no node has. */
-    class Medium_InvalidNUMAAllocation : public ContextFixture
+    class Small_InvalidNUMAAllocation : public HostContextFixture
     {
     };
 
@@ -306,7 +339,7 @@ namespace TopologyTests
      * information, so it has to resolve to something rather than index out of
      * bounds. The pointer's owner is recorded against the fallback device.
      */
-    TEST_F(Medium_InvalidNUMAAllocation, AnAllocationOnAnInvalidNUMAFallsBackAndIsRecorded)
+    TEST_F(Small_InvalidNUMAAllocation, AnAllocationOnAnInvalidNUMAFallsBackAndIsRecorded)
     {
         constexpr int INVALID_NUMA_ID = -5;
 
@@ -320,7 +353,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that releasing a fallback allocation clears the record of its owner. */
-    TEST_F(Medium_InvalidNUMAAllocation, ReleasingAFallbackAllocationClearsItsOwner)
+    TEST_F(Small_InvalidNUMAAllocation, ReleasingAFallbackAllocationClearsItsOwner)
     {
         constexpr int INVALID_NUMA_ID = -5;
         void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
@@ -334,12 +367,12 @@ namespace TopologyTests
     }
 
     /** @brief Fixture of the tests that read the live USM count. */
-    class Medium_LiveUSMCount : public ContextFixture
+    class Small_LiveUSMCount : public HostContextFixture
     {
     };
 
     /** @brief Tests that the live count follows each allocation and release. */
-    TEST_F(Medium_LiveUSMCount, FollowsAllocateAndRelease)
+    TEST_F(Small_LiveUSMCount, FollowsAllocateAndRelease)
     {
         const std::size_t baseline = context().memory().live_count();
 
@@ -359,7 +392,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that the live count follows an adopted record and its forgetting. */
-    TEST_F(Medium_LiveUSMCount, FollowsAdoptAndForget)
+    TEST_F(Small_LiveUSMCount, FollowsAdoptAndForget)
     {
         const std::size_t baseline = context().memory().live_count();
         int external = 0;
@@ -404,13 +437,13 @@ namespace TopologyTests
                            ::testing::Values(std::size_t{1}, std::size_t{100}, std::size_t{4096})));
 
     /** @brief Fixture of the rows that allocate one aligned block of a kind. */
-    class Medium_AlignedRecording : public ContextFixture,
-                                    public ::testing::WithParamInterface<Internal::Memory::USMKind>
+    class Small_AlignedRecording : public HostContextFixture,
+                                   public ::testing::WithParamInterface<Internal::Memory::USMKind>
     {
     };
 
     /** @brief Tests that the block is recorded once and dropped by release(). */
-    TEST_P(Medium_AlignedRecording, IsRecordedOnceAndDroppedByRelease)
+    TEST_P(Small_AlignedRecording, IsRecordedOnceAndDroppedByRelease)
     {
         const std::size_t baseline = context().memory().live_count();
 
@@ -422,7 +455,7 @@ namespace TopologyTests
         EXPECT_EQ(context().memory().live_count(), baseline);
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_AlignedRecording, ::testing::ValuesIn(K_ALIGNED_KINDS));
+    INSTANTIATE_TEST_SUITE_P(Rows, Small_AlignedRecording, ::testing::ValuesIn(K_ALIGNED_KINDS));
 
     /** @brief Tests that an aligned allocation on a device index past the last one stops. */
     TEST(Medium_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
@@ -834,14 +867,14 @@ namespace OffloadSeamShutdownTests
 
 namespace RunObserverWiringTests
 {
-    /** @brief Fixture of the observer wiring test: a context built once on the program's devices. */
-    class Medium_RuntimeContextObservers : public ::testing::Test
+    /** @brief Fixture of the observer wiring test: a host context. */
+    class Small_RuntimeContextObservers : public ::testing::Test
     {
         protected:
-            /** @brief Builds the context. */
+            /** @brief Builds the host context. */
             void SetUp() override
             {
-                context_owner_ = SushiRuntime::Test::make_context();
+                context_owner_ = make_host_context();
             }
 
             /** @brief Returns the context. */
@@ -856,7 +889,7 @@ namespace RunObserverWiringTests
      *
      * The gate rules are tested on RunObserverRegistry, which the context owns.
      */
-    TEST_F(Medium_RuntimeContextObservers, AnAddedObserverHearsRunsUntilItIsRemoved)
+    TEST_F(Small_RuntimeContextObservers, AnAddedObserverHearsRunsUntilItIsRemoved)
     {
         const auto observer = std::make_shared<SushiRuntime::RecordingObserver>();
         const std::uint64_t id = context().add_run_observer(observer);

@@ -44,6 +44,8 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -61,6 +63,7 @@
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 
+#include "support/host_runtime.hpp"
 #include "support/tolerance.hpp"
 
 using namespace SushiRuntime;
@@ -754,133 +757,103 @@ namespace GraphTests
 {
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Graph;
-    using SushiRuntime::Test::make_order_recorder;
 
-    /**
-     * @brief Tests sequential execution due to USM dependencies.
-     *
-     * Three tasks sharing one pointer must run strictly in order (RAW, then WAR/WAW).
-     */
-    TEST(Medium_TaskGraphTest, SequentialUSMDependency)
+    /** @brief Builds a host context on a seeded executor and a manual clock. */
+    std::shared_ptr<RuntimeContext> make_host_context()
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskGraph graph;
-
-        int dummy_data = 0;
-        void* usm_ptr = &dummy_data;
-
-        std::vector<int> execution_order;
-        std::mutex order_mutex;
-
-        constexpr auto delay = std::chrono::milliseconds(5);
-
-        TaskMetadata meta1{"Writer1"};
-        graph.add_task(meta1, {}, {SushiRuntime::BufferRegion(usm_ptr)}, make_order_recorder(1, execution_order, order_mutex, delay));
-
-        TaskMetadata meta2{"Reader1"};
-        graph.add_task(meta2, {SushiRuntime::BufferRegion(usm_ptr)}, {}, make_order_recorder(2, execution_order, order_mutex, delay));
-
-        TaskMetadata meta3{"Writer2"};
-        graph.add_task(meta3, {}, {SushiRuntime::BufferRegion(usm_ptr)}, make_order_recorder(3, execution_order, order_mutex, delay));
-
-        auto compiled_graph = graph.compile().value();
-        EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
-
-        ctx.execution_engine().execute(std::move(compiled_graph)).value();
-
-        std::lock_guard<std::mutex> lock(order_mutex);
-        ASSERT_EQ(execution_order.size(), 3);
-        EXPECT_EQ(execution_order[0], 1);
-        EXPECT_EQ(execution_order[1], 2);
-        EXPECT_EQ(execution_order[2], 3);
+        HostContextParts parts;
+        parts.executor = std::make_shared<SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
+        parts.clock = std::make_shared<ManualClock>();
+        return RuntimeContext::create_host(parts).value();
     }
 
     /**
-     * @brief Tests concurrent execution of independent tasks.
+     * @brief Tests sequential execution due to memory dependencies.
      *
-     * Tasks with no shared memory are independent roots and execute concurrently.
+     * Three nodes sharing one cell must run strictly in order (RAW, then WAR/WAW).
      */
-    TEST(Medium_TaskGraphTest, IndependentRootsExecution)
+    TEST(Small_TaskGraphTest, SequentialUSMDependency)
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
+        const auto ctx_owner = make_host_context();
         RuntimeContext& ctx = *ctx_owner;
         TaskGraph graph;
 
-        constexpr int NUM_TASKS = 10;
-        std::atomic<int> completed_tasks{0};
+        int shared_cell = 0;
+        const BufferRegion cell(&shared_cell);
+        std::vector<int> execution_order;
 
-        auto host_task = [&completed_tasks](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-        {
-            completed_tasks.fetch_add(1, std::memory_order_relaxed);
-            return {};
-        };
+        graph.add_native({}, {cell}, [&execution_order] { execution_order.push_back(1); });
+        graph.add_native({cell}, {}, [&execution_order] { execution_order.push_back(2); });
+        graph.add_native({}, {cell}, [&execution_order] { execution_order.push_back(3); });
 
-        for (int i = 0; i < NUM_TASKS; ++i)
-        {
-            TaskMetadata meta{"IndependentNode"};
-            graph.add_task(meta, {}, {}, host_task);
-        }
+        auto compiled_graph = graph.compile().value();
+        EXPECT_EQ(compiled_graph.roots.size(), 1u) << "Graph should only have 1 root due to linear dependency.";
+
+        ctx.execution_engine().execute(compiled_graph).value();
+
+        EXPECT_EQ(execution_order, (std::vector<int>{1, 2, 3}));
+    }
+
+    /**
+     * @brief Tests that independent nodes are all roots and all run.
+     *
+     * Nodes with no shared memory are independent roots.
+     */
+    TEST(Small_TaskGraphTest, IndependentRootsExecution)
+    {
+        const auto ctx_owner = make_host_context();
+        RuntimeContext& ctx = *ctx_owner;
+        TaskGraph graph;
+
+        constexpr std::size_t NUM_TASKS = 10;
+        std::size_t completed_tasks = 0;
+
+        for (std::size_t i = 0; i < NUM_TASKS; ++i)
+            graph.add_native({}, {}, [&completed_tasks] { ++completed_tasks; });
 
         auto compiled_graph = graph.compile().value();
 
         EXPECT_EQ(compiled_graph.roots.size(), NUM_TASKS);
 
-        ctx.execution_engine().execute(std::move(compiled_graph)).value();
+        ctx.execution_engine().execute(compiled_graph).value();
 
-        EXPECT_EQ(completed_tasks.load(), NUM_TASKS);
+        EXPECT_EQ(completed_tasks, NUM_TASKS);
     }
 
     /**
      * @brief Tests execution of a diamond DAG.
      *
-     * A(write X) -> B,C(read X) -> D(write X). B and C run in parallel after A; D waits for both resolving the WAR hazard.
+     * A(write X) -> B,C(read X) -> D(write X). B and C run after A; D waits for both resolving the WAR hazard.
      */
-    TEST(Medium_TaskGraphTest, FanOutFanInDiamond)
+    TEST(Small_TaskGraphTest, FanOutFanInDiamond)
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
+        const auto ctx_owner = make_host_context();
         RuntimeContext& ctx = *ctx_owner;
         TaskGraph graph;
 
         int shared_resource = 0;
-        void* ptr = &shared_resource;
+        const BufferRegion cell(&shared_resource);
+        int current_phase = 0;
+        int readers_after_writer = 0;
 
-        std::atomic<int> current_phase{0};
-        std::atomic<bool> fan_out_success{true};
-
-        TaskMetadata metaA{"Node_A"};
-        graph.add_task(metaA, {}, {SushiRuntime::BufferRegion(ptr)}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+        graph.add_native({}, {cell}, [&current_phase] { current_phase = 1; });
+        auto reader = [&current_phase, &readers_after_writer]
         {
-            current_phase.store(1, std::memory_order_release);
-            return {};
-        });
-
-        auto reader_task = [&current_phase, &fan_out_success](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-        {
-            if (current_phase.load(std::memory_order_acquire) < 1)
-                fan_out_success = false;
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            return {};
+            if (current_phase >= 1)
+                ++readers_after_writer;
         };
-
-        TaskMetadata metaB{"Node_B"};
-        TaskMetadata metaC{"Node_C"};
-        graph.add_task(metaB, {SushiRuntime::BufferRegion(ptr)}, {}, reader_task);
-        graph.add_task(metaC, {SushiRuntime::BufferRegion(ptr)}, {}, reader_task);
-
-        TaskMetadata metaD{"Node_D"};
-        graph.add_task(metaD, {}, {SushiRuntime::BufferRegion(ptr)}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+        graph.add_native({cell}, {}, reader);
+        graph.add_native({cell}, {}, reader);
+        graph.add_native({}, {cell}, [&current_phase, &readers_after_writer]
         {
-            current_phase.store(3, std::memory_order_release);
-            return {};
+            current_phase = readers_after_writer == 2 ? 3 : -1;
         });
 
         auto compiled = graph.compile().value();
-        ctx.execution_engine().execute(std::move(compiled)).value();
+        ctx.execution_engine().execute(compiled).value();
 
-        EXPECT_TRUE(fan_out_success) << "Readers executed before the initial writer completed!";
-        EXPECT_EQ(current_phase.load(), 3) << "Final writer did not complete successfully.";
+        EXPECT_EQ(readers_after_writer, 2) << "Readers executed before the initial writer completed!";
+        EXPECT_EQ(current_phase, 3) << "Final writer ran before both readers finished.";
     }
 } // namespace GraphTests
 

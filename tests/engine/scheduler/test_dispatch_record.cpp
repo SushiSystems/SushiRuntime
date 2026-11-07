@@ -225,10 +225,7 @@ TEST_F(Medium_DispatchRecord, ACompleteProfiledEventStillCountsAsSubmitted)
 }
 
 /** @brief Tests that with profiling off a complete event is no device work. */
-TEST_F(Medium_DispatchRecord, ACompleteEventIsNoWorkWithProfilingOff)
+TEST(Small_DispatchRecord, ACompleteEventIsNoWorkWithProfilingOff)
 {
-    sycl::event event = queue().submit(
-        [](sycl::handler& h) { SushiRuntime::Detail::enqueue_host_task(h, []() {}); });
-    event.wait();
-    EXPECT_FALSE(submitted_device_work(true, false, event, {}));
+    EXPECT_FALSE(submitted_device_work(true, false, sycl::event{}, {}));
 }

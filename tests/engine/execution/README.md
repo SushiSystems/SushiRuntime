@@ -64,7 +64,7 @@ overlapping host-to-device and device-to-host transfers with compute helps. Both
 `Benchmark_GraphCompile`. The transfer test does identical work on each side and prints whether
 each result matches the host reference, within the rounding bound `tests/support/tolerance.hpp`
 derives from the `expected()` recurrence. It sets no bar, because real overlap needs a discrete GPU
-with copy engines. That a compiled graph has roots is held by the `Medium_TaskGraphTest` tests of
+with copy engines. That a compiled graph has roots is held by the `Small_TaskGraphTest` tests of
 `test_scheduler_execution_engine.cpp`.
 
 `min_compile_us` uses a rolling set of 16 buffers so that consecutive tasks form real
@@ -123,13 +123,13 @@ reads the interface's default through it.
 
 ### `ABlockingRunIsInProgressUntilExecuteReturns`
 
-The run's one host task asks the engine and stores the answer, which must be true; after
+The run's one host node asks the engine on a host context and stores the answer, which must be true; after
 `execute()` returns the answer is false.
 
 ### `AnAsynchronousRunIsInProgressUntilCompleteReturns`
 
-The answer is true between `submit()` and `complete()` and false after. The task cannot finish
-before the first check, because it waits on the gate.
+The answer is true between `submit()` and `complete()` and false after. The node cannot run
+before the first check, because `submit()` runs nothing until `complete()` drains the executor.
 
 ### `ABlockingRunWhoseTaskThrowsReturnsKernelFailed` and `AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete`
 
@@ -178,12 +178,12 @@ second queue and never the plain queue handle.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
-`Medium_InvalidNUMAQueue` and `Medium_InvalidNUMAAllocation` cover the queue a NUMA ID routes to and the
+`Medium_InvalidNUMAQueue` and `Small_InvalidNUMAAllocation` cover the queue a NUMA ID routes to and the
 USM records of `memory()`: the context degrades without failing on an id no node has. The queue test runs
-one row for 999 and one for -5. `Medium_LiveUSMCount` follows the live count through allocate and release,
+one row for 999 and one for -5. `Small_LiveUSMCount` follows the live count through allocate and release,
 and through adopt and forget. `Medium_AlignedAllocation` is one row per kind, alignment and byte count;
 a shared row skips where the toolchain's aligned shared allocation ignores the alignment, which the
-fixture probes before the body runs. `Medium_AlignedRecording` is one row per kind. Discovery and NUMA
+fixture probes before the body runs. `Small_AlignedRecording` is one row per kind. Discovery and NUMA
 mapping alone are tested in `tests/platform/topology/`.
 
 `Large_RuntimeContextNvidia` validates that an NVIDIA GPU is discovered through the CUDA SYCL backend and
@@ -214,12 +214,12 @@ count is 2 after the context is destroyed: the destructor stops the coordinator 
 
 ### Observer wiring
 
-`Medium_RuntimeContextObservers` keeps the one test of the context's wiring. The gate and delivery rules
+`Small_RuntimeContextObservers` keeps the one test of the context's wiring. The gate and delivery rules
 are tested on `RunObserverRegistry`, which the context owns, in `test_run_observer_registry.cpp`.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RuntimeContextObservers.AnAddedObserverHearsRunsUntilItIsRemoved` | An observer added to the context hears the runs it delivers, the context wants timing while it is added, and removing it ends both. |
+| `Small_RuntimeContextObservers.AnAddedObserverHearsRunsUntilItIsRemoved` | An observer added to the context hears the runs it delivers, the context wants timing while it is added, and removing it ends both. |
 
 ## test_scheduler_execution_engine.cpp
 

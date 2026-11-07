@@ -30,7 +30,7 @@ submission rules run as rows over their inputs; only the two tests that read a r
 | `AnUnprofiledSubmissionRecordsNoSubmittingThread` | With profiling off no submitting thread is recorded. |
 | `ASubmissionThatReachedADeviceWaitsOnItsEvent` | A submission that reached a device is pushed with its event, not ready. |
 | `Medium_DispatchRecord.ACompleteProfiledEventStillCountsAsSubmitted` | A host-task event from a profiling queue that completed before the read still counts as submitted. |
-| `Medium_DispatchRecord.ACompleteEventIsNoWorkWithProfilingOff` | With profiling off a complete event is no device work. |
+| `Small_DispatchRecord.ACompleteEventIsNoWorkWithProfilingOff` | With profiling off a complete event is no device work. |
 
 The fixture derives its profiling queue from the context and device of the program's queue, once per
 process, because the program's queue does not profile.

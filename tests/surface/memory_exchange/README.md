@@ -9,12 +9,12 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_memory_exchange.cpp
 
-The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, each through a `CapabilityCache` of its own that answers from a `ScriptedCapabilityProbe`, on the program's one runtime. The suite `Medium_MemoryExchangeImport` holds the import test that keeps the wiring; it skips on a device that is not a GPU, which refuses every import before it reads the descriptor.
+The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, the capabilities and the import through a `CapabilityCache` of its own that answers from a `ScriptedCapabilityProbe`, on the program's one runtime, because `Interop::capabilities` and the import call a device queue and have no host path. The host export runs small, on a host runtime. The suite `Medium_MemoryExchangeImport` holds the import test that keeps the wiring; it skips on a device that is not a GPU, which refuses every import before it reads the descriptor.
 
 | Test | What it proves |
 | --- | --- |
-| `CapabilitiesOfDeviceZero` | Device 0 reports the capabilities its probe answered. |
-| `AHostExportGivesTheSizeAsked` | A host export gives an allocation of the size asked. |
+| `CapabilitiesOfDeviceZero` | Device 0 reports the capabilities its probe answered. Suite `Medium_MemoryExchange`. |
+| `AHostExportGivesTheSizeAsked` | A host export gives an allocation of the size asked. Suite `Small_MemoryExchange`. |
 | `AnImportWithNoKindIsRefused` | An import runs the descriptor checks: one naming no handle kind is refused with InvalidAccess, and the message names `Unspecified`. Suite `Medium_MemoryExchangeImport`. |
 
 ## test_descriptor_refusal.cpp

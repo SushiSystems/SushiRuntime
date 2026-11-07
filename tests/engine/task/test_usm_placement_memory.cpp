@@ -28,24 +28,26 @@
  * @author Mustafa Garip
  */
 
+#include <memory>
 #include <optional>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
 #include "support/placement_memory_contract.hpp"
-#include "support/runtime_environment.hpp"
 
 using SushiRuntime::Internal::Graph::USMPlacementMemory;
 
-/** @brief Holds an allocator over two entries that share the program queue; a test records ownership with adopt(). */
-class Medium_USMPlacementMemoryContract : public TestSupport::RuntimeTest
+/** @brief Holds an allocator over two host devices that share one context; a test records ownership with adopt(). */
+class Small_USMPlacementMemoryContract : public ::testing::Test
 {
     protected:
-        Medium_USMPlacementMemoryContract() : allocator_({queue(), queue()}), memory_(allocator_)
+        Small_USMPlacementMemoryContract()
+            : allocator_(std::make_unique<SushiRuntime::Internal::Memory::HostUSMSource>(2)),
+              memory_(allocator_)
         {
 
         }
@@ -57,14 +59,14 @@ class Medium_USMPlacementMemoryContract : public TestSupport::RuntimeTest
 };
 
 /** @brief Tests that an address nobody recorded has no device. */
-TEST_F(Medium_USMPlacementMemoryContract, AnUnrecordedAddressHasNoDevice)
+TEST_F(Small_USMPlacementMemoryContract, AnUnrecordedAddressHasNoDevice)
 {
     int cell = 0;
     TestSupport::expect_unrecorded_address_has_no_device(memory_, &cell);
 }
 
 /** @brief Tests that an adopted address names its device. */
-TEST_F(Medium_USMPlacementMemoryContract, AnAdoptedAddressNamesItsDevice)
+TEST_F(Small_USMPlacementMemoryContract, AnAdoptedAddressNamesItsDevice)
 {
     int cell = 0;
     allocator_.adopt(&cell, 1, sizeof(cell), std::nullopt);
@@ -75,13 +77,13 @@ TEST_F(Medium_USMPlacementMemoryContract, AnAdoptedAddressNamesItsDevice)
 }
 
 /** @brief Tests that the device count is the number of entries of the allocator. */
-TEST_F(Medium_USMPlacementMemoryContract, TheDeviceCountIsTheNumberOfEntriesOfTheAllocator)
+TEST_F(Small_USMPlacementMemoryContract, TheDeviceCountIsTheNumberOfEntriesOfTheAllocator)
 {
     TestSupport::expect_device_count(memory_, 2);
 }
 
-/** @brief Tests that two entries that share one queue share its context. */
-TEST_F(Medium_USMPlacementMemoryContract, TwoEntriesOfOneQueueShareItsContext)
+/** @brief Tests that two host devices share one context. */
+TEST_F(Small_USMPlacementMemoryContract, TwoHostDevicesShareOneContext)
 {
     TestSupport::expect_devices_share_a_context(memory_, 0, 1);
 }
