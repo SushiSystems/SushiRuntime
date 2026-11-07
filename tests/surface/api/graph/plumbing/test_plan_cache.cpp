@@ -40,6 +40,7 @@
 #include "hooked_copy_task.hpp"
 #include "support/installed_offload.hpp"
 #include "support/host_runtime.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Graph::InMemoryOffloadCoordinator;
@@ -52,6 +53,14 @@ namespace
 
 /** @brief Fixture of the plan-cache tests, which compile graphs on a host runtime. */
 class Small_PlanCache : public TestSupport::HostRuntimeTest
+{
+};
+
+/**
+ * @brief Fixture of the plan-cache tests that install an offload coordinator, which a host
+ *        runtime does not take, so they compile graphs on the program's runtime.
+ */
+class Medium_PlanCacheOffload : public TestSupport::RuntimeTest
 {
 };
 
@@ -93,7 +102,7 @@ TEST_F(Small_PlanCache, ARuleChangeDuringACompileRecompilesOnTheNextRun)
 }
 
 /** @brief Tests that a coordinator is prepared with the rules the compile read, not with a set changed during it. */
-TEST_F(Small_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
+TEST_F(Medium_PlanCacheOffload, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
 {
     const Runtime& rt = runtime();
     const InstalledCoordinator installed(rt);
@@ -117,7 +126,7 @@ TEST_F(Small_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
 }
 
 /** @brief Tests that a dynamic graph hands the nodes of each rebuilt region to the coordinator. */
-TEST_F(Small_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion)
+TEST_F(Medium_PlanCacheOffload, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion)
 {
     const InstalledCoordinator installed(runtime());
     auto world = runtime().dynamic_graph();
@@ -133,7 +142,7 @@ TEST_F(Small_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRe
 }
 
 /** @brief Tests that installing or removing an offload coordinator makes the plan stale. */
-TEST_F(Small_PlanCache, Regression_InstallingOrRemovingACoordinatorRecompiles)
+TEST_F(Medium_PlanCacheOffload, Regression_InstallingOrRemovingACoordinatorRecompiles)
 {
     auto graph = runtime().graph();
     graph.add_untracked(std::size_t{4}, [](std::size_t) {});

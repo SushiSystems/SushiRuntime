@@ -110,7 +110,7 @@ class Small_NodeOptions : public TestSupport::HostRuntimeTest
 };
 
 /** @brief Fixture of the tests of the id of a graph, run on a host runtime. */
-class Small_GraphId : public TestSupport::HostRuntimeTest
+class Small_GraphIdOfARun : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -215,7 +215,7 @@ TEST_F(Small_NodeOptions, ANodeThatStatesNoOriginHasNone)
 }
 
 /** @brief Tests that a run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. */
-TEST_F(Small_GraphId, ARunCarriesTheIdOfItsGraph)
+TEST_F(Small_GraphIdOfARun, ARunCarriesTheIdOfItsGraph)
 {
     auto first_buffer = runtime().buffer<float>(K_N).value();
     auto second_buffer = runtime().buffer<float>(K_N).value();
@@ -248,7 +248,7 @@ TEST_F(Small_GraphId, ARunCarriesTheIdOfItsGraph)
 }
 
 /** @brief Tests that an async step is observed under the id of the graph that started it. */
-TEST_F(Small_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
+TEST_F(Small_GraphIdOfARun, AnAsyncStepCarriesTheIdOfItsGraph)
 {
     ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
@@ -262,7 +262,7 @@ TEST_F(Small_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
 }
 
 /** @brief Tests that a graph keeps its id across a move and the moved-from one reports 0. */
-TEST_F(Small_GraphId, AMovedFromGraphReportsZero)
+TEST_F(Small_GraphIdOfARun, AMovedFromGraphReportsZero)
 {
     auto original = runtime().graph();
     const std::uint64_t id = original.id();
@@ -287,7 +287,7 @@ namespace
 } // namespace
 
 /** @brief Tests that every graph takes its own id and none takes 0. */
-TEST_F(Small_GraphId, NoGraphHasIdZero)
+TEST_F(Small_GraphIdOfARun, NoGraphHasIdZero)
 {
 
     const std::set<std::uint64_t> ids = ids_of_new_graphs(runtime(), 8);

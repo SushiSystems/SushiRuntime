@@ -50,13 +50,10 @@ namespace TestSupport
     class HostRuntimeTest : public ::testing::Test
     {
         protected:
-            /** @brief Makes the test's runtime on the fixture's executor and clock. */
-            void SetUp() override
+            /** @brief Makes the test's runtime on the fixture's executor and clock, before any SetUp(). */
+            HostRuntimeTest() : runtime_(make_runtime(executor_, clock_))
             {
-                SushiRuntime::HostRuntimeConfig config;
-                config.executor = executor_;
-                config.clock = clock_;
-                runtime_.emplace(SushiRuntime::Runtime::create_host(config).value());
+
             }
 
             /** @brief Returns the test's host runtime. */
@@ -69,6 +66,17 @@ namespace TestSupport
             [[nodiscard]] SushiRuntime::ManualClock& clock() { return *clock_; }
 
         private:
+            /** @brief Returns a host runtime on @p executor and @p clock. */
+            [[nodiscard]] static SushiRuntime::Runtime make_runtime(
+                const std::shared_ptr<SushiRuntime::SeededExecutor>& executor,
+                const std::shared_ptr<SushiRuntime::ManualClock>& clock)
+            {
+                SushiRuntime::HostRuntimeConfig config;
+                config.executor = executor;
+                config.clock = clock;
+                return SushiRuntime::Runtime::create_host(config).value();
+            }
+
             /** @brief Runs the runtime's nodes, in the order the fixture's seed draws. */
             std::shared_ptr<SushiRuntime::SeededExecutor> executor_ =
                 std::make_shared<SushiRuntime::SeededExecutor>(K_HOST_RUNTIME_SEED);
@@ -77,7 +85,7 @@ namespace TestSupport
             std::shared_ptr<SushiRuntime::ManualClock> clock_ =
                 std::make_shared<SushiRuntime::ManualClock>();
 
-            /** @brief The test's runtime, made in SetUp(). */
+            /** @brief The test's runtime; declared after the executor and the clock it is made on. */
             std::optional<SushiRuntime::Runtime> runtime_;
     };
 } // namespace TestSupport

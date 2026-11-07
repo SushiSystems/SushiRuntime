@@ -258,10 +258,10 @@ What tells one graph's runs from another's in a profile: its label, its id and i
 | `Small_GraphLabel.ADynamicGraphCarriesItsLabel` | A dynamic graph takes a label too. |
 | `Small_NodeOptions.OriginIsCopiedAtRecordTime` | The origin a caller states is copied when the node is recorded, so its storage may go. |
 | `Small_NodeOptions.ANodeThatStatesNoOriginHasNone` | A node that states no origin has an empty one. |
-| `Small_GraphId.ARunCarriesTheIdOfItsGraph` | A run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. |
-| `Small_GraphId.AnAsyncStepCarriesTheIdOfItsGraph` | An async step is observed under the id of the graph that started it. |
-| `Small_GraphId.AMovedFromGraphReportsZero` | A graph keeps its id across a move and the moved-from one reports 0. |
-| `Small_GraphId.NoGraphHasIdZero` | Every graph takes its own id and none takes 0. |
+| `Small_GraphIdOfARun.ARunCarriesTheIdOfItsGraph` | A run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. |
+| `Small_GraphIdOfARun.AnAsyncStepCarriesTheIdOfItsGraph` | An async step is observed under the id of the graph that started it. |
+| `Small_GraphIdOfARun.AMovedFromGraphReportsZero` | A graph keeps its id across a move and the moved-from one reports 0. |
+| `Small_GraphIdOfARun.NoGraphHasIdZero` | Every graph takes its own id and none takes 0. |
 
 
 ## test_register_profiler_parts/test_runtime_session.cpp

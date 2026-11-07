@@ -68,6 +68,9 @@ namespace SushiRuntime
 
                 [[nodiscard]] std::string driver_of(std::size_t device) const override
                 {
+                    // A host device has no SYCL device behind it to ask.
+                    if (!context_->devices().holds_queues())
+                        return "unknown";
                     try
                     {
                         return context_->devices().queue(device).get_device()

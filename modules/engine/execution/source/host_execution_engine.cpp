@@ -47,6 +47,7 @@
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 
 #include "run_observation_fill.hpp"
@@ -199,7 +200,8 @@ namespace SushiRuntime
 
         void HostExecutionEngine::dispatch(Internal::Graph::Node& node)
         {
-            if (node.is_sentinel)
+            // The sentinel is told by its address: only the scheduler engine marks it.
+            if (&node == running_->sentinel.get())
             {
                 finish_run();
                 return;
@@ -209,6 +211,9 @@ namespace SushiRuntime
                                  (node.bindings_ && !node.bindings_->enabled.load());
             if (!skipped)
             {
+                // A node that submits work states its widths, as its dispatch would on a device.
+                const Internal::Graph::NodeWidths widths = node.submits_device_work()
+                    ? Internal::Graph::snapshot_widths(node) : Internal::Graph::NodeWidths{};
                 const std::uint64_t start = clock_->now_ns();
                 Result<void> ran = run_body(node);
                 const std::uint64_t end = clock_->now_ns();
@@ -219,6 +224,8 @@ namespace SushiRuntime
                     Internal::Observability::DispatchFacts facts;
                     facts.node_index = node.registration_index;
                     facts.invocation = step_;
+                    facts.launched_width = widths.launched;
+                    facts.live_width = widths.live;
                     running_->profiling_ledger.record(
                         facts, Internal::Observability::DispatchTimes{start, start, end});
                 }
