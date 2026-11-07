@@ -199,11 +199,12 @@ namespace SushiRuntime
                     slot.built.store(true, std::memory_order_release);
                 });
 
+                info.driver_version = driver_version_of(descriptor.device);
                 SR_LOG_INFO(K_DEVICE_LOG_CATEGORY,
                             "Device: {} | Backend: {} | Driver: {} | NUMA: {} | Memory: {} MB | "
                             "Compute units: {}",
                             info.name, backend_name(info.backend),
-                            driver_version_of(descriptor.device), info.numa_node,
+                            info.driver_version, info.numa_node,
                             info.memory_bytes / (1024 * 1024), info.compute_units);
 
                 plain_offsets_.push_back(static_cast<std::uint8_t>(offset));
@@ -222,18 +223,14 @@ namespace SushiRuntime
         {
             const std::size_t device_count = host_devices.size();
 
+            // A set of host devices holds an inventory and no queue slot at all.
             infos_.reserve(device_count);
-            plain_offsets_.reserve(device_count);
-            // Move-assigned, not resized: once_flag and atomic elements are not movable.
-            slots_ = std::vector<LazyQueue>(device_count * K_FLAVOUR_COUNT);
-
             for (std::size_t index = 0; index < device_count; ++index)
             {
                 DeviceDescription& info = host_devices[index];
                 info.index = index;
                 if (NUMARouteTable::placed_node(info.numa_node) != info.numa_node)
                     info.numa_node = 0;
-                plain_offsets_.push_back(0);
                 infos_.push_back(std::move(info));
             }
 
@@ -316,7 +313,7 @@ namespace SushiRuntime
 
         bool DeviceQueueSet::has_profiling_queue(std::size_t index) const noexcept
         {
-            if (index >= infos_.size())
+            if (index * K_FLAVOUR_COUNT >= slots_.size())
                 return false;
 
             const LazyQueue* device_slots = &slots_[index * K_FLAVOUR_COUNT];
@@ -336,18 +333,13 @@ namespace SushiRuntime
             return queue(numa_routes_.device_or_next(device, fallback_numa));
         }
 
-        bool DeviceQueueSet::holds_queues() const noexcept
-        {
-            return !infos_.empty() && plain_slot(0).built.load(std::memory_order_acquire);
-        }
-
         std::vector<sycl::queue> DeviceQueueSet::plain_queues() const
         {
             std::vector<sycl::queue> queues;
-            queues.reserve(infos_.size());
-            for (std::size_t index = 0; index < infos_.size(); ++index)
-                if (plain_slot(index).built.load(std::memory_order_acquire))
-                    queues.push_back(*plain_slot(index).queue);
+            const std::size_t devices_with_slots = slots_.size() / K_FLAVOUR_COUNT;
+            queues.reserve(devices_with_slots);
+            for (std::size_t index = 0; index < devices_with_slots; ++index)
+                queues.push_back(*plain_slot(index).queue);
             return queues;
         }
 
@@ -391,7 +383,7 @@ namespace SushiRuntime
         void DeviceQueueSet::require_queue(std::size_t index) const
         {
             require_index(index);
-            SR_VERIFY(plain_slot(index).built.load(std::memory_order_acquire),
+            SR_VERIFY(index * K_FLAVOUR_COUNT < slots_.size(),
                       ("Device " + std::to_string(index) + " (" + infos_[index].name +
                        ") is a host device and holds no queue; a host runtime submits no work "
                        "to a device.")

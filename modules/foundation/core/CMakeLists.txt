@@ -7,4 +7,5 @@ sushiruntime_add_module(
     NAME core TIER foundation
     SOURCES
         assert.cpp
+        thread_pool_executor.cpp
         version.cpp)

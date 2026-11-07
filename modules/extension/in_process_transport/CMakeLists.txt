@@ -7,5 +7,6 @@ sushiruntime_add_module(
     NAME in_process_transport TIER extension
     SOURCES
         in_process_transport.cpp
+        transport_drives.cpp
     DEPENDS core log transport
     PRIVATE_DEPENDS wire frame_transport)

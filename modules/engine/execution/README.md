@@ -238,23 +238,35 @@ so the context holds any engine. The defaults answer an engine with no offload: 
 `!run_in_progress()`, a coordinator that is not null stops the process, and asking for the sink
 stops it too. `SchedulerExecutionEngine` overrides all four.
 
-## host_execution_engine.hpp
+## The host engine (source/host_execution_engine.hpp)
 
 ### HostExecutionEngine
 
-The engine of a host runtime. Each ready node is one job of a `SeededExecutor`: the job runs the
-node and posts the successors its completion frees, so the dependencies order what they order and
-the executor's seed orders the rest. A host node runs its body; a launch runs its `host_form`; a
-node with neither fails the run with `Unsupported`, named by `name_failure()`. After a failure or
-a `cancel()` the remaining nodes are skipped and still release their successors, so the run
-reaches its sentinel.
+The engine of a host runtime, private to the module: `RuntimeContext::create_host()` builds it and
+callers reach it as an `ExecutionEngine`. Each ready node is one job of the `Executor` it was given:
+the job runs the node through `Node::run_on_host()` and posts the successors its completion frees,
+so the dependencies order what they order and a `SeededExecutor`'s seed orders the rest. A host node
+runs its body; a launch runs its `host_form`; `run_on_host()` refuses any other node with
+`Unsupported`, which `name_failure()` names. After a failure or a `cancel()` the remaining nodes
+are skipped and still release their successors, so the run reaches its sentinel.
 
-`submit()` posts the roots and runs nothing; `complete()` steps the executor until the sentinel
-has run, and stops the process if the executor empties first. A test that owns the executor can
-step it between the two to replay an interleaving from its seed. `execute()` is the two in a row.
-A run that records timing stamps each dispatch from the engine's `Clock`: submit and start are the
-reading before the body, end the reading after it. The engine starts no thread, and every call is
-made on the thread that drives the executor.
+`submit()` posts the roots and runs nothing; `complete()` steps the executor on the calling thread
+until the sentinel has run and every job has finished. An executor with threads of its own runs jobs
+beside it, and the engine keeps the failure, the count and the ledger under one lock. A test that
+owns a `SeededExecutor` can step it between the two to replay an interleaving from its seed.
+`execute()` is the two in a row. A run that records timing stamps each dispatch from the engine's
+`Clock`: submit and start are the reading before the body, end the reading after it.
+
+## offload_host.hpp
+
+### OffloadHost
+
+What an engine that runs offload gives the context: `install_offload()`, `offload_sink()` and the
+idle hold of `begin_idle_change()` and `end_idle_change()`. Only `SchedulerExecutionEngine`
+implements it, and `RuntimeContext` keeps it beside the engine, set when `create()` builds the
+engine. A host context holds none: its `offload_sink()` is a `RefusingOffloadSink`, installing a
+coordinator stops the process, and a change of placement rules holds only while no run is in
+progress. `ExecutionEngine` declares no offload member and no default that stops the process.
 
 ## run_observer_registry.hpp
 

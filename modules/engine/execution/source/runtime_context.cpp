@@ -53,17 +53,20 @@
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
+#include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include <SushiRuntime/topology/in_memory_topology_provider.hpp>
-#include <SushiRuntime/topology/matrix_distance_model.hpp>
+#include <SushiRuntime/topology/host_topology.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/execution/host_execution_engine.hpp>
+#include <SushiRuntime/task/refusing_offload_sink.hpp>
+#include <SushiRuntime/execution/offload_host.hpp>
 #include <SushiRuntime/execution/scheduler_execution_engine.hpp>
+
+#include "host_execution_engine.hpp"
 
 namespace SushiRuntime
 {
@@ -166,7 +169,8 @@ namespace SushiRuntime
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(std::move(descriptors), false),
-                  memory(std::make_shared<Internal::Memory::USMAllocator>(devices.plain_queues()))
+                  memory(std::make_shared<Internal::Memory::USMAllocator>(
+                      Internal::Memory::make_sycl_usm_source(devices.plain_queues())))
             {
             }
 
@@ -184,7 +188,7 @@ namespace SushiRuntime
                   topology(provider, std::move(distance_model)),
                   devices(std::move(host_devices)),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      std::make_unique<Internal::Memory::HostUSMSource>(devices.count())))
+                      Internal::Memory::make_host_usm_source(devices.count())))
             {
             }
 
@@ -243,6 +247,12 @@ namespace SushiRuntime
 
             /** @brief Installed offload coordinator, co-owned; null when there is none. */
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
+
+            /** @brief The engine as an OffloadHost, set at create; null for an engine that runs none. */
+            OffloadHost* offload_host = nullptr;
+
+            /** @brief The sink a context with no OffloadHost hands out; it refuses every node. */
+            Internal::Graph::RefusingOffloadSink refusing_sink;
 
             /**
              * @brief Fills a record from the one in force, one generation above it, and
@@ -313,7 +323,9 @@ namespace SushiRuntime
                     settings, *provider, std::move(distance_model), std::move(*descriptors))));
 
                 // The engine reads the context while it is built, so impl_ is complete first.
-                context->impl_->engine = std::make_unique<SchedulerExecutionEngine>(*context);
+                auto engine = std::make_unique<SchedulerExecutionEngine>(*context);
+                context->impl_->offload_host = engine.get();
+                context->impl_->engine = std::move(engine);
             });
             if (!built)
                 return initialization_failure(std::move(built.error()));
@@ -323,11 +335,12 @@ namespace SushiRuntime
         }
 
         Result<std::shared_ptr<RuntimeContext>>
-        RuntimeContext::create_host(const HostContextParts& parts)
+        RuntimeContext::create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
+                                    std::shared_ptr<const Clock> clock)
         {
-            SR_VERIFY(parts.device_count > 0,
+            SR_VERIFY(device_count > 0,
                       "RuntimeContext::create_host: pass a device count of at least 1.");
-            SR_VERIFY(parts.executor != nullptr && parts.clock != nullptr,
+            SR_VERIFY(executor != nullptr && clock != nullptr,
                       "RuntimeContext::create_host: pass an executor and a clock, not null.");
             RuntimeSettings settings;
             settings.worker_count = 1;
@@ -335,22 +348,14 @@ namespace SushiRuntime
             // Every run goes to the engine, since the chain submits to a device queue.
             settings.force_scheduler = true;
 
-            std::vector<DeviceDescription> host_devices(parts.device_count);
-            for (std::size_t index = 0; index < host_devices.size(); ++index)
-            {
-                host_devices[index].name = "host device " + std::to_string(index);
-                host_devices[index].kind = DeviceKind::CPU;
-            }
-
-            Internal::Topology::InMemoryTopologyProvider provider(
-                std::vector<Internal::Topology::HardwareNode>{}, std::vector<int>{0});
-            auto distance_model = std::make_shared<Internal::Topology::MatrixDistanceModel>(
-                std::vector<std::vector<int>>{{10}});
+            Internal::Topology::HostTopology machine =
+                Internal::Topology::make_host_topology(device_count);
             std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
-                settings, provider, std::move(distance_model), std::move(host_devices))));
+                settings, *machine.provider, std::move(machine.distance_model),
+                std::move(machine.devices))));
             const std::weak_ptr<RuntimeContext> observed = context;
             context->impl_->engine = std::make_unique<HostExecutionEngine>(
-                parts.executor, parts.clock, parts.device_count,
+                std::move(executor), std::move(clock), device_count,
                 [observed](const RunObservation& observation)
                 {
                     if (const std::shared_ptr<RuntimeContext> held = observed.lock())
@@ -412,7 +417,11 @@ namespace SushiRuntime
         {
             SR_VERIFY(impl_->engine != nullptr,
                       "ExecutionEngine is not initialized: the context is still being built.");
-            impl_->engine->install_offload(offload.get());
+            SR_VERIFY(impl_->offload_host != nullptr || offload == nullptr,
+                      "RuntimeContext::install_offload(): this context's engine runs no offload; "
+                      "install a coordinator on a runtime that has a device.");
+            if (impl_->offload_host != nullptr)
+                impl_->offload_host->install_offload(offload.get());
             const bool installed = offload != nullptr;
             // The engine holds the new address before the replaced coordinator is released.
             impl_->offload = std::move(offload);
@@ -451,9 +460,9 @@ namespace SushiRuntime
 
         Internal::Graph::OffloadSink& RuntimeContext::offload_sink()
         {
-            SR_VERIFY(impl_->engine != nullptr,
-                      "ExecutionEngine is not initialized: the context is still being built.");
-            return impl_->engine->offload_sink();
+            if (impl_->offload_host == nullptr)
+                return impl_->refusing_sink;
+            return impl_->offload_host->offload_sink();
         }
 
         bool RuntimeContext::set_placement_rules(std::shared_ptr<const PlacementRules> rules)
@@ -463,11 +472,16 @@ namespace SushiRuntime
             // Allocated before the hold, so a run waiting on it waits for no allocation.
             const std::shared_ptr<PlacementSnapshot> next = std::make_shared<PlacementSnapshot>();
             next->rules = std::move(rules);
-            if (!impl_->engine->begin_idle_change())
+            // An engine with no OffloadHost holds nothing more than the run it is not running.
+            OffloadHost* const host = impl_->offload_host;
+            const bool held = host != nullptr ? host->begin_idle_change()
+                                              : !impl_->engine->run_in_progress();
+            if (!held)
                 return false;
             impl_->publish(next, [](const PlacementSnapshot& current, PlacementSnapshot& filled)
                            { filled.offload_installed = current.offload_installed; });
-            impl_->engine->end_idle_change();
+            if (host != nullptr)
+                host->end_idle_change();
             return true;
         }
 

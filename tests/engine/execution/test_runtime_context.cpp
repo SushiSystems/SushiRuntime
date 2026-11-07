@@ -72,21 +72,10 @@
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
+#include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
-
-namespace
-{
-    /** @brief Builds a host context on a seeded executor and a manual clock. */
-    std::shared_ptr<Internal::Execution::RuntimeContext> make_host_context()
-    {
-        Internal::Execution::HostContextParts parts;
-        parts.executor = std::make_shared<SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
-        parts.clock = std::make_shared<ManualClock>();
-        return Internal::Execution::RuntimeContext::create_host(parts).value();
-    }
-} // namespace
 
 /** @brief Tests the profiling queue RuntimeContext::devices() builds against the plain queue. */
 namespace ProfilingQueueTests
@@ -292,7 +281,7 @@ namespace TopologyTests
                 /** @brief Builds the host context. */
                 void SetUp() override
                 {
-                    context_owner_ = make_host_context();
+                    context_owner_ = TestSupport::make_host_context();
                 }
 
                 /** @brief Returns the context. */
@@ -874,7 +863,7 @@ namespace RunObserverWiringTests
             /** @brief Builds the host context. */
             void SetUp() override
             {
-                context_owner_ = make_host_context();
+                context_owner_ = TestSupport::make_host_context();
             }
 
             /** @brief Returns the context. */

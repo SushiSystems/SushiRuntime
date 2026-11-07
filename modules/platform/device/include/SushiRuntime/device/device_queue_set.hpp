@@ -132,9 +132,6 @@ namespace SushiRuntime
                 [[nodiscard]] sycl::queue& queue_or_numa_local(std::optional<std::size_t> device,
                                                                int fallback_numa);
 
-                /** @brief Reports whether the set holds queues: false for a set of host devices. */
-                [[nodiscard]] bool holds_queues() const noexcept;
-
                 /** @brief Returns a copy of every plain queue handle, in device order. */
                 [[nodiscard]] std::vector<sycl::queue> plain_queues() const;
 

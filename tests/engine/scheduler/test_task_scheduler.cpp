@@ -52,6 +52,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
+#include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
@@ -133,7 +134,8 @@ namespace
                      int nodes)
                 : topology_(Internal::Topology::InMemoryTopologyProvider({}, std::move(core_to_numa)),
                             std::make_shared<Internal::Topology::MatrixDistanceModel>(distances_between(nodes))),
-                  devices_(std::move(entries), false), memory_(devices_.plain_queues())
+                  devices_(std::move(entries), false),
+                  memory_(Internal::Memory::make_sycl_usm_source(devices_.plain_queues()))
             {
             }
 

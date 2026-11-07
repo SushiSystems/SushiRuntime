@@ -46,7 +46,7 @@ class Small_USMPlacementMemoryContract : public ::testing::Test
 {
     protected:
         Small_USMPlacementMemoryContract()
-            : allocator_(std::make_unique<SushiRuntime::Internal::Memory::HostUSMSource>(2)),
+            : allocator_(SushiRuntime::Internal::Memory::make_host_usm_source(2)),
               memory_(allocator_)
         {
 

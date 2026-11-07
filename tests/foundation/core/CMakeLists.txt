@@ -15,6 +15,7 @@ sushiruntime_add_module_tests(
         test_determinism.cpp
         test_error.cpp
         test_error_translation.cpp
+        test_executor.cpp
         test_export.cpp
         test_node_cost.cpp
         test_operation_id.cpp
@@ -25,5 +26,6 @@ sushiruntime_add_module_tests(
         test_result.cpp
         test_span.cpp
         test_strong_id.cpp
+        test_thread_pool_executor.cpp
         test_sushi_ptr.cpp
         test_version.cpp)

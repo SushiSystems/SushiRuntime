@@ -45,6 +45,8 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -176,18 +178,37 @@ namespace SushiRuntime
         return Internal::ContextAccess::handle(std::move(*context));
     }
 
+    Result<Runtime> Runtime::create_host_runtime(const HostRuntimeConfig& config)
+    {
+        HostRuntimeConfig filled = config;
+        if (!filled.executor)
+            filled.executor = std::make_shared<SeededExecutor>();
+        if (!filled.clock)
+            filled.clock = std::make_shared<ManualClock>();
+        RuntimeConfig facts_config;
+        facts_config.node_name = filled.node_name;
+        facts_config.labels = filled.labels;
+        Result<std::shared_ptr<NodeFacts>> facts = create_topology(facts_config);
+        if (!facts)
+            return make_error(std::move(facts.error()));
+        Result<ContextHandle> context = create_host_context(filled);
+        if (!context)
+            return make_error(std::move(context.error()));
+        Result<void> attached = attach_facts(*context, std::move(*facts));
+        if (!attached)
+            return make_error(std::move(attached.error()));
+        return Runtime(std::move(*context));
+    }
+
     Result<ContextHandle> Runtime::create_host_context(const HostRuntimeConfig& config)
     {
-        Detail::install_fatal_logging();
+        // A host runtime installs nothing process-wide, so a small test may make one.
         if (config.device_count == 0)
             return make_error(Error{ErrorCode::InvalidArgument,
                                     "HostRuntimeConfig::device_count is 0; pass at least 1."});
-        Internal::Execution::HostContextParts parts;
-        parts.device_count = config.device_count;
-        parts.executor = config.executor;
-        parts.clock = config.clock;
         Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
-            Internal::Execution::RuntimeContext::create_host(parts);
+            Internal::Execution::RuntimeContext::create_host(config.device_count, config.executor,
+                                                             config.clock);
         if (!context)
             return make_error(std::move(context.error()));
         return Internal::ContextAccess::handle(std::move(*context));

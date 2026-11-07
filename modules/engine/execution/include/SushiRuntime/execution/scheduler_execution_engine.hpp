@@ -41,6 +41,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/offload_host.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 
 namespace SushiRuntime
@@ -55,7 +56,7 @@ namespace SushiRuntime
          * recreating worker threads. RuntimeContext::Impl shuts this engine down
          * before any queues or allocators are destroyed.
          */
-        class SUSHIRUNTIME_API SchedulerExecutionEngine final : public ExecutionEngine
+        class SUSHIRUNTIME_API SchedulerExecutionEngine final : public ExecutionEngine, public OffloadHost
         {
         public:
             /**

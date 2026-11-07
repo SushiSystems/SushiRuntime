@@ -46,7 +46,9 @@
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/in_process_transport/executor_drive.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
+#include <SushiRuntime/in_process_transport/thread_drive.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -392,17 +394,13 @@ namespace
             void connect(bool reconnect,
                          InProcessMasterOptions master_options = InProcessMasterOptions())
             {
-                master_options.executor = executor_;
-                master_options.clock = clock_;
-                master_ = InProcessTransport::make_master(fabric_, master_options);
+                master_ = InProcessTransport::make_master(fabric_, master_options, make_drive());
                 const TransportResult master_started = master_->start(master_events_);
                 ASSERT_TRUE(master_started.is_ok()) << master_started.message;
 
                 InProcessWorkerOptions options;
                 options.reconnect = reconnect;
-                options.executor = executor_;
-                options.clock = clock_;
-                worker_ = InProcessTransport::make_worker(fabric_, options);
+                worker_ = InProcessTransport::make_worker(fabric_, options, make_drive());
                 const TransportResult worker_started = worker_->start(worker_events_);
                 ASSERT_TRUE(worker_started.is_ok()) << worker_started.message;
 
@@ -414,13 +412,19 @@ namespace
                 ASSERT_TRUE(master_peer_.valid());
             }
 
-            /** @brief Makes the master endpoint with the rig's executor and clock, and starts nothing. */
+            /** @brief Makes the master endpoint on the rig's drive, and starts nothing. */
             [[nodiscard]] std::shared_ptr<InProcessTransport> make_master_endpoint()
             {
-                InProcessMasterOptions options;
-                options.executor = executor_;
-                options.clock = clock_;
-                return InProcessTransport::make_master(fabric_, options);
+                return InProcessTransport::make_master(fabric_, InProcessMasterOptions(),
+                                                       make_drive());
+            }
+
+            /** @brief Returns a drive over the rig's executor and clock, or a thread for a threaded rig. */
+            [[nodiscard]] std::unique_ptr<TransportDrive> make_drive() const
+            {
+                if (executor_ == nullptr)
+                    return std::make_unique<ThreadDrive>();
+                return std::make_unique<ExecutorDrive>(executor_, clock_);
             }
 
             /**

@@ -32,9 +32,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <utility>
 #include <vector>
+
+#include <SushiRuntime/core/executor.hpp>
 
 namespace SushiRuntime
 {
@@ -46,12 +47,9 @@ namespace SushiRuntime
      * every platform. It starts no thread and is called from one thread.
      * @see modules/foundation/core/README.md
      */
-    class SeededExecutor final
+    class SeededExecutor final : public Executor
     {
         public:
-            /** @brief A unit of work; it runs once. */
-            using Job = std::function<void()>;
-
             /**
              * @brief Starts an executor whose order the seed fixes.
              * @param seed Any value; two executors of one seed draw the same order.
@@ -66,19 +64,19 @@ namespace SushiRuntime
             SeededExecutor& operator=(SeededExecutor&&) = delete;
 
             /** @brief Drops the jobs still pending without running them. */
-            ~SeededExecutor() = default;
+            ~SeededExecutor() override = default;
 
             /**
              * @brief Adds a job to the pending ones.
              * @param job Not empty.
              */
-            void post(Job job) { pending_.push_back(std::move(job)); }
+            void post(Job job) override { pending_.push_back(std::move(job)); }
 
             /**
              * @brief Runs one pending job, chosen by the seeded sequence.
              * @return False when no job was pending, true when one ran.
              */
-            bool run_one()
+            [[nodiscard]] bool run_one() override
             {
                 if (pending_.empty())
                     return false;

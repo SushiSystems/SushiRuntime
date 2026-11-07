@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/core/seeded_executor.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -60,17 +60,6 @@ namespace SushiRuntime
 
     namespace Internal::Execution
     {
-        /**
-         * @brief Holds what a host context is built from.
-         * @see modules/engine/execution/README.md
-         */
-        struct HostContextParts
-        {
-            std::size_t device_count = 1;              /**< Host devices the context stands for; at least 1. */
-            std::shared_ptr<SeededExecutor> executor;  /**< Runs every node; not null. */
-            std::shared_ptr<const Clock> clock;        /**< Times every recorded dispatch; not null. */
-        };
-
         /**
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
          *        the execution engine that runs on them.
@@ -108,13 +97,16 @@ namespace SushiRuntime
                        const RuntimeSettings& settings = {});
 
                 /**
-                 * @brief Builds a host context: host devices, host USM and a HostExecutionEngine.
-                 *
-                 * It makes no SYCL device, queue or thread; every run goes to the engine.
+                 * @brief Builds a host context, with no SYCL device, queue or offload: every node
+                 *        runs as a job of the executor.
+                 * @param device_count Host devices the context stands for; at least 1.
+                 * @param executor Runs every node; not null.
+                 * @param clock Times every recorded dispatch; not null.
                  * @see modules/engine/execution/README.md
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
-                create_host(const HostContextParts& parts);
+                create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
+                            std::shared_ptr<const Clock> clock);
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
@@ -172,8 +164,8 @@ namespace SushiRuntime
                  *        and counts the change in placement().
                  * @pre No run is in flight, and every TaskGraph built with the coordinator being
                  *      replaced has been compiled, emptied by take_nodes() or destroyed.
-                 * @param offload Null removes the installed one; the context releases a share
-                 *        on the next install and, in its destructor, after the engine.
+                 * @param offload Null removes the installed one, and the only value a host context
+                 *        takes; the context releases a share on the next install.
                  */
                 void install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> offload);
 
@@ -183,6 +175,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the sink an offload coordinator hands its nodes back to.
                  *
+                 * A context whose engine runs no offload returns a sink that refuses every node.
                  * A coordinator may be bound to it and started before install_offload(), so a
                  * start that fails leaves the installed one in place.
                  */

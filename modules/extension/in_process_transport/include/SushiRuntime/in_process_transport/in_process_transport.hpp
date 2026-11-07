@@ -36,12 +36,12 @@
 #include <functional>
 #include <memory>
 
-#include <SushiRuntime/core/clock.hpp>
-#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/in_process_transport/thread_drive.hpp>
+#include <SushiRuntime/in_process_transport/transport_drive.hpp>
 
 namespace SushiRuntime
 {
@@ -132,9 +132,10 @@ namespace SushiRuntime
                 void flush_held(std::uint64_t shuffle_seed = 0);
 
                 /**
-                 * @brief Posts a pump round of every threadless endpoint to its executor.
+                 * @brief Asks the drive of every endpoint for a pump round.
                  *
-                 * A test calls it after advancing the clock, so a due connection attempt runs.
+                 * A test calls it after advancing an ExecutorDrive's clock, so a due connection
+                 * attempt runs.
                  */
                 void wake_all();
 
@@ -170,12 +171,6 @@ namespace SushiRuntime
              * A cap of 0 refuses every control frame.
              */
             std::size_t control_queue_frames = 4096;
-
-            /** @brief Runs the pump rounds as jobs, in place of a pump thread; null starts the thread. */
-            std::shared_ptr<SeededExecutor> executor;
-
-            /** @brief Times a threadless endpoint; null, or a threaded one, reads the steady clock. */
-            std::shared_ptr<const Clock> clock;
         };
 
         /**
@@ -198,19 +193,13 @@ namespace SushiRuntime
              * A cap of 0 refuses every control frame.
              */
             std::size_t control_queue_frames = 4096;
-
-            /** @brief Runs the pump rounds as jobs, in place of a pump thread; null starts the thread. */
-            std::shared_ptr<SeededExecutor> executor;
-
-            /** @brief Times a threadless endpoint's attempts; null, or a threaded one, reads the steady clock. */
-            std::shared_ptr<const Clock> clock;
         };
 
         /**
          * @brief Attaches one endpoint to an InProcessFabric and keeps the Transport contract.
          *
-         * Each endpoint runs one pump thread, which delivers its inbound frames and makes its
-         * events. A worker endpoint connects once it and the master endpoint are both started,
+         * Each endpoint's drive runs its pump rounds, which deliver its inbound frames and make its
+         * events: a ThreadDrive on a thread, an ExecutorDrive as jobs a test steps. A worker endpoint connects once it and the master endpoint are both started,
          * and each connection is a new PeerID on both sides.
          * @see modules/extension/in_process_transport/README.md
          */
@@ -219,20 +208,24 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Creates the master endpoint of a fabric.
+                 * @param drive Runs the pump rounds and times the endpoint; not null.
                  * @pre The fabric has no master endpoint yet.
                  * @return Never null.
                  */
                 [[nodiscard]] static std::shared_ptr<InProcessTransport> make_master(
                     InProcessFabric& fabric,
-                    InProcessMasterOptions options = InProcessMasterOptions());
+                    InProcessMasterOptions options = InProcessMasterOptions(),
+                    std::unique_ptr<TransportDrive> drive = std::make_unique<ThreadDrive>());
 
                 /**
                  * @brief Creates a worker endpoint; the fabric gives it the next worker index.
+                 * @param drive Runs the pump rounds and times the connection attempts; not null.
                  * @return Never null.
                  */
                 [[nodiscard]] static std::shared_ptr<InProcessTransport> make_worker(
                     InProcessFabric& fabric,
-                    InProcessWorkerOptions options = InProcessWorkerOptions());
+                    InProcessWorkerOptions options = InProcessWorkerOptions(),
+                    std::unique_ptr<TransportDrive> drive = std::make_unique<ThreadDrive>());
 
                 /** @brief Stops the endpoint and detaches it from the fabric. */
                 ~InProcessTransport() override;
@@ -242,10 +235,10 @@ namespace SushiRuntime
                 InProcessTransport(InProcessTransport&&) = delete;
                 InProcessTransport& operator=(InProcessTransport&&) = delete;
 
-                /** @brief Starts the pump thread; a worker then connects when the master runs. */
+                /** @brief Starts the drive; a worker then connects when the master runs. */
                 [[nodiscard]] TransportResult start(TransportEvents& events) override;
 
-                /** @brief Closes the endpoint's connections and joins the pump thread. */
+                /** @brief Stops the drive and closes the endpoint's connections. */
                 void stop() noexcept override;
 
                 /** @brief Queues a control frame, which the fault policy sees as it leaves. */

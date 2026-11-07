@@ -44,6 +44,7 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node_profiling.hpp>
@@ -367,6 +368,15 @@ namespace SushiRuntime
 
             /** @brief Runs the node's pure-CPU work directly on the worker thread. */
             void execute_native() override                      { if(native_work) native_work(); }
+
+            /**
+             * @brief Runs the node on the calling thread, with no device: a native host node runs
+             *        its work, a launch runs its host form.
+             * @return What the work threw, as an Error, or an Unsupported error for a node with no
+             *         host form: an NdRange, a raw command group or a queue body.
+             * @see modules/engine/task/README.md
+             */
+            [[nodiscard]] Result<void> run_on_host();
 
             /** @brief Executes the task work within a SYCL handler. */
             void execute(sycl::handler& h) override             { if(work) work(h); }

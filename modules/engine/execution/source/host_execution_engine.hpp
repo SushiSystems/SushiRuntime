@@ -23,24 +23,25 @@
 
 /**
  * @file host_execution_engine.hpp
- * @brief Declares HostExecutionEngine, which runs a compiled graph on a SeededExecutor with no device and no thread.
+ * @brief Declares HostExecutionEngine, which runs a compiled graph as jobs of an Executor, with no device.
  * @author Mustafa Garip
  * @see modules/engine/execution/README.md
  */
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
@@ -50,13 +51,14 @@ namespace SushiRuntime
     namespace Internal::Execution
     {
         /**
-         * @brief Runs every node of a compiled graph as one job of a SeededExecutor.
+         * @brief Runs every node of a compiled graph as one job of an Executor.
          *
-         * A job runs one node and posts the successors it frees, so the seed orders what the
-         * dependencies leave unordered. Every call is made on the thread that drives the executor.
+         * A job runs one node and posts the successors it frees, so a SeededExecutor's seed orders
+         * what the dependencies leave unordered. complete() steps the executor on the calling
+         * thread; jobs an executor runs on its own threads update the run under one lock.
          * @see modules/engine/execution/README.md
          */
-        class SUSHIRUNTIME_API HostExecutionEngine final : public ExecutionEngine
+        class HostExecutionEngine final : public ExecutionEngine
         {
             public:
                 /**
@@ -66,7 +68,7 @@ namespace SushiRuntime
                  * @param devices The device count a profiling ledger is sized for; at least 1.
                  * @param notify Told the observation of a run submit_observed() started, at its end.
                  */
-                HostExecutionEngine(std::shared_ptr<SeededExecutor> executor,
+                HostExecutionEngine(std::shared_ptr<Executor> executor,
                                     std::shared_ptr<const Clock> clock, std::size_t devices,
                                     std::function<void(const RunObservation&)> notify);
 
@@ -140,11 +142,13 @@ namespace SushiRuntime
                 /** @brief Ends the run when its sentinel is reached. */
                 void finish_run();
 
-                /** @brief Runs the body of one node; returns what it threw as an Error. */
-                [[nodiscard]] Result<void> run_body(Internal::Graph::Node& node);
+                /** @brief Records the end of one node's run: its failure or its dispatch times. */
+                void record(Internal::Graph::Node& node, const Result<void>& ran,
+                            std::uint32_t launched, std::uint32_t live, std::uint64_t start,
+                            std::uint64_t end);
 
                 /** @brief The executor every node runs on. */
-                std::shared_ptr<SeededExecutor> executor_;
+                std::shared_ptr<Executor> executor_;
 
                 /** @brief The clock every recorded dispatch is stamped from. */
                 std::shared_ptr<const Clock> clock_;
@@ -155,20 +159,29 @@ namespace SushiRuntime
                 /** @brief Tells the context's observers about a run submit_observed() started. */
                 std::function<void(const RunObservation&)> notify_;
 
+                /** @brief Guards failure_, completed_, the ledger and the end of a run. */
+                mutable std::mutex mutex_;
+
                 /** @brief The graph of the run in progress; null between runs. */
                 Internal::Graph::CompiledGraph* running_ = nullptr;
 
                 /** @brief The first failure of the run in progress. */
                 std::optional<Error> failure_;
 
+                /** @brief Whether the run in progress has a failure; read without the lock. */
+                std::atomic<bool> failed_{false};
+
                 /** @brief Whether the run in progress has reached its sentinel. */
-                bool finished_ = true;
+                std::atomic<bool> finished_{true};
+
+                /** @brief The jobs posted and not yet finished in the run in progress. */
+                std::atomic<std::size_t> outstanding_{0};
 
                 /** @brief Whether the run in progress hands its observation over at its end. */
                 bool observe_on_finish_ = false;
 
                 /** @brief Whether cancel() was called since the last reset_cancellation(). */
-                bool cancelled_ = false;
+                std::atomic<bool> cancelled_{false};
 
                 /** @brief Whether shutdown() was called. */
                 bool shut_down_ = false;

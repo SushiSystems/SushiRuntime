@@ -44,7 +44,7 @@ using namespace SushiRuntime::Internal::Memory;
 /** @brief Tests that the observer hears the release of the address the allocator gave. */
 TEST(Small_USMReleaseObserver, HearsEachReleaseWithItsAddress)
 {
-    USMAllocator allocator(std::make_unique<HostUSMSource>());
+    USMAllocator allocator(make_host_usm_source());
     RecordingUSMReleaseObserver observer;
     allocator.set_release_observer(&observer);
 

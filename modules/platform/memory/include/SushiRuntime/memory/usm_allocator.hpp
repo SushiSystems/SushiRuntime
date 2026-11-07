@@ -36,8 +36,6 @@
 #include <optional>
 #include <vector>
 
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
@@ -58,13 +56,6 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API USMAllocator final
         {
             public:
-                /**
-                 * @brief Takes the queues to allocate on; a device's index is its position here.
-                 * @param device_queues Copies that share state with the caller's queues. The list
-                 *        is fixed for the allocator's lifetime.
-                 */
-                explicit USMAllocator(std::vector<sycl::queue> device_queues);
-
                 /**
                  * @brief Takes the source to allocate from; a device's index is the source's.
                  * @param source Not null; the allocator owns it for its whole life.
@@ -132,6 +123,16 @@ namespace SushiRuntime
                  * @see modules/platform/memory/README.md
                  */
                 [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const;
+
+                /**
+                 * @brief Copies bytes on the device that owns an allocation and returns when they
+                 *        have arrived.
+                 * @param base Start of the allocation that holds the device side of the copy.
+                 * @param device The device that copies when no device owns base.
+                 * @pre device names a device of the allocator; both ranges hold bytes.
+                 */
+                void copy(const void* base, std::size_t device, void* destination,
+                          const void* source, std::size_t bytes);
 
                 /**
                  * @brief Finds the first address of the recorded allocation an address falls in.

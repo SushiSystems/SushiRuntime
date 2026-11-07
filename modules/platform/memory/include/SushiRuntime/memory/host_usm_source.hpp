@@ -23,7 +23,7 @@
 
 /**
  * @file host_usm_source.hpp
- * @brief Declares HostUSMSource, the in-memory USMSource that allocates from the host heap.
+ * @brief Declares make_host_usm_source(), which makes the in-memory USMSource of the host heap.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -31,8 +31,7 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
-#include <string>
+#include <memory>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/usm_source.hpp>
@@ -42,33 +41,14 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         /**
-         * @brief Allocates every kind of USM from the host heap, for a fixed number of devices.
+         * @brief Makes a source that allocates every kind of USM from the host heap.
          *
-         * Every device shares one context, and an address the allocator did not record has no
-         * owner. It makes no device and starts no thread, so a small test can use it.
+         * Every device shares one context, and owners resolve as on a device. It makes no device
+         * and starts no thread.
+         * @param device_count The devices the source stands for; at least 1.
          * @see modules/platform/memory/README.md
          */
-        class SUSHIRUNTIME_API HostUSMSource final : public USMSource
-        {
-            public:
-                /**
-                 * @brief Makes a source of a number of host devices.
-                 * @param device_count At least 1.
-                 */
-                explicit HostUSMSource(std::size_t device_count = 1);
-
-                [[nodiscard]] std::size_t device_count() const noexcept override;
-                [[nodiscard]] void* allocate(const USMRequest& request) override;
-                void free(void* address, std::size_t device_index) override;
-                [[nodiscard]] std::optional<std::size_t>
-                resolve_owner(const void* address) const override;
-                [[nodiscard]] bool shares_context(std::size_t first,
-                                                  std::size_t second) const override;
-                [[nodiscard]] std::string device_name(std::size_t index) const override;
-
-            private:
-                /** @brief The number of devices the source stands for. */
-                std::size_t device_count_;
-        };
+        [[nodiscard]] SUSHIRUNTIME_API std::unique_ptr<USMSource>
+        make_host_usm_source(std::size_t device_count = 1);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

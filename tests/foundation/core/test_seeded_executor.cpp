@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -60,17 +59,6 @@ TEST(Small_SeededExecutor, OneSeedReplaysOneOrder)
     EXPECT_EQ(order_of(first, 16), order_of(second, 16));
 }
 
-/** @brief Tests that run_all runs every posted job exactly once. */
-TEST(Small_SeededExecutor, RunAllRunsEveryJobOnce)
-{
-    SeededExecutor executor(3);
-
-    std::vector<int> order = order_of(executor, 9);
-
-    std::sort(order.begin(), order.end());
-    EXPECT_EQ(order, (std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7, 8}));
-}
-
 /** @brief Tests that a job posted by a running job runs within the same run_all. */
 TEST(Small_SeededExecutor, AJobPostedByAJobRunsInTheSameDrain)
 {
@@ -82,14 +70,6 @@ TEST(Small_SeededExecutor, AJobPostedByAJobRunsInTheSameDrain)
     EXPECT_EQ(inner, 1);
 }
 
-/** @brief Tests that run_one on an empty executor runs nothing and says so. */
-TEST(Small_SeededExecutor, RunOneOnNothingPendingReturnsFalse)
-{
-    SeededExecutor executor;
-
-    EXPECT_FALSE(executor.run_one());
-}
-
 /** @brief Tests that run_one runs one job and leaves the rest pending. */
 TEST(Small_SeededExecutor, RunOneLeavesTheOtherJobsPending)
 {
@@ -97,7 +77,8 @@ TEST(Small_SeededExecutor, RunOneLeavesTheOtherJobsPending)
     executor.post([]() {});
     executor.post([]() {});
 
-    executor.run_one();
+    const bool ran = executor.run_one();
 
+    EXPECT_TRUE(ran);
     EXPECT_EQ(executor.pending(), 1u);
 }

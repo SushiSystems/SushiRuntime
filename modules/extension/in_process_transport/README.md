@@ -32,13 +32,20 @@ liveness check closes the peer.
 frames queued per peer; a `send()` past the bound returns `QueueFull`. A bound of 0 refuses every
 control frame, which is how a test makes the link refuse a send.
 
-### Threadless endpoints
+### The drive
 
-An endpoint whose options carry an `executor` starts no pump thread. Each time the endpoint has
-work (a frame in its inbox, a queued send, a new connection) it posts one pump round to that
-`SeededExecutor`, never two at once, and the round delivers the inbox, moves outbound frames and,
-on a worker, makes a due connection attempt. Events are made inside the executor's jobs, on the
-thread that steps it, so a test of the distributed layer runs small and replays its interleaving
-from the seed. The options' `clock` times the worker's reconnect delay and connect timeout; a test
-advances its `ManualClock` and calls `InProcessFabric::wake_all()` to run an attempt that came due.
-An endpoint with no executor reads the steady clock and ignores the option's clock.
+Every endpoint takes one `TransportDrive`, never null: `make_master()` and `make_worker()` take it as
+their last argument, a `ThreadDrive` when it is left out. Each time the endpoint has work (a frame in
+its inbox, a queued send, a new connection) it asks the drive for one pump round, never two waiting
+at once, and the round delivers the inbox, moves outbound frames and, on a worker, makes a due
+connection attempt. The drive's `now()` times the worker's reconnect delay and connect timeout, and
+the endpoint never reads another clock.
+
+- `ThreadDrive` runs the rounds on a thread that `start()` makes and `stop()` joins, and wakes itself
+  for a connection attempt through `post_round_at()`; it reads the steady clock.
+- `ExecutorDrive` posts each round as a job of an `Executor` and reads the clock it was given. Over a
+  `SeededExecutor` events are made on the thread that steps it, so a test of the distributed layer
+  runs small and replays its interleaving from the seed; a test advances its `ManualClock` and calls
+  `InProcessFabric::wake_all()` to run an attempt that came due.
+
+Both pass `TransportDriveContract`.

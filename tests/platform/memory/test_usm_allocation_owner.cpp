@@ -47,7 +47,7 @@ using SushiRuntime::Detail::Allocation;
 TEST(Small_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
 {
     constexpr std::size_t K_BYTES = 128;
-    auto allocator = std::make_shared<USMAllocator>(std::make_unique<HostUSMSource>());
+    auto allocator = std::make_shared<USMAllocator>(make_host_usm_source());
     USMRequest request;
     request.bytes = K_BYTES;
     void* const address = allocator->allocate(request);

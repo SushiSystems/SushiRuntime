@@ -68,13 +68,15 @@ carried.
 
 ### A set of host devices
 
-`DeviceQueueSet(std::vector<DeviceDescription>)` holds an inventory and no queue. It builds no
+`DeviceQueueSet(std::vector<DeviceDescription>)` holds an inventory and no queue slot. It builds no
 SYCL device, so the host runtime's context carries one. `count()`, `devices()`, `is_gpu()` and
 the NUMA routes answer from the descriptions as for any set, and a NUMA node out of range is
 placed on node 0 without a log line. `queue()` in either form, and `queue_or_numa_local()`, stop
 the process through `SR_VERIFY`, naming the device: a host runtime submits nothing to a device.
 `plain_queues()` is empty, and `wait_all()` and `raise_asynchronous_errors()` have nothing to
-visit.
+visit. No caller asks a set whether it holds queues: a copy goes through `USMAllocator::copy()`
+to the memory source, and a device's driver is `DeviceDescription::driver_version`, which the
+device set reads once when it builds the queue.
 
 ### One slot per flavour
 

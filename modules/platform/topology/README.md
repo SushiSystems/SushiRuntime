@@ -31,6 +31,12 @@ thread's affinity as it was. So does an id the OS refuses.
 to nothing on the other platform, so the module lists both. `Runtime::create()` in the `api` module
 builds the machine's facts from them.
 
+## host_topology.hpp
+
+`make_host_topology()` builds the machine `RuntimeContext::create_host()` stands for: an
+`InMemoryTopologyProvider` that maps every core to NUMA node 0, a `MatrixDistanceModel` of one node at
+distance 10, and the host devices, CPUs named `host device <i>`. It reads no hardware.
+
 ## topology_provider.hpp
 
 ### TopologyProvider

@@ -7,7 +7,7 @@ It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The eighteen public headers under `include/SushiRuntime/core/`:
+The twenty public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
@@ -20,16 +20,18 @@ The eighteen public headers under `include/SushiRuntime/core/`:
 | `determinism.hpp` | `Determinism`, the contract a recorder states for a node's result: `Unstated`, `Bitwise`, `Tolerant` or `Cosmetic` |
 | `error.hpp` | `ErrorCode`, its `to_string` overload and `Error` |
 | `error_translation.hpp` | `Detail::translate_exceptions`, which calls a function and returns what it throws as an `Error` |
+| `executor.hpp` | `Executor`, the port a part that runs jobs takes them through: `post()` and `run_one()` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `node_cost.hpp` | `NodeCost`, the floating-point operations, bytes and `NodeDType` a caller states one dispatch of a node does, `NodeDType` and `dtype_name()` |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `placement_class.hpp` | `PlacementClass`, the 32-bit FNV-1a hash of a dotted class name with the hash of each of its prefixes, and the `_class` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
 | `result.hpp` | `Result<T, E>`, which holds a value or an error, and `ErrorWrapper` with `make_error` |
-| `seeded_executor.hpp` | `SeededExecutor`, which runs posted jobs one at a time on the calling thread in an order a seed fixes, so a test replays a schedule from its seed |
+| `seeded_executor.hpp` | `SeededExecutor`, the `Executor` that runs posted jobs one at a time on the calling thread in an order a seed fixes, so a test replays a schedule from its seed |
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
 | `strong_id.hpp` | `StrongID`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
 | `sushi_ptr.hpp` | `sushi_ptr` and `make_sushi`, the intrusive smart pointer and its factory, with a `std::hash` specialisation |
+| `thread_pool_executor.hpp` | `ThreadPoolExecutor`, the `Executor` that runs posted jobs on threads it owns, oldest first, with `wait_idle()` |
 | `version.hpp` | The version macros, `Version`, `runtime_version()`, `runtime_version_string()`, `version_matches()` (two forms) and `require_matching_version()` |
 
 The sections below record why the code is the way it is. Each one is named after a header and the

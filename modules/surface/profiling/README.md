@@ -151,7 +151,7 @@ ProfiledRuntime is the port through which `RuntimeProfilerParts` and `RuntimeEnv
 its node name, its devices, the driver of a device, the worker count, the rebalancer state, and
 `observe_runs()`, which adds a `RunObserver` behind the profiler's gate and returns the handle that removes
 it. `profiled_runtime_of(runtime)` returns the adapter over a `Runtime`; it shares ownership of the runtime's
-context, and its `driver_of()` reads `unknown` when the backend does not answer.
+context, and its `driver_of()` returns the device's `DeviceDescription::driver_version`, `unknown` when the backend did not answer and for a host device.
 
 ## in_memory_profiled_runtime.hpp
 

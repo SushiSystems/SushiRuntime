@@ -23,7 +23,7 @@
 
 /**
  * @file sycl_usm_source.cpp
- * @brief Defines SYCLUSMSource, which takes USM from a set of SYCL device queues.
+ * @brief Defines SYCLUSMSource, which takes USM from a set of SYCL device queues, and its factory.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -31,6 +31,7 @@
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -74,6 +75,32 @@ namespace SushiRuntime
                 }
                 return nullptr;
             }
+
+            /** @brief Takes USM from a set of SYCL device queues, one device per queue. */
+            class SYCLUSMSource final : public USMSource
+            {
+                public:
+                    /** @brief Holds the queues; a device's index is its position. */
+                    explicit SYCLUSMSource(std::vector<sycl::queue> device_queues);
+
+                    [[nodiscard]] std::size_t device_count() const noexcept override;
+                    [[nodiscard]] void* allocate(const USMRequest& request) override;
+                    void free(void* address, std::size_t device_index) override;
+                    [[nodiscard]] std::optional<std::size_t>
+                    resolve_owner(const void* address) const override;
+                    [[nodiscard]] bool shares_context(std::size_t first,
+                                                      std::size_t second) const override;
+                    void copy(void* destination, const void* source, std::size_t bytes,
+                              std::size_t device_index) override;
+                    [[nodiscard]] std::string device_name(std::size_t index) const override;
+
+                private:
+                    /** @brief Returns the queue of a device; stops the process for a bad index. */
+                    [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
+
+                    /** @brief The queue of each device, by index. */
+                    std::vector<sycl::queue> queues_;
+            };
         } // namespace
 
         SYCLUSMSource::SYCLUSMSource(std::vector<sycl::queue> device_queues)
@@ -133,6 +160,14 @@ namespace SushiRuntime
             return queue_at(first).get_context() == queue_at(second).get_context();
         }
 
+        void SYCLUSMSource::copy(void* destination, const void* source, std::size_t bytes,
+                                 std::size_t device_index)
+        {
+            // The queue is copied, not mutated: a sycl::queue is a handle to one shared queue.
+            sycl::queue queue = queue_at(device_index);
+            queue.memcpy(destination, source, bytes).wait();
+        }
+
         std::string SYCLUSMSource::device_name(std::size_t index) const
         {
             return queue_at(index).get_device().get_info<sycl::info::device::name>();
@@ -146,6 +181,11 @@ namespace SushiRuntime
                        std::to_string(queues_.size()) + " device(s).")
                           .c_str());
             return queues_[device_index];
+        }
+
+        std::unique_ptr<USMSource> make_sycl_usm_source(std::vector<sycl::queue> device_queues)
+        {
+            return std::make_unique<SYCLUSMSource>(std::move(device_queues));
         }
     } // namespace Internal::Memory
 } // namespace SushiRuntime

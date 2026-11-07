@@ -107,6 +107,26 @@ objects must be reclaimed. The helpers `retire_objects`, `retire_from_threads`,
 loop. Under ASan and TSan the same run surfaces races and use-after-free. The counters are
 `shared_ptr`-owned for the reason `Tracked` gives.
 
+## test_host_usm_source.cpp and test_sycl_usm_source.cpp
+
+`USMSourceContract` (`tests/support/usm_source_contract.hpp`) runs as `Small_HostUSMSource` on
+`make_host_usm_source()` and as `Medium_SYCLUSMSource` on `make_sycl_usm_source()` over the program's
+queue.
+
+| Test | What it proves |
+| --- | --- |
+| `ASharedAllocationKeepsItsBytes` | A shared allocation holds the bytes written through it. |
+| `AnAlignedAllocationStartsOnItsAlignment` | An allocation with an alignment starts on it. |
+| `ADeviceSharesItsContextWithItself` | A device shares its memory context with itself. |
+| `AStackAddressHasNoOwner` | A stack address no device allocated resolves to no device. |
+| `AnAddressInsideASharedAllocationResolvesToItsDevice` | An interior address of a shared allocation resolves to its device. |
+| `AHostAllocationHasNoOwner` | Host memory belongs to no device. |
+| `ACopyPutsTheBytesInTheDestination` | `copy()` on a device puts the source bytes in a shared allocation. |
+| `ASourceOfOneDeviceCountsOne` | A source of one device reports one. |
+| `RefusesAnAlignmentThatIsNotAPowerOfTwo` | The host source refuses an alignment that is not a power of two with null. |
+| `TwoDevicesShareOneContext` | Every pair of host devices shares one context. |
+| `CountsTheDevicesItWasMadeWith` | A host source counts the devices it was made with. |
+
 ## test_recording_usm_release_observer.cpp
 
 A `RecordingUSMReleaseObserver` keeps the addresses it hears. The test calls `on_release()` itself,
@@ -122,13 +142,13 @@ The file tests USMAllocationOwner: an Allocation returns its USM to the allocato
 
 | Test | What it proves |
 | --- | --- |
-| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It runs small, on an allocator over a `HostUSMSource`. |
+| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It runs small, on an allocator over `make_host_usm_source()`. |
 | `AnOwnerWithNoAllocatorLeavesTheMemoryAlone` | An owner with no allocator releases nothing; the memory it is handed keeps its value. |
 
 ## test_usm_allocator.cpp
 
 The file covers `USMAllocator`. The record, release and observer tests run small, on an allocator over a
-`HostUSMSource` of two devices. The kind test runs as rows and skips when no SYCL device supports the
+`make_host_usm_source(2)`. The kind test runs as rows and skips when no SYCL device supports the
 row's kind; the alignment of the real SYCL allocation is checked by `Medium_AlignedAllocation` in
 `tests/engine/execution/test_runtime_context.cpp`. The release observer is the module's `RecordingUSMReleaseObserver`, and the
 ERROR and WARN lines are read through `LogCapture`.

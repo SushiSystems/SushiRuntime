@@ -23,20 +23,22 @@
 
 /**
  * @file host_execution_engine.cpp
- * @brief Defines HostExecutionEngine, which runs a compiled graph on a SeededExecutor.
+ * @brief Defines HostExecutionEngine, which runs a compiled graph as jobs of an Executor.
  * @author Mustafa Garip
  * @see modules/engine/execution/README.md
  */
 
-#include <SushiRuntime/execution/host_execution_engine.hpp>
+#include "host_execution_engine.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <utility>
-#include <vector>
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -45,7 +47,6 @@
 #include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
-#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
@@ -56,19 +57,7 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        namespace
-        {
-            /** @brief Returns the refusal of a node the host engine cannot run. */
-            [[nodiscard]] Error no_host_form() noexcept
-            {
-                return Error{ErrorCode::Unsupported,
-                             "the node has no host form: a host runtime runs host nodes and launches "
-                             "over a count or an Extent; run an NdRange, a raw command group or a "
-                             "queue body on a runtime that has a device"};
-            }
-        } // namespace
-
-        HostExecutionEngine::HostExecutionEngine(std::shared_ptr<SeededExecutor> executor,
+        HostExecutionEngine::HostExecutionEngine(std::shared_ptr<Executor> executor,
                                                  std::shared_ptr<const Clock> clock,
                                                  std::size_t devices,
                                                  std::function<void(const RunObservation&)> notify)
@@ -103,7 +92,8 @@ namespace SushiRuntime
                                         "already in progress on this engine."});
             running_ = &graph;
             failure_.reset();
-            finished_ = false;
+            failed_.store(false);
+            finished_.store(false);
             for (Internal::Graph::Node* root : graph.roots)
                 post(*root);
             return {};
@@ -122,11 +112,12 @@ namespace SushiRuntime
         {
             SR_VERIFY(running_ != nullptr,
                       "HostExecutionEngine::complete(): no run was submitted; call submit() first.");
-            while (!finished_)
-                SR_VERIFY(executor_->run_one(),
-                          "HostExecutionEngine::complete(): the executor holds no job and the run "
-                          "has not reached its last node; a job was dropped outside the engine.");
+            // A job's count is its last step, so at 0 after the sentinel no job reads the run.
+            while (!run_finished())
+                if (!executor_->run_one())
+                    std::this_thread::yield();
             running_ = nullptr;
+            const std::lock_guard<std::mutex> lock(mutex_);
             if (failure_)
                 return make_error(std::move(*failure_));
             return {};
@@ -134,7 +125,7 @@ namespace SushiRuntime
 
         bool HostExecutionEngine::run_finished()
         {
-            return finished_;
+            return finished_.load() && outstanding_.load() == 0;
         }
 
         bool HostExecutionEngine::run_in_progress() const noexcept
@@ -149,21 +140,22 @@ namespace SushiRuntime
 
         void HostExecutionEngine::cancel() noexcept
         {
-            cancelled_ = true;
+            cancelled_.store(true);
         }
 
         bool HostExecutionEngine::is_cancelled() const
         {
-            return cancelled_;
+            return cancelled_.load();
         }
 
         void HostExecutionEngine::reset_cancellation()
         {
-            cancelled_ = false;
+            cancelled_.store(false);
         }
 
         ExecutionMetrics HostExecutionEngine::metrics() const
         {
+            const std::lock_guard<std::mutex> lock(mutex_);
             ExecutionMetrics metrics;
             metrics.tasks_completed = completed_;
             return metrics;
@@ -195,6 +187,7 @@ namespace SushiRuntime
         void HostExecutionEngine::post(Internal::Graph::Node& node)
         {
             Internal::Graph::Node* const target = &node;
+            outstanding_.fetch_add(1);
             executor_->post([this, target]() { dispatch(*target); });
         }
 
@@ -204,10 +197,11 @@ namespace SushiRuntime
             if (&node == running_->sentinel.get())
             {
                 finish_run();
+                outstanding_.fetch_sub(1);
                 return;
             }
 
-            const bool skipped = failure_.has_value() || cancelled_ ||
+            const bool skipped = failed_.load() || cancelled_.load() ||
                                  (node.bindings_ && !node.bindings_->enabled.load());
             if (!skipped)
             {
@@ -215,57 +209,64 @@ namespace SushiRuntime
                 const Internal::Graph::NodeWidths widths = node.submits_device_work()
                     ? Internal::Graph::snapshot_widths(node) : Internal::Graph::NodeWidths{};
                 const std::uint64_t start = clock_->now_ns();
-                Result<void> ran = run_body(node);
+                const Result<void> ran = node.run_on_host();
                 const std::uint64_t end = clock_->now_ns();
-                if (!ran)
-                    failure_ = Internal::Scheduler::name_failure(node, ran.error());
-                else if (running_->profiling)
-                {
-                    Internal::Observability::DispatchFacts facts;
-                    facts.node_index = node.registration_index;
-                    facts.invocation = step_;
-                    facts.launched_width = widths.launched;
-                    facts.live_width = widths.live;
-                    running_->profiling_ledger.record(
-                        facts, Internal::Observability::DispatchTimes{start, start, end});
-                }
-                ++completed_;
+                record(node, ran, widths.launched, widths.live, start, end);
             }
 
-            // Every task a graph node frees is a graph node.
+            // Every task a graph node frees is a graph node; each is counted before this one ends.
             Internal::Scheduler::ReadySink freed;
             node.on_complete(freed);
             for (Internal::Scheduler::Task* successor : freed)
                 post(*static_cast<Internal::Graph::Node*>(successor));
+            outstanding_.fetch_sub(1);
+        }
+
+        void HostExecutionEngine::record(Internal::Graph::Node& node, const Result<void>& ran,
+                                         std::uint32_t launched, std::uint32_t live,
+                                         std::uint64_t start, std::uint64_t end)
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            ++completed_;
+            if (!ran)
+            {
+                if (!failure_)
+                    failure_ = Internal::Scheduler::name_failure(node, ran.error());
+                failed_.store(true);
+                return;
+            }
+            if (!running_->profiling)
+                return;
+            Internal::Observability::DispatchFacts facts;
+            facts.node_index = node.registration_index;
+            facts.invocation = step_;
+            facts.launched_width = launched;
+            facts.live_width = live;
+            running_->profiling_ledger.record(
+                facts, Internal::Observability::DispatchTimes{start, start, end});
         }
 
         void HostExecutionEngine::finish_run()
         {
-            finished_ = true;
-            ++step_;
-            if (!observe_on_finish_)
-                return;
-            observe_on_finish_ = false;
-            if (failure_ || !notify_)
-                return;
-            RunObservation& observation = running_->observation;
-            observation.layer = ExecutionLayer::Scheduler;
-            if (running_->profiling)
-                fill_observation(*running_, observation);
-            else
-                clear_observation(*running_, observation);
-            notify_(observation);
-        }
-
-        Result<void> HostExecutionEngine::run_body(Internal::Graph::Node& node)
-        {
-            const bool native = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host &&
-                                !node.submits_device_work();
-            if (native)
-                return SYCL::translate_exceptions([&node]() { node.execute_native(); });
-            if (node.host_form)
-                return SYCL::translate_exceptions([&node]() { node.host_form(); });
-            return make_error(no_host_form());
+            bool notify = false;
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                ++step_;
+                notify = observe_on_finish_ && !failure_ && notify_ != nullptr;
+                observe_on_finish_ = false;
+                if (notify)
+                {
+                    RunObservation& observation = running_->observation;
+                    observation.layer = ExecutionLayer::Scheduler;
+                    if (running_->profiling)
+                        fill_observation(*running_, observation);
+                    else
+                        clear_observation(*running_, observation);
+                }
+            }
+            if (notify)
+                notify_(running_->observation);
+            finished_.store(true);
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

@@ -8,6 +8,7 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_topology_log_category.cpp
         test_affinity.cpp
+        test_host_topology.cpp
         test_host_identity.cpp
         test_hw_discovery.cpp
         test_hwloc_topology_provider.cpp

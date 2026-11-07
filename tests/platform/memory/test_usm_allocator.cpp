@@ -50,6 +50,7 @@
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/recording_usm_release_observer.hpp>
+#include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -57,7 +58,7 @@
 
 #include "support/runtime_environment.hpp"
 
-using SushiRuntime::Internal::Memory::HostUSMSource;
+using SushiRuntime::Internal::Memory::make_host_usm_source;
 using SushiRuntime::Internal::Memory::RecordingUSMReleaseObserver;
 using SushiRuntime::Internal::Memory::USMAllocator;
 using SushiRuntime::Internal::Memory::USMKind;
@@ -181,7 +182,8 @@ namespace
 
                 for (const sycl::device& device : sycl::device::get_devices())
                     queues_.emplace_back(device);
-                allocator_ = std::make_unique<USMAllocator>(queues_);
+                allocator_ = std::make_unique<USMAllocator>(
+                    SushiRuntime::Internal::Memory::make_sycl_usm_source(queues_));
             }
 
             /** @brief Returns the first device that can allocate a kind, or nothing. */
@@ -216,7 +218,7 @@ namespace
             }
 
             /** @brief The allocator under test, over a host source of K_HOST_DEVICES devices. */
-            USMAllocator allocator_{std::make_unique<HostUSMSource>(K_HOST_DEVICES)};
+            USMAllocator allocator_{make_host_usm_source(K_HOST_DEVICES)};
     };
 } // namespace
 
@@ -570,7 +572,7 @@ TEST_F(Medium_UsmAllocator, SetReleaseObserverReturnsOnlyAfterAnObserverCallInFl
 
 TEST(Small_UsmAllocatorFailure, LogsTheRefusedRequest)
 {
-    USMAllocator allocator(std::make_unique<HostUSMSource>());
+    USMAllocator allocator(make_host_usm_source());
     const std::size_t past_the_memory = std::numeric_limits<std::size_t>::max();
 
     SushiRuntime::TestRunner::LogCapture capture;

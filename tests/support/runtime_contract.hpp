@@ -114,7 +114,57 @@ namespace TestSupport
         EXPECT_EQ(ticks, 5);
     }
 
+    /** @brief Tests that a run started without waiting has run its node once its wait returns. */
+    TYPED_TEST_P(RuntimeContract, AnAsynchronousRunHasRunItsNodeWhenItsWaitReturns)
+    {
+        int ticks = 0;
+        auto graph = this->runtime().graph();
+        graph.add_host([&ticks]() { ++ticks; });
+        auto handle = graph.run_async();
+        ASSERT_TRUE(handle.has_value());
+
+        ASSERT_TRUE(handle->wait().has_value());
+
+        EXPECT_EQ(ticks, 1);
+    }
+
+    /** @brief Tests that a cancel from inside a step stops the steps after it and says so. */
+    TYPED_TEST_P(RuntimeContract, ACancelInsideAStepStopsTheStepsAfterIt)
+    {
+        int ticks = 0;
+        auto graph = this->runtime().graph();
+        graph.add_host([&ticks, &graph]()
+        {
+            ++ticks;
+            graph.cancel();
+        });
+
+        auto report = graph.run(5);
+
+        ASSERT_TRUE(report.has_value());
+        EXPECT_TRUE(report->cancelled);
+        EXPECT_EQ(ticks, 1);
+    }
+
+    /** @brief Tests that a run after a cancelled one runs every step: the cancel does not carry over. */
+    TYPED_TEST_P(RuntimeContract, ARunAfterACancelledRunRunsEveryStep)
+    {
+        auto cancelled = this->runtime().graph();
+        cancelled.add_host([&cancelled]() { cancelled.cancel(); });
+        ASSERT_TRUE(cancelled.run(3).has_value());
+        int ticks = 0;
+        auto graph = this->runtime().graph();
+        graph.add_host([&ticks]() { ++ticks; });
+
+        ASSERT_TRUE(graph.run(3).has_value());
+
+        EXPECT_EQ(ticks, 3);
+    }
+
     REGISTER_TYPED_TEST_SUITE_P(RuntimeContract, ALaunchOverACountWritesEveryElement,
                                 AHostNodeAfterALaunchReadsItsWrites, AThrowingHostNodeFailsTheRun,
-                                ARunOfStepsRunsAHostNodeOncePerStep);
+                                ARunOfStepsRunsAHostNodeOncePerStep,
+                                AnAsynchronousRunHasRunItsNodeWhenItsWaitReturns,
+                                ACancelInsideAStepStopsTheStepsAfterIt,
+                                ARunAfterACancelledRunRunsEveryStep);
 } // namespace TestSupport

@@ -51,5 +51,6 @@ namespace SushiRuntime
         int numa_node = 0;                             /**< NUMA node the device sits on. */
         std::uint64_t memory_bytes = 0;                /**< Global memory of the device. */
         std::uint32_t compute_units = 0;               /**< Parallel compute units it has. */
+        std::string driver_version = "unknown";        /**< Driver version; "unknown" when unread. */
     };
 } // namespace SushiRuntime

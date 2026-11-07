@@ -30,9 +30,9 @@
 
 #include <SushiRuntime/profiling/profiled_runtime.hpp>
 
+#include <string>
 #include <utility>
-
-#include <sycl/sycl.hpp>
+#include <vector>
 
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -68,18 +68,7 @@ namespace SushiRuntime
 
                 [[nodiscard]] std::string driver_of(std::size_t device) const override
                 {
-                    // A host device has no SYCL device behind it to ask.
-                    if (!context_->devices().holds_queues())
-                        return "unknown";
-                    try
-                    {
-                        return context_->devices().queue(device).get_device()
-                            .get_info<sycl::info::device::driver_version>();
-                    }
-                    catch (const sycl::exception&)
-                    {
-                        return "unknown";
-                    }
+                    return context_->devices().devices().at(device).driver_version;
                 }
 
                 [[nodiscard]] std::size_t worker_count() const override

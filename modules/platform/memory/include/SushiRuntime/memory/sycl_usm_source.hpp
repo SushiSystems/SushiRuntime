@@ -23,16 +23,14 @@
 
 /**
  * @file sycl_usm_source.hpp
- * @brief Declares SYCLUSMSource, which takes USM from a set of SYCL device queues.
+ * @brief Declares make_sycl_usm_source(), which makes the USMSource of a set of SYCL device queues.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
 
 #pragma once
 
-#include <cstddef>
-#include <optional>
-#include <string>
+#include <memory>
 #include <vector>
 
 #include <sycl/sycl.hpp>
@@ -45,33 +43,11 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         /**
-         * @brief Allocates USM through sycl::malloc_* on one queue per device.
+         * @brief Makes a source that takes USM from the queues, one device per queue.
+         * @param device_queues A device's index is its position.
          * @see modules/platform/memory/README.md
          */
-        class SUSHIRUNTIME_API SYCLUSMSource final : public USMSource
-        {
-            public:
-                /**
-                 * @brief Takes the queues to allocate on; a device's index is its position here.
-                 * @param device_queues Copies that share state with the caller's queues.
-                 */
-                explicit SYCLUSMSource(std::vector<sycl::queue> device_queues);
-
-                [[nodiscard]] std::size_t device_count() const noexcept override;
-                [[nodiscard]] void* allocate(const USMRequest& request) override;
-                void free(void* address, std::size_t device_index) override;
-                [[nodiscard]] std::optional<std::size_t>
-                resolve_owner(const void* address) const override;
-                [[nodiscard]] bool shares_context(std::size_t first,
-                                                  std::size_t second) const override;
-                [[nodiscard]] std::string device_name(std::size_t index) const override;
-
-            private:
-                /** @brief Returns the queue of a device; fails on an index out of range. */
-                [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
-
-                /** @brief The queues, one per device, in device order. */
-                std::vector<sycl::queue> queues_;
-        };
+        [[nodiscard]] SUSHIRUNTIME_API std::unique_ptr<USMSource>
+        make_sycl_usm_source(std::vector<sycl::queue> device_queues);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

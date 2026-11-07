@@ -61,9 +61,10 @@ the graph module copies it into the plan's node table.
 
 `Node::host_form` holds the launch as a loop on the calling thread: the recorder fills it for a
 launch over a count or an `Extent`, whose kernel takes an index the host can build. The host
-runtime's engine runs it in place of `work`, which needs a `sycl::handler`. A node with an
-`NdRange`, a raw command group or a queue body has no host form, and the host engine fails its run
-with `Unsupported`. The device engines never read it.
+runtime's engine runs it in place of `work`, which needs a `sycl::handler`. The engine calls
+`Node::run_on_host()`, which runs a native host node's work or the host form, returns what either
+threw as an `Error`, and refuses a node with an `NdRange`, a raw command group or a queue body with
+`Unsupported`; the refusal lives with the node kinds. The device engines never read it.
 
 ## The events a body hands over
 

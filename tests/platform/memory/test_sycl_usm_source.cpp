@@ -23,7 +23,7 @@
 
 /**
  * @file test_sycl_usm_source.cpp
- * @brief Tests SYCLUSMSource against the USMSource contract on the program's device.
+ * @brief Tests the SYCL USMSource against the USMSource contract on the program's device.
  * @see tests/platform/memory/README.md
  * @author Mustafa Garip
  */
@@ -39,7 +39,7 @@
 #include "support/runtime_environment.hpp"
 #include "support/usm_source_contract.hpp"
 
-using SushiRuntime::Internal::Memory::SYCLUSMSource;
+using SushiRuntime::Internal::Memory::make_sycl_usm_source;
 using SushiRuntime::Internal::Memory::USMSource;
 
 namespace
@@ -50,7 +50,7 @@ namespace
         /** @brief Returns a SYCL source over the program's queue. */
         static std::unique_ptr<USMSource> make()
         {
-            return std::make_unique<SYCLUSMSource>(
+            return make_sycl_usm_source(
                 std::vector<sycl::queue>{TestSupport::RuntimeEnvironment::queue()});
         }
     };

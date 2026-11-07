@@ -63,6 +63,7 @@
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 
+#include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 #include "support/tolerance.hpp"
 
@@ -758,15 +759,6 @@ namespace GraphTests
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Graph;
 
-    /** @brief Builds a host context on a seeded executor and a manual clock. */
-    std::shared_ptr<RuntimeContext> make_host_context()
-    {
-        HostContextParts parts;
-        parts.executor = std::make_shared<SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
-        parts.clock = std::make_shared<ManualClock>();
-        return RuntimeContext::create_host(parts).value();
-    }
-
     /**
      * @brief Tests sequential execution due to memory dependencies.
      *
@@ -774,7 +766,7 @@ namespace GraphTests
      */
     TEST(Small_TaskGraphTest, SequentialUSMDependency)
     {
-        const auto ctx_owner = make_host_context();
+        const auto ctx_owner = TestSupport::make_host_context();
         RuntimeContext& ctx = *ctx_owner;
         TaskGraph graph;
 
@@ -801,7 +793,7 @@ namespace GraphTests
      */
     TEST(Small_TaskGraphTest, IndependentRootsExecution)
     {
-        const auto ctx_owner = make_host_context();
+        const auto ctx_owner = TestSupport::make_host_context();
         RuntimeContext& ctx = *ctx_owner;
         TaskGraph graph;
 
@@ -827,7 +819,7 @@ namespace GraphTests
      */
     TEST(Small_TaskGraphTest, FanOutFanInDiamond)
     {
-        const auto ctx_owner = make_host_context();
+        const auto ctx_owner = TestSupport::make_host_context();
         RuntimeContext& ctx = *ctx_owner;
         TaskGraph graph;
 

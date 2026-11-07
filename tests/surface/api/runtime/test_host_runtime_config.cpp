@@ -34,6 +34,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/runtime_contract.hpp"

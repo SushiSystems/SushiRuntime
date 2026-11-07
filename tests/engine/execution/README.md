@@ -118,8 +118,9 @@ No test reads a clock. Where a run must still be in flight at the check, its hos
 
 ### `MinimalEngine`
 
-An engine that implements only the two pure members. `Small_RunInProgress.TheInterfaceDefaultReportsNoRun`
-reads the interface's default through it.
+An engine that implements only the pure members: `execute()`, `submit()`, `complete()` and
+`shutdown()`. `Small_RunInProgress.TheInterfaceDefaultReportsNoRun` reads the interface's default
+through it.
 
 ### `ABlockingRunIsInProgressUntilExecuteReturns`
 
@@ -136,6 +137,15 @@ before the first check, because `submit()` runs nothing until `complete()` drain
 A task that throws ends a blocking run and an asynchronous one. `execute()` and `complete()` return
 `KernelFailed`, `execute()` with the task's text in the message, and the answer is false after each.
 
+### `HostEngineTests`
+
+`Small_HostExecutionEngine` runs on the engine of a host context, `TestSupport::make_host_context()`
+(`tests/support/host_context.hpp`), through the `ExecutionEngine` port; the engine's class lives in the
+module's `source/`. The cases check a diamond's order, one seed's replay of unordered nodes, that
+`submit()` runs nothing until `complete()`, a refused second submit, a throwing node that skips its
+successor, `Unsupported` for a command group with no host form, the host form run in its place, and a
+cancel that skips the nodes not yet run.
+
 ### `Medium_ChainedRunInProgress`
 
 The fixture compiles one kernel over shared USM that the context allocated on device 0 and classifies
@@ -145,6 +155,11 @@ two ends of a `ChainRun`: `finish()`, and the destructor of a run that never fin
 `AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing` runs a scheduled graph inside a chained
 run, and `OneChainedRunsEndLeavesTheOtherShowing` ends one `ChainRun` while a second is alive; the
 answer stays true until the last one is gone.
+
+## compile_offload_host.cpp
+
+Compiles `offload_host.hpp` alone. `OffloadHost` holds no logic of its own; the scheduler engine's
+offload tests and `RuntimeContext::install_offload()` cover what it carries.
 
 ## test_runtime_context.cpp
 

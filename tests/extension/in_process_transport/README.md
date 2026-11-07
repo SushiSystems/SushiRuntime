@@ -10,10 +10,10 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_in_process_transport.cpp
 
 The file runs the `Transport` contract on a master and a worker endpoint of one `InProcessFabric`. The
-endpoints of `Small_TransportContract` are threadless: they share one `SeededExecutor` and a
-`ManualClock`, and a wait steps the executor until the posted pump rounds are done, so those tests are
-small. `Medium_TransportContract` runs a pump thread per endpoint and holds the one promise that needs
-real threads. An `EventRecorder` implements `TransportEvents`,
+endpoints of `Small_TransportContract` each take an `ExecutorDrive` over one shared `SeededExecutor`
+and a `ManualClock`, and a wait steps the executor until the posted pump rounds are done, so those
+tests are small. `Medium_TransportContract` gives each endpoint a `ThreadDrive` and holds the one
+promise that needs real threads. An `EventRecorder` implements `TransportEvents`,
 copies every event into a list and lets a test wait until the list satisfies a condition; a test may set
 a reaction, which runs inside the event on the thread that makes it, outside the recorder's lock. The
 small tests wait by stepping the executor; the medium test waits on recorded events with a 10 s limit.
@@ -39,6 +39,23 @@ No test sleeps. The same promises over TCP are in
 | `ASendAfterStopReturnsStopped` | After `stop()`, called twice, a send returns `Stopped`. |
 | `AStoppedTransportCannotStartAgain` | A `start()` after `stop()` returns `AlreadyStarted` and makes no event. |
 | `AStreamOfferedAfterStopReturnsStopped` | `send_stream()` on a stopped transport returns `Stopped`. |
+
+## test_executor_drive.cpp and test_thread_drive.cpp
+
+`TransportDriveContract` (`tests/support/transport_drive_contract.hpp`) runs as `Small_ExecutorDrive`
+on a drive over a `SeededExecutor`, settled by `run_all()`, and as `Medium_ThreadDrive`, settled by
+waiting on a `RoundCounter`.
+
+| Test | What it proves |
+| --- | --- |
+| `APostedRoundRuns` | A posted round runs. |
+| `NoRoundRunsAfterStop` | A round posted after `stop()` does not run. |
+| `ALaterReadingIsNeverSmaller` | The drive's time never goes back. |
+| `ReadsTheClockItWasGiven` | An `ExecutorDrive` reads the clock it was given, as the test advances it. |
+
+## compile_transport_drive.cpp
+
+Compiles `transport_drive.hpp` alone; the port's promises are the contract above.
 
 ## compile_in_process_transport_log_category.cpp
 

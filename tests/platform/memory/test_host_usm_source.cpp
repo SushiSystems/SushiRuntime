@@ -23,7 +23,7 @@
 
 /**
  * @file test_host_usm_source.cpp
- * @brief Tests HostUSMSource against the USMSource contract and its own host promises.
+ * @brief Tests the host USMSource against the USMSource contract and its own host promises.
  * @see tests/platform/memory/README.md
  * @author Mustafa Garip
  */
@@ -38,7 +38,7 @@
 
 #include "support/usm_source_contract.hpp"
 
-using SushiRuntime::Internal::Memory::HostUSMSource;
+using SushiRuntime::Internal::Memory::make_host_usm_source;
 using SushiRuntime::Internal::Memory::USMKind;
 using SushiRuntime::Internal::Memory::USMRequest;
 using SushiRuntime::Internal::Memory::USMSource;
@@ -49,7 +49,7 @@ namespace
     struct HostSourceMaker
     {
         /** @brief Returns a host source of one device. */
-        static std::unique_ptr<USMSource> make() { return std::make_unique<HostUSMSource>(); }
+        static std::unique_ptr<USMSource> make() { return make_host_usm_source(); }
     };
 } // namespace
 
@@ -62,27 +62,27 @@ namespace TestSupport
 /** @brief Tests that an alignment that is not a power of two is refused with null. */
 TEST(Small_HostUSMSource, RefusesAnAlignmentThatIsNotAPowerOfTwo)
 {
-    HostUSMSource source;
+    const std::unique_ptr<USMSource> source = make_host_usm_source();
     USMRequest request;
     request.kind = USMKind::Device;
     request.bytes = 16;
     request.alignment = 48;
 
-    EXPECT_EQ(source.allocate(request), nullptr);
+    EXPECT_EQ(source->allocate(request), nullptr);
 }
 
 /** @brief Tests that every pair of devices of a host source shares one context. */
 TEST(Small_HostUSMSource, TwoDevicesShareOneContext)
 {
-    HostUSMSource source(2);
+    const std::unique_ptr<USMSource> source = make_host_usm_source(2);
 
-    EXPECT_TRUE(source.shares_context(0, 1));
+    EXPECT_TRUE(source->shares_context(0, 1));
 }
 
 /** @brief Tests that a source counts the devices it was made with. */
 TEST(Small_HostUSMSource, CountsTheDevicesItWasMadeWith)
 {
-    HostUSMSource source(3);
+    const std::unique_ptr<USMSource> source = make_host_usm_source(3);
 
-    EXPECT_EQ(source.device_count(), 3u);
+    EXPECT_EQ(source->device_count(), 3u);
 }

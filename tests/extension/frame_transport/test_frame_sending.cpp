@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/in_process_transport/executor_drive.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/transport/recording_transport_events.hpp>
@@ -65,14 +66,10 @@ namespace
             /** @brief Starts both endpoints and steps the executor until each sees the other. */
             void SetUp() override
             {
-                InProcessMasterOptions master_options;
-                master_options.executor = executor_;
-                master_options.clock = clock_;
-                InProcessWorkerOptions worker_options;
-                worker_options.executor = executor_;
-                worker_options.clock = clock_;
-                master_ = InProcessTransport::make_master(fabric_, master_options);
-                worker_ = InProcessTransport::make_worker(fabric_, worker_options);
+                master_ = InProcessTransport::make_master(
+                    fabric_, InProcessMasterOptions(), std::make_unique<ExecutorDrive>(executor_, clock_));
+                worker_ = InProcessTransport::make_worker(
+                    fabric_, InProcessWorkerOptions(), std::make_unique<ExecutorDrive>(executor_, clock_));
                 ASSERT_TRUE(master_->start(master_events_).is_ok());
                 ASSERT_TRUE(worker_->start(worker_events_).is_ok());
                 settle();

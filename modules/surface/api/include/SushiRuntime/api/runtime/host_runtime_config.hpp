@@ -36,7 +36,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/clock.hpp>
-#include <SushiRuntime/core/seeded_executor.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/machine/node_label.hpp>
 
 namespace SushiRuntime
@@ -53,8 +53,8 @@ namespace SushiRuntime
         /** @brief Host devices the runtime stands for; at least 1. */
         std::size_t device_count = 1;
 
-        /** @brief Runs every node, in the order its seed draws; null makes one of seed 0. */
-        std::shared_ptr<SeededExecutor> executor;
+        /** @brief Runs every node; null makes a SeededExecutor of seed 0, which starts no thread. */
+        std::shared_ptr<Executor> executor;
 
         /** @brief Times every recorded dispatch; null makes a ManualClock at 0. */
         std::shared_ptr<const Clock> clock;

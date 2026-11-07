@@ -42,7 +42,6 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/memory/memory_log_category.hpp>
-#include <SushiRuntime/memory/sycl_usm_source.hpp>
 
 namespace SushiRuntime
 {
@@ -90,12 +89,6 @@ namespace SushiRuntime
                 }
             }
         } // namespace
-
-        USMAllocator::USMAllocator(std::vector<sycl::queue> device_queues)
-            : USMAllocator(std::make_unique<SYCLUSMSource>(std::move(device_queues)))
-        {
-
-        }
 
         USMAllocator::USMAllocator(std::unique_ptr<USMSource> source) : source_(std::move(source))
         {
@@ -202,6 +195,13 @@ namespace SushiRuntime
             if (record.has_value() && record->device_index < source_->device_count())
                 return record;
             return std::nullopt;
+        }
+
+        void USMAllocator::copy(const void* base, std::size_t device, void* destination,
+                                const void* source, std::size_t bytes)
+        {
+            const std::optional<std::size_t> owner = owning_device(base);
+            source_->copy(destination, source, bytes, owner.value_or(device));
         }
 
         std::optional<std::size_t> USMAllocator::owning_device(const void* address) const

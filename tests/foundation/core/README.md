@@ -316,6 +316,32 @@ throw.
 | `BadAllocIsAllocationFailed` | `bad_alloc` is AllocationFailed whatever code the caller gave. |
 | `AnUnnamedThrowGetsTheFixedMessage` | A thrown non-exception is named, and the default code is KernelFailed. |
 
+## test_executor.cpp
+
+`ExecutorContract` (`tests/support/executor_contract.hpp`) runs small on `SeededExecutor`, drained by
+`run_all()`, and medium on a `ThreadPoolExecutor` of two workers, drained by `wait_idle()`.
+
+| Test | What it proves |
+| --- | --- |
+| `EveryPostedJobRunsOnce` | Three posted jobs each run once. |
+| `AJobPostedByAJobRuns` | A job a running job posts runs before the drain returns. |
+| `RunOneOnNothingPendingReturnsFalse` | `run_one()` on an executor holding no job runs nothing and returns false. |
+
+## test_thread_pool_executor.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `APoolOfNoWorkersRunsAJobOnlyInsideRunOne` | A pool of no workers starts no thread; a posted job waits for `run_one()`. |
+| `AJobRunsOnAWorkerThread` | A pool's worker runs a job nobody steps, on a thread other than the poster's. |
+
+## test_seeded_executor.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `OneSeedReplaysOneOrder` | Two executors of one seed run sixteen posts in the same order. |
+| `AJobPostedByAJobRunsInTheSameDrain` | `run_all()` counts a job a running job posted. |
+| `RunOneLeavesTheOtherJobsPending` | `run_one()` runs one of two jobs and leaves the other pending. |
+
 ## test_export.cpp
 
 The file tests the export macros: each one is defined, and SR_API spells SUSHIRUNTIME_API.

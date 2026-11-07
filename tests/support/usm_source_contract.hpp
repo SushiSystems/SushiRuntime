@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -109,6 +110,55 @@ namespace TestSupport
         EXPECT_FALSE(this->source().resolve_owner(&local).has_value());
     }
 
+    /** @brief Tests that an address inside a shared allocation resolves to the device it was made for. */
+    TYPED_TEST_P(USMSourceContract, AnAddressInsideASharedAllocationResolvesToItsDevice)
+    {
+        SushiRuntime::Internal::Memory::USMRequest request;
+        request.kind = SushiRuntime::Internal::Memory::USMKind::Shared;
+        request.bytes = 32;
+        void* const address = this->source().allocate(request);
+        ASSERT_NE(address, nullptr);
+
+        const std::optional<std::size_t> owner =
+            this->source().resolve_owner(static_cast<unsigned char*>(address) + 8);
+
+        EXPECT_EQ(owner, std::optional<std::size_t>(0));
+        this->source().free(address, 0);
+    }
+
+    /** @brief Tests that a host allocation has no owning device: host memory belongs to none. */
+    TYPED_TEST_P(USMSourceContract, AHostAllocationHasNoOwner)
+    {
+        SushiRuntime::Internal::Memory::USMRequest request;
+        request.kind = SushiRuntime::Internal::Memory::USMKind::Host;
+        request.bytes = 32;
+        void* const address = this->source().allocate(request);
+        ASSERT_NE(address, nullptr);
+
+        const std::optional<std::size_t> owner = this->source().resolve_owner(address);
+
+        EXPECT_FALSE(owner.has_value());
+        this->source().free(address, 0);
+    }
+
+    /** @brief Tests that a copy on a device puts the source bytes into a shared allocation. */
+    TYPED_TEST_P(USMSourceContract, ACopyPutsTheBytesInTheDestination)
+    {
+        constexpr std::size_t K_BYTES = 16;
+        SushiRuntime::Internal::Memory::USMRequest request;
+        request.kind = SushiRuntime::Internal::Memory::USMKind::Shared;
+        request.bytes = K_BYTES;
+        void* const destination = this->source().allocate(request);
+        ASSERT_NE(destination, nullptr);
+        unsigned char bytes[K_BYTES];
+        std::memset(bytes, 0x3C, K_BYTES);
+
+        this->source().copy(destination, bytes, K_BYTES, 0);
+
+        EXPECT_EQ(static_cast<unsigned char*>(destination)[K_BYTES - 1], 0x3C);
+        this->source().free(destination, 0);
+    }
+
     /** @brief Tests that a source of one device reports one device. */
     TYPED_TEST_P(USMSourceContract, ASourceOfOneDeviceCountsOne)
     {
@@ -118,5 +168,7 @@ namespace TestSupport
     REGISTER_TYPED_TEST_SUITE_P(USMSourceContract, ASharedAllocationKeepsItsBytes,
                                 AnAlignedAllocationStartsOnItsAlignment,
                                 ADeviceSharesItsContextWithItself, AStackAddressHasNoOwner,
+                                AnAddressInsideASharedAllocationResolvesToItsDevice,
+                                AHostAllocationHasNoOwner, ACopyPutsTheBytesInTheDestination,
                                 ASourceOfOneDeviceCountsOne);
 } // namespace TestSupport

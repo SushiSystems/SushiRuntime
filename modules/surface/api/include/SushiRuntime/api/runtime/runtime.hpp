@@ -102,26 +102,11 @@ namespace SushiRuntime
              * @return The runtime, or an InvalidArgument error for a bad label or no device.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] static Result<Runtime> create_host(HostRuntimeConfig config = {})
+            [[nodiscard]] static Result<Runtime> create_host(const HostRuntimeConfig& config = {})
             {
+                // The check is inline so it compares the caller's headers with the library.
                 require_matching_version();
-                if (!config.executor)
-                    config.executor = std::make_shared<SeededExecutor>();
-                if (!config.clock)
-                    config.clock = std::make_shared<ManualClock>();
-                RuntimeConfig facts_config;
-                facts_config.node_name = config.node_name;
-                facts_config.labels = config.labels;
-                Result<std::shared_ptr<NodeFacts>> facts = create_topology(facts_config);
-                if (!facts)
-                    return make_error(std::move(facts.error()));
-                Result<ContextHandle> context = create_host_context(config);
-                if (!context)
-                    return make_error(std::move(context.error()));
-                Result<void> attached = attach_facts(*context, std::move(*facts));
-                if (!attached)
-                    return make_error(std::move(attached.error()));
-                return Runtime(std::move(*context));
+                return create_host_runtime(config);
             }
 
             Runtime(Runtime&&) noexcept = default;
@@ -287,6 +272,13 @@ namespace SushiRuntime
              */
             [[nodiscard]] SUSHIRUNTIME_API static Result<ContextHandle>
             create_context(const RuntimeConfig& config);
+
+            /**
+             * @brief Builds a host runtime once its release is checked: a SeededExecutor of seed 0
+             *        and a ManualClock at 0 stand in for an executor or a clock the config leaves null.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API static Result<Runtime>
+            create_host_runtime(const HostRuntimeConfig& config);
 
             /** @brief Builds the context of a host runtime; the config's executor and clock are set. */
             [[nodiscard]] SUSHIRUNTIME_API static Result<ContextHandle>

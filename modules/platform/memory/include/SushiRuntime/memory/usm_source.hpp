@@ -43,8 +43,9 @@ namespace SushiRuntime
         /**
          * @brief Makes and frees the bytes of USM allocations on a fixed set of devices.
          *
-         * USMAllocator keeps the records; a source only moves memory. SYCLUSMSource is the
-         * device adapter and HostUSMSource the in-memory one; both pass USMSourceContract.
+         * USMAllocator keeps the records; a source only moves memory. make_sycl_usm_source() makes
+         * the device adapter and make_host_usm_source() the in-memory one; both pass
+         * USMSourceContract.
          * @see modules/platform/memory/README.md
          */
         class USMSource
@@ -71,8 +72,10 @@ namespace SushiRuntime
                 virtual void free(void* address, std::size_t device_index) = 0;
 
                 /**
-                 * @brief Returns the device that owns an address allocate() did not record.
-                 * @return The device, or nothing when no device of the source owns it.
+                 * @brief Returns the device that owns a shared or device allocation of the source's
+                 *        devices, an address inside one included.
+                 * @return The device, or nothing for host memory: a Host allocation, a stack or heap
+                 *         address, and an address no device of the source owns.
                  */
                 [[nodiscard]] virtual std::optional<std::size_t>
                 resolve_owner(const void* address) const = 0;
@@ -83,6 +86,16 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] virtual bool shares_context(std::size_t first,
                                                           std::size_t second) const = 0;
+
+                /**
+                 * @brief Copies bytes between two addresses, on the device that does the copy, and
+                 *        returns when they have arrived.
+                 * @param device_index The device whose memory engine copies.
+                 * @pre device_index is below device_count(); both ranges hold bytes and do not
+                 *      overlap.
+                 */
+                virtual void copy(void* destination, const void* source, std::size_t bytes,
+                                  std::size_t device_index) = 0;
 
                 /**
                  * @brief Returns the name of a device, as a refusal line prints it.

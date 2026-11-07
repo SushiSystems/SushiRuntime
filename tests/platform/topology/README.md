@@ -35,6 +35,14 @@ list core 0.
 twice, and no null byte. `host_operating_system()` names the system the test was compiled for:
 Windows, Linux, or Unknown elsewhere.
 
+## test_host_topology.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `MapsItsCoreToNodeZeroAndHasNoHardwareNode` | The host provider maps core 0 to node 0 and enumerates no node. |
+| `HasOneNodeAtTheLocalDistance` | The host distance model holds one node at distance 10. |
+| `NamesEachDeviceForItsIndexAsACPU` | Each host device is a CPU named `host device <i>`, at its index. |
+
 ## test_hw_discovery.cpp
 
 The file covers what `HardwareDiscovery` returns for a filter and what `parse_pci_address` reads. The

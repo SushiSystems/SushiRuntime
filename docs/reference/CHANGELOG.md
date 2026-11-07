@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 2026-11-07 — core: Added `Executor`, the port a part that runs jobs takes them through, with a thread-pool adapter beside the seeded one; a host runtime takes any executor (`executor.hpp`).
+- 2026-11-07 — execution: Moved the offload members of `ExecutionEngine` into `OffloadHost`, which only the scheduler engine implements; a host context hands out a refusing sink (`offload_host.hpp`).
+- 2026-11-07 — memory: Gave `USMSource` a `copy()` and one owner promise for both adapters, which factories make; the allocator takes no queue list (`usm_source.hpp`).
+- 2026-11-07 — device: Removed `DeviceQueueSet::holds_queues()`; a device's driver is `DeviceDescription::driver_version` (`device_queue_set.hpp`).
+- 2026-11-07 — in_process_transport: Made every endpoint take a `TransportDrive`, a thread by default or an executor with its clock, in place of the options' executor and clock (`transport_drive.hpp`).
+- 2026-11-07 — api: Made `Runtime::create_host()` install no process-wide fatal-log handler (`runtime.cpp`).
+- 2026-11-07 — topology: Added `make_host_topology()`, the machine a host context stands for (`host_topology.hpp`).
 - 2026-11-07 — api: Added `Runtime::create_host()`, a runtime with host devices, host memory and no thread, whose nodes run as jobs on a seeded executor (RW-124, `e6ec9548`).
 - 2026-11-07 — api: Gave count, `Extent`, dynamic, device-sized and late-count launches a host form the host runtime runs (RW-126, `7d4c949d`).
 - 2026-11-07 — in_process_transport: Made an endpoint given an executor run with no pump thread, its rounds posted as jobs (RW-87, `c156df96`).

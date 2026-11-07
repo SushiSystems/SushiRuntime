@@ -49,6 +49,7 @@
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
+#include <SushiRuntime/in_process_transport/executor_drive.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
@@ -181,8 +182,8 @@ namespace OffloadDispatcherTests
             protected:
                 /** @brief Builds a master endpoint whose control queue holds @p queue_frames. */
                 explicit DispatcherRig(std::size_t queue_frames)
-                    : master_(InProcessTransport::make_master(fabric_,
-                                                              master_options(queue_frames)))
+                    : master_(InProcessTransport::make_master(fabric_, master_options(queue_frames),
+                                                              make_drive()))
                 {
 
                 }
@@ -201,7 +202,7 @@ namespace OffloadDispatcherTests
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
                     ASSERT_TRUE(master_->start(master_events_).is_ok());
-                    worker_ = InProcessTransport::make_worker(fabric_, worker_options());
+                    worker_ = InProcessTransport::make_worker(fabric_, worker_options(), make_drive());
                     ASSERT_TRUE(worker_->start(worker_events_).is_ok());
                     settle();
                     ASSERT_TRUE(master_events_.wait_for_connections(1, K_NO_WAIT));
@@ -296,7 +297,7 @@ namespace OffloadDispatcherTests
                 /** @brief Connects and registers a second worker; returns the master's peer for it. */
                 PeerID connect_second_worker()
                 {
-                    second_worker_ = InProcessTransport::make_worker(fabric_, worker_options());
+                    second_worker_ = InProcessTransport::make_worker(fabric_, worker_options(), make_drive());
                     EXPECT_TRUE(second_worker_->start(second_events_).is_ok());
                     settle();
                     EXPECT_TRUE(master_events_.wait_for_connections(2, K_NO_WAIT));
@@ -387,13 +388,17 @@ namespace OffloadDispatcherTests
                 /// @brief The storage of a buffer no test shares.
                 Storage unshared_{};
 
-                /** @brief Returns the options of a threadless master endpoint with the given queue. */
+                /** @brief Returns a drive over the test's executor and clock. */
+                std::unique_ptr<Distributed::TransportDrive> make_drive() const
+                {
+                    return std::make_unique<Distributed::ExecutorDrive>(executor_, clock_);
+                }
+
+                /** @brief Returns the options of a master endpoint with the given queue. */
                 InProcessMasterOptions master_options(std::size_t queue_frames) const
                 {
                     InProcessMasterOptions options;
                     options.control_queue_frames = queue_frames;
-                    options.executor = executor_;
-                    options.clock = clock_;
                     return options;
                 }
 
@@ -401,8 +406,6 @@ namespace OffloadDispatcherTests
                 InProcessWorkerOptions worker_options() const
                 {
                     InProcessWorkerOptions options;
-                    options.executor = executor_;
-                    options.clock = clock_;
                     return options;
                 }
 

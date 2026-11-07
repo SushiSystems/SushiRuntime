@@ -167,39 +167,48 @@ by a mutex, and `released()` returns a copy. It needs no device or thread.
 
 ### USMSource
 
-The port `USMAllocator` takes its memory from. A source makes and frees bytes and answers four
-questions about its devices: how many there are, which one owns an address the allocator never
-recorded, whether two of them share one memory context, and a device's name for a log line. The
-allocator keeps every record; a source keeps none. Both adapters pass `USMSourceContract`
-(`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and `Medium_SYCLUSMSource`.
+The port `USMAllocator` takes its memory from. A source makes, frees and copies bytes and
+answers four questions about its devices: how many there are, which one owns an address, whether
+two of them share one memory context, and a device's name for a log line. The owner promise is one
+for both adapters: a shared or device allocation of the source, an interior address included,
+resolves to its device, and host memory (a `Host` allocation, a stack or heap address) to none.
+`copy()` moves bytes on a device's memory engine and returns when they have arrived. The allocator
+keeps the records a caller reads; a source keeps only what its owner promise needs. Both adapters
+pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and
+`Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
+its factory and holds it as a `USMSource`.
 
 ## sycl_usm_source.hpp
 
-### SYCLUSMSource
+### make_sycl_usm_source
 
 The device adapter: `sycl::malloc_*` and `sycl::aligned_alloc_*` on one queue per device,
-`sycl::free` on release, and `sycl::get_pointer_type` and `get_pointer_device` across the queues'
-contexts for an address without a record. A shared match wins at once; a device match waits for
-a later shared one. `USMAllocator(std::vector<sycl::queue>)` builds one.
+`sycl::free` on release, `queue.memcpy()` for a copy, and `sycl::get_pointer_type` and
+`get_pointer_device` across the queues' contexts for an owner. A shared match wins at once; a device
+match waits for a later shared one. The factory takes `std::vector<sycl::queue>`, so this is the one
+header of the module that includes `<sycl/sycl.hpp>`: a function that takes a `sycl::queue` needs its
+definition, and neither DPC++ nor AdaptiveCpp offers a declaration to forward.
 
 ## host_usm_source.hpp
 
-### HostUSMSource
+### make_host_usm_source
 
 The in-memory adapter: every kind of USM comes from the host heap, aligned by over-allocation,
-with the heap block's address stored in the word below the one returned. It makes no device and
-starts no thread, so the host runtime and the small tests of the allocator run on it. Every device
-shares one context, an address without a record has no owner, and an alignment that is not a
-power of two is refused with null.
+with the heap block's address stored in the word below the one returned, and a copy is a
+`std::memcpy`. It makes no device and starts no thread, so the host runtime and the small tests of
+the allocator run on it. Every device shares one context, and an alignment that is not a power of
+two is refused with null. It keeps the extent and device of each shared and device allocation, so
+it keeps the owner promise as a device does.
 
 ## usm_allocator.hpp
 
 ### USMAllocator
 
 The allocator owns one `USMSource` for its whole life and asks it for every byte; it keeps the
-records itself. `USMAllocator(std::vector<sycl::queue>)` wraps the queues in a `SYCLUSMSource`.
-A `sycl::queue` is a handle, so the copies name the same queues as the caller's, and the memory
-module needs no header of the module that builds them. A device's index is the source's, the
+records itself; `copy()` asks `owning_device()` for the device that copies and hands the bytes to
+the source. A caller with device queues passes `make_sycl_usm_source(queues)`; a `sycl::queue` is a
+handle, so the copies name the same queues as the caller's, and the memory module needs no header
+of the module that builds them. A device's index is the source's, the
 number USMRegistry stores.
 
 The source never changes after construction and is read without a lock. Each registry
@@ -270,5 +279,5 @@ The record is the first answer and costs one hash lookup. Without a record the a
 source's `resolve_owner()`. The SYCL source asks each queue's context for the pointer's kind and
 device: a shared allocation that matches is returned at once, a device allocation that matches is
 kept while the remaining queues are tried, host USM resolves to nothing, and a context that throws
-for an address it does not know counts as no match. The host source owns no address it did not
-record.
+for an address it does not know counts as no match. The host source looks the address up among
+the shared and device allocations it made.

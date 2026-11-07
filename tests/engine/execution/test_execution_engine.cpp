@@ -29,15 +29,18 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -51,6 +54,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
+#include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 
 namespace
@@ -68,6 +72,18 @@ namespace
         public:
             /** @brief Runs nothing. */
             SushiRuntime::Result<void> execute(CompiledGraph&) override
+            {
+                return {};
+            }
+
+            /** @brief Starts nothing. */
+            SushiRuntime::Result<void> submit(CompiledGraph&) override
+            {
+                return {};
+            }
+
+            /** @brief Waits for nothing. */
+            SushiRuntime::Result<void> complete() override
             {
                 return {};
             }
@@ -100,16 +116,6 @@ namespace
         TaskGraph graph;
         graph.add_native({}, {}, work);
         return graph.compile().value();
-    }
-
-    /** @brief Builds a host context on a seeded executor and a manual clock. */
-    std::shared_ptr<RuntimeContext> make_host_context()
-    {
-        SushiRuntime::Internal::Execution::HostContextParts parts;
-        parts.executor =
-            std::make_shared<SushiRuntime::SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
-        parts.clock = std::make_shared<SushiRuntime::ManualClock>();
-        return RuntimeContext::create_host(parts).value();
     }
 
     /** @brief Owns one float array of shared USM on device 0 of a context. */
@@ -181,7 +187,7 @@ TEST(Small_RunInProgress, TheInterfaceDefaultReportsNoRun)
 /** @brief Tests that a blocking run is in progress for a node of the run, and not after execute() returns. */
 TEST(Small_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 {
-    const auto context_owner = make_host_context();
+    const auto context_owner = TestSupport::make_host_context();
     ExecutionEngine& engine = context_owner->execution_engine();
 
     bool seen_inside = false;
@@ -199,7 +205,7 @@ TEST(Small_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 /** @brief Tests that a submitted run is in progress until complete() returns. */
 TEST(Small_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 {
-    const auto context_owner = make_host_context();
+    const auto context_owner = TestSupport::make_host_context();
     ExecutionEngine& engine = context_owner->execution_engine();
     ASSERT_TRUE(engine.supports_asynchronous_run());
     CompiledGraph plan = compile_native_task([] {});
@@ -214,7 +220,7 @@ TEST(Small_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 /** @brief Tests that a blocking run whose task throws returns KernelFailed and leaves no run in progress. */
 TEST(Small_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
 {
-    const auto context_owner = make_host_context();
+    const auto context_owner = TestSupport::make_host_context();
     ExecutionEngine& engine = context_owner->execution_engine();
 
     CompiledGraph blocking = compile_native_task([] { throw std::runtime_error("probe failure"); });
@@ -230,7 +236,7 @@ TEST(Small_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
 /** @brief Tests that an asynchronous run whose task throws returns KernelFailed from complete(). */
 TEST(Small_RunInProgress, AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete)
 {
-    const auto context_owner = make_host_context();
+    const auto context_owner = TestSupport::make_host_context();
     ExecutionEngine& engine = context_owner->execution_engine();
     CompiledGraph asynchronous =
         compile_native_task([] { throw std::runtime_error("probe failure"); });
@@ -333,3 +339,190 @@ TEST_F(Medium_ChainedRunInProgress, OneChainedRunsEndLeavesTheOtherShowing)
     }
     EXPECT_FALSE(engine().run_in_progress());
 }
+
+/** @brief Tests the engine of a host context: order, seeding, asynchronous runs, failure and cancel. */
+namespace HostEngineTests
+{
+    using SushiRuntime::BufferRegion;
+    using SushiRuntime::ErrorCode;
+    using SushiRuntime::SeededExecutor;
+    using SushiRuntime::Internal::Execution::ExecutionEngine;
+    using SushiRuntime::Internal::Execution::RuntimeContext;
+    using SushiRuntime::Internal::Graph::CompiledGraph;
+    using SushiRuntime::Internal::Graph::Node;
+    using SushiRuntime::Internal::Graph::TaskGraph;
+
+    /** @brief Holds the engine of a host context, with the executor the context was made on. */
+    struct HostEngine
+    {
+        /** @brief Makes a host context whose executor draws from a seed. */
+        explicit HostEngine(std::uint64_t seed = 0)
+            : executor(std::make_shared<SeededExecutor>(seed)),
+              context(TestSupport::make_host_context(executor)),
+              engine(context->execution_engine())
+        {
+        }
+
+        std::shared_ptr<SeededExecutor> executor; /**< Runs the engine's nodes. */
+        std::shared_ptr<RuntimeContext> context;  /**< Owns the engine. */
+        ExecutionEngine& engine;                  /**< The engine under test. */
+    };
+
+    /**
+     * @brief Builds a diamond of host nodes over four cells: a, then b and c from a, then d from b and c.
+     * @param order Gains each node's letter as it runs.
+     */
+    CompiledGraph diamond(std::vector<char>& order, int* cells)
+    {
+        TaskGraph graph;
+        graph.add_native({}, {BufferRegion(&cells[0])}, [&order]() { order.push_back('a'); });
+        graph.add_native({BufferRegion(&cells[0])}, {BufferRegion(&cells[1])},
+                         [&order]() { order.push_back('b'); });
+        graph.add_native({BufferRegion(&cells[0])}, {BufferRegion(&cells[2])},
+                         [&order]() { order.push_back('c'); });
+        graph.add_native({BufferRegion(&cells[1]), BufferRegion(&cells[2])},
+                         {BufferRegion(&cells[3])}, [&order]() { order.push_back('d'); });
+        return graph.compile().value();
+    }
+
+    /** @brief Builds a graph of independent host nodes, each appending its number to order. */
+    CompiledGraph siblings(std::vector<int>& order, int count)
+    {
+        TaskGraph graph;
+        for (int node = 0; node < count; ++node)
+            graph.add_native({}, {}, [&order, node]() { order.push_back(node); });
+        return graph.compile().value();
+    }
+
+    /** @brief Tests that a diamond runs its first node first and its last node last. */
+    TEST(Small_HostExecutionEngine, RunsADiamondInDependencyOrder)
+    {
+    HostEngine host;
+    std::vector<char> order;
+    int cells[4] = {};
+    CompiledGraph plan = diamond(order, cells);
+
+    ASSERT_TRUE(host.engine.execute(plan).has_value());
+
+    ASSERT_EQ(order.size(), 4u);
+    EXPECT_EQ(order.front(), 'a');
+    EXPECT_EQ(order.back(), 'd');
+    }
+
+    /** @brief Tests that two engines of one seed run unordered nodes in the same order. */
+    TEST(Small_HostExecutionEngine, OneSeedReplaysTheOrderOfUnorderedNodes)
+    {
+    HostEngine first(11);
+    HostEngine second(11);
+    std::vector<int> first_order;
+    std::vector<int> second_order;
+    CompiledGraph first_plan = siblings(first_order, 8);
+    CompiledGraph second_plan = siblings(second_order, 8);
+
+    ASSERT_TRUE(first.engine.execute(first_plan).has_value());
+    ASSERT_TRUE(second.engine.execute(second_plan).has_value());
+
+    EXPECT_EQ(first_order, second_order);
+    }
+
+    /** @brief Tests that submit runs nothing until the executor is stepped. */
+    TEST(Small_HostExecutionEngine, SubmitRunsNothingUntilTheExecutorIsStepped)
+    {
+    HostEngine host;
+    std::vector<int> order;
+    CompiledGraph plan = siblings(order, 3);
+
+    ASSERT_TRUE(host.engine.submit(plan).has_value());
+
+    EXPECT_TRUE(order.empty());
+    EXPECT_FALSE(host.engine.run_finished());
+    }
+
+    /** @brief Tests that complete drains the executor and finishes the run it submitted. */
+    TEST(Small_HostExecutionEngine, CompleteFinishesTheSubmittedRun)
+    {
+    HostEngine host;
+    std::vector<int> order;
+    CompiledGraph plan = siblings(order, 3);
+    ASSERT_TRUE(host.engine.submit(plan).has_value());
+
+    ASSERT_TRUE(host.engine.complete().has_value());
+
+    EXPECT_EQ(order.size(), 3u);
+    EXPECT_TRUE(host.engine.run_finished());
+    }
+
+    /** @brief Tests that a second submit during a run is refused with InvalidState. */
+    TEST(Small_HostExecutionEngine, RefusesASubmitDuringARun)
+    {
+    HostEngine host;
+    std::vector<int> order;
+    CompiledGraph plan = siblings(order, 2);
+    ASSERT_TRUE(host.engine.submit(plan).has_value());
+
+    auto refused = host.engine.submit(plan);
+
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
+    }
+
+    /** @brief Tests that a node that throws fails the run and its successor does not run. */
+    TEST(Small_HostExecutionEngine, AThrowingNodeFailsTheRunAndSkipsItsSuccessor)
+    {
+    HostEngine host;
+    int cell = 0;
+    bool successor_ran = false;
+    TaskGraph graph;
+    graph.add_native({}, {BufferRegion(&cell)}, []() { throw std::runtime_error("boom"); });
+    graph.add_native({BufferRegion(&cell)}, {}, [&successor_ran]() { successor_ran = true; });
+    CompiledGraph plan = graph.compile().value();
+
+    auto ran = host.engine.execute(plan);
+
+    ASSERT_FALSE(ran.has_value());
+    EXPECT_FALSE(successor_ran);
+    }
+
+    /** @brief Tests that a command group with no host form fails the run with Unsupported. */
+    TEST(Small_HostExecutionEngine, ACommandGroupWithNoHostFormFailsWithUnsupported)
+    {
+    HostEngine host;
+    TaskGraph graph;
+    graph.add_node([](sycl::handler&) {}, std::vector<sycl::event>{});
+    CompiledGraph plan = graph.compile().value();
+
+    auto ran = host.engine.execute(plan);
+
+    ASSERT_FALSE(ran.has_value());
+    EXPECT_EQ(ran.error().code, ErrorCode::Unsupported);
+    }
+
+    /** @brief Tests that a command group with a host form runs that form in its place. */
+    TEST(Small_HostExecutionEngine, RunsTheHostFormOfACommandGroup)
+    {
+    HostEngine host;
+    int value = 0;
+    TaskGraph graph;
+    Node& node = graph.add_node([](sycl::handler&) {}, std::vector<sycl::event>{});
+    node.host_form = [&value]() { value = 7; };
+    CompiledGraph plan = graph.compile().value();
+
+    ASSERT_TRUE(host.engine.execute(plan).has_value());
+
+    EXPECT_EQ(value, 7);
+    }
+
+    /** @brief Tests that a cancelled run skips the nodes it had not run. */
+    TEST(Small_HostExecutionEngine, ACancelledRunSkipsTheNodesNotYetRun)
+    {
+    HostEngine host;
+    std::vector<int> order;
+    CompiledGraph plan = siblings(order, 4);
+    ASSERT_TRUE(host.engine.submit(plan).has_value());
+
+    host.engine.cancel();
+    static_cast<void>(host.engine.complete());
+
+    EXPECT_TRUE(order.empty());
+    }
+} // namespace HostEngineTests
