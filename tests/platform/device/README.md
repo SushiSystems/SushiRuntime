@@ -29,11 +29,6 @@ The set copies the inventory and numbers the devices by position.
 One row per flavour. Each row names whether the plain queue itself serves that flavour when the plain
 queue is in order and when it is out of order.
 
-### `HandsOutTheDevicesOfTheNodeInTurn`
-
-The rotation cursor is per thread, so each row reads it on a fresh thread. The cursor is process-wide
-state of the module, so injecting it is a change to the production code; that change is not made here.
-
 ### `ABadLookupStopsNamingItsCause`
 
 One death test with a row per call: a bad index through each accessor, the index equal to the count,
@@ -76,6 +71,9 @@ The file tests NUMARouteTable over NUMA ids given as values, with no device.
 | `Small_NUMARouteTable.DevicesOnAnInvalidIDServeNodeZero` | Devices that report -1 and 4096 serve node 0, and the device on node 1 serves node 1. |
 | `Small_NUMARouteTable.ANamedDeviceWinsOverTheRotation` | `device_or_next()` returns the device it is given, whatever node the rotation would run over. |
 | `Small_NUMARouteTable.NamesTheNodesThatHoldNoDevice` | Over devices on nodes 3 and 0 the table has four nodes, two populated, and names nodes 1 and 2 as empty. |
+| `Small_NUMARouteTableRotation.HandsOutTheDevicesOfTheNodeInTurn` | Over devices on nodes 0, 2 and 2, four calls for node 2 on one cursor hand out devices 1, 2, 1, 2. |
+| `Small_NUMARouteTableRotation.ANodeWithNoDeviceRotatesOverAll` | Four calls for device-less node 1 hand out 0, 1, 2, 0 on the cursor's fallback position. |
+| `Small_NUMARouteTableRotation.TwoCursorsKeepTheirOwnPositions` | A call on one cursor does not move the other. |
 
 ## test_queue_flavour.cpp
 

@@ -159,7 +159,9 @@ device it rotates over the route, one step per call, with a cursor that belongs 
 thread. A node with
 devices has its own cursor. All fallback routes share one cursor per thread, so a thread that
 alternates between two device-less nodes still advances one step per call. The cursors are
-`thread_local` and therefore shared by every set in the process.
+`thread_local` and therefore shared by every set in the process. The rotation itself is
+`NUMARouteTable::device_or_next(device, numa, cursor)`, which advances a `RotationCursor` the
+caller owns; the set passes it the calling thread's cursor.
 
 The rotation spreads tasks that name no buffer over the devices of a node. It is also the cause
 of the first entry in `docs/backlog/README.md`: a kernel that captured USM of one

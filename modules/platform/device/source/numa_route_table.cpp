@@ -48,19 +48,11 @@ namespace SushiRuntime
             constexpr const char* K_EMPTY_TABLE_MESSAGE =
                 "The device set holds no device, so no NUMA node resolves to one.";
 
-            /**
-             * @brief Returns this thread's next position in a NUMA node's rotation.
-             * @param is_fallback True to advance the one cursor every device-less node shares.
-             * @pre numa_node is in [0, K_MAX_NUMA_NODES) unless is_fallback.
-             */
-            std::size_t next_rotation(bool is_fallback, int numa_node) noexcept
+            /** @brief Returns the cursor of the calling thread, which starts every rotation at zero. */
+            RotationCursor& thread_cursor() noexcept
             {
-                static thread_local std::size_t numa_cursors[K_MAX_NUMA_NODES] = {0};
-                static thread_local std::size_t fallback_cursor = 0;
-
-                if (is_fallback)
-                    return fallback_cursor++;
-                return numa_cursors[static_cast<std::size_t>(numa_node)]++;
+                static thread_local RotationCursor cursor;
+                return cursor;
             }
         } // namespace
 
@@ -112,13 +104,20 @@ namespace SushiRuntime
 
         std::size_t NUMARouteTable::device_or_next(std::optional<std::size_t> device, int fallback_numa) const
         {
+            return device_or_next(device, fallback_numa, thread_cursor());
+        }
+
+        std::size_t NUMARouteTable::device_or_next(std::optional<std::size_t> device, int fallback_numa,
+                                                   RotationCursor& cursor) const
+        {
             if (device)
                 return *device;
 
             const Route& route = route_for(fallback_numa);
             SR_VERIFY(!route.devices.empty(), K_EMPTY_TABLE_MESSAGE);
-            const std::size_t position = next_rotation(route.is_fallback, fallback_numa);
-            return route.devices[position % route.devices.size()];
+            std::size_t& position = route.is_fallback ? cursor.fallback
+                                                      : cursor.numa[static_cast<std::size_t>(fallback_numa)];
+            return route.devices[position++ % route.devices.size()];
         }
 
         std::size_t NUMARouteTable::node_count() const noexcept

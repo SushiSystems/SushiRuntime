@@ -35,12 +35,24 @@
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Device
     {
+        /**
+         * @brief Holds one caller's positions in the rotations of a NUMA route table.
+         *
+         * The caller owns it, so two callers with two cursors never move each other's rotation.
+         */
+        struct RotationCursor
+        {
+            std::size_t numa[K_MAX_NUMA_NODES] = {}; /**< Next position on each node that holds a device. */
+            std::size_t fallback = 0;                /**< Next position shared by every device-less node. */
+        };
+
         /**
          * @brief Routes a NUMA node to the devices that serve it, built from the node of each device.
          *
@@ -89,6 +101,17 @@ namespace SushiRuntime
                  * @pre The table holds a device, or @p device is given.
                  */
                 [[nodiscard]] std::size_t device_or_next(std::optional<std::size_t> device, int fallback_numa) const;
+
+                /**
+                 * @brief Returns @p device when it is given, or the next device of a NUMA node's rotation
+                 *        on @p cursor, which it advances.
+                 * @param device The device to use; nothing selects the rotation.
+                 * @param fallback_numa NUMA node the rotation runs over when @p device is empty.
+                 * @param cursor The caller's positions; untouched when @p device is given.
+                 * @pre The table holds a device, or @p device is given.
+                 */
+                [[nodiscard]] std::size_t device_or_next(std::optional<std::size_t> device, int fallback_numa,
+                                                         RotationCursor& cursor) const;
 
                 /** @brief Returns the number of nodes from 0 to the highest one that holds a device. */
                 [[nodiscard]] std::size_t node_count() const noexcept;

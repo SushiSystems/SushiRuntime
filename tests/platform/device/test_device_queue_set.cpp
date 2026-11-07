@@ -34,7 +34,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -212,31 +211,6 @@ namespace
         const char* pattern;
     };
 
-    /** @brief One NUMA node the rotation runs over, and the devices it must hand out in order. */
-    struct RotationRow
-    {
-        /** @brief The row name gtest prints. */
-        const char* name;
-        /** @brief The node the rotation runs over. */
-        int numa_node;
-        /** @brief The device index of each of four calls. */
-        std::vector<std::size_t> devices;
-    };
-
-    /** @brief Returns the queues four calls of a fresh thread get for @p numa_node; the thread starts every rotation at zero. */
-    std::vector<sycl::queue*> rotate_on_fresh_thread(DeviceQueueSet& set, int numa_node)
-    {
-        static constexpr int K_CALLS = 4;
-        std::vector<sycl::queue*> handed;
-        std::thread caller([&set, &handed, numa_node]
-        {
-            for (int call = 0; call < K_CALLS; ++call)
-                handed.push_back(&set.queue_or_numa_local(std::nullopt, numa_node));
-        });
-        caller.join();
-        return handed;
-    }
-
 } // namespace
 
 class Medium_DeviceQueueSet : public DeviceFixture
@@ -295,29 +269,6 @@ TEST_P(Medium_DeviceQueueSetProfiling, TheFlagOfTheSetDecidesEveryPlainQueue)
 
 INSTANTIATE_TEST_SUITE_P(Flags, Medium_DeviceQueueSetProfiling, ::testing::Values(true, false),
                          [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "WithProfiling" : "WithoutProfiling"; });
-
-class Medium_DeviceQueueSetRotation : public DeviceFixture, public ::testing::WithParamInterface<RotationRow>
-{
-};
-
-/** @brief Tests that the rotation over a node's devices hands each one out in turn on a fresh thread. */
-TEST_P(Medium_DeviceQueueSetRotation, HandsOutTheDevicesOfTheNodeInTurn)
-{
-    const RotationRow& row = GetParam();
-    DeviceQueueSet set(describe_first_device_on({0, 2, 2}), false);
-
-    const std::vector<sycl::queue*> handed = rotate_on_fresh_thread(set, row.numa_node);
-
-    std::vector<sycl::queue*> expected;
-    for (const std::size_t device : row.devices)
-        expected.push_back(&set.queue(device));
-    EXPECT_EQ(handed, expected);
-}
-
-INSTANTIATE_TEST_SUITE_P(Nodes, Medium_DeviceQueueSetRotation,
-                         ::testing::Values(RotationRow{"ANodeWithTwoDevices", 2, {1, 2, 1, 2}},
-                                           RotationRow{"ANodeWithNoDeviceRotatesOverAll", 1, {0, 1, 2, 0}}),
-                         [](const ::testing::TestParamInfo<RotationRow>& info) { return std::string(info.param.name); });
 
 class Medium_DeviceQueueSetDeathTest : public TestSupport::RuntimeTest, public ::testing::WithParamInterface<StopRow>
 {

@@ -37,6 +37,7 @@
 #include <SushiRuntime/device/numa_route_table.hpp>
 
 using SushiRuntime::Internal::Device::NUMARouteTable;
+using SushiRuntime::Internal::Device::RotationCursor;
 
 namespace
 {
@@ -101,6 +102,46 @@ TEST(Small_NUMARouteTable, ANamedDeviceWinsOverTheRotation)
 
     EXPECT_EQ(table.device_or_next(std::optional<std::size_t>{2}, 0), 2u);
     EXPECT_EQ(table.device_or_next(std::optional<std::size_t>{0}, 2), 0u);
+}
+
+/** @brief Tests that the rotation hands the devices of a node out in turn on one cursor. */
+TEST(Small_NUMARouteTableRotation, HandsOutTheDevicesOfTheNodeInTurn)
+{
+    const NUMARouteTable table(std::vector<int>{0, 2, 2});
+    RotationCursor cursor;
+
+    std::vector<std::size_t> handed;
+    for (int call = 0; call < 4; ++call)
+        handed.push_back(table.device_or_next(std::nullopt, 2, cursor));
+
+    EXPECT_EQ(handed, (std::vector<std::size_t>{1, 2, 1, 2}));
+}
+
+/** @brief Tests that a node with no device rotates over every device on the shared fallback position. */
+TEST(Small_NUMARouteTableRotation, ANodeWithNoDeviceRotatesOverAll)
+{
+    const NUMARouteTable table(std::vector<int>{0, 2, 2});
+    RotationCursor cursor;
+
+    std::vector<std::size_t> handed;
+    for (int call = 0; call < 4; ++call)
+        handed.push_back(table.device_or_next(std::nullopt, 1, cursor));
+
+    EXPECT_EQ(handed, (std::vector<std::size_t>{0, 1, 2, 0}));
+    EXPECT_EQ(cursor.fallback, 4u);
+}
+
+/** @brief Tests that two cursors over one table keep their own positions. */
+TEST(Small_NUMARouteTableRotation, TwoCursorsKeepTheirOwnPositions)
+{
+    const NUMARouteTable table(std::vector<int>{0, 2, 2});
+    RotationCursor first;
+    RotationCursor second;
+
+    static_cast<void>(table.device_or_next(std::nullopt, 2, first));
+
+    EXPECT_EQ(table.device_or_next(std::nullopt, 2, second), 1u);
+    EXPECT_EQ(table.device_or_next(std::nullopt, 2, first), 2u);
 }
 
 /** @brief Tests that the table names the nodes below its highest one that hold no device. */
