@@ -40,31 +40,15 @@
 #include <SushiRuntime/link_security/handshake.hpp>
 #include <SushiRuntime/link_security/sha256.hpp>
 
+#include "support/digest_bytes.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
+using TestSupport::bytes_of;
+using TestSupport::to_hex;
 
 namespace
 {
-    /** @brief Returns a vector's bytes as a span. */
-    span<const std::uint8_t> bytes_of(const std::vector<std::uint8_t>& bytes)
-    {
-        return { bytes.data(), bytes.size() };
-    }
-
-    /** @brief Returns a digest as 64 lowercase hexadecimal digits. */
-    std::string to_hex(const Sha256Digest& digest)
-    {
-        static constexpr char K_DIGITS[] = "0123456789abcdef";
-        std::string text;
-        text.reserve(digest.size() * 2);
-        for (const std::uint8_t byte : digest)
-        {
-            text.push_back(K_DIGITS[byte >> 4]);
-            text.push_back(K_DIGITS[byte & 0x0fu]);
-        }
-        return text;
-    }
-
     /** @brief Returns the bytes first, first + 1, ... of the given count. */
     std::vector<std::uint8_t> counting(std::uint8_t first, std::size_t count)
     {

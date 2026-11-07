@@ -32,7 +32,8 @@ last test; a medium test that needs either derives its fixture from `TestSupport
 never builds its own. `buffer_contents.hpp` reads, fills and windows a buffer's contents,
 `slot_buffers.hpp` makes one device, one shared and one host counter buffer, and
 `adopted_handles.hpp` builds a `Buffer` or `State` over a made-up address with
-`RecordingAllocationOwner`.
+`RecordingAllocationOwner`, and `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
+SHA-256 digest as hexadecimal text.
 
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.

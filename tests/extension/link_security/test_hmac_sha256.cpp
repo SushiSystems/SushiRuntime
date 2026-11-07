@@ -41,44 +41,22 @@
 #include <SushiRuntime/link_security/hmac_sha256.hpp>
 #include <SushiRuntime/link_security/sha256.hpp>
 
+#include "support/digest_bytes.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
+using TestSupport::bytes_of;
+using TestSupport::to_hex;
 
 namespace
 {
     /** @brief Names the bytes of a key or a message. */
     using Bytes = std::vector<std::uint8_t>;
 
-    /** @brief Returns the bytes of a text as a span, without its terminator. */
-    span<const std::uint8_t> bytes_of(std::string_view text)
-    {
-        return { reinterpret_cast<const std::uint8_t*>(text.data()), text.size() };
-    }
-
-    /** @brief Returns a vector's bytes as a span. */
-    span<const std::uint8_t> bytes_of(const Bytes& bytes)
-    {
-        return { bytes.data(), bytes.size() };
-    }
-
     /** @brief Returns the bytes of a text. */
     Bytes bytes_from(std::string_view text)
     {
         return Bytes(text.begin(), text.end());
-    }
-
-    /** @brief Returns a digest as 64 lowercase hexadecimal digits. */
-    std::string to_hex(const Sha256Digest& digest)
-    {
-        static constexpr char K_DIGITS[] = "0123456789abcdef";
-        std::string text;
-        text.reserve(digest.size() * 2);
-        for (const std::uint8_t byte : digest)
-        {
-            text.push_back(K_DIGITS[byte >> 4]);
-            text.push_back(K_DIGITS[byte & 0x0fu]);
-        }
-        return text;
     }
 
     /** @brief Returns @p count bytes that all hold @p value. */

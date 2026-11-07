@@ -41,31 +41,15 @@
 
 #include <SushiRuntime/link_security/sha256.hpp>
 
+#include "support/digest_bytes.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
+using TestSupport::bytes_of;
+using TestSupport::to_hex;
 
 namespace
 {
-    /** @brief Returns the bytes of a text as a span, without its terminator. */
-    span<const std::uint8_t> bytes_of(std::string_view text)
-    {
-        return { reinterpret_cast<const std::uint8_t*>(text.data()), text.size() };
-    }
-
-    /** @brief Returns a digest as 64 lowercase hexadecimal digits. */
-    std::string to_hex(const Sha256Digest& digest)
-    {
-        static constexpr char K_DIGITS[] = "0123456789abcdef";
-        std::string text;
-        text.reserve(digest.size() * 2);
-        for (const std::uint8_t byte : digest)
-        {
-            text.push_back(K_DIGITS[byte >> 4]);
-            text.push_back(K_DIGITS[byte & 0x0fu]);
-        }
-        return text;
-    }
-
     /** @brief Returns @p count bytes that all hold @p value. */
     std::vector<std::uint8_t> repeated(std::uint8_t value, std::size_t count)
     {
