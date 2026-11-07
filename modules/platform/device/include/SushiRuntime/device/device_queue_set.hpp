@@ -33,6 +33,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -42,6 +43,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/numa_route_table.hpp>
+#include <SushiRuntime/device/queue_factory.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 namespace SushiRuntime
@@ -64,6 +66,17 @@ namespace SushiRuntime
                  * @param profiling True to build every plain queue with enable_profiling.
                  */
                 DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling);
+
+                /**
+                 * @brief Builds the plain queue of every device through a factory, and the
+                 *        NUMA routing table.
+                 * @param devices The inventory, in the order that fixes each device's index.
+                 * @param factory Builds every queue of the set; holds a device per entry of
+                 *                @p devices. Must not be null.
+                 * @param profiling True to build every plain queue with enable_profiling.
+                 */
+                DeviceQueueSet(std::vector<DeviceDescription> devices,
+                               std::unique_ptr<QueueFactory> factory, bool profiling);
 
                 /**
                  * @brief Builds a set of host devices that holds no queue and makes no device.
@@ -229,6 +242,9 @@ namespace SushiRuntime
 
                 /// @brief Routes of every NUMA node to the devices that serve it.
                 NUMARouteTable numa_routes_;
+
+                /// @brief Builds every queue of the set; null for a set of host devices.
+                std::unique_ptr<QueueFactory> factory_;
         };
     } // namespace Device
 } // namespace SushiRuntime

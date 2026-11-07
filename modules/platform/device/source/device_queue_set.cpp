@@ -33,7 +33,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -46,6 +46,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/device/device_log_category.hpp>
+#include <SushiRuntime/device/sycl_queue_factory.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
@@ -72,39 +73,6 @@ namespace SushiRuntime
             {
                 return QueueFlavour{(offset & K_IN_ORDER_OFFSET) != 0,
                                     (offset & K_PROFILING_OFFSET) != 0};
-            }
-
-            /** @brief Rethrows every asynchronous error a queue collected. */
-            void rethrow_async_errors(sycl::exception_list errors)
-            {
-                for (const std::exception_ptr& error : errors)
-                    std::rethrow_exception(error);
-            }
-
-            /** @brief Returns the SYCL property list of a flavour. */
-            sycl::property_list properties_of(QueueFlavour flavour)
-            {
-                if (flavour.in_order && flavour.profiling)
-                    return {sycl::property::queue::in_order(),
-                            sycl::property::queue::enable_profiling()};
-                if (flavour.in_order)
-                    return {sycl::property::queue::in_order()};
-                if (flavour.profiling)
-                    return {sycl::property::queue::enable_profiling()};
-                return {};
-            }
-
-            /**
-             * @brief Builds one queue of a flavour on a device.
-             * @param shared_context Context to build in; null gives the queue its own.
-             */
-            sycl::queue make_queue(const sycl::device& device, const sycl::context* shared_context,
-                                   QueueFlavour flavour)
-            {
-                if (shared_context)
-                    return sycl::queue(*shared_context, device, rethrow_async_errors,
-                                       properties_of(flavour));
-                return sycl::queue(device, rethrow_async_errors, properties_of(flavour));
             }
 
             /** @brief Returns the name of a SYCL backend as the device line prints it. */
@@ -136,21 +104,25 @@ namespace SushiRuntime
                 }
             }
 
-            /** @brief Returns the driver version a device reports, or "unknown" when it cannot. */
-            std::string driver_version_of(const sycl::device& device)
+            /** @brief Returns the SYCL device of every descriptor, in order. */
+            std::vector<sycl::device> devices_of(const std::vector<DeviceDescriptor>& descriptors)
             {
-                try
-                {
-                    return device.get_info<sycl::info::device::driver_version>();
-                }
-                catch (const sycl::exception& error)
-                {
-                    SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
-                                 "Driver version of device {} is not answerable: {}; the device "
-                                 "line names it unknown.",
-                                 device.get_info<sycl::info::device::name>(), error.what());
-                    return "unknown";
-                }
+                std::vector<sycl::device> devices;
+                devices.reserve(descriptors.size());
+                for (const DeviceDescriptor& descriptor : descriptors)
+                    devices.push_back(descriptor.device);
+                return devices;
+            }
+
+            /** @brief Returns the description of every descriptor, in order. */
+            std::vector<DeviceDescription>
+            descriptions_of(std::vector<DeviceDescriptor>& descriptors)
+            {
+                std::vector<DeviceDescription> infos;
+                infos.reserve(descriptors.size());
+                for (DeviceDescriptor& descriptor : descriptors)
+                    infos.push_back(std::move(descriptor.info));
+                return infos;
             }
         } // namespace
 
@@ -166,7 +138,19 @@ namespace SushiRuntime
         }
 
         DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling)
+            // Either helper may run first: each touches only its own field of a descriptor.
+            : DeviceQueueSet(descriptions_of(devices),
+                             std::make_unique<SYCLQueueFactory>(devices_of(devices)), profiling)
         {
+        }
+
+        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescription> devices,
+                                       std::unique_ptr<QueueFactory> factory, bool profiling)
+            : factory_(std::move(factory))
+        {
+            SR_VERIFY(factory_ != nullptr, "A device set needs a queue factory.");
+            SR_VERIFY(factory_->count() == devices.size(),
+                      "A queue factory must hold one device per entry of the inventory.");
             const std::size_t device_count = devices.size();
 
             infos_.reserve(device_count);
@@ -176,8 +160,7 @@ namespace SushiRuntime
 
             for (std::size_t index = 0; index < device_count; ++index)
             {
-                DeviceDescriptor& descriptor = devices[index];
-                DeviceDescription& info = descriptor.info;
+                DeviceDescription& info = devices[index];
                 info.index = index;
 
                 if (NUMARouteTable::placed_node(info.numa_node) != info.numa_node)
@@ -189,18 +172,17 @@ namespace SushiRuntime
                 }
 
                 // A non-CPU, non-GPU device gets an in-order queue (device/README.md).
-                const QueueFlavour plain{
-                    !descriptor.device.is_cpu() && !descriptor.device.is_gpu(), profiling};
+                const QueueFlavour plain{factory_->needs_in_order(index), profiling};
                 const std::size_t offset = offset_of(plain);
 
                 LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
-                std::call_once(slot.once, [&slot, &descriptor, plain]()
+                std::call_once(slot.once, [this, &slot, index, plain]()
                 {
-                    slot.queue.emplace(make_queue(descriptor.device, nullptr, plain));
+                    slot.queue.emplace(factory_->make(index, plain, nullptr));
                     slot.built.store(true, std::memory_order_release);
                 });
 
-                info.driver_version = driver_version_of(descriptor.device);
+                info.driver_version = factory_->driver_version(index);
                 SR_LOG_INFO(K_DEVICE_LOG_CATEGORY,
                             "Device: {} | Backend: {} | Driver: {} | NUMA: {} | Memory: {} MB | "
                             "Compute units: {}",
@@ -317,11 +299,10 @@ namespace SushiRuntime
             LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
             std::call_once(slot.once, [this, index, offset, flavour, &slot]()
             {
-                const sycl::queue& plain = *plain_slot(index).queue;
-                const sycl::context context = plain.get_context();
+                const sycl::context context = plain_slot(index).queue->get_context();
 
                 const auto started = std::chrono::steady_clock::now();
-                slot.queue.emplace(make_queue(plain.get_device(), &context, flavour_of(offset)));
+                slot.queue.emplace(factory_->make(index, flavour_of(offset), &context));
                 const double build_ms = std::chrono::duration<double, std::milli>(
                                             std::chrono::steady_clock::now() - started)
                                             .count();

@@ -1,0 +1,64 @@
+/**************************************************************************/
+/* test_sycl_queue_factory.cpp                                            */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file test_sycl_queue_factory.cpp
+ * @brief Tests the SYCL QueueFactory against the QueueFactory contract on the program's device.
+ * @see tests/platform/device/README.md
+ * @author Mustafa Garip
+ */
+
+#include <memory>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/device/queue_factory.hpp>
+#include <SushiRuntime/device/sycl_queue_factory.hpp>
+
+#include "support/queue_factory_contract.hpp"
+#include "support/runtime_environment.hpp"
+
+using SushiRuntime::Internal::Device::QueueFactory;
+using SushiRuntime::Internal::Device::SYCLQueueFactory;
+
+namespace
+{
+    /** @brief Makes the factory the contract runs on: the device of the program's queue. */
+    struct SYCLFactoryMaker
+    {
+        /** @brief Returns a SYCL factory over the device of the program's queue. */
+        static std::unique_ptr<QueueFactory> make()
+        {
+            return std::make_unique<SYCLQueueFactory>(
+                std::vector<sycl::device>{TestSupport::RuntimeEnvironment::queue().get_device()});
+        }
+    };
+} // namespace
+
+namespace TestSupport
+{
+    /** @brief Runs the QueueFactory contract on a device, the boundary the in-memory factory stands in for. */
+    INSTANTIATE_TYPED_TEST_SUITE_P(Medium_SYCLQueueFactory, QueueFactoryContract, ::SYCLFactoryMaker, );
+} // namespace TestSupport

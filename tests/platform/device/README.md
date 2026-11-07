@@ -39,20 +39,31 @@ state of the module, so injecting it is a change to the production code; that ch
 One death test with a row per call: a bad index through each accessor, the index equal to the count,
 and the lookups on an empty set.
 
-### `TheDeviceLineNamesTheBackend` and `TheDeviceLineNamesTheDriver`
+### The in-memory set
 
-A `LogCapture` at `Info` sees the constructor's device line, and each test asserts one word of it.
-
-### `TheFirstBuildOfALazyQueueFlavourIsLogged` and `ASecondRequestForABuiltFlavourLogsNothing`
-
-A `LogCapture` at `Debug` starts after construction. The first request for an in-order profiling
-queue logs one `DEBUG` with the flavour and the build time; a second request logs nothing.
+Small. `InMemorySet` builds a set over an `InMemoryQueueFactory`, so the queue table, the
+profiling flag, the in-order rule and the log lines run with no accelerator; the factory's
+`builds()` shows each queue the set asked for. `TheDeviceLineNamesTheBackendAndTheDriver` reads
+the constructor's device line through a `LogCapture` at `Info`. A `LogCapture` at `Debug` that
+starts after construction sees the first request for an in-order profiling queue log one `DEBUG`
+with the flavour and the build time, and a second request log nothing.
 
 ### `AnInvalidNUMAIDInADescriptionBecomesNodeZero`
 
 Small, on a host set. The wiring check of the NUMA routes: the set writes the node the route table places each device on
 into its inventory, and resolves node 0 through the table. The routing decisions themselves are
 tested small in `test_numa_route_table.cpp`.
+
+## test_queue_factory.cpp
+
+Small. `properties_of()` asks for no property for the plain flavour, and for exactly the
+properties a flavour names otherwise.
+
+## test_in_memory_queue_factory.cpp and test_sycl_queue_factory.cpp
+
+`Small_InMemoryQueueFactory` runs `QueueFactoryContract` on an in-memory factory of two devices
+and checks its record of builds and its in-order list. `Medium_SYCLQueueFactory` runs the same
+contract on the device of the program's queue, the boundary the in-memory factory stands in for.
 
 ## test_numa_route_table.cpp
 

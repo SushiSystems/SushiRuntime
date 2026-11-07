@@ -11,8 +11,10 @@ The module is internal: its headers are for the other modules of the library and
   times profiling or not.
 - The routing from a NUMA node to the devices that sit on it.
 
-The set is built once, from a `std::vector<DeviceDescriptor>` and the profiling flag, and does
-not change afterwards. There is no re-probe. A reference to a queue or to the inventory stays
+The set is built once, from a `std::vector<DeviceDescriptor>` and the profiling flag, or from a
+`std::vector<DeviceDescription>`, a `QueueFactory` and the profiling flag, and does not change
+afterwards. The descriptor form builds its queues through a `SYCLQueueFactory` over the
+descriptors' devices. There is no re-probe. A reference to a queue or to the inventory stays
 valid until the set is destroyed.
 
 ## What it depends on
@@ -23,7 +25,8 @@ It includes no header of `topology`, `execution`, `scheduler`, `graph`, `memory`
 caller turns whatever it discovered into descriptors; the module never asks the machine what
 devices exist.
 
-The sources are `modules/platform/device/source/device_queue_set.cpp` and `numa_route_table.cpp`.
+The sources are `modules/platform/device/source/device_queue_set.cpp`, `numa_route_table.cpp` and
+`sycl_queue_factory.cpp`.
 
 ## Public headers
 
@@ -32,6 +35,9 @@ The sources are `modules/platform/device/source/device_queue_set.cpp` and `numa_
 | `device/device_descriptor.hpp` | `DeviceDescriptor`, a SYCL device with its `DeviceDescription` |
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
+| `device/queue_factory.hpp` | `QueueFactory`, the port the set builds every queue through, and `properties_of()` |
+| `device/sycl_queue_factory.hpp` | `SYCLQueueFactory`, the factory over SYCL devices |
+| `device/in_memory_queue_factory.hpp` | `InMemoryQueueFactory`, a factory of host queues that records each build |
 | `device/numa_route_table.hpp` | `NUMARouteTable`, the routes from a NUMA node to its devices, built from NUMA ids alone |
 
 ## Behaviour of the set
@@ -65,6 +71,21 @@ A descriptor whose NUMA node is negative or not below `K_MAX_NUMA_NODES` is plac
 0, with a WARN that names the device and the value it reported. `devices()[i].numa_node` holds
 the node the device was placed on. `devices()[i].index` is always `i`, whatever the descriptor
 carried.
+
+### The queue factory
+
+`QueueFactory` answers, per device, whether its plain queue must run in order and which driver
+it reports, and builds a queue of a flavour, in a given context or in its own. The set asks it
+for every queue it holds: the plain queues at construction, a lazy flavour in the context of the
+device's plain queue on first use.
+
+`SYCLQueueFactory` builds on the SYCL devices it was given; a device that is neither a CPU nor a
+GPU needs an in-order plain queue, and every queue rethrows its asynchronous errors when asked.
+`InMemoryQueueFactory` builds every queue on the SYCL host device (`sycl::cpu_selector_v`), so
+the queues of two devices are two different queues and no accelerator is touched. Which devices
+need an in-order queue is a list given at construction, the driver of device i is
+`in-memory i`, and `builds()` returns every build with its device, flavour and whether it was
+built in a given context. Both pass `QueueFactoryContract` (`tests/support/queue_factory_contract.hpp`).
 
 ### A set of host devices
 
