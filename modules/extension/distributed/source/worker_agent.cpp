@@ -276,7 +276,10 @@ namespace SushiRuntime
                 /** @brief Returns the endpoint of a connection for a log line. */
                 [[nodiscard]] std::string endpoint_of(PeerID peer) const;
 
-                /** @brief Closes the registered connection and waits until its queue drained. */
+                /**
+                 * @brief Closes the registered connection; waits until its queue drained when the
+                 *        agent owns threads, and does not wait otherwise.
+                 */
                 void close_master() noexcept;
 
                 /** @brief Writes the counters as one INFO line. */
@@ -554,6 +557,10 @@ namespace SushiRuntime
                     return;
 
                 transport_->close_peer(*master);
+
+                if (!options_.own_threads)
+                    return;
+
                 std::unique_lock<std::mutex> lock(mutex_);
                 const bool closed = connection_changed_.wait_for(
                     lock, K_CLOSE_LIMIT, [&] { return connected_ != *master; });

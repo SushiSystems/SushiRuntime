@@ -83,12 +83,6 @@ namespace
 
             }
 
-            /** @brief Closes the connection so that stopping the agent waits for nobody. */
-            void TearDown() override
-            {
-                fabric_.lose();
-            }
-
             /** @brief Builds the agent on the fabric's worker endpoint and starts it. */
             void start()
             {
@@ -215,6 +209,22 @@ TEST_F(Small_WorkerAgentStep, NewSessionClearsTheCache)
     run(dispatch_of(5, op, {}, {}));
     EXPECT_EQ(calls, 3) << "a new session kept the ids of the old one";
     EXPECT_EQ(agent_->statistics().reconnects, 2u);
+}
+
+/** @brief Tests that stopping a threadless agent closes the master's link without waiting for a loss. */
+TEST_F(Small_WorkerAgentStep, Regression_StopEndsTheLinkAtOnceWhenTheAgentOwnsNoThread)
+{
+    start();
+    register_master(7);
+    const std::size_t losses = fabric_.master_events().losses().size();
+    const auto before = std::chrono::steady_clock::now();
+
+    agent_->stop();
+    fabric_.settle();
+
+    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::milliseconds(1000))
+        << "stop() waited on wall time for a loss nothing delivers";
+    EXPECT_GT(fabric_.master_events().losses().size(), losses) << "the master never saw the link end";
 }
 
 /** @brief Tests that a worker name HELLO cannot carry is refused before the transport starts. */
