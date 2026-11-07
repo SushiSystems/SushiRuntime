@@ -244,7 +244,8 @@ are tested on `RunObserverRegistry`, which the context owns, in `test_run_observ
 
 CPU work and GPU work dispatched through independent per-device queues must run concurrently and
 without a race. These tests assert correctness only. The benchmark suite measures the speedup from
-the overlap (`Benchmark_AsyncOverlap`).
+the overlap (`Benchmark_AsyncOverlap`). Each `Medium_` body runs on the program's one device context,
+`TestSupport::ContextEnvironment::context()`, and builds none of its own.
 
 ### `CPUAndGPUVectorAddsBothProduceTheirSums`
 

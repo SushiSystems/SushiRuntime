@@ -63,6 +63,7 @@
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 
+#include "support/context_environment.hpp"
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 #include "support/tolerance.hpp"
@@ -278,8 +279,7 @@ namespace DevicePipelineTests
      */
     TEST(Medium_DevicePipelineTest, DiamondAllKernelNodes)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
 
         if (!numa0_has_single_queue(context))
             GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would scatter "
@@ -466,8 +466,7 @@ namespace HeterogeneousPipelineTests
      */
     TEST(Medium_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
         TaskGraph graph;
         const std::vector<sycl::queue*> device_queues = cpu_and_gpu_queues(context);
         ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
@@ -513,8 +512,7 @@ namespace SYCLExecutionTests
      */
     TEST(Medium_SyclExecutionTest, EndToEndVectorAddition)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
         TaskGraph graph;
 
         sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
@@ -573,8 +571,7 @@ namespace SYCLExecutionTests
      */
     TEST(Medium_SyclExecutionTest, MultiStageChain)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
         TaskGraph graph;
 
         constexpr size_t N     = 2048;
@@ -745,9 +742,9 @@ namespace ReplayHostWriteTests
     /** @brief Tests that a replay reads the word of the row's kind the host wrote since the last execution. */
     TEST_P(Medium_ReplayHostWrite, AReplayReadsTheWordTheHostWrote)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
+        SushiRuntime::Internal::Execution::RuntimeContext& shared_context = TestSupport::ContextEnvironment::context();
 
-        replay_on_every_device(*context_owner, GetParam());
+        replay_on_every_device(shared_context, GetParam());
     }
 
     INSTANTIATE_TEST_SUITE_P(Rows, Medium_ReplayHostWrite, ::testing::Values(USMKind::Shared, USMKind::Host));

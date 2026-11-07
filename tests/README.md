@@ -28,7 +28,8 @@ The code the tests of several modules share is in internal modules that only the
 `tolerance.hpp` is copied from SushiSkills and derives a floating-point tolerance from a rounding
 bound, so no comparison spells one. `runtime_environment.hpp` registers one `testing::Environment`
 per program that makes the runtime and the device queue on first use and releases them after the
-last test; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
+last test, and `context_environment.hpp` does the same for the one device `RuntimeContext` an engine
+test program shares; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
 never builds its own. A test that needs another configuration asks the environment for the runtime
 of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer), made once per
 shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
