@@ -24,7 +24,7 @@
 /**
  * @file test_kernel_registry.cpp
  * @brief Tests KernelRegistry: sealing and the refusal of an empty kernel.
- * @see tests/extension/distributed/README.md
+ * @see tests/extension/worker_types/README.md
  * @author Mustafa Garip
  */
 

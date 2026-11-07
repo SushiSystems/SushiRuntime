@@ -25,7 +25,7 @@
  * @file dispatch_executor.hpp
  * @brief Declares DispatchExecutor, the worker's job queue and the thread that runs kernels.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
 #pragma once
@@ -47,15 +47,16 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/distributed/worker_statistics.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
-#include "dispatch_job.hpp"
-#include "dispatch_recorder.hpp"
-#include "dispatch_settler.hpp"
-#include "held_tasks.hpp"
-#include "worker_buffer_cache.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_job.hpp>
+#include <SushiRuntime/dispatch_executor/dispatch_plan.hpp>
+#include <SushiRuntime/dispatch_executor/dispatch_recorder.hpp>
+#include <SushiRuntime/dispatch_executor/dispatch_settler.hpp>
+#include <SushiRuntime/dispatch_executor/held_tasks.hpp>
+#include <SushiRuntime/dispatch_executor/worker_buffer_cache.hpp>
 
 namespace SushiRuntime
 {
@@ -77,21 +78,11 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Names what enqueue() did with a dispatch.
-         */
-        enum class EnqueueStatus : std::uint8_t
-        {
-            Queued,    /**< The job waits for the exec thread; send TASK_ACCEPTED. */
-            QueueFull, /**< The queue is at max_jobs; send nothing, the master takes it back. */
-            Stopping,  /**< stop() has begun; the executor queued a ShuttingDown result itself. */
-        };
-
-        /**
          * @brief Runs dispatched kernels as tasks of the worker's runtime, each on its device.
          *
          * The exec thread pins each job's buffers, pulls missing inputs and checks its device;
          * DispatchRecorder records and runs the batch, DispatchSettler reports each job.
-         * @see modules/extension/distributed/README.md
+         * @see modules/extension/dispatch_executor/README.md
          */
         class SUSHIRUNTIME_API DispatchExecutor final
         {
@@ -119,6 +110,15 @@ namespace SushiRuntime
 
                 /** @brief Starts the exec thread; called once. */
                 void start();
+
+                /**
+                 * @brief Gathers and runs one batch on the calling thread, as the exec thread would.
+                 *
+                 * A test that owns the cache and the transport calls it instead of waiting for
+                 * the thread; a batch that needs an input from the master waits for it here too.
+                 * @return False when no job waited or stop() began; nothing ran then.
+                 */
+                bool step();
 
                 /**
                  * @brief Queues a dispatch the deduplicator has passed; called on the reader.
@@ -160,6 +160,9 @@ namespace SushiRuntime
                 /** @brief Gathers and runs batches until stop(). */
                 void run() noexcept;
 
+                /** @brief Gathers the waiting jobs into one batch and runs it. */
+                void run_one_batch();
+
                 /**
                  * @brief Takes the next job for a batch.
                  * @return None when the queue is empty, stop() began, or the next job reads a
@@ -187,12 +190,10 @@ namespace SushiRuntime
                                  const char* consequence) const;
 
                 /**
-                 * @brief Tells whether the device a job names can run it.
-                 * @return False, after logging why, when the worker has no such device or the
-                 *         device does not share the cache's context, so the cache's memory
-                 *         would not be reachable from it.
+                 * @brief Asks judge_job() about a job: its kernel, its device and the context.
+                 * @param kernel_known Whether the registry has the job's operation.
                  */
-                [[nodiscard]] bool can_run_on_its_device(const DispatchJob& job);
+                [[nodiscard]] JobVerdict verdict_of(const DispatchJob& job, bool kernel_known);
 
                 /// @brief Guards jobs_, stopping_ and pulling_.
                 mutable std::mutex mutex_;

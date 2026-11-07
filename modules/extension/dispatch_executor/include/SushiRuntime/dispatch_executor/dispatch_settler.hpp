@@ -25,7 +25,7 @@
  * @file dispatch_settler.hpp
  * @brief Declares DispatchSettler, which reports each job's outcome to the master.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
 #pragma once
@@ -35,13 +35,13 @@
 #include <memory>
 #include <string>
 
-#include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/distributed/worker_statistics.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
-#include "dispatch_job.hpp"
-#include "held_tasks.hpp"
-#include "worker_buffer_cache.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_job.hpp>
+#include <SushiRuntime/dispatch_executor/held_tasks.hpp>
+#include <SushiRuntime/dispatch_executor/worker_buffer_cache.hpp>
 
 namespace SushiRuntime
 {
@@ -52,7 +52,7 @@ namespace SushiRuntime
          *        failed TASK_RESULT, and counts the outcome.
          *
          * Every way a task leaves goes through it, so each one lets its held id go once.
-         * @see modules/extension/distributed/README.md
+         * @see modules/extension/dispatch_executor/README.md
          */
         class DispatchSettler final
         {

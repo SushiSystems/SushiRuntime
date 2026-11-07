@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* buffer_view.hpp                                                        */
+/* worker_statistics.hpp                                                  */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,44 +22,35 @@
 /**************************************************************************/
 
 /**
- * @file buffer_view.hpp
- * @brief Declares BufferView, the address and the size a kernel receives for one buffer.
+ * @file worker_statistics.hpp
+ * @brief Declares WorkerStatistics, the counters of a worker agent.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/worker_types/README.md
  */
 
 #pragma once
 
-#include <cstddef>
+#include <cstdint>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
         /**
-         * @brief Names the memory of one buffer on the machine that runs a kernel.
-         *
-         * The view owns nothing: the memory belongs to the worker's cache, or to the master's
-         * allocation when the kernel runs as a local fallback. A view a kernel receives is
-         * valid until the event that kernel returns completes.
+         * @brief Holds a worker's counters since start().
          */
-        struct BufferView
+        struct WorkerStatistics
         {
-            /** @brief Holds the base address, a USM allocation; null when the size is 0. */
-            void* data = nullptr;
-
-            /** @brief Holds the number of bytes at the address. */
-            std::size_t size_bytes = 0;
-
-            /**
-             * @brief Returns the address as a pointer to elements of @p Element.
-             * @tparam Element The type the buffer was written as; size_bytes is not checked.
-             */
-            template <typename Element>
-            [[nodiscard]] Element* as() const noexcept
-            {
-                return static_cast<Element*>(data);
-            }
+            std::uint64_t tasks_run = 0;                      /**< Kernels that ran to the end. */
+            std::uint64_t tasks_failed_kernel = 0;            /**< Kernels that threw. */
+            std::uint64_t tasks_failed_output_allocation = 0; /**< Outputs that did not fit. */
+            std::uint64_t tasks_failed_input_unavailable = 0; /**< Inputs that never arrived. */
+            std::uint64_t tasks_failed_unknown_operation = 0; /**< Operations with no kernel. */
+            std::uint64_t tasks_failed_shutting_down = 0;     /**< Tasks failed by stop(). */
+            std::uint64_t cache_bytes = 0;                    /**< Bytes the cache holds. */
+            std::uint64_t cache_evictions = 0;                /**< Buffers the cache dropped. */
+            std::uint64_t registrations = 0;                  /**< WELCOME frames accepted. */
+            std::uint64_t reconnects = 0;                     /**< Registrations after the first. */
         };
 
     } // namespace Distributed

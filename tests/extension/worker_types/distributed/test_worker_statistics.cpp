@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* held_tasks.cpp                                                         */
+/* test_worker_statistics.cpp                                             */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,50 +22,31 @@
 /**************************************************************************/
 
 /**
- * @file held_tasks.cpp
- * @brief Implements HeldTasks.
+ * @file test_worker_statistics.cpp
+ * @brief Tests WorkerStatistics: a worker that did nothing reports nothing.
+ * @see tests/extension/worker_types/README.md
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
  */
 
-#include "held_tasks.hpp"
+#include <gtest/gtest.h>
 
-#include <algorithm>
+#include <SushiRuntime/distributed/worker_statistics.hpp>
 
-namespace SushiRuntime
+using namespace SushiRuntime::Distributed;
+
+/** @brief Tests that every counter of a new WorkerStatistics is zero. */
+TEST(Small_WorkerStatistics, EveryCounterStartsAtZero)
 {
-    namespace Distributed
-    {
-        std::uint64_t HeldTasks::hold(std::uint64_t task_id)
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            held_.insert(task_id);
-            return generation_;
-        }
+    const WorkerStatistics statistics;
 
-        void HeldTasks::let_go(std::uint64_t task_id, std::uint64_t generation) noexcept
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            if (generation != generation_)
-                return;
-
-            held_.erase(task_id);
-            idle_value_ = std::max(idle_value_, task_id + 1);
-        }
-
-        void HeldTasks::reset() noexcept
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            held_.clear();
-            idle_value_ = 0;
-            ++generation_;
-        }
-
-        std::uint64_t HeldTasks::oldest() const
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            return held_.empty() ? idle_value_ : *held_.begin();
-        }
-
-    } // namespace Distributed
-} // namespace SushiRuntime
+    EXPECT_EQ(statistics.tasks_run, 0u);
+    EXPECT_EQ(statistics.tasks_failed_kernel, 0u);
+    EXPECT_EQ(statistics.tasks_failed_output_allocation, 0u);
+    EXPECT_EQ(statistics.tasks_failed_input_unavailable, 0u);
+    EXPECT_EQ(statistics.tasks_failed_unknown_operation, 0u);
+    EXPECT_EQ(statistics.tasks_failed_shutting_down, 0u);
+    EXPECT_EQ(statistics.cache_bytes, 0u);
+    EXPECT_EQ(statistics.cache_evictions, 0u);
+    EXPECT_EQ(statistics.registrations, 0u);
+    EXPECT_EQ(statistics.reconnects, 0u);
+}

@@ -25,7 +25,7 @@
  * @file kernel_registry.hpp
  * @brief Declares KernelRegistry, which maps an operation id to the kernel that runs it.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/worker_types/README.md
  */
 
 #pragma once

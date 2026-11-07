@@ -25,7 +25,7 @@
  * @file dispatch_job.hpp
  * @brief Declares DispatchJob, a queued dispatch, and DispatchEntry, a job of a batch.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
 #pragma once

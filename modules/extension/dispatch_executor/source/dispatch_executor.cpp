@@ -25,10 +25,10 @@
  * @file dispatch_executor.cpp
  * @brief Implements DispatchExecutor: the job queue, the exec thread and the pins of a batch.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
-#include "dispatch_executor.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_executor.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -40,7 +40,7 @@
 #include <vector>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/dispatch_executor/dispatch_executor_log_category.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 
@@ -50,22 +50,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Holds the chunk size used when a dispatch arrives with none. */
-            constexpr std::uint32_t K_DEFAULT_CHUNK_BYTES = 256u * 1024u;
-
-            /** @brief Holds the most data bytes one BUFFER_CHUNK frame can carry. */
-            constexpr std::uint32_t K_MAX_CHUNK_BYTES =
-                Wire::K_MAX_FRAME_PAYLOAD -
-                static_cast<std::uint32_t>(Wire::BufferChunkMessage::K_PREFIX_BYTES);
-
-            /** @brief Returns a chunk size a frame can carry; 0 takes the default. */
-            std::uint32_t usable_chunk_bytes(std::uint32_t chunk_bytes) noexcept
-            {
-                if (chunk_bytes == 0)
-                    return K_DEFAULT_CHUNK_BYTES;
-                return std::min(chunk_bytes, K_MAX_CHUNK_BYTES);
-            }
-
             /** @brief Returns the words a log line uses for a cache answer. */
             const char* cache_status_name(CacheStatus status) noexcept
             {
@@ -174,18 +158,17 @@ namespace SushiRuntime
                                                  std::vector<BufferView> inputs,
                                                  std::vector<BufferView> outputs)
                 {
+                    for (const BufferHandle& output : job.dispatch.outputs)
+                        written_.push_back(output.id);
                     return entries_.emplace_back(std::move(job), kernel, std::move(inputs),
                                                  std::move(outputs));
                 }
 
-                /** @brief Tells whether a job of the batch writes a buffer. */
-                [[nodiscard]] bool writes(GlobalBufferID id) const noexcept
+                /** @brief Returns the ids the jobs of the batch write. */
+                [[nodiscard]] SushiRuntime::span<const GlobalBufferID> written() const noexcept
                 {
-                    for (const DispatchEntry& entry : entries_)
-                        for (const BufferHandle& output : entry.job.dispatch.outputs)
-                            if (output.id == id)
-                                return true;
-                    return false;
+                    return SushiRuntime::span<const GlobalBufferID>(written_.data(),
+                                                                    written_.size());
                 }
 
                 /** @brief Tells whether the batch holds no job. */
@@ -206,6 +189,9 @@ namespace SushiRuntime
 
                 /// @brief One entry per job; a deque, so an entry stays where it was built.
                 std::deque<DispatchEntry> entries_;
+
+                /// @brief The ids the jobs of the batch write.
+                std::vector<GlobalBufferID> written_;
         };
 
         DispatchExecutor::DispatchExecutor(sushi_ptr<KernelRegistry> kernels,
@@ -238,12 +224,14 @@ namespace SushiRuntime
             bool stopping = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                stopping = stopping_;
+                const EnqueueStatus admitted =
+                    admit_dispatch(jobs_.size(), options_.max_jobs, stopping_);
+                if (admitted == EnqueueStatus::QueueFull)
+                    return admitted;
+
+                stopping = admitted == EnqueueStatus::Stopping;
                 if (!stopping)
                 {
-                    if (jobs_.size() >= options_.max_jobs)
-                        return EnqueueStatus::QueueFull;
-
                     DispatchJob job;
                     job.from = from;
                     job.dispatch = std::move(dispatch);
@@ -267,7 +255,7 @@ namespace SushiRuntime
             accepted.task_id = task_id;
             const SendStatus sent = send_message(transport_, from, accepted);
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: TASK_ACCEPTED to peer {} was not queued (status {})",
+                SR_LOG_DEBUG(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: TASK_ACCEPTED to peer {} was not queued (status {})",
                              task_id, from.value, static_cast<int>(sent));
             return EnqueueStatus::Queued;
         }
@@ -305,18 +293,18 @@ namespace SushiRuntime
                     settler_.fail(job.from, job.dispatch.task_id, job.generation,
                                   Wire::TaskResultStatus::ShuttingDown);
                 if (!queued.empty())
-                    SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: {} queued tasks reported as shutting down",
+                    SR_LOG_INFO(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "worker stopping: {} queued tasks reported as shutting down",
                                 queued.size());
             }
             catch (const std::exception& error)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: not every queued task was reported: {}; the "
+                SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "worker stopping: not every queued task was reported: {}; the "
                             "master takes the rest back when the connection closes",
                             error.what());
             }
             catch (...)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: not every queued task was reported: unknown "
+                SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "worker stopping: not every queued task was reported: unknown "
                             "exception; the master takes the rest back when the connection "
                             "closes");
             }
@@ -354,28 +342,45 @@ namespace SushiRuntime
                         return;
                 }
 
-                Batch batch(cache_);
-                // The last batch's tasks hold &entry of a destroyed deque; this drops them unrun.
-                recorder_.clear();
-                while (std::optional<DispatchJob> job = next_job(batch))
-                {
-                    try
-                    {
-                        prepare(*job, batch);
-                    }
-                    catch (const std::exception& error)
-                    {
-                        settler_.abandon(*job, error.what());
-                    }
-                    catch (...)
-                    {
-                        settler_.abandon(*job, "unknown exception");
-                    }
-                }
-
-                if (!batch.empty())
-                    run_batch(batch);
+                run_one_batch();
             }
+        }
+
+        bool DispatchExecutor::step()
+        {
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                if (stopping_ || jobs_.empty())
+                    return false;
+            }
+
+            run_one_batch();
+            return true;
+        }
+
+        void DispatchExecutor::run_one_batch()
+        {
+            Batch batch(cache_);
+            // The last batch's tasks hold &entry of a destroyed deque; this drops them unrun.
+            recorder_.clear();
+            while (std::optional<DispatchJob> job = next_job(batch))
+            {
+                try
+                {
+                    prepare(*job, batch);
+                }
+                catch (const std::exception& error)
+                {
+                    settler_.abandon(*job, error.what());
+                }
+                catch (...)
+                {
+                    settler_.abandon(*job, "unknown exception");
+                }
+            }
+
+            if (!batch.empty())
+                run_batch(batch);
         }
 
         std::optional<DispatchJob> DispatchExecutor::next_job(const Batch& batch)
@@ -385,9 +390,11 @@ namespace SushiRuntime
                 return std::nullopt;
 
             // An input a job of this batch writes is in no cache yet; the next batch reads it.
-            for (const BufferHandle& input : jobs_.front().dispatch.inputs)
-                if (batch.writes(input.id))
-                    return std::nullopt;
+            const std::vector<BufferHandle>& inputs = jobs_.front().dispatch.inputs;
+            if (reads_a_written_buffer(
+                    SushiRuntime::span<const BufferHandle>(inputs.data(), inputs.size()),
+                    batch.written()))
+                return std::nullopt;
 
             std::optional<DispatchJob> job(std::move(jobs_.front()));
             jobs_.pop_front();
@@ -424,34 +431,20 @@ namespace SushiRuntime
         void DispatchExecutor::log_no_room(std::uint64_t task_id, const BufferHandle& handle,
                                            const char* consequence) const
         {
-            SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: cannot allocate {} bytes for buffer {} (budget {}, in use "
+            SR_LOG_ERROR(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: cannot allocate {} bytes for buffer {} (budget {}, in use "
                          "{}); reported as {}",
                          task_id, handle.size_bytes, handle.id.value, cache_.budget(),
                          cache_.bytes(), consequence);
         }
 
-        bool DispatchExecutor::can_run_on_its_device(const DispatchJob& job)
+        JobVerdict DispatchExecutor::verdict_of(const DispatchJob& job, bool kernel_known)
         {
             const std::uint32_t device = job.dispatch.device_index;
-            if (device >= devices_.count())
-            {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
-                            "task {}: the dispatch names device {}, and this worker has {}; "
-                            "reported as kernel failed",
-                            job.dispatch.task_id, device, devices_.count());
-                return false;
-            }
-
-            if (devices_.queue(device).get_context() !=
-                devices_.queue(options_.cache_device).get_context())
-            {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
-                            "task {}: device {} does not share the context of device {}, where the "
-                            "worker's buffers live; reported as kernel failed",
-                            job.dispatch.task_id, device, options_.cache_device);
-                return false;
-            }
-            return true;
+            const bool shares_context =
+                device < devices_.count() &&
+                devices_.queue(device).get_context() ==
+                    devices_.queue(options_.cache_device).get_context();
+            return judge_job(kernel_known, device, devices_.count(), shares_context);
         }
 
         void DispatchExecutor::prepare(DispatchJob& job, Batch& batch)
@@ -460,9 +453,10 @@ namespace SushiRuntime
             const std::uint64_t task_id = dispatch.task_id;
 
             const KernelRegistry::Kernel* kernel = kernels_->find(dispatch.operation);
-            if (kernel == nullptr)
+            const JobVerdict verdict = verdict_of(job, kernel != nullptr);
+            if (verdict == JobVerdict::UnknownOperation)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: this worker has no kernel for operation {}; reported as "
+                SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: this worker has no kernel for operation {}; reported as "
                             "unknown operation",
                             task_id, dispatch.operation.value);
                 settler_.fail(job.from, task_id, job.generation,
@@ -470,8 +464,23 @@ namespace SushiRuntime
                 return;
             }
 
-            if (!can_run_on_its_device(job))
+            if (verdict == JobVerdict::DeviceMissing)
             {
+                SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY,
+                            "task {}: the dispatch names device {}, and this worker has {}; "
+                            "reported as kernel failed",
+                            task_id, dispatch.device_index, devices_.count());
+                settler_.fail(job.from, task_id, job.generation,
+                              Wire::TaskResultStatus::KernelFailed);
+                return;
+            }
+
+            if (verdict == JobVerdict::DeviceOutsideCacheContext)
+            {
+                SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY,
+                            "task {}: device {} does not share the context of device {}, where the "
+                            "worker's buffers live; reported as kernel failed",
+                            task_id, dispatch.device_index, options_.cache_device);
                 settler_.fail(job.from, task_id, job.generation,
                               Wire::TaskResultStatus::KernelFailed);
                 return;
@@ -507,7 +516,7 @@ namespace SushiRuntime
                     if (status == CacheStatus::AllocationFailed)
                         log_no_room(task_id, handle, "input unavailable");
                     else
-                        SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: input buffer {} version {} did not arrive from "
+                        SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: input buffer {} version {} did not arrive from "
                                     "peer {}: {}; reported as input unavailable",
                                     task_id, handle.id.value, handle.version, job.from.value,
                                     cache_status_name(status));

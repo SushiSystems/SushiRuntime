@@ -25,7 +25,7 @@
  * @file dispatch_recorder.hpp
  * @brief Declares DispatchRecorder, which records a batch's jobs as tasks and runs them.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
 #pragma once
@@ -40,7 +40,7 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
-#include "dispatch_job.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_job.hpp>
 
 namespace SushiRuntime
 {
@@ -52,7 +52,7 @@ namespace SushiRuntime
          *
          * One run orders the jobs that share a buffer and overlaps the rest. Only the exec
          * thread calls it.
-         * @see modules/extension/distributed/README.md
+         * @see modules/extension/dispatch_executor/README.md
          */
         class DispatchRecorder final
         {

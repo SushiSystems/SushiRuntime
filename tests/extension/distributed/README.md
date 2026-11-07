@@ -308,16 +308,6 @@ task is resubmitted and the local fallback writes the output.
 The file includes `distributed_log_category.hpp` alone, so the header carries every include it needs.
 The header holds a constant, which has no behaviour of its own to test.
 
-## test_kernel_registry.cpp
-
-### `SealedRegistryStopsARegistration`, `SealingKeepsTheRegisteredKernels`, `EmptyKernelStopsTheRegistration`
-
-Finding QC-37. `Medium_KernelRegistryDeathTest` needs no queue: its kernel returns a default event
-and is never called. After `seal()`, `register_kernel` must stop the process for a new operation
-and for one already registered. `SealingKeepsTheRegisteredKernels` runs small: sealing marks the
-registry sealed and keeps what it held. A default-constructed `Kernel` must stop a registration on
-an open registry and on a sealed one, with the message that names the empty kernel.
-
 ## test_registered_task/test_nested_run_probe.cpp
 
 The file probes whether a registered kernel may run a compiled graph from inside its own body, as
@@ -468,15 +458,6 @@ without a port, port 0, an unbracketed IPv6 address in `SR_MASTER`, an unknown f
 a value given to `--no-reconnect`, and a number that is zero where one is needed, too large,
 negative, fractional, empty or not a number. Each message is one line, and a refused value's line
 starts with the flag or the variable it came from.
-
-## test_buffer_view.cpp
-
-The file tests BufferView: the bytes it names, read as an element type.
-
-| Test | What it proves |
-| --- | --- |
-| `AsTypesTheAddress` | As() returns the address of the bytes, typed as the element asked for. |
-| `ADefaultViewNamesNothing` | A default view names no bytes. |
 
 ## test_cluster.cpp
 

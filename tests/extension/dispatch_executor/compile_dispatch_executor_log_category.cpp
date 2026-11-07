@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_buffer_view.cpp                                                   */
+/* compile_dispatch_executor_log_category.cpp                             */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,33 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_buffer_view.cpp
- * @brief Tests BufferView: the bytes it names, read as an element type.
- * @see tests/extension/distributed/README.md
+ * @file compile_dispatch_executor_log_category.cpp
+ * @brief Compiles dispatch_executor_log_category.hpp on its own, so the header carries every include it needs.
+ * @see tests/extension/dispatch_executor/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/distributed/buffer_view.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Distributed;
-
-/** @brief Tests that as() returns the address of the bytes, typed as the element asked for. */
-TEST(Small_BufferView, AsTypesTheAddress)
-{
-    float values[4] = {1.0f, 2.0f, 3.0f, 4.0f};
-    const BufferView view{values, sizeof(values)};
-    EXPECT_EQ(view.as<float>(), values);
-    EXPECT_EQ(view.as<const float>()[2], 3.0f);
-    EXPECT_EQ(view.size_bytes, 4 * sizeof(float));
-}
-
-/** @brief Tests that a default view names no bytes. */
-TEST(Small_BufferView, ADefaultViewNamesNothing)
-{
-    const BufferView view;
-    EXPECT_EQ(view.data, nullptr);
-    EXPECT_EQ(view.size_bytes, 0u);
-}
+#include <SushiRuntime/dispatch_executor/dispatch_executor_log_category.hpp>

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* held_tasks.hpp                                                         */
+/* buffer_view.hpp                                                        */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,58 +22,44 @@
 /**************************************************************************/
 
 /**
- * @file held_tasks.hpp
- * @brief Declares HeldTasks, the task ids a worker holds until their results leave.
+ * @file buffer_view.hpp
+ * @brief Declares BufferView, the address and the size a kernel receives for one buffer.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/worker_types/README.md
  */
 
 #pragma once
 
-#include <cstdint>
-#include <mutex>
-#include <set>
+#include <cstddef>
 
 namespace SushiRuntime
 {
     namespace Distributed
     {
         /**
-         * @brief Keeps the task ids the worker holds for one connection, for HEARTBEAT.
+         * @brief Names the memory of one buffer on the machine that runs a kernel.
          *
-         * An output stream may outlive the executor, so the two share this object. Its mutex
-         * is a leaf: nothing is called while it is held.
+         * The view owns nothing: the memory belongs to the worker's cache, or to the master's
+         * allocation when the kernel runs as a local fallback. A view a kernel receives is
+         * valid until the event that kernel returns completes.
          */
-        class HeldTasks final
+        struct BufferView
         {
-            public:
-                /**
-                 * @brief Starts holding a task.
-                 * @return The generation let_go() must be given for the same task.
-                 */
-                [[nodiscard]] std::uint64_t hold(std::uint64_t task_id);
+            /** @brief Holds the base address, a USM allocation; null when the size is 0. */
+            void* data = nullptr;
 
-                /** @brief Stops holding a task whose result left or cannot leave. */
-                void let_go(std::uint64_t task_id, std::uint64_t generation) noexcept;
+            /** @brief Holds the number of bytes at the address. */
+            std::size_t size_bytes = 0;
 
-                /** @brief Forgets every task and the idle value; the connection is gone. */
-                void reset() noexcept;
-
-                /** @brief Returns the smallest held id, or the idle value when none is. */
-                [[nodiscard]] std::uint64_t oldest() const;
-
-            private:
-                /// @brief Guards every member below.
-                mutable std::mutex mutex_;
-
-                /// @brief The ids held, smallest first.
-                std::set<std::uint64_t> held_;
-
-                /// @brief The largest id let go plus one; 0 before the first.
-                std::uint64_t idle_value_ = 0;
-
-                /// @brief Counts the resets, so a task of an earlier connection is ignored.
-                std::uint64_t generation_ = 0;
+            /**
+             * @brief Returns the address as a pointer to elements of @p Element.
+             * @tparam Element The type the buffer was written as; size_bytes is not checked.
+             */
+            template <typename Element>
+            [[nodiscard]] Element* as() const noexcept
+            {
+                return static_cast<Element*>(data);
+            }
         };
 
     } // namespace Distributed

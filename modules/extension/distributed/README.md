@@ -4,12 +4,12 @@ The master and worker layer that ships named kernels and buffer references acros
 built only when the CMake option `SR_ENABLE_DISTRIBUTED` is on, which `sr build --distributed`
 sets.
 
-The module depends on `core`, `api`, `transport` and `cluster_load` through its headers. Its
+The module depends on `core`, `api`, `transport`, `cluster_load` and `worker_types` through its headers. Its
 sources depend on `logging`, `memory`, `device`, `task`, `execution`, `region`, `log`,
 `context_access` and the internal modules `wire`, `link_security`, `network_socket`,
 `frame_transport`, `buffer_exchange`, `pending_tasks`, `dispatch_deduplication`,
-`process_environment` and `offload_coordination`, which hold the bricks the master and the worker
-are built from.
+`process_environment`, `offload_coordination`, `cluster_monitor`, `master_link` and
+`dispatch_executor`, which hold the bricks the master and the worker are built from.
 
 How to run a master and a worker is in
 [`DISTRIBUTED_GUIDE.md`](../../../docs/guides/DISTRIBUTED_GUIDE.md); this page describes the code.
@@ -28,10 +28,11 @@ module `transport`; the offload policy and the cluster's statistics are the publ
 | `distributed.hpp` | Nothing; it includes what a master or a worker program needs |
 | `cluster.hpp` | `Cluster`, `ClusterOptions`, the chunk size limits |
 | `shared_secret.hpp` | `SharedSecret` |
-| `buffer_view.hpp` | `BufferView` |
+| `buffer_view.hpp` | `BufferView`, from the `worker_types` module |
 | `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
-| `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
-| `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd`, `WorkerStatistics` |
+| `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form, from the `worker_types` module |
+| `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd` |
+| `worker_statistics.hpp` | `WorkerStatistics`, from the `worker_types` module |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
 | `worker_options_parser.hpp` | `parse_worker_options()`, `WorkerOptionsResult`, `WorkerOptionsStatus`, `EnvironmentReader` |
 | `registered_task.hpp` | `record_registered_task()` |
@@ -264,14 +265,9 @@ lifetime.
 
 | Header | Class | Owns | Runs on |
 | --- | --- | --- | --- |
-| `worker_buffer_cache.hpp` | `WorkerBufferCache` | cached buffers, chunk assembly, the byte budget, pins | exec thread asks, reader thread delivers |
 | `dispatch_deduplication/dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
 | `master_link/master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `LinkEnd` the agent reports as `WorkerEnd`, the check that every HELLO fact fits 255 bytes; its own module | reader thread and its own thread |
-| `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, the pins and the device check of each job | reader thread enqueues, its own thread gathers batches |
-| `dispatch_job.hpp` | `DispatchJob`, `DispatchEntry` | one queued dispatch; one job of a batch and the run of its kernel | exec thread builds, the runtime's pool runs the kernel |
-| `dispatch_recorder.hpp` | `DispatchRecorder` | the graph each batch runs on, the borrowed buffers, the run | exec thread |
-| `dispatch_settler.hpp` | `DispatchSettler` | the commit and output stream of a job that ran, every failed `TASK_RESULT`, the task counters | exec thread, reader thread for a refused enqueue |
-| `held_tasks.hpp` | `HeldTasks` | the task ids held until their result leaves | exec thread, reader thread, transport writer |
+| `dispatch_executor/dispatch_executor.hpp` | `DispatchExecutor`, with `WorkerBufferCache`, `DispatchJob`, `DispatchRecorder`, `DispatchSettler`, `HeldTasks` | the job queue, the exec thread, the pins and the device check of each job; its own module | reader thread enqueues, its own thread gathers |
 | `process_environment/stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
 | `process_environment/environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
 | `worker_session.hpp` | `serve_worker()`, `exit_code_of()` | one agent on a given transport, from start to exit code | caller's thread |
@@ -486,7 +482,7 @@ after the other: the first pulls it, the second finds it.
 | Thread | Runs |
 | --- | --- |
 | Transport reader | every `on_` call of the agent, so the routing table and the handlers above |
-| Exec (`DispatchExecutor`) | batch gathering, input pulls, output pins, `Graph::run()`, results |
+| Exec (`DispatchExecutor`; `WorkerAgent::step()` when `own_threads` is false) | batch gathering, input pulls, output pins, `Graph::run()`, results |
 | Runtime worker pool | the task of each dispatch: its kernel and the copy of its outputs |
 | Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch, `Transport::stop()` for a link that ended |
 | Transport writer | output streams |

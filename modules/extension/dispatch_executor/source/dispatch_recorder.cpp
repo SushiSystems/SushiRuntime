@@ -25,10 +25,10 @@
  * @file dispatch_recorder.cpp
  * @brief Implements DispatchRecorder: the borrowed buffers, the recorded task and the run.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
-#include "dispatch_recorder.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_recorder.hpp>
 
 #include <cstddef>
 #include <exception>

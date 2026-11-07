@@ -27,14 +27,14 @@
  * @author Mustafa Garip
  */
 
-#include "worker_buffer_cache.hpp"
+#include <SushiRuntime/dispatch_executor/worker_buffer_cache.hpp>
 
 #include <cstring>
 #include <limits>
 #include <utility>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/dispatch_executor/dispatch_executor_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -330,7 +330,7 @@ namespace SushiRuntime
 
             progress_.notify_all();
             if (discarded)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "pull of buffer {} version {} discarded: chunk at offset {} with {} "
+                SR_LOG_DEBUG(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "pull of buffer {} version {} discarded: chunk at offset {} with {} "
                              "bytes does not continue the transfer",
                              chunk.handle.id.value, chunk.handle.version, chunk.offset,
                              chunk.data.size());

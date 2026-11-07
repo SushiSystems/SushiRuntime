@@ -25,7 +25,7 @@
  * @file worker_buffer_cache.hpp
  * @brief Declares WorkerBufferCache, the worker's copies of the master's shared buffers.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
 #pragma once

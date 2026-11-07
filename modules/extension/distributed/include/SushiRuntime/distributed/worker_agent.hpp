@@ -40,6 +40,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
+#include <SushiRuntime/distributed/worker_statistics.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 
 namespace SushiRuntime
@@ -70,6 +71,13 @@ namespace SushiRuntime
 
             /** @brief Fails a task when no chunk of a requested buffer arrives for this long. */
             std::chrono::milliseconds pull_idle_timeout{5000};
+
+            /**
+             * @brief Tells whether start() runs the exec and heartbeat threads.
+             *
+             * False leaves them to the caller, who runs what they would run through step().
+             */
+            bool own_threads = true;
         };
 
         /**
@@ -83,23 +91,6 @@ namespace SushiRuntime
             RejectedAuthentication, /**< One side's proof failed: the secrets differ. */
             ProtocolMismatch,       /**< The peer is another protocol version, or no master. */
             MasterLost,             /**< The master went away and the transport does not retry. */
-        };
-
-        /**
-         * @brief Holds a worker's counters since start().
-         */
-        struct WorkerStatistics
-        {
-            std::uint64_t tasks_run = 0;                      /**< Kernels that ran to the end. */
-            std::uint64_t tasks_failed_kernel = 0;            /**< Kernels that threw. */
-            std::uint64_t tasks_failed_output_allocation = 0; /**< Outputs that did not fit. */
-            std::uint64_t tasks_failed_input_unavailable = 0; /**< Inputs that never arrived. */
-            std::uint64_t tasks_failed_unknown_operation = 0; /**< Operations with no kernel. */
-            std::uint64_t tasks_failed_shutting_down = 0;     /**< Tasks failed by stop(). */
-            std::uint64_t cache_bytes = 0;                    /**< Bytes the cache holds. */
-            std::uint64_t cache_evictions = 0;                /**< Buffers the cache dropped. */
-            std::uint64_t registrations = 0;                  /**< WELCOME frames accepted. */
-            std::uint64_t reconnects = 0;                     /**< Registrations after the first. */
         };
 
         /**
@@ -136,6 +127,15 @@ namespace SushiRuntime
                  * @return The transport's result; on a failure no thread is left running.
                  */
                 [[nodiscard]] TransportResult start();
+
+                /**
+                 * @brief Does what the agent's threads would, on the calling thread.
+                 *
+                 * The link's due heartbeat or watch, then one batch of the queued jobs. For an
+                 * agent built with own_threads false; with threads running, they do it.
+                 * @return True when a batch ran.
+                 */
+                bool step();
 
                 /**
                  * @brief Blocks until the agent stops serving, or the timeout.

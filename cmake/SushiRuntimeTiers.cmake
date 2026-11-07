@@ -63,6 +63,8 @@ set(SUSHIRUNTIME_MODULE_TIERS
     cluster_load    extension
     offload_coordination extension
     cluster_monitor extension
+    worker_types extension
+    dispatch_executor extension
     master_link extension
     distributed     extension)
 
@@ -120,12 +122,18 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     cluster_monitor buffer_exchange
     cluster_monitor pending_tasks
     cluster_monitor offload_coordination
+    dispatch_executor transport
+    dispatch_executor wire
+    dispatch_executor worker_types
+    dispatch_executor frame_transport
     master_link transport
     master_link wire
     master_link link_security
     master_link frame_transport
     distributed     cluster_load
     distributed     cluster_monitor
+    distributed     worker_types
+    distributed     dispatch_executor
     distributed     master_link
     distributed     offload_coordination
     distributed     buffer_exchange
@@ -161,6 +169,8 @@ set(SUSHIRUNTIME_OPTIONAL_MODULES
     cluster_load    SR_ENABLE_DISTRIBUTED
     offload_coordination SR_ENABLE_DISTRIBUTED
     cluster_monitor SR_ENABLE_DISTRIBUTED
+    worker_types SR_ENABLE_DISTRIBUTED
+    dispatch_executor SR_ENABLE_DISTRIBUTED
     master_link SR_ENABLE_DISTRIBUTED
     distributed     SR_ENABLE_DISTRIBUTED)
 

@@ -1,0 +1,54 @@
+/**************************************************************************/
+/* test_buffer_view.cpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file test_buffer_view.cpp
+ * @brief Tests BufferView: the bytes it names, read as an element type.
+ * @see tests/extension/worker_types/README.md
+ * @author Mustafa Garip
+ */
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/distributed/buffer_view.hpp>
+
+using namespace SushiRuntime;
+using namespace SushiRuntime::Distributed;
+
+/** @brief Tests that as() returns the address of the bytes, typed as the element asked for. */
+TEST(Small_BufferView, AsTypesTheAddress)
+{
+    float values[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+    const BufferView view{values, sizeof(values)};
+    EXPECT_EQ(view.as<float>(), values);
+    EXPECT_EQ(view.as<const float>()[2], 3.0f);
+    EXPECT_EQ(view.size_bytes, 4 * sizeof(float));
+}
+
+/** @brief Tests that a default view names no bytes. */
+TEST(Small_BufferView, ADefaultViewNamesNothing)
+{
+    const BufferView view;
+    EXPECT_EQ(view.data, nullptr);
+    EXPECT_EQ(view.size_bytes, 0u);
+}

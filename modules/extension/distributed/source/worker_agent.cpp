@@ -63,9 +63,9 @@
 #include <SushiRuntime/wire/wire_messages.hpp>
 #include <SushiRuntime/dispatch_deduplication/dispatch_deduplicator.hpp>
 
-#include "dispatch_executor.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_executor.hpp>
 #include <SushiRuntime/master_link/master_link.hpp>
-#include "worker_buffer_cache.hpp"
+#include <SushiRuntime/dispatch_executor/worker_buffer_cache.hpp>
 
 namespace SushiRuntime
 {
@@ -236,6 +236,9 @@ namespace SushiRuntime
 
                 /** @brief Stops the bricks and the transport in the order the README gives. */
                 void stop() noexcept;
+
+                /** @brief Runs what the threads would: the link's due step, then one batch. */
+                bool step();
 
                 /** @brief Returns the link's end, waiting for it at most the timeout. */
                 [[nodiscard]] WorkerEnd wait_for_end(std::chrono::milliseconds timeout);
@@ -536,8 +539,11 @@ namespace SushiRuntime
             TransportResult result;
             try
             {
-                executor_.start();
-                link_.start();
+                if (options_.own_threads)
+                {
+                    executor_.start();
+                    link_.start();
+                }
                 result = transport_->start(*this);
             }
             catch (const std::exception& error)
@@ -625,6 +631,12 @@ namespace SushiRuntime
             log_statistics();
         }
 
+        bool WorkerAgent::Impl::step()
+        {
+            link_.step();
+            return executor_.step();
+        }
+
         WorkerEnd WorkerAgent::Impl::wait_for_end(std::chrono::milliseconds timeout)
         {
             return worker_end_of(link_.wait_for_end(timeout));
@@ -709,6 +721,11 @@ namespace SushiRuntime
         TransportResult WorkerAgent::start()
         {
             return impl_->start();
+        }
+
+        bool WorkerAgent::step()
+        {
+            return impl_->step();
         }
 
         WorkerEnd WorkerAgent::wait_for_end(std::chrono::milliseconds timeout)

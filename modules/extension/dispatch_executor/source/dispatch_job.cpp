@@ -25,10 +25,10 @@
  * @file dispatch_job.cpp
  * @brief Implements DispatchEntry: the run of one kernel and the copy of its outputs.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/dispatch_executor/README.md
  */
 
-#include "dispatch_job.hpp"
+#include <SushiRuntime/dispatch_executor/dispatch_job.hpp>
 
 #include <exception>
 #include <utility>

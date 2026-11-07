@@ -8,24 +8,16 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         cluster.cpp
-        dispatch_executor.cpp
-        dispatch_job.cpp
-        dispatch_recorder.cpp
-        dispatch_settler.cpp
         distributed_coordinator.cpp
-        held_tasks.cpp
-        kernel_registry.cpp
-        master_link.cpp
         peer_connection.cpp
         registered_task.cpp
         shared_secret.cpp
         tcp_transport.cpp
         worker_agent.cpp
-        worker_buffer_cache.cpp
         worker_main.cpp
         worker_options_parser.cpp
         worker_session.cpp
-    DEPENDS core log machine api transport cluster_load
+    DEPENDS core log machine api transport cluster_load worker_types
     PRIVATE_DEPENDS
         memory
         device
@@ -44,4 +36,5 @@ sushiruntime_add_module(
         offload_coordination
         cluster_monitor
         master_link
+        dispatch_executor
     EXTERNAL SushiLog::text)
