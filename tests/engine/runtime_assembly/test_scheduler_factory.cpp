@@ -34,28 +34,36 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
-#include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
+
+#include "support/host_context.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the scheduler runs every task submitted, then stops. */
-TEST(Medium_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
+TEST(Small_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
 {
     constexpr std::size_t K_TASKS = 16;
-    const std::shared_ptr<Internal::Execution::RuntimeContext> context = make_context();
+    SeededExecutor executor{TestSupport::K_HOST_RUNTIME_SEED};
+    const std::shared_ptr<Internal::Execution::RuntimeContext> context = TestSupport::make_host_context();
     Internal::Scheduler::TaskScheduler scheduler = make_scheduler(*context);
+    scheduler.set_executor(&executor);
     std::atomic<std::size_t> executed{0};
 
     scheduler.start();
     scheduler.arm_for_execution();
     for (std::size_t index = 0; index < K_TASKS; ++index)
         scheduler.submit(new AtomicCounterTask(executed));
+    while (executor.run_one())
+    {
+    }
 
     scheduler.wait_quiescent();
     scheduler.stop();

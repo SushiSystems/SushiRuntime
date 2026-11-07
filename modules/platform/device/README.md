@@ -90,7 +90,8 @@ built in a given context. Both pass `QueueFactoryContract` (`tests/support/queue
 ### A set of host devices
 
 `DeviceQueueSet(std::vector<DeviceDescription>)` holds an inventory and no queue slot. It builds no
-SYCL device, so the host runtime's context carries one. `count()`, `devices()`, `is_gpu()` and
+SYCL device. A host runtime's context does not use it: its set is built over an
+`InMemoryQueueFactory`, so it holds host queues. `count()`, `devices()`, `is_gpu()` and
 the NUMA routes answer from the descriptions as for any set, and a NUMA node out of range is
 placed on node 0 without a log line. `queue()` in either form, and `queue_or_numa_local()`, stop
 the process through `SR_VERIFY`, naming the device: a host runtime submits nothing to a device.

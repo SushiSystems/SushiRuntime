@@ -51,6 +51,7 @@
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
+#include <SushiRuntime/device/in_memory_queue_factory.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
@@ -175,7 +176,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Builds every part of a host context but the engine: host devices, host USM.
+             * @brief Builds every part of a host context but the engine: host devices whose
+             *        queues are host queues of an InMemoryQueueFactory, and host USM.
              * @param provider Queried during construction only; not stored.
              * @param distance_model Must not be null.
              * @param host_devices The devices the context stands for; not empty.
@@ -186,7 +188,9 @@ namespace SushiRuntime
                  std::vector<DeviceDescription> host_devices)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
-                  devices(std::move(host_devices)),
+                  devices(host_devices,
+                          std::make_unique<Internal::Device::InMemoryQueueFactory>(host_devices.size()),
+                          false),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
                       Internal::Memory::make_host_usm_source(devices.count())))
             {

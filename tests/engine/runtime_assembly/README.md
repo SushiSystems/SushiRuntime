@@ -21,4 +21,4 @@ The file tests make_scheduler(): a scheduler over a context that runs what it is
 
 | Test | What it proves |
 | --- | --- |
-| `TheSchedulerRunsWhatItIsGiven` | The scheduler runs every task submitted, then stops. The test waits on `wait_quiescent()`, not on a clock. |
+| `TheSchedulerRunsWhatItIsGiven` | Small, over a host context, its rounds on a `SeededExecutor`: the scheduler runs every task submitted, then stops. |

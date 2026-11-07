@@ -257,6 +257,10 @@ owns a `SeededExecutor` can step it between the two to replay an interleaving fr
 `execute()` is the two in a row. A run that records timing stamps each dispatch from the engine's
 `Clock`: submit and start are the reading before the body, end the reading after it.
 
+The devices of a host context are a `DeviceQueueSet` built over an `InMemoryQueueFactory`, and its
+memory is host USM. The engine submits nothing to a queue, but a scheduler, a `ChainRun` or a task
+body built over the context's parts gets a host queue for each device, a different one per device.
+
 ## offload_host.hpp
 
 ### OffloadHost
