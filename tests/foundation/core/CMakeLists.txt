@@ -21,6 +21,7 @@ sushiruntime_add_module_tests(
         test_placement_class.cpp
         test_recording_allocation_owner.cpp
         test_ref_counted.cpp
+        test_seeded_executor.cpp
         test_result.cpp
         test_span.cpp
         test_strong_id.cpp

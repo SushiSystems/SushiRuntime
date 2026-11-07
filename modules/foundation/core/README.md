@@ -26,6 +26,7 @@ The eighteen public headers under `include/SushiRuntime/core/`:
 | `placement_class.hpp` | `PlacementClass`, the 32-bit FNV-1a hash of a dotted class name with the hash of each of its prefixes, and the `_class` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
 | `result.hpp` | `Result<T, E>`, which holds a value or an error, and `ErrorWrapper` with `make_error` |
+| `seeded_executor.hpp` | `SeededExecutor`, which runs posted jobs one at a time on the calling thread in an order a seed fixes, so a test replays a schedule from its seed |
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
 | `strong_id.hpp` | `StrongID`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
 | `sushi_ptr.hpp` | `sushi_ptr` and `make_sushi`, the intrusive smart pointer and its factory, with a `std::hash` specialisation |
