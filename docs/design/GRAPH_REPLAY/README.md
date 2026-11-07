@@ -57,6 +57,9 @@ Non-goals: changing any public verb's meaning; kernel-argument update inside a r
 (the spike did not test it and the CPU device reports only limited graph support); multi-device
 graphs, which keep today's scheduler.
 
+`HostExecutionEngine`, the engine of a host runtime, runs a plan's nodes as jobs of a
+`SeededExecutor` and never replays; the ruling that makes it is LAYERED_EXECUTION ruling 17.
+
 The owner took all four decisions as recommended:
 
 1. **Automatic or opt-in.** Automatic per plan, with a `RuntimeSettings` switch that forces the

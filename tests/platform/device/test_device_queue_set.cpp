@@ -560,6 +560,14 @@ TEST(Small_HostDeviceQueueSet, HoldsNoPlainQueue)
     EXPECT_TRUE(set.plain_queues().empty());
 }
 
+/** @brief Tests that a host set says it holds no queue. */
+TEST(Small_HostDeviceQueueSet, SaysItHoldsNoQueue)
+{
+    DeviceQueueSet set(host_inventory());
+
+    EXPECT_FALSE(set.holds_queues());
+}
+
 /** @brief Tests that waiting on a host set succeeds, since it holds no queue to wait on. */
 TEST(Small_HostDeviceQueueSet, WaitingOnAllSucceeds)
 {

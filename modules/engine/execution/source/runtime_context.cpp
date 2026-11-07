@@ -43,19 +43,26 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/machine/device_description.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/in_memory_topology_provider.hpp>
+#include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/execution/host_execution_engine.hpp>
 #include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
 namespace SushiRuntime
@@ -163,6 +170,24 @@ namespace SushiRuntime
             {
             }
 
+            /**
+             * @brief Builds every part of a host context but the engine: host devices, host USM.
+             * @param provider Queried during construction only; not stored.
+             * @param distance_model Must not be null.
+             * @param host_devices The devices the context stands for; not empty.
+             */
+            Impl(const RuntimeSettings& runtime_settings,
+                 Internal::Topology::TopologyProvider& provider,
+                 std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
+                 std::vector<DeviceDescription> host_devices)
+                : settings(runtime_settings),
+                  topology(provider, std::move(distance_model)),
+                  devices(std::move(host_devices)),
+                  memory(std::make_shared<Internal::Memory::USMAllocator>(
+                      std::make_unique<Internal::Memory::HostUSMSource>(devices.count())))
+            {
+            }
+
             /** @brief Stops everything that submits work, then lets the device set drain. */
             ~Impl()
             {
@@ -253,7 +278,7 @@ namespace SushiRuntime
             std::shared_ptr<const NodeFacts> machine;
 
             /** @brief Execution engine; built last, by RuntimeContext::create(). */
-            std::unique_ptr<SchedulerExecutionEngine> engine;
+            std::unique_ptr<ExecutionEngine> engine;
         };
 
         Result<std::shared_ptr<RuntimeContext>>
@@ -294,6 +319,43 @@ namespace SushiRuntime
                 return initialization_failure(std::move(built.error()));
             if (refused)
                 return initialization_failure(std::move(*refused));
+            return context;
+        }
+
+        Result<std::shared_ptr<RuntimeContext>>
+        RuntimeContext::create_host(const HostContextParts& parts)
+        {
+            SR_VERIFY(parts.device_count > 0,
+                      "RuntimeContext::create_host: pass a device count of at least 1.");
+            SR_VERIFY(parts.executor != nullptr && parts.clock != nullptr,
+                      "RuntimeContext::create_host: pass an executor and a clock, not null.");
+            RuntimeSettings settings;
+            settings.worker_count = 1;
+            settings.pinning = PinPolicy::Float;
+            // Every run goes to the engine, since the chain submits to a device queue.
+            settings.force_scheduler = true;
+
+            std::vector<DeviceDescription> host_devices(parts.device_count);
+            for (std::size_t index = 0; index < host_devices.size(); ++index)
+            {
+                host_devices[index].name = "host device " + std::to_string(index);
+                host_devices[index].kind = DeviceKind::CPU;
+            }
+
+            Internal::Topology::InMemoryTopologyProvider provider(
+                std::vector<Internal::Topology::HardwareNode>{}, std::vector<int>{0});
+            auto distance_model = std::make_shared<Internal::Topology::MatrixDistanceModel>(
+                std::vector<std::vector<int>>{{10}});
+            std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
+                settings, provider, std::move(distance_model), std::move(host_devices))));
+            const std::weak_ptr<RuntimeContext> observed = context;
+            context->impl_->engine = std::make_unique<HostExecutionEngine>(
+                parts.executor, parts.clock, parts.device_count,
+                [observed](const RunObservation& observation)
+                {
+                    if (const std::shared_ptr<RuntimeContext> held = observed.lock())
+                        held->notify_run(observation);
+                });
             return context;
         }
 

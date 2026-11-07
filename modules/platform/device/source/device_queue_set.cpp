@@ -336,6 +336,11 @@ namespace SushiRuntime
             return queue(numa_routes_.device_or_next(device, fallback_numa));
         }
 
+        bool DeviceQueueSet::holds_queues() const noexcept
+        {
+            return !infos_.empty() && plain_slot(0).built.load(std::memory_order_acquire);
+        }
+
         std::vector<sycl::queue> DeviceQueueSet::plain_queues() const
         {
             std::vector<sycl::queue> queues;

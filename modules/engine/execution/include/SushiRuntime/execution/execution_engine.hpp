@@ -270,6 +270,44 @@ namespace SushiRuntime
 
             /** @brief Clears the mark one begin_chained_run() set; does nothing by default. */
             virtual void end_chained_run() noexcept {}
+
+            /**
+             * @brief Holds the engine idle for a change no run may see half done.
+             *
+             * Default answers !run_in_progress() and holds nothing more.
+             * @return False, holding nothing, when a run is in progress.
+             * @pre Exactly one end_idle_change() follows a true return.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] virtual bool begin_idle_change() noexcept { return !run_in_progress(); }
+
+            /** @brief Releases the hold a true begin_idle_change() took; does nothing by default. */
+            virtual void end_idle_change() noexcept {}
+
+            /**
+             * @brief Hands the engine the offload coordinator its runs consult.
+             *
+             * Default stops the process for a coordinator that is not null: an engine that does not
+             * override it runs no offload.
+             * @param offload Not owned; null removes the installed one.
+             * @pre No run is in flight.
+             */
+            virtual void install_offload(Internal::Graph::OffloadCoordinator* offload)
+            {
+                SR_VERIFY(offload == nullptr,
+                          "ExecutionEngine::install_offload(): this engine runs no offload; "
+                          "install a coordinator on a runtime that has a device.");
+            }
+
+            /**
+             * @brief Returns the sink an offload coordinator hands its nodes back to.
+             * @pre The engine overrides it; the default stops the process.
+             */
+            [[nodiscard]] virtual Internal::Graph::OffloadSink& offload_sink()
+            {
+                SR_FATAL("ExecutionEngine::offload_sink(): this engine has no offload sink; ask a "
+                         "runtime that has a device.");
+            }
         };
     } // namespace Internal::Execution
 } // namespace SushiRuntime

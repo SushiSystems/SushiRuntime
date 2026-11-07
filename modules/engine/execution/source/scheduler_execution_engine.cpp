@@ -58,6 +58,8 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
+#include "run_observation_fill.hpp"
+
 namespace SushiRuntime
 {
     namespace Internal::Execution
@@ -175,36 +177,6 @@ namespace SushiRuntime
             };
         } // namespace
 
-        namespace
-        {
-            /** @brief Empties @p observation but for the plan's table, for a run that records no timing. */
-            void clear_observation(Internal::Graph::CompiledGraph& graph, RunObservation& observation)
-            {
-                observation.events.clear();
-                observation.device_clocks.clear();
-                observation.drops = DropCounts{};
-                observation.table = graph.node_table;
-                observation.graph_id = graph.graph_id;
-            }
-
-            /**
-             * @brief Reads a plan's ledger into an observation and logs what the run lost.
-             * @param observation Gains the table, the records, the pairings and the drop counts.
-             */
-            void fill_observation(Internal::Graph::CompiledGraph& graph, RunObservation& observation)
-            {
-                observation.events.clear();
-                observation.device_clocks.clear();
-                observation.table = graph.node_table;
-                observation.graph_id = graph.graph_id;
-                graph.profiling_ledger.collect(observation.events);
-                graph.profiling_ledger.collect_pairings(observation.device_clocks);
-                observation.drops = graph.profiling_ledger.drops();
-
-                // One line per run for what the record lacks (modules/engine/execution/README.md).
-                log_dropped_dispatches(observation.drops);
-            }
-        } // namespace
 
         /**
          * @brief Owns the scheduler, completion gate and rebalancer (modules/engine/execution/README.md).

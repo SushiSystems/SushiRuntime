@@ -30,12 +30,15 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -57,6 +60,17 @@ namespace SushiRuntime
 
     namespace Internal::Execution
     {
+        /**
+         * @brief Holds what a host context is built from.
+         * @see modules/engine/execution/README.md
+         */
+        struct HostContextParts
+        {
+            std::size_t device_count = 1;              /**< Host devices the context stands for; at least 1. */
+            std::shared_ptr<SeededExecutor> executor;  /**< Runs every node; not null. */
+            std::shared_ptr<const Clock> clock;        /**< Times every recorded dispatch; not null. */
+        };
+
         /**
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
          *        the execution engine that runs on them.
@@ -94,6 +108,15 @@ namespace SushiRuntime
                        const RuntimeSettings& settings = {});
 
                 /** @brief Stops the engine, then waits for every device queue. */
+                /**
+                 * @brief Builds a host context: host devices, host USM and a HostExecutionEngine.
+                 *
+                 * It makes no SYCL device, queue or thread; every run goes to the engine.
+                 * @see modules/engine/execution/README.md
+                 */
+                [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
+                create_host(const HostContextParts& parts);
+
                 ~RuntimeContext();
 
                 /** @brief Copy and move are disabled to keep state integrity. */

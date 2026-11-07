@@ -57,6 +57,14 @@ fields it stores behind `OffloadState::payload`.
 determinism contract and an optional `NodeCost`. The cost is absent unless the recorder stated one;
 the graph module copies it into the plan's node table.
 
+## The host form of a launch
+
+`Node::host_form` holds the launch as a loop on the calling thread: the recorder fills it for a
+launch over a count or an `Extent`, whose kernel takes an index the host can build. The host
+runtime's engine runs it in place of `work`, which needs a `sycl::handler`. A node with an
+`NdRange`, a raw command group or a queue body has no host form, and the host engine fails its run
+with `Unsupported`. The device engines never read it.
+
 ## The events a body hands over
 
 A host-work body that submits several kernels returns one event, which the successors wait on, and

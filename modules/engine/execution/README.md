@@ -231,6 +231,31 @@ write_run_values() sums the workers' busy, stealing, polling and idle time and w
 values `worker.busy`, `worker.stealing`, `worker.polling` and `worker.idle`, then starts the buckets
 again so an unobserved run does not report an earlier run's time.
 
+### The calls the context makes of an engine
+
+`begin_idle_change()`, `end_idle_change()`, `install_offload()` and `offload_sink()` are virtual,
+so the context holds any engine. The defaults answer an engine with no offload: the idle hold is
+`!run_in_progress()`, a coordinator that is not null stops the process, and asking for the sink
+stops it too. `SchedulerExecutionEngine` overrides all four.
+
+## host_execution_engine.hpp
+
+### HostExecutionEngine
+
+The engine of a host runtime. Each ready node is one job of a `SeededExecutor`: the job runs the
+node and posts the successors its completion frees, so the dependencies order what they order and
+the executor's seed orders the rest. A host node runs its body; a launch runs its `host_form`; a
+node with neither fails the run with `Unsupported`, named by `name_failure()`. After a failure or
+a `cancel()` the remaining nodes are skipped and still release their successors, so the run
+reaches its sentinel.
+
+`submit()` posts the roots and runs nothing; `complete()` steps the executor until the sentinel
+has run, and stops the process if the executor empties first. A test that owns the executor can
+step it between the two to replay an interleaving from its seed. `execute()` is the two in a row.
+A run that records timing stamps each dispatch from the engine's `Clock`: submit and start are the
+reading before the body, end the reading after it. The engine starts no thread, and every call is
+made on the thread that drives the executor.
+
 ## run_observer_registry.hpp
 
 ### RunObserverRegistry

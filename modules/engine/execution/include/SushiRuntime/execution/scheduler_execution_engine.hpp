@@ -194,20 +194,20 @@ namespace SushiRuntime
              * @pre Exactly one end_idle_change() follows a true return.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] bool begin_idle_change() noexcept;
+            [[nodiscard]] bool begin_idle_change() noexcept override;
 
             /** @brief Releases the hold a true begin_idle_change() took. */
-            void end_idle_change() noexcept;
+            void end_idle_change() noexcept override;
 
             /**
              * @brief Forwards to the scheduler's set_offload_coordinator().
              * @pre No run is in flight.
              * @param offload Not owned; null removes the installed one.
              */
-            void install_offload(Internal::Graph::OffloadCoordinator* offload);
+            void install_offload(Internal::Graph::OffloadCoordinator* offload) override;
 
             /** @brief Returns the sink an offload coordinator hands its nodes back to. */
-            [[nodiscard]] Internal::Graph::OffloadSink& offload_sink() noexcept;
+            [[nodiscard]] Internal::Graph::OffloadSink& offload_sink() noexcept override;
 
         private:
             struct Impl;

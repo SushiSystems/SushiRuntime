@@ -91,6 +91,13 @@ namespace SushiRuntime
             /** @brief Pure-CPU work run natively on the worker thread (no SYCL queue). */
             std::function<void()> native_work;
 
+            /**
+             * @brief The launch run as a host loop, for a runtime with no device; empty when the
+             *        node has no host form.
+             * @see modules/engine/task/README.md
+             */
+            std::function<void()> host_form;
+
             /** @brief The execution mode of this node. */
             ExecutionMode mode = ExecutionMode::Kernel;
 
