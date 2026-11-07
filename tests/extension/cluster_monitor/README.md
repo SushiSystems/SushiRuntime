@@ -29,8 +29,8 @@ passed in.
 
 ## test_cluster_monitor.cpp
 
-The file tests `ClusterMonitor` over the real directory, table and holds, a `RecordingTransport` and a
-`ManualClock`. A worker that registered needs a full handshake, so the pass with a PING to an alive worker
+The file tests `ClusterMonitor` over the real directory, table and holds, an `InProcessTransport` master
+endpoint whose worker end records (`TestSupport::ExecutorFabric`) and a `ManualClock`. A worker that registered needs a full handshake, so the pass with a PING to an alive worker
 is checked in the cluster tests of `distributed`.
 
 | Test | What it proves |

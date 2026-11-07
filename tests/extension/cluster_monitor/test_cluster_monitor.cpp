@@ -40,10 +40,12 @@
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
+#include <SushiRuntime/transport/recording_transport_events.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/refusing_offload_sink.hpp>
 
-#include "support/recording_transport.hpp"
+#include "support/executor_fabric.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -63,7 +65,7 @@ namespace
                 std::chrono::nanoseconds(K_START_NS)));
     }
 
-    /** @brief Builds a monitor over real bricks, a recording transport and a clock the test moves. */
+    /** @brief Builds a monitor over real bricks, an in-process transport that a worker end records and a clock the test moves. */
     class Small_ClusterMonitor : public ::testing::Test
     {
         protected:
@@ -72,9 +74,31 @@ namespace
                 : directory_(SushiRuntime::span<const std::uint8_t>(), std::make_shared<LeastLoadedOffloadPolicy>()),
                   exchange_(registry_, 1024),
                   clock_(K_START_NS),
-                  monitor_(directory_, pending_, held_, registry_, exchange_, transport_,
+                  monitor_(directory_, pending_, held_, registry_, exchange_, *fabric_.master(),
                            ClusterMonitorOptions{}, clock_)
             {
+                fabric_.start_master();
+                fabric_.start_worker_recording();
+            }
+
+            /** @brief Returns the name the master gives its connection to the worker end. */
+            [[nodiscard]] PeerID worker_peer() const
+            {
+                return fabric_.master_peer();
+            }
+
+            /** @brief Returns the frames the monitor sent that reached the worker end. */
+            [[nodiscard]] std::size_t frames_sent()
+            {
+                fabric_.settle();
+                return fabric_.worker_events().frames().size();
+            }
+
+            /** @brief Returns how many connections the worker end saw closed by the monitor. */
+            [[nodiscard]] std::size_t peers_closed()
+            {
+                fabric_.settle();
+                return fabric_.worker_events().losses().size();
             }
 
             /** @brief Moves the clock by @p step and runs one pass. */
@@ -90,7 +114,7 @@ namespace
             HeldNodes held_;                      /**< Holds the nodes a rule keeps back. */
             BufferRegistry registry_;             /**< Holds the shared buffers' versions. */
             BufferExchange exchange_;             /**< Forgets the tasks taken back. */
-            TestSupport::RecordingTransport transport_; /**< Records the closes. */
+            TestSupport::ExecutorFabric fabric_;  /**< Joins the monitor to a worker end that records. */
             RefusingOffloadSink sink_;            /**< Counts the nodes handed back. */
             ManualClock clock_;                   /**< Moves only when the test says. */
             ClusterMonitor monitor_;              /**< The unit under test. */
@@ -102,22 +126,21 @@ TEST_F(Small_ClusterMonitor, AnEmptyPassSendsAndClosesNothing)
 {
     pass_after(milliseconds(0));
 
-    EXPECT_TRUE(transport_.sent().empty());
-    EXPECT_TRUE(transport_.closed().empty());
+    EXPECT_EQ(frames_sent(), 0u);
+    EXPECT_EQ(peers_closed(), 0u);
     EXPECT_EQ(monitor_.statistics().redispatched, 0u);
 }
 
 /** @brief Tests that a peer is closed once the clock passes its handshake limit, and not before. */
 TEST_F(Small_ClusterMonitor, APeerPastTheHandshakeLimitIsClosed)
 {
-    directory_.add_peer(PeerID{1}, "peer", start_point());
+    directory_.add_peer(worker_peer(), "peer", start_point());
 
     pass_after(milliseconds(4999));
-    EXPECT_TRUE(transport_.closed().empty()) << "4999 ms is inside the 5000 ms limit";
+    EXPECT_EQ(peers_closed(), 0u) << "4999 ms is inside the 5000 ms limit";
 
     pass_after(milliseconds(2));
-    ASSERT_EQ(transport_.closed().size(), 1u);
-    EXPECT_EQ(transport_.closed()[0], PeerID{1});
+    EXPECT_EQ(peers_closed(), 1u) << "the one connection of the worker end was not closed";
 }
 
 /** @brief Tests that a task nobody acknowledged is taken back, counted and handed to the sink. */
@@ -173,21 +196,27 @@ TEST(Medium_ClusterMonitorThread, TheThreadClosesAPeerPastTheHandshakeLimitAndSt
     HeldNodes held;
     BufferRegistry registry;
     BufferExchange exchange(registry, 1024);
-    TestSupport::RecordingTransport transport;
+    InProcessFabric fabric;
+    RecordingTransportEvents master_events;
+    RecordingTransportEvents worker_events;
+    const std::shared_ptr<InProcessTransport> master = InProcessTransport::make_master(fabric);
+    const std::shared_ptr<InProcessTransport> worker = InProcessTransport::make_worker(fabric);
+    ASSERT_TRUE(master->start(master_events).is_ok());
+    ASSERT_TRUE(worker->start(worker_events).is_ok());
+    ASSERT_TRUE(master_events.wait_for_connections(1, std::chrono::seconds(30)));
     RefusingOffloadSink sink;
     SteadyClock clock;
     ClusterMonitorOptions options;
     options.period = milliseconds(1);
     options.handshake_timeout = milliseconds(5);
-    ClusterMonitor monitor(directory, pending, held, registry, exchange, transport, options,
-                           clock);
-    directory.add_peer(PeerID{1}, "peer", std::chrono::steady_clock::now());
+    ClusterMonitor monitor(directory, pending, held, registry, exchange, *master, options, clock);
+    directory.add_peer(master_events.connected()[0], "peer", std::chrono::steady_clock::now());
 
     monitor.start(sink);
-    for (int attempt = 0; attempt < 2000 && transport.closed().empty(); ++attempt)
-        std::this_thread::sleep_for(milliseconds(1));
+    const bool is_closed = worker_events.wait_for_losses(1, std::chrono::seconds(30));
     monitor.stop();
+    worker->stop();
+    master->stop();
 
-    ASSERT_FALSE(transport.closed().empty()) << "the thread never ran a pass that closed the peer";
-    EXPECT_EQ(transport.closed()[0], PeerID{1});
+    EXPECT_TRUE(is_closed) << "the thread never ran a pass that closed the peer";
 }

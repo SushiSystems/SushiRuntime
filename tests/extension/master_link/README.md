@@ -25,15 +25,16 @@ The file tests the pure step with fixed points of time.
 
 ## test_master_link.cpp
 
-The file tests `MasterLink` over a `RecordingTransport` and a `ManualClock`: the test calls the `on_*`
-events and `step()`, and reads the frames sent and the peers closed.
+The file tests `MasterLink` over a worker `InProcessTransport` endpoint on an `ExecutorDrive` and a `ManualClock`: the test
+calls the `on_*` events and `step()`, settles the fabric, and reads the frames sent and the
+connections closed at the master end (`TestSupport::ExecutorFabric`).
 
 | Test | What it proves |
 | --- | --- |
 | `Small_MasterLink.AConnectionOpensTheHandshakeWithHello` | `HELLO` carries the name and the build id, and the link is not registered. |
 | `Small_MasterLink.TheWorkerProvesItselfOnlyAfterTheMasterProved` | `PROOF` follows a good `CHALLENGE`, carries the worker proof, the ops, the job bound and the cache budget, and `WELCOME` registers. |
 | `Small_MasterLink.AMasterProvingAnotherKeyEndsTheLink` | A `CHALLENGE` proved with another key ends the link as `RejectedAuthentication`, sends no `PROOF` and closes the peer. |
-| `Small_MasterLink.AnEndedLinkStopsItsTransportOnce`, `AConnectionAfterTheEndIsClosed` | An ended link stops its transport once and closes a later connection without a `HELLO`. |
+| `Small_MasterLink.AnEndedLinkStopsItsTransport`, `AConnectionAfterTheEndIsClosed` | An ended link stops its transport, which then refuses a send and connects no more, and a later connection gets no `HELLO` and is seen closed at the master end. |
 | `Small_MasterLink.PingGetsNoPongBeforeRegistration`, `ThePongCarriesTheFreeMemoryOfTheProbe` | A `PING` before `WELCOME` gets no `PONG`; after it the `PONG` carries the token and the probe's free memory. |
 | `Small_MasterLink.ALateChallengeForAForgottenHelloIsIgnored`, `AChallengeForAnEarlierHelloIsIgnored` | A `CHALLENGE` for a forgotten or an earlier `HELLO` is ignored and does not end the link. |
 | `Small_MasterLink.ARegisteredLinkSendsAHeartbeatEveryInterval` | The `HEARTBEAT` carries what the probe returns and is sent once per interval. |

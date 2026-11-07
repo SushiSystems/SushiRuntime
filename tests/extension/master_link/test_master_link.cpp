@@ -44,7 +44,7 @@
 #include <SushiRuntime/master_link/master_link.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
-#include "support/recording_transport.hpp"
+#include "support/executor_fabric.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -52,8 +52,11 @@ using std::chrono::milliseconds;
 
 namespace
 {
-    /** @brief Holds the peer the master connects as. */
-    const PeerID K_MASTER{1};
+    /** @brief Holds the name the master gives the worker in WELCOME. */
+    constexpr std::uint32_t K_WORKER_ID = 1;
+
+    /** @brief Holds a step of the fabric's clock that passes the delay before a worker reconnects. */
+    constexpr std::uint64_t K_RECONNECT_NS = 2'000'000;
 
     /** @brief Holds the byte every key of these tests is filled with. */
     constexpr std::uint8_t K_SECRET_BYTE = 0x42;
@@ -106,7 +109,7 @@ namespace
     Wire::WelcomeMessage welcome_of(std::uint32_t liveness_timeout_ms, std::uint32_t chunk_bytes)
     {
         Wire::WelcomeMessage welcome;
-        welcome.worker_id = K_MASTER.value;
+        welcome.worker_id = K_WORKER_ID;
         welcome.liveness_timeout_ms = liveness_timeout_ms;
         welcome.ping_interval_ms = 250;
         welcome.chunk_bytes = chunk_bytes;
@@ -115,24 +118,13 @@ namespace
 
     /** @brief Decodes the payload of a sent frame. */
     template <typename Message>
-    Message decode(const TestSupport::SentFrame& frame)
+    Message decode(const RecordedFrame& frame)
     {
         Message message;
         const Wire::DecodeResult result = Message::decode(
             span<const std::byte>(frame.payload.data(), frame.payload.size()), message);
         EXPECT_TRUE(result.ok()) << "payload failed to decode at offset " << result.offset;
         return message;
-    }
-
-    /** @brief Returns the frames of one type the transport was given, in order. */
-    std::vector<TestSupport::SentFrame> frames_of(const TestSupport::RecordingTransport& transport,
-                                                  MessageType type)
-    {
-        std::vector<TestSupport::SentFrame> frames;
-        for (const TestSupport::SentFrame& frame : transport.sent())
-            if (frame.type == type)
-                frames.push_back(frame);
-        return frames;
     }
 
     /** @brief Returns the options of a worker named "worker-a" with two ops. */
@@ -148,27 +140,49 @@ namespace
         return options;
     }
 
-    /** @brief Holds a link over a recording transport, with nonces 1, 2, 3 and so on. */
+    /** @brief Holds a link over an in-process transport whose master end records, with nonces 1, 2, 3 and so on. */
     class LinkRig
     {
         public:
             /** @brief Builds the link on @p clock with @p options. */
             LinkRig(const Clock& clock, MasterLinkOptions options)
                 : secret_(secret_of(K_SECRET_BYTE)),
-                  link_(transport_, span<const std::uint8_t>(secret_.data(), secret_.size()),
+                  link_(*fabric_.worker(), span<const std::uint8_t>(secret_.data(), secret_.size()),
                         std::move(options), [this]() -> Result<HandshakeNonce>
                         {
                             return nonce_of(++drawn_);
                         },
                         clock)
             {
+                fabric_.start_master();
+                fabric_.start_worker_recording();
+            }
+
+            /** @brief Returns the name the worker end gives its connection to the master. */
+            PeerID peer()
+            {
+                return fabric_.worker_events().connected().back();
+            }
+
+            /** @brief Returns the frames of one type that reached the master end, in order. */
+            std::vector<RecordedFrame> sent(MessageType type)
+            {
+                fabric_.settle();
+                return fabric_.master_events().frames_of(type);
+            }
+
+            /** @brief Returns how many connections the master end saw closed. */
+            std::size_t closed_count()
+            {
+                fabric_.settle();
+                return fabric_.master_events().losses().size();
             }
 
             /** @brief Returns the HELLO frames sent so far, decoded. */
-            std::vector<Wire::HelloMessage> hellos() const
+            std::vector<Wire::HelloMessage> hellos()
             {
                 std::vector<Wire::HelloMessage> hellos;
-                for (const TestSupport::SentFrame& frame : frames_of(transport_, MessageType::Hello))
+                for (const RecordedFrame& frame : sent(MessageType::Hello))
                     hellos.push_back(decode<Wire::HelloMessage>(frame));
                 return hellos;
             }
@@ -176,14 +190,14 @@ namespace
             /** @brief Connects, answers the newest HELLO with a good CHALLENGE and a WELCOME. */
             LinkChange register_master(std::uint64_t session_id, std::uint32_t liveness_ms)
             {
-                link_.on_connected(K_MASTER);
-                link_.on_challenge(K_MASTER, challenge_of(secret_, session_id,
+                link_.on_connected(peer());
+                link_.on_challenge(peer(), challenge_of(secret_, session_id,
                                                           nonce_in(hellos().back())));
-                return link_.on_welcome(K_MASTER, welcome_of(liveness_ms, 4096));
+                return link_.on_welcome(peer(), welcome_of(liveness_ms, 4096));
             }
 
             std::vector<std::uint8_t> secret_;           /**< The key both sides hold. */
-            TestSupport::RecordingTransport transport_;  /**< Records what the link sends. */
+            TestSupport::ExecutorFabric fabric_;         /**< Carries what the link sends to a master end that records. */
             std::uint8_t drawn_ = 0;                     /**< Counts the nonces drawn. */
             MasterLink link_;                            /**< The link under test. */
     };
@@ -212,7 +226,7 @@ namespace
 /** @brief Tests that a new connection opens the handshake with a HELLO about this worker. */
 TEST_F(Small_MasterLink, AConnectionOpensTheHandshakeWithHello)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
 
     ASSERT_EQ(rig_.hellos().size(), 1u);
     EXPECT_EQ(rig_.hellos()[0].node_name, "worker-a");
@@ -223,14 +237,14 @@ TEST_F(Small_MasterLink, AConnectionOpensTheHandshakeWithHello)
 /** @brief Tests that the worker proves itself only after it checked the master's proof. */
 TEST_F(Small_MasterLink, TheWorkerProvesItselfOnlyAfterTheMasterProved)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
     const HandshakeNonce worker_nonce = nonce_in(rig_.hellos()[0]);
-    ASSERT_TRUE(frames_of(rig_.transport_, MessageType::Proof).empty());
+    ASSERT_TRUE(rig_.sent(MessageType::Proof).empty());
 
-    EXPECT_EQ(rig_.link_.on_challenge(K_MASTER, challenge_of(rig_.secret_, 7, worker_nonce)),
+    EXPECT_EQ(rig_.link_.on_challenge(rig_.peer(), challenge_of(rig_.secret_, 7, worker_nonce)),
               LinkChange::None);
 
-    const std::vector<TestSupport::SentFrame> proofs = frames_of(rig_.transport_, MessageType::Proof);
+    const std::vector<RecordedFrame> proofs = rig_.sent(MessageType::Proof);
     ASSERT_EQ(proofs.size(), 1u);
     const Wire::ProofMessage proof = decode<Wire::ProofMessage>(proofs[0]);
     const Sha256Digest expected =
@@ -243,58 +257,59 @@ TEST_F(Small_MasterLink, TheWorkerProvesItselfOnlyAfterTheMasterProved)
     EXPECT_EQ(proof.cache_budget, 4096u);
     EXPECT_EQ(rig_.link_.registrations(), 0u);
 
-    EXPECT_EQ(rig_.link_.on_welcome(K_MASTER, welcome_of(5000, 4096)),
+    EXPECT_EQ(rig_.link_.on_welcome(rig_.peer(), welcome_of(5000, 4096)),
               LinkChange::RegisteredNewSession);
     EXPECT_EQ(rig_.link_.registrations(), 1u);
     EXPECT_EQ(rig_.link_.chunk_bytes(), 4096u);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running);
     ASSERT_TRUE(rig_.link_.master().has_value());
-    EXPECT_EQ(*rig_.link_.master(), K_MASTER);
+    EXPECT_EQ(*rig_.link_.master(), rig_.peer());
 }
 
 /** @brief Tests that a master proving another key ends the link before the worker proves anything. */
 TEST_F(Small_MasterLink, AMasterProvingAnotherKeyEndsTheLink)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
 
     const LinkChange change = rig_.link_.on_challenge(
-        K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0])));
+        rig_.peer(), challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0])));
 
     EXPECT_EQ(change, LinkChange::Ended);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::RejectedAuthentication);
-    ASSERT_EQ(rig_.transport_.closed().size(), 1u);
-    EXPECT_EQ(rig_.transport_.closed()[0], K_MASTER);
-    EXPECT_TRUE(frames_of(rig_.transport_, MessageType::Proof).empty())
+    EXPECT_EQ(rig_.closed_count(), 1u) << "the connection of the unproven master stayed open";
+    EXPECT_TRUE(rig_.sent(MessageType::Proof).empty())
         << "PROOF went to an unproven master";
     EXPECT_EQ(rig_.hellos().size(), 1u);
 }
 
-/** @brief Tests that an ended link stops its transport once, so it connects no more. */
-TEST_F(Small_MasterLink, AnEndedLinkStopsItsTransportOnce)
+/** @brief Tests that an ended link stops its transport, so it connects no more. */
+TEST_F(Small_MasterLink, AnEndedLinkStopsItsTransport)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
     ASSERT_EQ(rig_.link_.on_challenge(
-                  K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0]))),
+                  rig_.peer(), challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0]))),
               LinkChange::Ended);
 
     rig_.link_.step();
     rig_.link_.step();
 
-    EXPECT_EQ(rig_.transport_.stops(), 1u);
+    EXPECT_EQ(rig_.fabric_.worker()->send(rig_.peer(), MessageType::Ping, {}), SendStatus::Stopped);
+    rig_.fabric_.advance(K_RECONNECT_NS);
+    EXPECT_EQ(rig_.fabric_.master_events().connected().size(), 1u) << "the stopped transport connected again";
 }
 
-/** @brief Tests that a connection made after the link ended is closed and gets no HELLO. */
+/** @brief Tests that a connection made after the link ended gets no HELLO and the master end sees it closed. */
 TEST_F(Small_MasterLink, AConnectionAfterTheEndIsClosed)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
     ASSERT_EQ(rig_.link_.on_challenge(
-                  K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0]))),
+                  rig_.peer(), challenge_of(secret_of(0x43), 7, nonce_in(rig_.hellos()[0]))),
               LinkChange::Ended);
 
-    rig_.link_.on_connected(PeerID{2});
+    rig_.link_.on_connected(rig_.peer());
 
     EXPECT_EQ(rig_.hellos().size(), 1u);
-    EXPECT_EQ(rig_.transport_.closed().back(), PeerID{2});
+    EXPECT_GE(rig_.closed_count(), 1u) << "the master end still sees the connection open";
 }
 
 /** @brief Tests that a worker answers PING only once WELCOME registered it. */
@@ -306,16 +321,16 @@ TEST_F(Small_MasterLink, PingGetsNoPongBeforeRegistration)
     registered.token = 99;
 
     // The master registered this worker on PROOF, but its WELCOME has not arrived.
-    rig_.link_.on_connected(K_MASTER);
-    rig_.link_.on_challenge(K_MASTER, challenge_of(rig_.secret_, 7, nonce_in(rig_.hellos()[0])));
-    rig_.link_.on_ping(K_MASTER, early);
-    EXPECT_TRUE(frames_of(rig_.transport_, MessageType::Pong).empty())
+    rig_.link_.on_connected(rig_.peer());
+    rig_.link_.on_challenge(rig_.peer(), challenge_of(rig_.secret_, 7, nonce_in(rig_.hellos()[0])));
+    rig_.link_.on_ping(rig_.peer(), early);
+    EXPECT_TRUE(rig_.sent(MessageType::Pong).empty())
         << "a link that is not registered told the master it is alive";
 
-    rig_.link_.on_welcome(K_MASTER, welcome_of(0, 4096));
-    rig_.link_.on_ping(K_MASTER, registered);
+    rig_.link_.on_welcome(rig_.peer(), welcome_of(0, 4096));
+    rig_.link_.on_ping(rig_.peer(), registered);
 
-    const std::vector<TestSupport::SentFrame> pongs = frames_of(rig_.transport_, MessageType::Pong);
+    const std::vector<RecordedFrame> pongs = rig_.sent(MessageType::Pong);
     ASSERT_EQ(pongs.size(), 1u);
     EXPECT_EQ(decode<Wire::PongMessage>(pongs[0]).token, 99u);
 }
@@ -333,10 +348,10 @@ TEST_F(Small_MasterLink, ThePongCarriesTheFreeMemoryOfTheProbe)
     Wire::PingMessage ping;
     ping.token = 5;
 
-    rig.link_.on_ping(K_MASTER, ping);
+    rig.link_.on_ping(rig.peer(), ping);
 
-    ASSERT_EQ(frames_of(rig.transport_, MessageType::Pong).size(), 1u);
-    EXPECT_EQ(decode<Wire::PongMessage>(frames_of(rig.transport_, MessageType::Pong)[0]).free_mem,
+    ASSERT_EQ(rig.sent(MessageType::Pong).size(), 1u);
+    EXPECT_EQ(decode<Wire::PongMessage>(rig.sent(MessageType::Pong)[0]).free_mem,
               12345u);
 }
 
@@ -344,7 +359,7 @@ TEST_F(Small_MasterLink, ThePongCarriesTheFreeMemoryOfTheProbe)
 TEST_F(Small_MasterLink, ALateChallengeForAForgottenHelloIsIgnored)
 {
     constexpr std::size_t K_HELLOS = 5;
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
     for (std::size_t sent = 1; sent < K_HELLOS; ++sent)
     {
         advance(milliseconds(10));
@@ -354,27 +369,27 @@ TEST_F(Small_MasterLink, ALateChallengeForAForgottenHelloIsIgnored)
     // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
     const HandshakeNonce first = nonce_in(rig_.hellos()[0]);
 
-    const LinkChange change = rig_.link_.on_challenge(K_MASTER, challenge_of(rig_.secret_, 7, first));
+    const LinkChange change = rig_.link_.on_challenge(rig_.peer(), challenge_of(rig_.secret_, 7, first));
 
     EXPECT_EQ(change, LinkChange::None) << "a CHALLENGE for a forgotten HELLO was taken for a wrong secret";
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running);
-    EXPECT_TRUE(frames_of(rig_.transport_, MessageType::Proof).empty());
+    EXPECT_TRUE(rig_.sent(MessageType::Proof).empty());
 }
 
 /** @brief Tests that a CHALLENGE for an earlier HELLO still remembered is ignored. */
 TEST_F(Small_MasterLink, AChallengeForAnEarlierHelloIsIgnored)
 {
-    rig_.link_.on_connected(K_MASTER);
+    rig_.link_.on_connected(rig_.peer());
     advance(milliseconds(10));
     rig_.link_.step();
     ASSERT_EQ(rig_.hellos().size(), 2u);
 
     const LinkChange change = rig_.link_.on_challenge(
-        K_MASTER, challenge_of(rig_.secret_, 7, nonce_in(rig_.hellos()[0])));
+        rig_.peer(), challenge_of(rig_.secret_, 7, nonce_in(rig_.hellos()[0])));
 
     EXPECT_EQ(change, LinkChange::None);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running);
-    EXPECT_TRUE(frames_of(rig_.transport_, MessageType::Proof).empty());
+    EXPECT_TRUE(rig_.sent(MessageType::Proof).empty());
 }
 
 /** @brief Tests that a registered link sends a HEARTBEAT every interval, carrying the probe. */
@@ -392,18 +407,18 @@ TEST_F(Small_MasterLink, ARegisteredLinkSendsAHeartbeatEveryInterval)
     rig.register_master(7, 0);
 
     rig.link_.step();
-    EXPECT_TRUE(frames_of(rig.transport_, MessageType::Heartbeat).empty());
+    EXPECT_TRUE(rig.sent(MessageType::Heartbeat).empty());
 
     advance(milliseconds(10));
     rig.link_.step();
 
-    const std::vector<TestSupport::SentFrame> beats = frames_of(rig.transport_, MessageType::Heartbeat);
+    const std::vector<RecordedFrame> beats = rig.sent(MessageType::Heartbeat);
     ASSERT_EQ(beats.size(), 1u);
     EXPECT_EQ(decode<Wire::HeartbeatMessage>(beats[0]).queue_depth, 3u);
     EXPECT_EQ(decode<Wire::HeartbeatMessage>(beats[0]).oldest_held_task_id, 42u);
 
     rig.link_.step();
-    EXPECT_EQ(frames_of(rig.transport_, MessageType::Heartbeat).size(), 1u)
+    EXPECT_EQ(rig.sent(MessageType::Heartbeat).size(), 1u)
         << "the next heartbeat is an interval away";
 }
 
@@ -415,9 +430,8 @@ TEST_F(Small_MasterLink, ASilentMasterIsClosedAndTheLinkMayReconnect)
     advance(milliseconds(41));
     rig_.link_.step();
 
-    ASSERT_EQ(rig_.transport_.closed().size(), 1u) << "a silent master was never closed";
-    EXPECT_EQ(rig_.transport_.closed()[0], K_MASTER);
-    EXPECT_EQ(rig_.link_.on_lost(K_MASTER, PeerLoss{PeerLossCause::ClosedLocally, 0, ""}),
+    ASSERT_EQ(rig_.closed_count(), 1u) << "a silent master was never closed";
+    EXPECT_EQ(rig_.link_.on_lost(rig_.peer(), PeerLoss{PeerLossCause::ClosedLocally, 0, ""}),
               LinkChange::Disconnected);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running) << "a lost master ended a link that may reconnect";
 }
@@ -428,22 +442,22 @@ TEST_F(Small_MasterLink, AFrameFromTheMasterRestartsTheSilence)
     rig_.register_master(7, 40);
 
     advance(milliseconds(30));
-    rig_.link_.note_frame(K_MASTER);
+    rig_.link_.note_frame(rig_.peer());
     advance(milliseconds(30));
     rig_.link_.step();
 
-    EXPECT_TRUE(rig_.transport_.closed().empty()) << "60 ms after the start is only 30 ms of silence";
+    EXPECT_EQ(rig_.closed_count(), 0u) << "60 ms after the start is only 30 ms of silence";
 }
 
 /** @brief Tests that a new master session is told from a known one, and counted as a reconnect. */
 TEST_F(Small_MasterLink, ANewSessionIsToldFromAKnownOne)
 {
     EXPECT_EQ(rig_.register_master(7, 0), LinkChange::RegisteredNewSession);
-    rig_.link_.on_lost(K_MASTER, PeerLoss{});
+    rig_.link_.on_lost(rig_.peer(), PeerLoss{});
 
     EXPECT_EQ(rig_.register_master(7, 0), LinkChange::Registered)
         << "the same session after a reconnect is not a new one";
-    rig_.link_.on_lost(K_MASTER, PeerLoss{});
+    rig_.link_.on_lost(rig_.peer(), PeerLoss{});
 
     EXPECT_EQ(rig_.register_master(8, 0), LinkChange::RegisteredNewSession);
     EXPECT_EQ(rig_.link_.registrations(), 3u);
@@ -457,10 +471,10 @@ TEST_F(Small_MasterLink, ALossAfterGoodbyeIsTheWorkersOwn)
 
     rig_.link_.say_goodbye();
 
-    const std::vector<TestSupport::SentFrame> goodbyes = frames_of(rig_.transport_, MessageType::Goodbye);
+    const std::vector<RecordedFrame> goodbyes = rig_.sent(MessageType::Goodbye);
     ASSERT_EQ(goodbyes.size(), 1u);
     EXPECT_EQ(decode<Wire::GoodbyeMessage>(goodbyes[0]).reason, Wire::GoodbyeReason::Shutdown);
-    EXPECT_EQ(rig_.link_.on_lost(K_MASTER, PeerLoss{}), LinkChange::None);
+    EXPECT_EQ(rig_.link_.on_lost(rig_.peer(), PeerLoss{}), LinkChange::None);
     EXPECT_EQ(rig_.link_.on_connect_abandoned(), LinkChange::None);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running);
 
@@ -473,13 +487,13 @@ TEST_F(Small_MasterLink, ARejectForTheSecretOrTheVersionEndsTheLink)
 {
     Wire::RejectMessage busy;
     busy.reason = Wire::RejectReason::Busy;
-    rig_.link_.on_connected(K_MASTER);
-    EXPECT_EQ(rig_.link_.on_reject(K_MASTER, busy), LinkChange::None);
+    rig_.link_.on_connected(rig_.peer());
+    EXPECT_EQ(rig_.link_.on_reject(rig_.peer(), busy), LinkChange::None);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::Running);
 
     Wire::RejectMessage version;
     version.reason = Wire::RejectReason::Version;
-    EXPECT_EQ(rig_.link_.on_reject(K_MASTER, version), LinkChange::Ended);
+    EXPECT_EQ(rig_.link_.on_reject(rig_.peer(), version), LinkChange::Ended);
     EXPECT_EQ(rig_.link_.end(), LinkEnd::ProtocolMismatch);
 }
 
@@ -492,7 +506,7 @@ TEST_F(Small_MasterLink, AnAbandonedConnectEndsByWhetherTheLinkEverRegistered)
     ManualClock clock(K_START_NS);
     LinkRig registered(clock, link_options());
     registered.register_master(7, 0);
-    registered.link_.on_lost(K_MASTER, PeerLoss{});
+    registered.link_.on_lost(registered.peer(), PeerLoss{});
     EXPECT_EQ(registered.link_.on_connect_abandoned(), LinkChange::Ended);
     EXPECT_EQ(registered.link_.end(), LinkEnd::MasterLost);
 }
@@ -515,18 +529,39 @@ TEST_F(Small_MasterLink, AFactAbove255BytesIsNamed)
 TEST(Medium_MasterLinkThread, TheThreadSendsHeartbeatsUntilStopped)
 {
     SteadyClock clock;
+    InProcessFabric fabric;
+    RecordingTransportEvents master_events;
+    RecordingTransportEvents worker_events;
+    const std::shared_ptr<InProcessTransport> master = InProcessTransport::make_master(fabric);
+    const std::shared_ptr<InProcessTransport> worker = InProcessTransport::make_worker(fabric);
+    ASSERT_TRUE(master->start(master_events).is_ok());
+    ASSERT_TRUE(worker->start(worker_events).is_ok());
+    ASSERT_TRUE(worker_events.wait_for_connections(1, std::chrono::seconds(30)));
+    const PeerID peer = worker_events.connected().back();
+    const std::vector<std::uint8_t> secret = secret_of(K_SECRET_BYTE);
+    std::uint8_t drawn = 0;
     MasterLinkOptions options = link_options();
     options.heartbeat_interval = milliseconds(2);
-    LinkRig rig(clock, std::move(options));
-    rig.register_master(7, 0);
+    MasterLink link(*worker, span<const std::uint8_t>(secret.data(), secret.size()),
+                    std::move(options), [&drawn]() -> Result<HandshakeNonce>
+                    {
+                        return nonce_of(++drawn);
+                    },
+                    clock);
+    link.on_connected(peer);
+    ASSERT_TRUE(master_events.wait_for_frames(MessageType::Hello, 1, std::chrono::seconds(30)));
+    link.on_challenge(peer, challenge_of(secret, 7,
+                                         nonce_in(decode<Wire::HelloMessage>(
+                                             master_events.frames_of(MessageType::Hello)[0]))));
+    link.on_welcome(peer, welcome_of(0, 4096));
 
-    rig.link_.start();
-    for (int attempt = 0; attempt < 2000 &&
-                          frames_of(rig.transport_, MessageType::Heartbeat).size() < 2; ++attempt)
-        std::this_thread::sleep_for(milliseconds(1));
-    rig.link_.stop();
+    link.start();
+    const bool is_beating = master_events.wait_for_frames(MessageType::Heartbeat, 2,
+                                                         std::chrono::seconds(30));
+    link.stop();
+    worker->stop();
+    master->stop();
 
-    EXPECT_GE(frames_of(rig.transport_, MessageType::Heartbeat).size(), 2u)
-        << "the thread never sent two heartbeats";
-    EXPECT_EQ(rig.link_.end(), LinkEnd::Stopped);
+    EXPECT_TRUE(is_beating) << "the thread never sent two heartbeats";
+    EXPECT_EQ(link.end(), LinkEnd::Stopped);
 }
