@@ -84,6 +84,22 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 30. Ruled on 2026-11-07 by the lead (RW-107), refining decision 24: the install path is `AdvancedControls::install_offload()`, which forwards to the context; a runtime starts with no coordinator, so a caller that never installs one keeps today's behaviour. The three plan-cache promises run on it with the in-memory coordinator of `task`. `OffloadedCountIsOfThisRun` needs a coordinator that takes a node and completes it on another thread, which the in-memory one does not do; RW-107 keeps that one promise.
 31. Ruled on 2026-11-07 by the owner (RW-107): `OffloadedCountIsOfThisRun` is a medium test. `tests/support/accepting_offload_coordinator.hpp` holds a coordinator built on the `OffloadCoordinator` port that hands each node to a worker thread it owns, completes it there and joins the thread in its destructor. The test installs it through `AdvancedControls::install_offload()` with `TestSupport::InstalledOffload`, which the plan-cache tests now share, and RW-107 closes.
 32. Ruled on 2026-11-07 by the lead (RW-119): a `control_queue_frames` of 0 on an `InProcessTransport` endpoint refuses every control frame with `QueueFull`. The `Outbox` under it holds at least one frame, so the distributed build's run failed `RefusedSendUndoesThePendingEntry`; the endpoint keeps the bound itself, and `AControlQueueOfNoFramesRefusesEverySend` holds it.
+33. Ruled on 2026-11-07 by the orchestrator, with the owner's delegation for public interfaces (RW-124, RW-125): decisions 26, 27 and 28 are overturned where they leave a logic test medium for want of a seam. The five seams of the industrial-testing spec are built and public: `Clock` and `ManualClock` (RW-122), `SeededExecutor`, the fake device `Runtime::create_host()` with `HostExecutionEngine`, `HostUSMSource` and a host `DeviceQueueSet` (RW-123, RW-124), the host-only graph and plan core on that runtime, and the threadless `InProcessTransport` (RW-87). LAYERED_EXECUTION rulings 14 to 19 hold them. Every case the medium audit below rules LOGIC moves onto its seam as `Small_`, and one `Medium_` case is kept per boundary.
+34. Ruled on 2026-11-07 by the orchestrator: a launch has a host form only over a count or an `Extent`. An `NdRange`, a raw command group, a queue body, a device-sized and a late-count launch fail on the host runtime with `Unsupported`, and their tests stay medium as the kernel boundary until a host form is built for them (RW-126).
+
+## Medium audit
+
+Read case by case by four workers over the `Medium_` suites at 4af8f95f; the table, one row per suite with its case count, its class and the seam or boundary, is `medium_audit.md` in the orchestrator's scratchpad, summarised here.
+
+| Slice | Cases | BOUNDARY | LOGIC | LOGIC by seam |
+| --- | --- | --- | --- | --- |
+| surface/api/graph | 256 | 31 | 225 | host runtime 181, with clock 6, with executor 38 |
+| surface/api, the rest | 229 | 47 | 182 | host runtime 160, clock 1, executor 5, none 10, other 6 |
+| profiling, memory_exchange, engine, platform, foundation, applications | 294 | 84 | 210 | host runtime 112, executor 36, host memory 34, other 19, none 6, clock 3 |
+| extension | 182 | 47 | 135 | threadless transport 118, executor 119, host runtime 91, clock 17, none 5, other 12 (a case counts under each seam) |
+| **All** | **961** | **209** | **752** | |
+
+Counts by size before the work, by `git grep` of the suite prefixes at 23bf5b2f: 856 `Small_`, 960 `Medium_`, 14 `Large_`.
 
 ## Dispatches
 
@@ -119,6 +135,10 @@ dispatch: J16 RW-100/102 engine seams — sonnet medium, 2 rounds (sent back for
 dispatch: J16 RW-101 foundation seams — sonnet medium, 2 rounds (sent back for skipping DISPATCH rules 1 and 2), partial (profile, logger and Result records to RW-115 to RW-118), rung 1
 dispatch: J16 RW-104/105/106 extension — sonnet medium, 1 round, stopped by the owner's shutdown, partial and unreviewed (three new files left uncommitted), rung 1
 dispatch: J16 RW-104/105/106 extension seams — sonnet medium, 1 round, passed (refusing sink moved beside its port in task by the lead; FactsRecordingPolicy left, the in-memory policy records no facts), rung 1
+dispatch: J16 medium audit A, api/graph — sonnet medium, 1 round, passed, rung 1
+dispatch: J16 medium audit B, api rest — sonnet medium, 1 round, passed, rung 1
+dispatch: J16 medium audit C, lower tiers — sonnet medium, 1 round, passed, rung 1
+dispatch: J16 medium audit D, extension — sonnet medium, 2 rounds (sent back for skipping two skills of DISPATCH rule 1; no row changed), passed, rung 1
 
 ## Totals
 

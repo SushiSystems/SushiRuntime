@@ -32,6 +32,10 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: RW-89 applied (decision 10); the GPU skip is RW-90 |
 | M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: RW-98 and five RW-99 resizes by 8db1ef11; the three graph-identity records ruled medium (decision 26) |
 | M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: `test_test_budget_settings.py` deleted (decision 15); the three resizes applied by 0e276549 (RW-95, decision 16) |
+| S1 | The clock, the executor, the host USM source and host device set, the host runtime and the threadless transport (decision 33) | M1 to M14 | done, not built: ce70e55b, da4525a5, 42195e98, 565948f1, 958c0976, c156df96 |
+| S2 | Host forms for NdRange, raw command group, queue body, device-sized and late-count launches (decision 34) | S1 | todo: RW-126 |
+| V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | running |
+| V2 | One `sr build --distributed`, `sr test -l small` and `sr test -l medium --distributed`, fixed until green | V1 | todo |
 
 ## Acceptance
 
