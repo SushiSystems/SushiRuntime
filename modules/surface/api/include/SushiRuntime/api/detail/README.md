@@ -366,6 +366,15 @@ baked in when the task is submitted. A device count is read in the kernel, and a
 capacity becomes zero and a fault record (docs/design/GRAPH_REPLAY/README.md §D.2). A host count past
 its capacity is written to the fault record on the host, and the fill does not run.
 
+Its host form resolves the same counts on the calling thread and runs the fill once. A device
+count slot is host memory on a host runtime, so the form reads it as the kernel would.
+
+### device_sized_node
+
+device_sized_node() describes a node launched at its capacity that reads its live width and words
+on device. run_device_sized_item() is the body of one work-item, which the kernel and the host
+form share: the host form loops over the capacity on the calling thread.
+
 ## node_description.hpp
 
 ### NodeDescription

@@ -66,6 +66,13 @@ namespace SushiRuntime
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = width;
+            description.host_form = [counts, fault, fill]()
+            {
+                std::array<std::size_t, K> live{};
+                for (std::size_t k = 0; k < K; ++k)
+                    live[k] = read_live_count(late_count_source(counts[k], fault), fault);
+                fill(live);
+            };
             description.work = CommandGroupWork([counts, fault, fill](sycl::handler& h)
             {
                 std::array<LiveCountSource, K> sources;
