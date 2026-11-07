@@ -49,14 +49,17 @@
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device/in_memory_queue_factory.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/machine/device_description.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
-#include <SushiRuntime/memory/sycl_usm_source.hpp>
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
+#include <SushiRuntime/device/in_memory_queue_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
@@ -71,7 +74,6 @@
 
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
-#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Graph::Node;
@@ -83,18 +85,15 @@ namespace
     /** @brief Stands for "handed a queue of no entry", and for a node whose work did not run. */
     constexpr std::size_t K_NO_DEVICE = static_cast<std::size_t>(-1);
 
-    /** @brief Builds an inventory of @p count entries over the device SYCL selects by default, all on NUMA node 0. */
-    std::vector<Internal::Device::DeviceDescriptor> entries_over_the_default_device(std::size_t count)
+    /** @brief Builds an inventory of @p count host entries, all on NUMA node 0. */
+    std::vector<DeviceDescription> host_entries(std::size_t count)
     {
-        std::vector<Internal::Device::DeviceDescriptor> entries;
-        for (std::size_t index = 0; index < count; ++index)
+        std::vector<DeviceDescription> entries(count);
+        for (DeviceDescription& entry : entries)
         {
-            Internal::Device::DeviceDescriptor descriptor;
-            descriptor.device = sycl::device{sycl::default_selector_v};
-            descriptor.info.name = "default";
-            descriptor.info.backend = descriptor.device.get_backend();
-            descriptor.info.numa_node = 0;
-            entries.push_back(descriptor);
+            entry.name = "in-memory";
+            entry.kind = DeviceKind::CPU;
+            entry.numa_node = 0;
         }
         return entries;
     }
@@ -121,23 +120,23 @@ namespace
     /**
      * @brief Owns what a scheduler is built on: a topology, a device set and an allocator.
      *
-     * The device set makes a queue only at its first use, so building the parts touches no device.
+     * The device set builds its queues through an InMemoryQueueFactory and the allocator takes
+     * host memory, so building the parts touches no accelerator, and the entries' queues differ.
      */
     class Hardware
     {
         public:
             /**
              * @brief Builds the parts.
-             * @param entries Device entries of the set; none for a scheduler that only constructs.
+             * @param entries Host entries of the set; none for a scheduler that only constructs.
              * @param core_to_numa NUMA node of each logical core; empty for a machine with no core map.
              * @param nodes NUMA nodes the distance model knows.
              */
-            Hardware(std::vector<Internal::Device::DeviceDescriptor> entries, std::vector<int> core_to_numa,
-                     int nodes)
+            Hardware(std::vector<DeviceDescription> entries, std::vector<int> core_to_numa, int nodes)
                 : topology_(Internal::Topology::InMemoryTopologyProvider({}, std::move(core_to_numa)),
                             std::make_shared<Internal::Topology::MatrixDistanceModel>(distances_between(nodes))),
-                  devices_(std::move(entries), false),
-                  memory_(Internal::Memory::make_sycl_usm_source(devices_.plain_queues()))
+                  devices_(entries, std::make_unique<Internal::Device::InMemoryQueueFactory>(entries.size()), false),
+                  memory_(Internal::Memory::make_host_usm_source(entries.size()))
             {
             }
 
@@ -145,6 +144,14 @@ namespace
             std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings)
             {
                 return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_);
+            }
+
+            /** @brief Builds a scheduler of @p settings whose rounds run on @p executor, without starting it. */
+            std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings, Executor& executor)
+            {
+                std::unique_ptr<TaskScheduler> scheduler = make(settings);
+                scheduler->set_executor(&executor);
+                return scheduler;
             }
 
             /** @brief Returns the device set. */
@@ -162,18 +169,10 @@ namespace
             Internal::Memory::USMAllocator memory_;
     };
 
-    /** @brief Returns the one hardware of the program with @p count entries, built on the first call. */
-    Hardware& shared_hardware(std::size_t count)
-    {
-        static Hardware one{entries_over_the_default_device(1), {}, 1};
-        static Hardware two{entries_over_the_default_device(2), {}, 1};
-        return count == 1 ? one : two;
-    }
-
     /** @brief Builds hardware with no device entry and the given core map, for a scheduler that only constructs. */
     std::unique_ptr<Hardware> hardware_without_devices(std::vector<int> core_to_numa, int nodes)
     {
-        return std::make_unique<Hardware>(std::vector<Internal::Device::DeviceDescriptor>{},
+        return std::make_unique<Hardware>(std::vector<DeviceDescription>{},
                                           std::move(core_to_numa), nodes);
     }
 
@@ -341,19 +340,19 @@ namespace
     }
 } // namespace
 
-/** @brief Runs a two-worker scheduler over a two-entry device set; see README.md. */
-class Medium_NodePlacement : public TestSupport::RuntimeTest
+/** @brief Runs a two-worker scheduler stepped by a seeded executor over two in-memory entries; see README.md. */
+class Small_NodePlacement : public ::testing::Test
 {
     protected:
-        Medium_NodePlacement()
-            : hardware_(shared_hardware(2)),
-              scheduler_(hardware_.make(WorkerPoolSettings{2, 0, PinPolicy::Float}))
+        Small_NodePlacement()
+            : hardware_(host_entries(2), {}, 1),
+              scheduler_(hardware_.make(WorkerPoolSettings{2, 0, PinPolicy::Float}, executor_))
         {
             scheduler_->start();
             scheduler_->arm_for_execution();
         }
 
-        ~Medium_NodePlacement() override
+        ~Small_NodePlacement() override
         {
             scheduler_->stop();
         }
@@ -367,6 +366,9 @@ class Medium_NodePlacement : public TestSupport::RuntimeTest
         {
             handed.reset();
             scheduler_->submit(&node);
+            while (executor_.run_one())
+            {
+            }
             scheduler_->wait_quiescent();
 
             if (!handed)
@@ -386,14 +388,16 @@ class Medium_NodePlacement : public TestSupport::RuntimeTest
             return entries;
         }
 
-        /// @brief Two entries on NUMA node 0, each with its own queue on one SYCL device.
-        Hardware& hardware_;
+        /// @brief Runs the rounds; declared first, so it outlives the scheduler.
+        SeededExecutor executor_{TestSupport::K_HOST_RUNTIME_SEED};
+        /// @brief Two entries on NUMA node 0, each with its own host queue.
+        Hardware hardware_;
         /// @brief The scheduler under test, started and armed.
         std::unique_ptr<TaskScheduler> scheduler_;
 };
 
 /** @brief Tests that two nodes with no region and no placement run on entry 0. */
-TEST_F(Medium_NodePlacement, RegionlessNodesRunOnDeviceZero)
+TEST_F(Small_NodePlacement, RegionlessNodesRunOnDeviceZero)
 {
     // The control proves the two entries can be told apart by their queues.
     ASSERT_EQ(hardware_.devices().count(), 2u);
@@ -410,7 +414,7 @@ TEST_F(Medium_NodePlacement, RegionlessNodesRunOnDeviceZero)
 }
 
 /** @brief Tests that a node placed on an entry runs on that entry. */
-TEST_F(Medium_NodePlacement, APlacedNodeRunsOnItsDevice)
+TEST_F(Small_NodePlacement, APlacedNodeRunsOnItsDevice)
 {
     ASSERT_FALSE(hardware_.devices().queue(0) == hardware_.devices().queue(1));
     std::optional<sycl::queue> handed;
@@ -422,7 +426,7 @@ TEST_F(Medium_NodePlacement, APlacedNodeRunsOnItsDevice)
 }
 
 /** @brief Tests that a node keeps the entry it was first dispatched to on every later step. */
-TEST_F(Medium_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
+TEST_F(Small_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
 {
     std::optional<sycl::queue> handed;
     const sushi_ptr<Node> regionless = make_recording_node(handed);
@@ -434,7 +438,7 @@ TEST_F(Medium_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
 }
 
 /** @brief Tests that a node over an owned region, stating nothing, runs on the owner. */
-TEST_F(Medium_NodePlacement, ANodeOverAnOwnedRegionRunsOnTheOwner)
+TEST_F(Small_NodePlacement, ANodeOverAnOwnedRegionRunsOnTheOwner)
 {
     int cell = 0;
     hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
@@ -448,7 +452,7 @@ TEST_F(Medium_NodePlacement, ANodeOverAnOwnedRegionRunsOnTheOwner)
 }
 
 /** @brief Tests that a stated placement in the owner's context outranks the owner. */
-TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
+TEST_F(Small_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
 {
     int cell = 0;
     hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
@@ -463,7 +467,7 @@ TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
 }
 
 /** @brief Tests that a node whose region no device owns runs on the placement it states. */
-TEST_F(Medium_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
+TEST_F(Small_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
 {
     int cell = 0;
     std::optional<sycl::queue> handed;
@@ -475,7 +479,7 @@ TEST_F(Medium_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
 }
 
 /** @brief Tests that a node whose region no device owns and that states nothing runs on entry 0. */
-TEST_F(Medium_NodePlacement, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
+TEST_F(Small_NodePlacement, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
 {
     int cell = 0;
     std::optional<sycl::queue> handed;
@@ -486,7 +490,7 @@ TEST_F(Medium_NodePlacement, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
 }
 
 /** @brief Tests that a placement past the device set fails the run, naming the node, the index and the device count. */
-TEST_F(Medium_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
+TEST_F(Small_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
 {
     std::optional<sycl::queue> handed;
     const sushi_ptr<Node> node = make_recording_node(handed);

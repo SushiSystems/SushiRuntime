@@ -145,18 +145,19 @@ No split tells the owner's own range apart without a handler, so the coverage ch
 
 The file builds each scheduler from a topology view over `InMemoryTopologyProvider` and
 `MatrixDistanceModel`, a device set and an allocator, the parts a `RuntimeContext` would supply,
-because a module test names no execution header. The device set makes a queue only at its first use,
-and the sets of the placement and offload fixtures are built once per process.
+because a module test names no execution header. The device set of `Hardware` builds its queues
+through an `InMemoryQueueFactory` and its allocator takes host memory, so no fixture touches an
+accelerator.
 
-### Medium_NodePlacement
+### Small_NodePlacement
 
-The pool has two floating workers over a device set of two entries on NUMA node 0, both over the
-default SYCL device. Each entry has its own queue, and two queues compare equal only when they are
-copies of one another, so the queue a node receives names its entry. Each node is a host node that
-submits device work, so the scheduler picks a queue for it, and its work records the queue it
-receives. `USMAllocator::adopt()` records a host address as owned by an entry without allocating
-device memory. A placement logic test could run small only with a host `DeviceQueueSet`, which does
-not exist yet.
+The pool has two floating workers over a device set of two host entries on NUMA node 0, and its
+rounds run on a `SeededExecutor` the fixture drains after each submission. The in-memory factory
+builds each entry its own host queue, and two queues compare equal only when they are copies of
+one another, so the queue a node receives names its entry. Each node is a host node that submits
+device work, so the scheduler picks a queue for it, and its work records the queue it receives.
+`USMAllocator::adopt()` records a host address as owned by an entry; the host allocator answers
+that every pair of entries shares a context.
 
 | Test | What it proves |
 | --- | --- |
