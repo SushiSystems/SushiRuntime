@@ -121,12 +121,12 @@ Counts by size after the work, by the same `git grep` at e6ec9548: 1380 `Small_`
 | --- | --- | --- | --- |
 | applications/examples | 4 / 2 / 0 | 4 / 2 / 0 | 67% |
 | engine/dependency_tracking | 12 / 0 / 0 | 12 / 0 / 0 | 100% |
-| engine/execution | 28 / 35 / 10 | 50 / 22 / 10 | 61% |
+| engine/execution | 28 / 35 / 10 | 51 / 21 / 10 | 62% |
 | engine/graph | 23 / 5 / 0 | 26 / 2 / 0 | 93% |
 | engine/probe_tasks | 0 / 3 / 0 | 0 / 3 / 0 | 0% |
 | engine/region_boundary | 4 / 0 / 0 | 4 / 0 / 0 | 100% |
 | engine/runtime_assembly | 0 / 2 / 0 | 0 / 2 / 0 | 0% |
-| engine/scheduler | 63 / 34 / 0 | 64 / 33 / 0 | 66% |
+| engine/scheduler | 63 / 34 / 0 | 77 / 20 / 0 | 79% |
 | engine/task | 70 / 13 / 0 | 74 / 9 / 0 | 89% |
 | engine/work_stealing | 2 / 1 / 0 | 2 / 1 / 0 | 67% |
 | extension/buffer_exchange | 33 / 0 / 0 | 33 / 0 / 0 | 100% |
@@ -172,7 +172,7 @@ The suite does not meet the spec yet: 19 of 47 modules are below 80% small. The 
 - `extension/distributed` (15%): its endpoints start their own threads; RW-127.
 - `surface/api` (77%): NdRange, raw command groups, queue bodies and the interop queries have no host form; RW-126.
 - `surface/profiling` (68%): a SushiProfiler session takes the process-wide collector; RW-128.
-- `engine/execution` and `engine/scheduler` (61%, 66%): `TaskScheduler` has no executor mode, and `ChainRun` and the task bodies take a `sycl::queue&`; RW-129.
+- `engine/execution` and `engine/scheduler` (62%, 79%): `TaskScheduler` runs on an executor (decision 48), but `ChainRun` and the task bodies still take a `sycl::queue&` and `Medium_NodePlacement` waits on a host device set with distinct queues; RW-129.
 - `platform/device`, `platform/topology` and `platform/memory` (52%, 60%, 73%): the queue factory, the device enumerator, the hwloc reader of `NUMAMapper` and the `USMShared` allocation source are not built.
 - `extension/network_socket`, `foundation/usm_guard`, `engine/probe_tasks` and `engine/runtime_assembly` (0%): every case is a socket, a death test or a real device.
 
