@@ -161,16 +161,39 @@ namespace
         bool plain_when_out_of_order;
     };
 
-    /** @brief One inventory: the NUMA ids of the descriptors, or none for every device, and a stale index to overwrite. */
+    /** @brief One host inventory the set must list as given, and the stale index each entry carries. */
     struct InventoryRow
     {
         /** @brief The row name gtest prints. */
         const char* name;
-        /** @brief One descriptor of SYCL's first device per id; empty means every device SYCL reports. */
-        std::vector<int> numa_nodes;
-        /** @brief An index every descriptor carries before the set renumbers it, or nothing. */
-        std::optional<std::size_t> stale_index;
+        /** @brief The entries given to the set; the set renumbers their index. */
+        std::vector<DeviceDescription> given;
     };
+
+    /** @brief Builds one description of a host device for the inventory rows. */
+    DeviceDescription inventory_entry(const char* name, DeviceKind kind, std::size_t stale_index)
+    {
+        DeviceDescription info;
+        info.index = stale_index;
+        info.name = name;
+        info.kind = kind;
+        info.backend = sycl::backend::opencl;
+        info.numa_node = 0;
+        info.memory_bytes = std::uint64_t{8} << 30;
+        info.compute_units = 12;
+        return info;
+    }
+
+    /** @brief Returns the inventories the set is built from: mixed kinds, and a shared stale index. */
+    std::vector<InventoryRow> inventory_rows()
+    {
+        return {InventoryRow{"CPUAndGPU",
+                             {inventory_entry("host cpu", DeviceKind::CPU, 0),
+                              inventory_entry("host gpu", DeviceKind::GPU, 1)}},
+                InventoryRow{"TwoDescriptorsWithTheSameStaleIndex",
+                             {inventory_entry("host a", DeviceKind::CPU, 7),
+                              inventory_entry("host b", DeviceKind::GPU, 7)}}};
+    }
 
     /** @brief One call on a set, and the message a stop must carry. */
     struct StopRow
@@ -211,44 +234,6 @@ namespace
     }
 
 } // namespace
-
-class Medium_DeviceQueueSetInventory : public DeviceFixture, public ::testing::WithParamInterface<InventoryRow>
-{
-};
-
-TEST_P(Medium_DeviceQueueSetInventory, CountAndInventoryFollowTheDescriptors)
-{
-    const InventoryRow& row = GetParam();
-    std::vector<DeviceDescriptor> descriptors =
-        row.numa_nodes.empty() ? describe_all_devices() : describe_first_device_on(row.numa_nodes);
-    if (row.stale_index.has_value())
-    {
-        for (DeviceDescriptor& descriptor : descriptors)
-            descriptor.info.index = *row.stale_index;
-    }
-    const std::vector<DeviceDescriptor> given = descriptors;
-    DeviceQueueSet set(std::move(descriptors), false);
-
-    ASSERT_EQ(set.count(), given.size());
-    ASSERT_EQ(set.devices().size(), given.size());
-    for (std::size_t index = 0; index < given.size(); ++index)
-    {
-        const DeviceDescription& info = set.devices()[index];
-        EXPECT_EQ(info.index, index);
-        EXPECT_EQ(info.name, given[index].info.name);
-        EXPECT_EQ(info.kind, given[index].info.kind);
-        EXPECT_EQ(info.backend, given[index].info.backend);
-        EXPECT_EQ(info.numa_node, 0);
-        EXPECT_EQ(info.memory_bytes, given[index].info.memory_bytes);
-        EXPECT_EQ(info.compute_units, given[index].info.compute_units);
-        EXPECT_EQ(set.is_gpu(index), given[index].device.is_gpu());
-    }
-}
-
-INSTANTIATE_TEST_SUITE_P(Inventories, Medium_DeviceQueueSetInventory,
-                         ::testing::Values(InventoryRow{"EveryDevice", {}, std::nullopt},
-                                           InventoryRow{"TwoDescriptorsWithTheSameStaleIndex", {0, 0}, 7}),
-                         [](const ::testing::TestParamInfo<InventoryRow>& info) { return std::string(info.param.name); });
 
 class Medium_DeviceQueueSet : public DeviceFixture
 {
@@ -346,16 +331,6 @@ TEST_P(Medium_DeviceQueueSetProfiling, TheFlagOfTheSetDecidesEveryPlainQueue)
 
 INSTANTIATE_TEST_SUITE_P(Flags, Medium_DeviceQueueSetProfiling, ::testing::Values(true, false),
                          [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "WithProfiling" : "WithoutProfiling"; });
-
-TEST_F(Medium_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
-{
-    DeviceQueueSet set(describe_first_device_on({1, -1, 4096}), false);
-
-    EXPECT_EQ(set.devices()[0].numa_node, 1);
-    EXPECT_EQ(set.devices()[1].numa_node, 0);
-    EXPECT_EQ(set.devices()[2].numa_node, 0);
-    EXPECT_EQ(set.device_for_numa(0), 1u);
-}
 
 class Medium_DeviceQueueSetRotation : public DeviceFixture, public ::testing::WithParamInterface<RotationRow>
 {
@@ -582,4 +557,51 @@ TEST(Medium_HostDeviceQueueSetDeathTest, AskingForAQueueStopsAndNamesTheDevice)
     DeviceQueueSet set(host_inventory());
 
     EXPECT_DEATH(static_cast<void>(set.queue(0)), "host a");
+}
+
+/** @brief Runs the inventory test over the rows of inventory_rows(). */
+class Small_HostDeviceQueueSetInventory : public ::testing::TestWithParam<InventoryRow>
+{
+};
+
+/** @brief Tests that a host set lists every description as given, renumbered and on node zero. */
+TEST_P(Small_HostDeviceQueueSetInventory, CountAndInventoryFollowTheDescriptions)
+{
+    const std::vector<DeviceDescription>& given = GetParam().given;
+    DeviceQueueSet set(given);
+
+    ASSERT_EQ(set.count(), given.size());
+    ASSERT_EQ(set.devices().size(), given.size());
+    for (std::size_t index = 0; index < given.size(); ++index)
+    {
+        const DeviceDescription& info = set.devices()[index];
+        EXPECT_EQ(info.index, index);
+        EXPECT_EQ(info.name, given[index].name);
+        EXPECT_EQ(info.kind, given[index].kind);
+        EXPECT_EQ(info.backend, given[index].backend);
+        EXPECT_EQ(info.numa_node, 0);
+        EXPECT_EQ(info.memory_bytes, given[index].memory_bytes);
+        EXPECT_EQ(info.compute_units, given[index].compute_units);
+        EXPECT_EQ(set.is_gpu(index), given[index].kind == DeviceKind::GPU);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(Inventories, Small_HostDeviceQueueSetInventory, ::testing::ValuesIn(inventory_rows()),
+                         [](const ::testing::TestParamInfo<InventoryRow>& info) { return std::string(info.param.name); });
+
+/** @brief Tests that a host set places a NUMA id that names no node on node zero and routes node zero to the device on node one. */
+TEST(Small_HostDeviceQueueSet, AnInvalidNUMAIDInADescriptionBecomesNodeZero)
+{
+    std::vector<DeviceDescription> given = {inventory_entry("host a", DeviceKind::CPU, 0),
+                                            inventory_entry("host b", DeviceKind::CPU, 1),
+                                            inventory_entry("host c", DeviceKind::CPU, 2)};
+    given[0].numa_node = 1;
+    given[1].numa_node = -1;
+    given[2].numa_node = 4096;
+    DeviceQueueSet set(given);
+
+    EXPECT_EQ(set.devices()[0].numa_node, 1);
+    EXPECT_EQ(set.devices()[1].numa_node, 0);
+    EXPECT_EQ(set.devices()[2].numa_node, 0);
+    EXPECT_EQ(set.device_for_numa(0), 1u);
 }

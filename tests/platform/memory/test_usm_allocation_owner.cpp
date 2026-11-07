@@ -28,14 +28,14 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <memory>
-#include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/allocation.hpp>
 
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -44,27 +44,23 @@ using namespace SushiRuntime::Internal::Memory;
 using SushiRuntime::Detail::Allocation;
 
 /** @brief Tests that destroying the allocation frees the USM through the allocator. */
-TEST(Medium_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
+TEST(Small_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
 {
-    if (sycl::device::get_devices().empty())
-        GTEST_SKIP() << "no SYCL device";
-    auto allocator = std::make_shared<USMAllocator>(
-        std::vector<sycl::queue>{sycl::queue(sycl::device::get_devices().front())});
+    constexpr std::size_t K_BYTES = 128;
+    auto allocator = std::make_shared<USMAllocator>(std::make_unique<HostUSMSource>());
     USMRequest request;
-    request.bytes = 128;
+    request.bytes = K_BYTES;
     void* const address = allocator->allocate(request);
-    if (address == nullptr)
-        GTEST_SKIP() << "the device gives no shared memory";
+    ASSERT_NE(address, nullptr);
     const std::size_t live = allocator->live_count();
 
     {
-        Allocation allocation(address, 128, std::make_unique<USMAllocationOwner>(allocator));
+        Allocation allocation(address, K_BYTES, std::make_unique<USMAllocationOwner>(allocator));
         EXPECT_EQ(allocator->live_count(), live);
     }
     EXPECT_EQ(allocator->live_count(), live - 1);
 }
 
-/** @brief Tests that an owner with no allocator releases nothing and leaves the memory alone. */
 TEST(Small_USMAllocationOwner, AnOwnerWithNoAllocatorLeavesTheMemoryAlone)
 {
     constexpr int K_KEPT = 7;

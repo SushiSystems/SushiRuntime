@@ -19,10 +19,10 @@ The file tests DeviceQueueSet's inventory, queue table, NUMA routing and index c
 flavour, profiling, rotation and stop tests run as rows; a loop over the devices sits in a named
 helper that returns the first defect, and the test asserts that it is empty.
 
-### `CountAndInventoryFollowTheDescriptors`
+### `CountAndInventoryFollowTheDescriptions`
 
-Two rows: every device SYCL reports, and two descriptors that carry the same stale index. The set
-copies the inventory and numbers the devices by position.
+Small, on a host set. Two rows: a CPU and a GPU, and two descriptions that carry the same stale index.
+The set copies the inventory and numbers the devices by position.
 
 ### `IsBuiltOnceWithThePropertiesAsked`
 
@@ -48,9 +48,9 @@ A `LogCapture` at `Info` sees the constructor's device line, and each test asser
 A `LogCapture` at `Debug` starts after construction. The first request for an in-order profiling
 queue logs one `DEBUG` with the flavour and the build time; a second request logs nothing.
 
-### `AnInvalidNUMAIDInADescriptorBecomesNodeZero`
+### `AnInvalidNUMAIDInADescriptionBecomesNodeZero`
 
-The wiring check of the NUMA routes: the set writes the node the route table places each device on
+Small, on a host set. The wiring check of the NUMA routes: the set writes the node the route table places each device on
 into its inventory, and resolves node 0 through the table. The routing decisions themselves are
 tested small in `test_numa_route_table.cpp`.
 

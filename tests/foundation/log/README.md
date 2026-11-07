@@ -38,8 +38,13 @@ build removes `Debug` calls at compile time, which would pass the first half for
 ### `SinkReceivesEveryFieldAndTheLine`
 
 Each field must arrive apart: the level, `logger_test` and `alpha`, the file without its folder, the
-line, a thread number, a time no earlier than the call and the message alone. The line must join
+line, a thread number and the message alone. The line must join
 them as `[WARN] [logger_test.alpha] [tN] [test_logger.cpp:L] message`.
+
+### `RecordIsStampedNotBeforeTheCall`
+
+Medium, since the logger stamps the record from the system clock. The record's time is no earlier than a
+reading taken just before the call.
 
 ### `FatalIsDeliveredAfterTheQueueOnTheCallingThread`
 

@@ -122,23 +122,20 @@ The file tests USMAllocationOwner: an Allocation returns its USM to the allocato
 
 | Test | What it proves |
 | --- | --- |
-| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It stays medium, since the owner holds a concrete allocator. |
+| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It runs small, on an allocator over a `HostUSMSource`. |
 | `AnOwnerWithNoAllocatorLeavesTheMemoryAlone` | An owner with no allocator releases nothing; the memory it is handed keeps its value. |
 
 ## test_usm_allocator.cpp
 
-The file covers `USMAllocator`. The kind and alignment tests run as rows and skip when no SYCL device
-supports the row's kind. The release observer is the module's `RecordingUSMReleaseObserver`, and the
+The file covers `USMAllocator`. The record, release and observer tests run small, on an allocator over a
+`HostUSMSource` of two devices. The kind test runs as rows and skips when no SYCL device supports the
+row's kind; the alignment of the real SYCL allocation is checked by `Medium_AlignedAllocation` in
+`tests/engine/execution/test_runtime_context.cpp`. The release observer is the module's `RecordingUSMReleaseObserver`, and the
 ERROR and WARN lines are read through `LogCapture`.
 
 ### `AllocatesIsUsableIsCountedAndIsReleased`
 
 One row per kind. A device writes device USM; the host writes host and shared USM.
-
-### `ReturnsAnAddressOnTheAlignment`
-
-One row per kind, alignment and length. A shared row skips where the toolchain's aligned shared
-allocation does not honour the alignment.
 
 ### `AnAllocationResolvesToItsDeviceAtItsBase`, `AnInteriorAddressFindsItsBase`, `TheAddressPastTheEndHasNoBase` and `AReleasedAllocationHasNoBase`
 
@@ -161,11 +158,10 @@ from inside it. `forget` drops the record and does not free; null is ignored.
 The first release of a block logs no ERROR line. The second leaves `live_count` unchanged, and logs
 exactly one ERROR line that contains the address and the words "no record".
 
-### `ReleaseOfForeignUSMLeavesItAllocated`
+### `ReleaseOfAnUnrecordedAddressLogsAndLeavesItAllocated`
 
-The test allocates shared USM with `sycl::malloc_shared` outside the allocator and releases it through
-the allocator. The release logs exactly one ERROR line and leaves `live_count` unchanged. The block keeps
-its bytes, which one whole-buffer comparison checks, and the test frees it with `sycl::free`.
+The test releases a heap block the allocator never recorded. The release logs exactly one ERROR line and
+leaves `live_count` unchanged. The block keeps its bytes, which one whole-buffer comparison checks.
 
 ### `TheReleaseObserverHearsNothingBeforeARelease`, `ANullReleaseAndAForgetAreNotHeard`, `AnAdoptedAddressIsHeardWhenReleased` and `ARemovedObserverHearsNothingMore`
 
@@ -173,19 +169,18 @@ Each test states one promise of the observer: it hears nothing before a release,
 nor a `forget` reaches it, an adopted address is reported like any other, and a removed observer is
 not told. That the observer hears a released address once is in `test_usm_release_observer.cpp`.
 
-### `SetReleaseObserverWaitsForAnObserverCallInFlight`
+### `SetReleaseObserverReturnsOnlyAfterAnObserverCallInFlightFinished`
 
-The test installs an observer whose `on_release` blocks, then releases an adopted address on a second
-thread, so one call is in flight. A third thread removes the observer. The test asserts that the removal
-has not returned after 200 ms, opens the observer, and asserts that the removal returns. The wait is a
-sleep, since the module takes no clock the test could advance.
+Medium, since it hands a call over between real threads. The test installs an observer whose `on_release`
+blocks, then releases an adopted address on a second thread, so one call is in flight. A third thread
+removes the observer; the test waits until that thread has begun, opens the observer, and asserts that the
+call had run to its end when the removal returned. It uses no sleep and no deadline.
 
-### `Medium_UsmAllocatorFailure.LogsTheRefusedRequest`
+### `Small_UsmAllocatorFailure.LogsTheRefusedRequest`
 
-The test asks device 0 for twice its global memory, with an alignment of 64, under a `LogCapture` at
+The test asks a host source for the largest byte count, with an alignment of 64, under a `LogCapture` at
 `Warn`. It asserts the allocator returns null and logs exactly one `WARN` in the `memory` module
-whose message holds the byte count and the alignment. A SYCL runtime that throws for the request
-instead of returning null makes the test skip, since the refusal is then not made in this file.
+whose message holds the byte count and the alignment.
 
 ## test_usm_registry.cpp
 

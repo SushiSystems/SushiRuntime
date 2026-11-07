@@ -28,11 +28,12 @@
  * @author Mustafa Garip
  */
 
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/recording_usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
@@ -41,11 +42,9 @@
 using namespace SushiRuntime::Internal::Memory;
 
 /** @brief Tests that the observer hears the release of the address the allocator gave. */
-TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
+TEST(Small_USMReleaseObserver, HearsEachReleaseWithItsAddress)
 {
-    if (sycl::device::get_devices().empty())
-        GTEST_SKIP() << "no SYCL device";
-    USMAllocator allocator({sycl::queue(sycl::device::get_devices().front())});
+    USMAllocator allocator(std::make_unique<HostUSMSource>());
     RecordingUSMReleaseObserver observer;
     allocator.set_release_observer(&observer);
 
@@ -53,8 +52,7 @@ TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
     request.kind = USMKind::Shared;
     request.bytes = 64;
     void* const address = allocator.allocate(request);
-    if (address == nullptr)
-        GTEST_SKIP() << "the device gives no shared memory";
+    ASSERT_NE(address, nullptr);
     allocator.release(address);
 
     EXPECT_EQ(observer.released(), std::vector<void*>{address});

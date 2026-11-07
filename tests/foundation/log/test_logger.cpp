@@ -121,7 +121,7 @@ namespace
             SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
     };
 
-    /** @brief The logger tests that touch no thread and no clock. */
+    /** @brief The logger tests that touch no thread and read no clock of their own. */
     class Small_LoggerTest : public LoggerTest
     {
     };
@@ -174,14 +174,11 @@ TEST_F(Small_LoggerTest, SetLogLevelTakesEffect)
 }
 
 /** @brief Tests that the record carries every field apart and the line joins them. */
-TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
+TEST_F(Small_LoggerTest, SinkReceivesEveryFieldAndTheLine)
 {
     SeenRecords records;
     SushiLog::set_log_sink(collect_into(&records));
 
-    const std::int64_t before = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                    std::chrono::system_clock::now().time_since_epoch())
-                                    .count();
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "value {} of {}", 3, "seven");
 
     ASSERT_EQ(records.size(), 1u);
@@ -192,7 +189,6 @@ TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
     EXPECT_EQ(record.file, "test_logger.cpp");
     EXPECT_GT(record.line_number, 0u);
     EXPECT_GT(record.number, 0u);
-    EXPECT_GE(record.time_ns, before);
     EXPECT_EQ(record.message, "value 3 of seven");
     EXPECT_NE(record.line.find("[WARN] [logger_test.alpha] [t" + std::to_string(record.number) +
                                "] [test_logger.cpp:" + std::to_string(record.line_number) +
@@ -201,6 +197,21 @@ TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
         << record.line;
     EXPECT_EQ(record.line.find('\n'), std::string::npos);
     EXPECT_EQ(record.thread, std::this_thread::get_id());
+}
+
+/** @brief Tests that the record is stamped with a time not earlier than the call that made it. */
+TEST_F(Medium_LoggerTest, RecordIsStampedNotBeforeTheCall)
+{
+    SeenRecords records;
+    SushiLog::set_log_sink(collect_into(&records));
+    const std::int64_t before = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+    SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "stamped");
+
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_GE(records[0].time_ns, before);
 }
 
 /** @brief Tests that a FATAL record reaches the sink after every queued one, on the caller. */
