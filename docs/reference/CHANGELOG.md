@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-07 — worker_types: Added `KernelRegistry::register_host_kernel()` and `find_host()`, a kernel that needs no queue, which a worker on a host runtime runs; `register_kernel()` behaves as before (RW-127, `4310f909`).
+- 2026-11-07 — api: Added `Recorder::task(access, body, host_form, placement)`, a queue task that also has a host form the host runtime runs (RW-127, `4310f909`).
+- 2026-11-07 — device: Added `DeviceQueueSet::shares_context()` and `free_memory()`, which answer a host set without a queue (RW-127, `4310f909`).
+- 2026-11-07 — distributed: Added `WorkerAgentOptions::clock`, the clock the link reads; null keeps the steady clock (RW-127, `4310f909`).
 - 2026-11-07 — core: Added `Executor`, the port a part that runs jobs takes them through, with a thread-pool adapter beside the seeded one; a host runtime takes any executor (`executor.hpp`).
 - 2026-11-07 — execution: Moved the offload members of `ExecutionEngine` into `OffloadHost`, which only the scheduler engine implements; a host context hands out a refusing sink (`offload_host.hpp`).
 - 2026-11-07 — memory: Gave `USMSource` a `copy()` and one owner promise for both adapters, which factories make; the allocator takes no queue list (`usm_source.hpp`).
