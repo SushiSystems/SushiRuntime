@@ -422,7 +422,10 @@ namespace SushiRuntime
                 if (side != Side::Worker)
                     return;
                 if (worker_options.reconnect)
+                {
                     next_attempt = now() + nanoseconds_of(worker_options.reconnect_delay);
+                    drive->post_round_at(next_attempt);
+                }
                 else
                     abandon("the in-process master was lost and reconnecting is off");
             }

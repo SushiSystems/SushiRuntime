@@ -217,6 +217,7 @@ dispatch: J16 V1 surface/profiling — sonnet medium, 1 round, partial (41 cases
 dispatch: J16 V1 engine and memory_exchange — sonnet medium, 1 round, partial (scheduler and queue seams to RW-129), rung 1
 dispatch: J16 V1 platform, foundation and applications — sonnet medium, 1 round, partial (queue factory, enumerator, hwloc and USMShared seams not built), rung 1
 dispatch: J16 V1 extension rest and device-sized leftovers — sonnet medium, 1 round, passed, rung 1
+dispatch: J16 R1 recorder and dynamic graph split — sonnet medium, 2 rounds (course correction: the mirror checker wants the split files in test_recorder/ and test_dynamic_graph/), passed, rung 1
 
 ## Totals
 

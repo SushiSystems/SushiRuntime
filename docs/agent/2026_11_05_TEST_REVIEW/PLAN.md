@@ -36,6 +36,10 @@ writes each add. Nothing in a module job changes production code except a seam a
 | S2 | Host forms for NdRange, raw command group, queue body, device-sized and late-count launches (decision 34) | S1 | partly done: dynamic, device-sized and late-count by db46c0e6 and 7d4c949d; NdRange, raw command groups and queue bodies left in RW-126 |
 | V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | partly done: every folder but `extension/distributed` moved; the cases left medium wait on RW-126 to RW-129 |
 | V2 | One `sr build --distributed`, `sr test -l small` and `sr test -l medium --distributed`, fixed until green | V1 | done: small 1310 of 1310, medium 432 of 432 at e6ec9548 |
+| R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | done: 37246149; the `sycl_usm_source.hpp` SYCL include stays, decision 37 says why |
+| R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | todo: not started |
+| R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | partly done: the splits and the merge by 26816063, `make_host_context()` by 37246149; stale includes outside the split files and EpochManager left |
+| R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
 
 ## Acceptance
 
