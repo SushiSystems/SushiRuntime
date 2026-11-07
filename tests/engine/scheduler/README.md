@@ -244,6 +244,15 @@ The scheduler is built over an empty device set, with no thread started. The lin
 | `Small_TaskSchedulerCancel.LogsTheTasksASkippedRunLeftUnrun` | A cancelled run logs exactly one INFO naming the five tasks it skipped. |
 | `Small_TaskSchedulerCancel.ARunNobodyCancelledLogsNoSkipLine` | A run nobody cancelled logs no skip line; the test first asserts the sink saw the pool's own line. |
 
+## test_steal_order.cpp and test_worker_pool_sizing.cpp
+
+Small, on values alone. `build_steal_order()` over an in-memory topology of four cores on two nodes:
+a pinned worker takes its core's node, an unlisted core sits on node 0, node-local victims come first
+and count as the local tier, a floating pool is all local, and one machine always gets one order.
+`size_worker_pool()`: 0 workers runs one per core, a machine of no cores counts as one, the count is
+capped, a pinned range that starts past the last core starts at core 0, one wider than the machine
+keeps the cores from its start to the last, and a floating pool is not clamped.
+
 ## test_thermal_proxy_strategy.cpp
 
 The file drives the real `ThermalProxyStrategy` with `InMemoryTelemetry` and `RecordingTaskMigrator`.

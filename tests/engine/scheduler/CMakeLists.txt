@@ -23,7 +23,9 @@ sushiruntime_add_module_tests(
         test_recording_rebalance_strategy.cpp
         test_recording_task_migrator.cpp
         test_run_outcome.cpp
+        test_steal_order.cpp
         test_sycl_event_readiness.cpp
         test_task_scheduler.cpp
         test_thermal_proxy_strategy.cpp
+        test_worker_pool_sizing.cpp
         test_workload_coordinator.cpp)
