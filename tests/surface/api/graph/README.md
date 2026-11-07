@@ -66,9 +66,10 @@ tests at the end of `test_graph.cpp`.
 
 The file covers the launches of phase P3 of `docs/design/GRAPH_REPLAY/README.md` (sections D.2 and G): a
 `Recorder::kernel(DeviceSized, ...)` and a `sized_from_device` task, both sized by a count a
-predecessor wrote in the same step. The `sized_from_device` test (`Small_SizedFromDevice`) runs on a host
-runtime. The other tests run on the program's runtime; the two rows of `Medium_DeviceSizedLayers` run
-one on the in-order chain and one on a runtime forced onto the scheduler.
+predecessor wrote in the same step. `Small_SizedFromDevice` and `Small_DeviceSizedLaunch` run on a host
+runtime, where a device-sized launch and a resolver have a host form that loops on the calling thread.
+The two rows of `Medium_DeviceSizedLayers` run the kernel on the device, one on the in-order chain and one
+on a runtime forced onto the scheduler.
 
 ### `record_marking_rule`
 
@@ -84,7 +85,7 @@ model of one such write.
 | `ALiveWidthChangeDoesNotRecompile` | The same four widths leave `compile_count()` at one. |
 | `ANullLiveWidthRunsEveryItem` | A null `live_width` lets every work-item run up to the capacity. |
 | `TheKernelArityPicksTheLiveWords` | A callable of two arguments gets `live_words[0]` after the index. `record_marking_rule` covers the callable of three arguments. |
-| `ZeroCapacityLaunchRunsNothing` | A zero-width `parallel_for` is not portable, so a launch of capacity zero submits an empty task. The buffer keeps its canary. |
+| `ZeroCapacityLaunchRunsNothing` | A launch of capacity zero runs no work-item. The buffer keeps its canary. |
 | `ZeroCapacityLaunchReleasesItsSuccessor` | The empty launch still completes: a successor that reads the same buffer copies the untouched canary. |
 
 ### `DeviceSizedRuleMatchesTheHostModelAsTheCountsChange`
@@ -226,7 +227,7 @@ the observation's events land in recording order whichever layer ran it. The obs
 | Test | What it proves |
 | --- | --- |
 | `EachNodeOfARuleReportsItsStatedWidth` | Two nodes of one rule state 600 and 1. The buffers they name are oversized by 9 and by 8 elements, so a stamp that read the size of either buffer and not the stated width fails. |
-| `ResolverAndDeviceSizedNodeReportTheirStatedWidths` | A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is built with `LateCount::fixed`, so the live count is the capacity and every work-item writes. |
+| `Small_NodeOptionsLateWidth.ResolverAndDeviceSizedNodeReportTheirStatedWidths` | A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is built with `LateCount::fixed`, so the live count is the capacity and every work-item writes. |
 
 ### `ANodeReportsTheNameAndTheOperationItStated`
 

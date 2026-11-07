@@ -38,19 +38,18 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_device_sized.hpp>
 
-#include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the device-sized test, which runs a description on the program's runtime. */
-class Medium_EmitDeviceSized : public TestSupport::RuntimeTest
+/** @brief Fixture of the device-sized test, which runs the host form of a description on a host runtime. */
+class Small_EmitDeviceSized : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that only the indices below the device-written live width run. */
-TEST_F(Medium_EmitDeviceSized, OnlyTheLiveIndicesRun)
+TEST_F(Small_EmitDeviceSized, OnlyTheLiveIndicesRun)
 {
     constexpr std::size_t K_CAPACITY = 8;
     constexpr std::size_t K_LIVE = 3;
@@ -68,7 +67,7 @@ TEST_F(Medium_EmitDeviceSized, OnlyTheLiveIndicesRun)
         {}, {BufferRegion(words)}, launch, [words](std::size_t index) { words[index] = 1; },
         K_CAPACITY);
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(description.width, K_CAPACITY);
     EXPECT_EQ(TestSupport::contents(data), TestSupport::window_of<int>(K_CAPACITY, 0, K_LIVE, 1, 0));

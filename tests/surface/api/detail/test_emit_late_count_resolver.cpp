@@ -38,19 +38,18 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_late_count_resolver.hpp>
 
-#include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the resolver test, which runs a description on the program's runtime. */
-class Medium_EmitLateCountResolver : public TestSupport::RuntimeTest
+/** @brief Fixture of the resolver test, which runs the host form of a description on a host runtime. */
+class Small_EmitLateCountResolver : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that a fixed and a host count reach the fill as their live values. */
-TEST_F(Medium_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
+TEST_F(Small_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
 {
     auto out = runtime().buffer<int>(2).value();
     TestSupport::fill_with(out, -1);
@@ -66,7 +65,7 @@ TEST_F(Medium_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
         },
         {}, {BufferRegion(words)}, 1);
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(TestSupport::contents(out), (std::vector<int>{6, 4}));
 }

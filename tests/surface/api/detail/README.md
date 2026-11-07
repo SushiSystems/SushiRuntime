@@ -6,7 +6,7 @@ The tests of the callable traits, the node emitters and the fault record of `api
 A test here that runs a described node allocates its data through `Runtime::buffer`. When the
 description has a host form (`NodeDescription::host_form`), the test calls it on a host runtime from
 `TestSupport::HostRuntimeTest` and runs small. A description with no host form (a raw command group,
-a queue body, a device-sized launch, a late-count resolver) takes the program's runtime from
+a queue body) takes the program's runtime from
 `TestSupport::RuntimeTest` and runs medium. A test that builds a description and reads its fields
 touches no device and runs small. Headers whose tests were removed are compiled alone by the
 `compile_*.cpp` files below.
@@ -124,7 +124,7 @@ The file tests `device_sized_node()`: the launch covers the capacity and stops a
 
 | Test | What it proves |
 | --- | --- |
-| `OnlyTheLiveIndicesRun` | Only the indices below the device-written live width run; the rest keep their value. |
+| `Small_EmitDeviceSized.OnlyTheLiveIndicesRun` | The host form runs only the indices below the live width; the rest keep their value. |
 
 ## test_emit_dynamic.cpp
 
@@ -151,7 +151,7 @@ The file tests `late_count_resolver_node()`: the fill receives each count's live
 
 | Test | What it proves |
 | --- | --- |
-| `TheFillReceivesTheLiveCounts` | A fixed and a host count reach the fill as their live values. |
+| `Small_EmitLateCountResolver.TheFillReceivesTheLiveCounts` | A fixed and a host count reach the fill as their live values through the host form. |
 
 ## test_emit_launch.cpp
 

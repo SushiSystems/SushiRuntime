@@ -30,7 +30,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -38,7 +37,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -48,6 +46,8 @@
 #include <SushiLog/log/log_level.hpp>
 #include <SushiLog/log/log_record.hpp>
 
+#include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -87,8 +87,14 @@ namespace OffloadDispatcherTests
 
     namespace
     {
-        /** @brief Bounds every wait, so a broken transport fails a test and hangs none. */
-        constexpr std::chrono::milliseconds K_WAIT{30000};
+        /** @brief Asks a recorder for what it holds now, without waiting. */
+        constexpr std::chrono::milliseconds K_NO_WAIT{0};
+
+        /** @brief Holds the seed of the executor the endpoints of a test share. */
+        constexpr std::uint64_t K_EXECUTOR_SEED = 5;
+
+        /** @brief Holds the time every call of the directory in these tests is given. */
+        constexpr std::chrono::steady_clock::time_point K_NOW{std::chrono::seconds(1)};
 
         /** @brief Holds the control frames a master endpoint queues per peer in most tests. */
         constexpr std::size_t K_QUEUE_FRAMES = 4096;
@@ -167,7 +173,8 @@ namespace OffloadDispatcherTests
          *        table and the master endpoint of an in-process fabric, and restores the
          *        logger a test changed.
          *
-         * The worker is a real endpoint, so each dispatch reaches a recording receiver.
+         * The worker is a threadless endpoint on the master's executor, so each dispatch
+         * reaches a recording receiver once the test steps the executor.
          */
         class DispatcherRig : public ::testing::Test
         {
@@ -180,6 +187,12 @@ namespace OffloadDispatcherTests
 
                 }
 
+                /** @brief Runs every posted pump round, so each queued frame is delivered. */
+                void settle()
+                {
+                    executor_->run_all();
+                }
+
                 /** @brief Registers the worker and shares two of the three buffers. */
                 void SetUp() override
                 {
@@ -188,18 +201,24 @@ namespace OffloadDispatcherTests
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
                     ASSERT_TRUE(master_->start(master_events_).is_ok());
-                    worker_ = InProcessTransport::make_worker(fabric_);
+                    worker_ = InProcessTransport::make_worker(fabric_, worker_options());
                     ASSERT_TRUE(worker_->start(worker_events_).is_ok());
-                    ASSERT_TRUE(master_events_.wait_for_connections(1, K_WAIT));
+                    settle();
+                    ASSERT_TRUE(master_events_.wait_for_connections(1, K_NO_WAIT));
                     worker_peer_ = master_events_.connected().front();
                     register_worker(worker_peer_, K_WORKER_NAME);
                     registry_.register_buffer(first_.data(), sizeof(Storage));
                     registry_.register_buffer(second_.data(), sizeof(Storage));
                 }
 
-                /** @brief Puts the default sink and the saved level back. */
+                /** @brief Puts the default sink and the saved level back, and stops the endpoints. */
                 void TearDown() override
                 {
+                    if (second_worker_ != nullptr)
+                        second_worker_->stop();
+                    if (worker_ != nullptr)
+                        worker_->stop();
+                    master_->stop();
                     SushiLog::set_log_sink(nullptr);
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
@@ -207,8 +226,7 @@ namespace OffloadDispatcherTests
                 /** @brief Takes a worker through HELLO and PROOF under the empty secret. */
                 void register_worker(PeerID peer, const char* name)
                 {
-                    const std::chrono::steady_clock::time_point now =
-                        std::chrono::steady_clock::now();
+                    const std::chrono::steady_clock::time_point now = K_NOW;
                     HandshakeNonce worker_nonce{};
                     worker_nonce.bytes.fill(0x11);
                     HandshakeNonce master_nonce{};
@@ -264,7 +282,8 @@ namespace OffloadDispatcherTests
                     const std::size_t pings = events.frame_count(MessageType::Ping);
                     EXPECT_EQ(send_message(*master_, peer, Wire::PingMessage()),
                               SendStatus::Queued);
-                    EXPECT_TRUE(events.wait_for_frames(MessageType::Ping, pings + 1, K_WAIT));
+                    settle();
+                    EXPECT_TRUE(events.wait_for_frames(MessageType::Ping, pings + 1, K_NO_WAIT));
                     return events.frames_of(MessageType::TaskDispatch);
                 }
 
@@ -277,9 +296,10 @@ namespace OffloadDispatcherTests
                 /** @brief Connects and registers a second worker; returns the master's peer for it. */
                 PeerID connect_second_worker()
                 {
-                    second_worker_ = InProcessTransport::make_worker(fabric_);
+                    second_worker_ = InProcessTransport::make_worker(fabric_, worker_options());
                     EXPECT_TRUE(second_worker_->start(second_events_).is_ok());
-                    EXPECT_TRUE(master_events_.wait_for_connections(2, K_WAIT));
+                    settle();
+                    EXPECT_TRUE(master_events_.wait_for_connections(2, K_NO_WAIT));
                     second_peer_ = master_events_.connected().back();
                     register_worker(second_peer_, K_SECOND_WORKER_NAME);
                     return second_peer_;
@@ -353,7 +373,7 @@ namespace OffloadDispatcherTests
                 std::uint32_t worker_inflight() const
                 {
                     std::vector<WorkerSnapshot> workers;
-                    directory_.snapshot(std::chrono::steady_clock::now(), workers);
+                    directory_.snapshot(K_NOW, workers);
                     EXPECT_EQ(workers.size(), 1u);
                     return workers.empty() ? 0 : workers.front().inflight;
                 }
@@ -367,13 +387,31 @@ namespace OffloadDispatcherTests
                 /// @brief The storage of a buffer no test shares.
                 Storage unshared_{};
 
-                /** @brief Returns the options of a master endpoint with the given queue. */
-                static InProcessMasterOptions master_options(std::size_t queue_frames)
+                /** @brief Returns the options of a threadless master endpoint with the given queue. */
+                InProcessMasterOptions master_options(std::size_t queue_frames) const
                 {
                     InProcessMasterOptions options;
                     options.control_queue_frames = queue_frames;
+                    options.executor = executor_;
+                    options.clock = clock_;
                     return options;
                 }
+
+                /** @brief Returns the options of a threadless worker endpoint. */
+                InProcessWorkerOptions worker_options() const
+                {
+                    InProcessWorkerOptions options;
+                    options.executor = executor_;
+                    options.clock = clock_;
+                    return options;
+                }
+
+                /// @brief Runs the pump rounds of every endpoint on the stepping thread.
+                std::shared_ptr<SeededExecutor> executor_ =
+                    std::make_shared<SeededExecutor>(K_EXECUTOR_SEED);
+
+                /// @brief Times the endpoints; no test advances it.
+                std::shared_ptr<const Clock> clock_ = std::make_shared<ManualClock>();
 
                 /// @brief The fabric the master and its workers share.
                 InProcessFabric fabric_;
@@ -434,22 +472,22 @@ namespace OffloadDispatcherTests
         };
 
         /** @brief Runs the dispatcher over a master endpoint with the usual control queue. */
-        class Medium_OffloadDispatcherTest : public DispatcherRig
+        class Small_OffloadDispatcherTest : public DispatcherRig
         {
             protected:
                 /** @brief Builds the rig with a queue that holds every frame of a test. */
-                Medium_OffloadDispatcherTest() : DispatcherRig(K_QUEUE_FRAMES)
+                Small_OffloadDispatcherTest() : DispatcherRig(K_QUEUE_FRAMES)
                 {
 
                 }
         };
 
         /** @brief Runs the dispatcher over a master endpoint whose queue refuses every send. */
-        class Medium_FullQueueOffloadDispatcherTest : public DispatcherRig
+        class Small_FullQueueOffloadDispatcherTest : public DispatcherRig
         {
             protected:
                 /** @brief Builds the rig with a queue of no frames. */
-                Medium_FullQueueOffloadDispatcherTest() : DispatcherRig(K_NO_QUEUE)
+                Small_FullQueueOffloadDispatcherTest() : DispatcherRig(K_NO_QUEUE)
                 {
 
                 }
@@ -457,7 +495,7 @@ namespace OffloadDispatcherTests
     } // namespace
 
     /** @brief Tests that a node at the attempt cap is declined and offered again next run. */
-    TEST_F(Medium_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
+    TEST_F(Small_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -489,7 +527,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a send the transport refuses leaves no task, no load and a false. */
-    TEST_F(Medium_FullQueueOffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
+    TEST_F(Small_FullQueueOffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -512,7 +550,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that nothing is dispatched once the pending table and the directory closed. */
-    TEST_F(Medium_OffloadDispatcherTest, StoppedCoordinatorDeclines)
+    TEST_F(Small_OffloadDispatcherTest, StoppedCoordinatorDeclines)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -535,7 +573,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a double-buffered node dispatches and settles its live lists. */
-    TEST_F(Medium_OffloadDispatcherTest, DynamicNodeResolvesItsLiveLists)
+    TEST_F(Small_OffloadDispatcherTest, DynamicNodeResolvesItsLiveLists)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -588,7 +626,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that one prepare() that leaves op-tagged nodes local logs one WARN. */
-    TEST_F(Medium_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
+    TEST_F(Small_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
@@ -626,7 +664,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a node that stays local raises only the shared buffers it writes. */
-    TEST_F(Medium_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
+    TEST_F(Small_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
     {
         const sushi_ptr<Internal::Graph::Node> writer =
             fixed_node(OperationID(0), unshared_.data(), second_.data());
@@ -647,7 +685,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a node whose writes name one buffer twice stays local and is counted. */
-    TEST_F(Medium_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
+    TEST_F(Small_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
@@ -697,7 +735,7 @@ namespace OffloadDispatcherTests
      * @brief Tests that two plans prepared under different rule sets and run alternately each
      *        place their node by their own set, not by the set of the later prepare().
      */
-    TEST_F(Medium_OffloadDispatcherTest, Regression_EachPlanPlacesByItsOwnRules)
+    TEST_F(Small_OffloadDispatcherTest, Regression_EachPlanPlacesByItsOwnRules)
     {
         connect_second_worker();
 
@@ -720,7 +758,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a Fail rule naming a worker ends the run of an untagged node. */
-    TEST_F(Medium_OffloadDispatcherTest, FailRuleRefusesAnUntaggedNodeNamingTheRule)
+    TEST_F(Small_OffloadDispatcherTest, FailRuleRefusesAnUntaggedNodeNamingTheRule)
     {
         dispatcher_.bind(sink_);
         const sushi_ptr<Internal::Graph::Node> node =
@@ -744,7 +782,7 @@ namespace OffloadDispatcherTests
      * @brief Tests that a Local rule naming a worker runs nodes that cannot travel on the master
      *        and logs one WARN per rule and reason.
      */
-    TEST_F(Medium_OffloadDispatcherTest, LocalRuleRunsNodesThatCannotTravelAndWarnsOnce)
+    TEST_F(Small_OffloadDispatcherTest, LocalRuleRunsNodesThatCannotTravelAndWarnsOnce)
     {
         capture_warnings();
         dispatcher_.bind(sink_);
@@ -774,7 +812,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a rule-placed node out of attempts follows the rule's absent policy. */
-    TEST_F(Medium_OffloadDispatcherTest, RulePlacedNodeOutOfAttemptsFollowsItsPolicy)
+    TEST_F(Small_OffloadDispatcherTest, RulePlacedNodeOutOfAttemptsFollowsItsPolicy)
     {
         capture_warnings();
         dispatcher_.bind(sink_);
@@ -802,7 +840,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a node no rule places is declined at the cap and never refused. */
-    TEST_F(Medium_OffloadDispatcherTest, NodeWithoutARuleOutOfAttemptsIsDeclined)
+    TEST_F(Small_OffloadDispatcherTest, NodeWithoutARuleOutOfAttemptsIsDeclined)
     {
         capture_warnings();
         dispatcher_.bind(sink_);

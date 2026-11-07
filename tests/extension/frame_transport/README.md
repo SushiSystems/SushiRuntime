@@ -30,11 +30,13 @@ apart by the buffer id and the offset it carries.
 ## test_frame_sending.cpp
 
 The file tests send_message(): one control frame of the message's type, whose payload decodes back.
-`Medium_FrameSending` joins the master endpoint and a worker endpoint of one `InProcessFabric`; the
-worker's `RecordingTransportEvents` keep what arrives. It starts threads, so every test is medium.
+`Small_FrameSending` joins the master endpoint and a worker endpoint of one `InProcessFabric`; the
+worker's `RecordingTransportEvents` keep what arrives. Both endpoints are threadless: they share one
+`SeededExecutor` and a `ManualClock`, and a test steps the executor until the frames are delivered, so
+every test is small.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_FrameSending.AMessageLeavesAsOneFrameOfItsType` | A PING sent with a scratch buffer arrives at the worker as one frame of its type whose payload carries its token. |
-| `Medium_FrameSending.TheFormWithoutABufferQueuesTheSameFrame` | The form that owns its buffer queues a frame whose token decodes to the same value. |
-| `Medium_FrameSending.AnUnknownPeerIsReportedAsTheTransportSaidIt` | A peer the master never saw comes back as `UnknownPeer`, the status of `Transport::send()`. |
+| `Small_FrameSending.AMessageLeavesAsOneFrameOfItsType` | A PING sent with a scratch buffer arrives at the worker as one frame of its type whose payload carries its token. |
+| `Small_FrameSending.TheFormWithoutABufferQueuesTheSameFrame` | The form that owns its buffer queues a frame whose token decodes to the same value. |
+| `Small_FrameSending.AnUnknownPeerIsReportedAsTheTransportSaidIt` | A peer the master never saw comes back as `UnknownPeer`, the status of `Transport::send()`. |

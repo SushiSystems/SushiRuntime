@@ -349,13 +349,13 @@ namespace WorkerDirectoryTests
                 }
         };
 
-        /** @brief Names the fixture of the tests that touch memory and one mutex only. */
+        /** @brief Names the fixture of the tests that touch memory and one mutex only, with a wait of no time at most. */
         class Small_WorkerDirectory : public WorkerDirectoryFixture
         {
 
         };
 
-        /** @brief Names the fixture of the tests that run a second thread or a timed wait. */
+        /** @brief Names the fixture of the tests that run a second thread that waits for a wake. */
         class Medium_WorkerDirectory : public WorkerDirectoryFixture
         {
 
@@ -485,17 +485,17 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(directory_.remove_peer(K_FIRST).known);
     }
 
-    TEST_F(Medium_WorkerDirectory, WaitForZeroWorkersIsReachedAtOnce)
+    TEST_F(Small_WorkerDirectory, WaitForZeroWorkersIsReachedAtOnce)
     {
         EXPECT_TRUE(directory_.wait_for_workers(0, milliseconds(0)));
     }
 
-    TEST_F(Medium_WorkerDirectory, WaitForAWorkerNobodyRegisteredTimesOut)
+    TEST_F(Small_WorkerDirectory, WaitForAWorkerNobodyRegisteredTimesOut)
     {
         EXPECT_FALSE(directory_.wait_for_workers(1, milliseconds(0)));
     }
 
-    TEST_F(Medium_WorkerDirectory, WaitForWorkersIsReachedAtOnceOnceTheCountIsAlive)
+    TEST_F(Small_WorkerDirectory, WaitForWorkersIsReachedAtOnceOnceTheCountIsAlive)
     {
         ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
@@ -527,7 +527,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(reached.load());
     }
 
-    TEST_F(Medium_WorkerDirectory, ClosedDirectoryReachesNoCountItHeldWhenItClosed)
+    TEST_F(Small_WorkerDirectory, ClosedDirectoryReachesNoCountItHeldWhenItClosed)
     {
         ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
         directory_.close();
@@ -535,7 +535,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(directory_.wait_for_workers(2, milliseconds(0)));
     }
 
-    TEST_F(Medium_WorkerDirectory, ClosedDirectoryReachesNoCountEvenZero)
+    TEST_F(Small_WorkerDirectory, ClosedDirectoryReachesNoCountEvenZero)
     {
         directory_.close();
 

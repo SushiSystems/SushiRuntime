@@ -9,23 +9,27 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_in_process_transport.cpp
 
-The file runs the `Transport` contract on a master and a worker endpoint of one `InProcessFabric`. Each
-endpoint runs a pump thread, so every test is medium. An `EventRecorder` implements `TransportEvents`,
+The file runs the `Transport` contract on a master and a worker endpoint of one `InProcessFabric`. The
+endpoints of `Small_TransportContract` are threadless: they share one `SeededExecutor` and a
+`ManualClock`, and a wait steps the executor until the posted pump rounds are done, so those tests are
+small. `Medium_TransportContract` runs a pump thread per endpoint and holds the one promise that needs
+real threads. An `EventRecorder` implements `TransportEvents`,
 copies every event into a list and lets a test wait until the list satisfies a condition; a test may set
-a reaction, which runs inside the event on the pump thread, outside the recorder's lock. The tests wait
-on recorded events with a 10 s limit and never on a sleep. The same promises over TCP are in
+a reaction, which runs inside the event on the thread that makes it, outside the recorder's lock. The
+small tests wait by stepping the executor; the medium test waits on recorded events with a 10 s limit.
+No test sleeps. The same promises over TCP are in
 `tests/extension/distributed/README.md`.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_TransportContract.DeliversWorkerFramesInOrder` | The worker queues 500 control frames that carry a counter. The master sees the counters in order. |
+| `Small_TransportContract.DeliversWorkerFramesInOrder` | The worker queues 500 control frames that carry a counter. The master sees the counters in order. |
 | `DeliversMasterFramesInOrder` | The master queues 500 control frames that carry a counter. The worker sees the counters in order. |
 | `StatisticsCountEveryFrameWithItsHeader` | The worker's sent bytes and the master's received bytes cover the 12-byte header and the 4-byte payload of each of 500 frames. |
 | `QueuedFramesArriveBeforeTheLossOfTheirPeer` | The worker queues 100 frames and calls `close_peer()`. The master records the connection, the 100 frames in order and one `ClosedByPeer` loss, 102 events in all. |
 | `TheClosingSideHearsOneLocalLossThenAbandons` | The side that calls `close_peer()` records one `ClosedLocally` loss and then one `on_connect_abandoned()`, since its reconnect is off. |
 | `ASendToAClosedPeerReturnsUnknownPeer` | A send to the closed peer returns `UnknownPeer` on both ends. |
 | `StopReportsNoLoss` | `stop()` makes no `on_peer_lost` event. |
-| `NoEventIsMadeAfterStopReturns` | While the worker floods the master with heartbeats, the master stops; the master's event list then stops growing although the worker keeps sending. |
+| `Medium_TransportContract.NoEventIsMadeAfterStopReturns` | While the worker floods the master with heartbeats, the master stops; the master's event list then stops growing although the worker keeps sending. |
 | `AnEventMayAnswerTheFramesItReceives` | The master answers each of 64 frames from inside the callback with a `PONG` carrying the same counter; no send is refused, and the worker sees the counters in order. |
 | `AnEventMaySendFromTheConnectionCallback` | The master sends a `PING` from the callback that announces the worker; the worker receives it. |
 | `AControlQueueOfNoFramesRefusesEverySend` | A master whose `control_queue_frames` is 0 refuses a send to a connected worker as `QueueFull`. The `Outbox` under it holds at least one frame, so the bound is kept by the endpoint. |

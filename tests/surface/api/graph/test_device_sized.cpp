@@ -199,8 +199,8 @@ namespace
 } // namespace
 
 
-/** @brief Fixture of the device-sized launch tests, which record graphs on the program's runtime. */
-class Medium_DeviceSizedLaunch : public TestSupport::RuntimeTest
+/** @brief Fixture of the device-sized launch tests, which record graphs on a host runtime. */
+class Small_DeviceSizedLaunch : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -217,7 +217,7 @@ class Medium_DeviceSizedLayers : public TestSupport::LayerRuntimeTest
 };
 
 /** @brief Tests that exactly the work-items below the live width run, at every width. */
-TEST_F(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
+TEST_F(Small_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 {
     constexpr std::size_t CAPACITY = 600;
     constexpr std::size_t SALT = 7;
@@ -246,7 +246,7 @@ TEST_F(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 }
 
 /** @brief Tests that a change of the live width does not recompile the graph. */
-TEST_F(Medium_DeviceSizedLaunch, ALiveWidthChangeDoesNotRecompile)
+TEST_F(Small_DeviceSizedLaunch, ALiveWidthChangeDoesNotRecompile)
 {
     constexpr std::size_t CAPACITY = 600;
 
@@ -270,7 +270,7 @@ TEST_F(Medium_DeviceSizedLaunch, ALiveWidthChangeDoesNotRecompile)
 }
 
 /** @brief Tests that a launch with a null live width runs every item up to its capacity. */
-TEST_F(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItem)
+TEST_F(Small_DeviceSizedLaunch, ANullLiveWidthRunsEveryItem)
 {
     constexpr std::size_t CAPACITY = 300;
 
@@ -290,7 +290,7 @@ TEST_F(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItem)
 }
 
 /** @brief Tests that a kernel taking a live word is passed the live words, while one that does not take it is not. */
-TEST_F(Medium_DeviceSizedLaunch, TheKernelArityPicksTheLiveWords)
+TEST_F(Small_DeviceSizedLaunch, TheKernelArityPicksTheLiveWords)
 {
     constexpr std::size_t CAPACITY = 300;
     constexpr std::size_t LIVE = 123;
@@ -327,7 +327,7 @@ TEST_F(Medium_DeviceSizedLaunch, TheKernelArityPicksTheLiveWords)
 }
 
 /** @brief Tests that a launch of capacity zero runs no item. */
-TEST_F(Medium_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothing)
+TEST_F(Small_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothing)
 {
     auto target = runtime().buffer<std::uint32_t>(1).value();
     target[0] = K_CANARY;
@@ -345,7 +345,7 @@ TEST_F(Medium_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothing)
 }
 
 /** @brief Tests that the successor of a launch of capacity zero still runs. */
-TEST_F(Medium_DeviceSizedLaunch, ZeroCapacityLaunchReleasesItsSuccessor)
+TEST_F(Small_DeviceSizedLaunch, ZeroCapacityLaunchReleasesItsSuccessor)
 {
     auto target = runtime().buffer<std::uint32_t>(1).value();
     auto done   = runtime().buffer<std::uint32_t>(1).value();
@@ -438,7 +438,7 @@ TEST_F(Small_SizedFromDevice, SizedFromDeviceMatchesTheHostModelAsTheCountChange
 INSTANTIATE_TEST_SUITE_P(Rows, Medium_DeviceSizedLayers, ::testing::Values(false, true));
 
 /** @brief Tests that a device count over its capacity fails the run. */
-TEST_F(Medium_DeviceSizedLaunch, DeviceCountOverCapacityFailsTheRun)
+TEST_F(Small_DeviceSizedLaunch, DeviceCountOverCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 100;
 
@@ -456,7 +456,7 @@ TEST_F(Medium_DeviceSizedLaunch, DeviceCountOverCapacityFailsTheRun)
 }
 
 /** @brief Tests that a graph with a count inside the capacity runs clean after a run failed for a count over it. */
-TEST_F(Medium_DeviceSizedLaunch, AGraphRunsCleanAfterARunFailedForACountOverTheCapacity)
+TEST_F(Small_DeviceSizedLaunch, AGraphRunsCleanAfterARunFailedForACountOverTheCapacity)
 {
     constexpr std::size_t CAPACITY = 100;
 

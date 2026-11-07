@@ -40,7 +40,6 @@
 
 #include "run_recorder.hpp"
 #include "support/host_runtime.hpp"
-#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -63,8 +62,8 @@ namespace
     {
     };
 
-    /** @brief Fixture of the node-option test of the late-count and device-sized nodes, which run on the program's runtime. */
-    class Medium_NodeOptionsLateWidth : public TestSupport::RuntimeTest
+    /** @brief Fixture of the node-option test of the late-count and device-sized nodes, which run on a host runtime. */
+    class Small_NodeOptionsLateWidth : public TestSupport::HostRuntimeTest
     {
     };
 } // namespace
@@ -106,7 +105,7 @@ TEST_F(Small_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 }
 
 /** @brief Tests that a resolver and a device-sized node report the widths they stated. */
-TEST_F(Medium_NodeOptionsLateWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
+TEST_F(Small_NodeOptionsLateWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 {
     constexpr std::size_t CAPACITY = 128;
 
