@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -41,13 +42,14 @@
 #include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/memory/usm_source.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
         /**
-         * @brief Allocates USM on one of a fixed set of device queues and remembers its device.
+         * @brief Allocates USM from a source of a fixed set of devices and remembers its device.
          *
          * Every method may be called from any thread at any time. Two calls that name the
          * same address are ordered by the caller.
@@ -63,6 +65,12 @@ namespace SushiRuntime
                  */
                 explicit USMAllocator(std::vector<sycl::queue> device_queues);
 
+                /**
+                 * @brief Takes the source to allocate from; a device's index is the source's.
+                 * @param source Not null; the allocator owns it for its whole life.
+                 */
+                explicit USMAllocator(std::unique_ptr<USMSource> source);
+
                 /** @brief Leaves live allocations alone; live_count() says how many remain. */
                 ~USMAllocator() = default;
 
@@ -74,13 +82,13 @@ namespace SushiRuntime
                 /**
                  * @brief Allocates USM of the requested kind on the requested device, recorded.
                  * @param request Alignment 0 asks for none.
-                 * @return The allocation, or null when SYCL could not satisfy it.
+                 * @return The allocation, or null when the source could not satisfy it.
                  * @pre request.device_index names a device of the allocator.
                  */
                 [[nodiscard]] void* allocate(const USMRequest& request);
 
                 /**
-                 * @brief Forgets an address and frees it against the queue of its device.
+                 * @brief Forgets an address and frees it on the source, against its device.
                  * @param address Null is ignored. An adopted address is forgotten and not freed.
                  *        An address with no record is not freed, and one ERROR names it. A free
                  *        that throws is logged as one ERROR and the memory stays allocated.
@@ -120,7 +128,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the device of an address, asking SYCL when no record exists.
-                 * @return Nothing for null, for host USM and for memory no queue's context knows.
+                 * @return Nothing for null, for host USM and for memory no device of the source owns.
                  * @see modules/platform/memory/README.md
                  */
                 [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const;
@@ -137,7 +145,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t device_count() const noexcept;
 
                 /**
-                 * @brief Tells whether two devices' queues share one SYCL context.
+                 * @brief Tells whether two devices of the source share one memory context.
                  * @pre Both indices name devices of the allocator.
                  * @see modules/platform/memory/README.md
                  */
@@ -157,10 +165,10 @@ namespace SushiRuntime
 
             private:
                 /**
-                 * @brief Returns the queue of a device.
-                 * @pre device_index names a device of the allocator.
+                 * @brief Fails a device index the allocator does not hold.
+                 * @param device_index The index a caller passed.
                  */
-                [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
+                void require_device(std::size_t device_index) const;
 
                 /**
                  * @brief Forgets an address and frees it when a record names its device.
@@ -168,8 +176,8 @@ namespace SushiRuntime
                  */
                 void release_recorded(void* address);
 
-                /** @brief One queue per device, fixed at construction. */
-                std::vector<sycl::queue> queues_;
+                /** @brief The memory of every device, fixed at construction; never null. */
+                std::unique_ptr<USMSource> source_;
 
                 /** @brief Every live address, allocated here or adopted, and its device. */
                 USMRegistry registry_;

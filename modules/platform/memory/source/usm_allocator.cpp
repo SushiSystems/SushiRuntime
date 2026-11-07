@@ -32,6 +32,7 @@
 
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -41,6 +42,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/memory/memory_log_category.hpp>
+#include <SushiRuntime/memory/sycl_usm_source.hpp>
 
 namespace SushiRuntime
 {
@@ -48,37 +50,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Makes the unaligned SYCL allocation of a kind; null when SYCL has none. */
-            void* allocate_unaligned(USMKind kind, std::size_t bytes, const sycl::queue& queue)
-            {
-                switch (kind)
-                {
-                    case USMKind::Host:
-                        return sycl::malloc_host(bytes, queue);
-                    case USMKind::Shared:
-                        return sycl::malloc_shared(bytes, queue);
-                    case USMKind::Device:
-                        return sycl::malloc_device(bytes, queue);
-                }
-                return nullptr;
-            }
-
-            /** @brief Makes the aligned SYCL allocation of a kind; null when SYCL has none. */
-            void* allocate_aligned(USMKind kind, std::size_t alignment, std::size_t bytes,
-                                   const sycl::queue& queue)
-            {
-                switch (kind)
-                {
-                    case USMKind::Host:
-                        return sycl::aligned_alloc_host(alignment, bytes, queue);
-                    case USMKind::Shared:
-                        return sycl::aligned_alloc_shared(alignment, bytes, queue);
-                    case USMKind::Device:
-                        return sycl::aligned_alloc_device(alignment, bytes, queue);
-                }
-                return nullptr;
-            }
-
             /** @brief Returns the name of a USM kind as the refusal line prints it. */
             const char* kind_name(USMKind kind) noexcept
             {
@@ -94,15 +65,14 @@ namespace SushiRuntime
                 return "unknown";
             }
 
-            /** @brief Logs one WARN for a request SYCL answered with null. */
-            void log_refused_request(const USMRequest& request, const sycl::queue& queue)
+            /** @brief Logs one WARN for a request the source answered with null. */
+            void log_refused_request(const USMRequest& request, const USMSource& source)
             {
                 SR_LOG_WARN(K_MEMORY_LOG_CATEGORY,
-                            "SYCL refused a {} USM allocation of {} bytes, alignment {}, on "
+                            "The source refused a {} USM allocation of {} bytes, alignment {}, on "
                             "device {} ({}); returning null to the caller.",
                             kind_name(request.kind), request.bytes, request.alignment,
-                            request.device_index,
-                            queue.get_device().get_info<sycl::info::device::name>());
+                            request.device_index, source.device_name(request.device_index));
             }
 
             /** @brief Logs one ERROR for a release that threw; falls back to stderr. */
@@ -122,9 +92,14 @@ namespace SushiRuntime
         } // namespace
 
         USMAllocator::USMAllocator(std::vector<sycl::queue> device_queues)
-            : queues_(std::move(device_queues))
+            : USMAllocator(std::make_unique<SYCLUSMSource>(std::move(device_queues)))
         {
 
+        }
+
+        USMAllocator::USMAllocator(std::unique_ptr<USMSource> source) : source_(std::move(source))
+        {
+            SR_VERIFY(source_ != nullptr, "USMAllocator: pass a USM source, not null.");
         }
 
         void* USMAllocator::allocate(const USMRequest& request)
@@ -132,13 +107,11 @@ namespace SushiRuntime
             SR_ZONE_FINE("memory.allocate");
             SR_VALUE("memory.allocate_bytes", "bytes", static_cast<double>(request.bytes));
 
-            const sycl::queue& queue = queue_at(request.device_index);
-            void* const address = request.alignment == 0
-                ? allocate_unaligned(request.kind, request.bytes, queue)
-                : allocate_aligned(request.kind, request.alignment, request.bytes, queue);
+            require_device(request.device_index);
+            void* const address = source_->allocate(request);
             if (!address)
             {
-                log_refused_request(request, queue);
+                log_refused_request(request, *source_);
                 return nullptr;
             }
 
@@ -182,13 +155,13 @@ namespace SushiRuntime
             if (adopted_.take(address).has_value())
                 return;
 
-            if (device.has_value() && *device < queues_.size())
+            if (device.has_value() && *device < source_->device_count())
             {
-                sycl::free(address, queues_[*device]);
+                source_->free(address, *device);
                 return;
             }
 
-            if (queues_.empty())
+            if (source_->device_count() == 0)
             {
                 SR_LOG_WARN(K_MEMORY_LOG_CATEGORY, "release of USM address {} with no record: the allocator holds no "
                             "device, so nothing was freed.", address);
@@ -202,7 +175,7 @@ namespace SushiRuntime
         void USMAllocator::adopt(void* address, std::size_t device_index,
                                  std::optional<std::size_t> bytes, std::optional<USMKind> kind)
         {
-            static_cast<void>(queue_at(device_index));
+            require_device(device_index);
 
             // Marked before it is recorded: a recorded adopted address is never seen unmarked.
             adopted_.record(address, device_index, bytes, kind);
@@ -218,7 +191,7 @@ namespace SushiRuntime
         std::optional<std::size_t> USMAllocator::device_of(const void* address) const
         {
             const std::optional<std::size_t> device = registry_.owner_of(address);
-            if (device.has_value() && *device < queues_.size())
+            if (device.has_value() && *device < source_->device_count())
                 return device;
             return std::nullopt;
         }
@@ -226,7 +199,7 @@ namespace SushiRuntime
         std::optional<USMRegistry::Record> USMAllocator::record_of(const void* address) const
         {
             const std::optional<USMRegistry::Record> record = registry_.record_of(address);
-            if (record.has_value() && record->device_index < queues_.size())
+            if (record.has_value() && record->device_index < source_->device_count())
                 return record;
             return std::nullopt;
         }
@@ -239,30 +212,7 @@ namespace SushiRuntime
             if (const std::optional<std::size_t> recorded = device_of(address))
                 return recorded;
 
-            std::optional<std::size_t> best;
-            for (std::size_t index = 0; index < queues_.size(); ++index)
-            {
-                const sycl::queue& queue = queues_[index];
-                try
-                {
-                    const sycl::context context = queue.get_context();
-                    const sycl::usm::alloc kind = sycl::get_pointer_type(address, context);
-                    if (kind == sycl::usm::alloc::unknown || kind == sycl::usm::alloc::host)
-                        continue;
-                    if (sycl::get_pointer_device(address, context) != queue.get_device())
-                        continue;
-                    // A shared match wins at once; a device match waits for a later shared one.
-                    if (kind == sycl::usm::alloc::shared)
-                        return index;
-                    best = index;
-                }
-                catch (const sycl::exception&)
-                {
-                    // This context cannot resolve the address, which answers "not this device".
-                    continue;
-                }
-            }
-            return best;
+            return source_->resolve_owner(address);
         }
 
         std::optional<const void*> USMAllocator::containing_base(const void* address) const
@@ -287,22 +237,23 @@ namespace SushiRuntime
 
         std::size_t USMAllocator::device_count() const noexcept
         {
-            return queues_.size();
+            return source_->device_count();
         }
 
         bool USMAllocator::shares_context(std::size_t first, std::size_t second) const
         {
-            return queue_at(first).get_context() == queue_at(second).get_context();
+            require_device(first);
+            require_device(second);
+            return source_->shares_context(first, second);
         }
 
-        const sycl::queue& USMAllocator::queue_at(std::size_t device_index) const
+        void USMAllocator::require_device(std::size_t device_index) const
         {
-            SR_VERIFY(device_index < queues_.size(),
+            SR_VERIFY(device_index < source_->device_count(),
                       ("USM device index " + std::to_string(device_index) +
                        " is out of range: the allocator holds " +
-                       std::to_string(queues_.size()) + " device(s).")
+                       std::to_string(source_->device_count()) + " device(s).")
                           .c_str());
-            return queues_[device_index];
         }
 
     } // namespace Memory

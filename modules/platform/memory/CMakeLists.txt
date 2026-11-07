@@ -6,6 +6,6 @@
 sushiruntime_add_module(
     NAME memory TIER platform INTERNAL
     SYCL
-    SOURCES usm_allocator.cpp
+    SOURCES host_usm_source.cpp sycl_usm_source.cpp usm_allocator.cpp
     DEPENDS core log
     PRIVATE_DEPENDS profile)

@@ -218,6 +218,32 @@ namespace SushiRuntime
             log_numa_routes();
         }
 
+        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescription> host_devices)
+        {
+            const std::size_t device_count = host_devices.size();
+
+            infos_.reserve(device_count);
+            plain_offsets_.reserve(device_count);
+            // Move-assigned, not resized: once_flag and atomic elements are not movable.
+            slots_ = std::vector<LazyQueue>(device_count * K_FLAVOUR_COUNT);
+
+            for (std::size_t index = 0; index < device_count; ++index)
+            {
+                DeviceDescription& info = host_devices[index];
+                info.index = index;
+                if (NUMARouteTable::placed_node(info.numa_node) != info.numa_node)
+                    info.numa_node = 0;
+                plain_offsets_.push_back(0);
+                infos_.push_back(std::move(info));
+            }
+
+            std::vector<int> device_nodes;
+            device_nodes.reserve(infos_.size());
+            for (const DeviceDescription& info : infos_)
+                device_nodes.push_back(info.numa_node);
+            numa_routes_ = NUMARouteTable(device_nodes);
+        }
+
         DeviceQueueSet::~DeviceQueueSet()
         {
             for_each_built_queue([]([[maybe_unused]] const DeviceDescription& info, sycl::queue& built)
@@ -250,13 +276,13 @@ namespace SushiRuntime
 
         sycl::queue& DeviceQueueSet::queue(std::size_t index)
         {
-            require_index(index);
+            require_queue(index);
             return *slots_[index * K_FLAVOUR_COUNT + plain_offsets_[index]].queue;
         }
 
         sycl::queue& DeviceQueueSet::queue(std::size_t index, QueueFlavour flavour)
         {
-            require_index(index);
+            require_queue(index);
 
             const std::size_t offset = offset_for(index, flavour);
             LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
@@ -315,7 +341,8 @@ namespace SushiRuntime
             std::vector<sycl::queue> queues;
             queues.reserve(infos_.size());
             for (std::size_t index = 0; index < infos_.size(); ++index)
-                queues.push_back(*plain_slot(index).queue);
+                if (plain_slot(index).built.load(std::memory_order_acquire))
+                    queues.push_back(*plain_slot(index).queue);
             return queues;
         }
 
@@ -353,6 +380,16 @@ namespace SushiRuntime
                       ("Device index " + std::to_string(index) +
                        " is out of bounds; the set holds " + std::to_string(infos_.size()) +
                        " device(s).")
+                          .c_str());
+        }
+
+        void DeviceQueueSet::require_queue(std::size_t index) const
+        {
+            require_index(index);
+            SR_VERIFY(plain_slot(index).built.load(std::memory_order_acquire),
+                      ("Device " + std::to_string(index) + " (" + infos_[index].name +
+                       ") is a host device and holds no queue; a host runtime submits no work "
+                       "to a device.")
                           .c_str());
         }
 

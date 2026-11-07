@@ -517,3 +517,61 @@ TEST_F(Medium_DeviceQueueSet, ASecondRequestForABuiltFlavourLogsNothing)
 
     EXPECT_TRUE(capture.records().empty());
 }
+
+namespace
+{
+    /** @brief Returns the inventory of a host set: two CPU devices, the second on a NUMA node out of range. */
+    std::vector<DeviceDescription> host_inventory()
+    {
+        DeviceDescription first;
+        first.name = "host a";
+        first.kind = DeviceKind::CPU;
+        DeviceDescription second;
+        second.name = "host b";
+        second.kind = DeviceKind::CPU;
+        second.numa_node = -3;
+        return {first, second};
+    }
+} // namespace
+
+/** @brief Tests that a host set lists its descriptions in order, each with its index. */
+TEST(Small_HostDeviceQueueSet, ListsTheDescriptionsInOrderWithTheirIndex)
+{
+    DeviceQueueSet set(host_inventory());
+
+    ASSERT_EQ(set.count(), 2u);
+    EXPECT_EQ(set.devices()[1].name, "host b");
+    EXPECT_EQ(set.devices()[1].index, 1u);
+}
+
+/** @brief Tests that a host set places a NUMA node out of range on node zero. */
+TEST(Small_HostDeviceQueueSet, PlacesANUMANodeOutOfRangeOnNodeZero)
+{
+    DeviceQueueSet set(host_inventory());
+
+    EXPECT_EQ(set.devices()[1].numa_node, 0);
+}
+
+/** @brief Tests that a host set hands out no plain queue. */
+TEST(Small_HostDeviceQueueSet, HoldsNoPlainQueue)
+{
+    DeviceQueueSet set(host_inventory());
+
+    EXPECT_TRUE(set.plain_queues().empty());
+}
+
+/** @brief Tests that waiting on a host set succeeds, since it holds no queue to wait on. */
+TEST(Small_HostDeviceQueueSet, WaitingOnAllSucceeds)
+{
+    DeviceQueueSet set(host_inventory());
+
+    EXPECT_TRUE(set.wait_all().has_value());
+}
+
+/** @brief Tests that asking a host set for a queue stops the process, naming the device. */
+TEST(Medium_HostDeviceQueueSetDeathTest, AskingForAQueueStopsAndNamesTheDevice)
+{
+    DeviceQueueSet set(host_inventory());
+
+    EXPECT_DEATH(static_cast<void>(set.queue(0)), "host a");
+}

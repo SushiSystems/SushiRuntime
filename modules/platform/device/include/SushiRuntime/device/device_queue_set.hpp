@@ -65,6 +65,15 @@ namespace SushiRuntime
                  */
                 DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling);
 
+                /**
+                 * @brief Builds a set of host devices that holds no queue and makes no device.
+                 *
+                 * count(), devices() and the NUMA routes answer as for any set; a call that
+                 * returns a queue stops the process, and wait_all() has nothing to wait on.
+                 * @param host_devices The inventory, in the order that fixes each device's index.
+                 */
+                explicit DeviceQueueSet(std::vector<DeviceDescription> host_devices);
+
                 /** @brief Waits for every built queue; logs a failure and never throws. */
                 ~DeviceQueueSet();
 
@@ -157,6 +166,11 @@ namespace SushiRuntime
                  * @brief Stops the process when an index names no device.
                  */
                 void require_index(std::size_t index) const;
+
+                /**
+                 * @brief Stops the process when an index names no device or a host device.
+                 */
+                void require_queue(std::size_t index) const;
 
                 /**
                  * @brief Returns the offset, among a device's slots, of the slot that serves a

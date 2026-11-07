@@ -8,8 +8,11 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_memory_log_category.cpp
         compile_usm_request.cpp
+        compile_usm_source.cpp
         test_epoch_reclamation.cpp
+        test_host_usm_source.cpp
         test_recording_usm_release_observer.cpp
+        test_sycl_usm_source.cpp
         test_usm_allocation_owner.cpp
         test_usm_allocator.cpp
         test_usm_registry.cpp

@@ -163,15 +163,46 @@ RecordingUSMReleaseObserver is a USMReleaseObserver that keeps the address of ea
 in arrival order. `on_release()` may be called from several threads at once, so the list is guarded
 by a mutex, and `released()` returns a copy. It needs no device or thread.
 
+## usm_source.hpp
+
+### USMSource
+
+The port `USMAllocator` takes its memory from. A source makes and frees bytes and answers four
+questions about its devices: how many there are, which one owns an address the allocator never
+recorded, whether two of them share one memory context, and a device's name for a log line. The
+allocator keeps every record; a source keeps none. Both adapters pass `USMSourceContract`
+(`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and `Medium_SYCLUSMSource`.
+
+## sycl_usm_source.hpp
+
+### SYCLUSMSource
+
+The device adapter: `sycl::malloc_*` and `sycl::aligned_alloc_*` on one queue per device,
+`sycl::free` on release, and `sycl::get_pointer_type` and `get_pointer_device` across the queues'
+contexts for an address without a record. A shared match wins at once; a device match waits for
+a later shared one. `USMAllocator(std::vector<sycl::queue>)` builds one.
+
+## host_usm_source.hpp
+
+### HostUSMSource
+
+The in-memory adapter: every kind of USM comes from the host heap, aligned by over-allocation,
+with the heap block's address stored in the word below the one returned. It makes no device and
+starts no thread, so the host runtime and the small tests of the allocator run on it. Every device
+shares one context, an address without a record has no owner, and an alignment that is not a
+power of two is refused with null.
+
 ## usm_allocator.hpp
 
 ### USMAllocator
 
-The allocator copies the queues it is given. A `sycl::queue` is a handle, so the copies name the
-same queues as the caller's, and the memory module needs no header of the module that builds them.
-A device's index is its position in that list, the number USMRegistry stores.
+The allocator owns one `USMSource` for its whole life and asks it for every byte; it keeps the
+records itself. `USMAllocator(std::vector<sycl::queue>)` wraps the queues in a `SYCLUSMSource`.
+A `sycl::queue` is a handle, so the copies name the same queues as the caller's, and the memory
+module needs no header of the module that builds them. A device's index is the source's, the
+number USMRegistry stores.
 
-The queue list never changes after construction and is read without a lock. Each registry
+The source never changes after construction and is read without a lock. Each registry
 operation takes that registry's lock, and the observer is one atomic pointer beside a count of
 the calls into it. Calls on different
 addresses can therefore run on any threads at once. Two calls on the same address, a release and a
@@ -183,7 +214,7 @@ outlived the allocator, and live_count() is how a teardown check finds it.
 ### allocate: the two failures
 
 A device index that names no device is a caller's mistake and stops the process through
-`SR_VERIFY`; the message carries the index and the device count. An allocation SYCL
+`SR_VERIFY`; the message carries the index and the device count. An allocation the source
 cannot satisfy returns null and records nothing, because running out of device memory is a
 condition a caller can handle. The allocator logs one WARN for it, under `sushiruntime.memory`,
 with the kind, the bytes, the alignment and the device index and name; the status the caller
@@ -197,8 +228,8 @@ size of the request; `release()` writes the fine zone `memory.release`. Both go 
 
 ### release
 
-An adopted address is forgotten and not freed. It was allocated outside SYCL, a mapping of
-another process's memory for example, and `sycl::free` on it is undefined. The allocator tells
+An adopted address is forgotten and not freed. It was allocated outside the source, a mapping of
+another process's memory for example, and freeing it there is undefined. The allocator tells
 adopted addresses apart with a second USMRegistry that holds only them, because USMRegistry's
 entry has no field for it. allocate() clears that mark for the address it returns: an adopted
 mapping that was unmapped without forget() can leave its address to a later allocation, and the
@@ -210,7 +241,7 @@ freeing it would be a double free in the second case and a free against a guesse
 first. An allocator with no device logs a WARN instead.
 
 release() is `noexcept`, because USMAllocationOwner calls it from a `noexcept` override and
-`Detail::Allocation` calls that from a destructor. A `sycl::free` that throws is caught and logged as one
+`Detail::Allocation` calls that from a destructor. A source free that throws is caught and logged as one
 ERROR; the record is already gone by then, so the address is not tracked.
 
 ### set_release_observer
@@ -227,15 +258,17 @@ set_release_observer() from on_release() waits for itself and never returns.
 
 ### shares_context
 
-`shares_context(first, second)` compares the contexts of two devices' queues. The task module's
+`shares_context(first, second)` asks the source whether two devices share one memory context;
+the SYCL source compares their queues' contexts. The task module's
 `placement_of()` asks it before a stated device wins over the device that owns a node's memory,
 since USM is only usable from the context it was allocated in. `device_count()` lets it check an
 index first, because `shares_context()` stops the process on an index past the devices.
 
 ### owning_device
 
-The record is the first answer and costs one hash lookup. Without a record the allocator asks each
-queue's context for the pointer's kind and device. A shared allocation that matches is returned at
-once; a device allocation that matches is kept while the remaining queues are tried, so a shared
-match on a later queue wins. Host USM belongs to a context and to no device, and resolves to
-nothing. A context that throws for an address it does not know counts as no match.
+The record is the first answer and costs one hash lookup. Without a record the allocator asks the
+source's `resolve_owner()`. The SYCL source asks each queue's context for the pointer's kind and
+device: a shared allocation that matches is returned at once, a device allocation that matches is
+kept while the remaining queues are tried, host USM resolves to nothing, and a context that throws
+for an address it does not know counts as no match. The host source owns no address it did not
+record.

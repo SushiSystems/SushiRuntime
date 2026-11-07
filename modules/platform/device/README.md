@@ -66,6 +66,16 @@ A descriptor whose NUMA node is negative or not below `K_MAX_NUMA_NODES` is plac
 the node the device was placed on. `devices()[i].index` is always `i`, whatever the descriptor
 carried.
 
+### A set of host devices
+
+`DeviceQueueSet(std::vector<DeviceDescription>)` holds an inventory and no queue. It builds no
+SYCL device, so the host runtime's context carries one. `count()`, `devices()`, `is_gpu()` and
+the NUMA routes answer from the descriptions as for any set, and a NUMA node out of range is
+placed on node 0 without a log line. `queue()` in either form, and `queue_or_numa_local()`, stop
+the process through `SR_VERIFY`, naming the device: a host runtime submits nothing to a device.
+`plain_queues()` is empty, and `wait_all()` and `raise_asynchronous_errors()` have nothing to
+visit.
+
 ### One slot per flavour
 
 `queue(index, flavour)` returns the queue in the slot the flavour names, and builds it on first
