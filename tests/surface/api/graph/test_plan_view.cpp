@@ -139,7 +139,7 @@ TEST_F(Medium_PlanView, RunUsesThePlanCompileBuilt)
         ASSERT_EQ(words[i], 1u) << "at i=" << i;
 }
 
-/** @brief Tests that compile() and plan() return one InvalidGraph refusal, the one run() returns. */
+/** @brief Tests that compile() and plan() return the recorder's InvalidAccess refusal, the one run() returns. */
 TEST_F(Medium_PlanView, CompileReturnsTheRecordersRefusal)
 {
     auto graph = runtime().graph();
@@ -148,13 +148,13 @@ TEST_F(Medium_PlanView, CompileReturnsTheRecordersRefusal)
 
     const auto compiled = graph.compile();
     ASSERT_FALSE(compiled);
-    EXPECT_EQ(compiled.error().code, ErrorCode::InvalidGraph);
+    EXPECT_EQ(compiled.error().code, ErrorCode::InvalidAccess);
     EXPECT_FALSE(compiled.error().message.empty());
     EXPECT_EQ(graph.compile_count(), 0u);
 
     const auto plan = graph.plan();
     ASSERT_FALSE(plan);
-    EXPECT_EQ(plan.error().code, ErrorCode::InvalidGraph);
+    EXPECT_EQ(plan.error().code, ErrorCode::InvalidAccess);
     EXPECT_EQ(plan.error().message, compiled.error().message);
 
     const auto run = graph.run();

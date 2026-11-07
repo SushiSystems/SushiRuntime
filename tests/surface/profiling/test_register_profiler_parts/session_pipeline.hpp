@@ -129,6 +129,14 @@ namespace SessionTests
                 return shape;
             }
 
+            /** @brief Returns the shape of a second runtime that keeps every run on the worker pool. */
+            static TestSupport::RuntimeShape other_scheduler_config()
+            {
+                TestSupport::RuntimeShape shape = scheduler_config();
+                shape.instance = 1;
+                return shape;
+            }
+
             /** @brief Returns the shape of a runtime that lets a chainable plan run as an in-order chain. */
             static TestSupport::RuntimeShape chain_config()
             {

@@ -150,7 +150,7 @@ namespace
 TEST(Medium_RuntimeSessionStress, TwoRuntimesFeedOneSourceFromSeveralThreadsWhileTheConsumerCollects)
 {
     SessionPipeline first_runtime;
-    SessionPipeline second_runtime;
+    SessionPipeline second_runtime(SessionPipeline::other_scheduler_config());
     auto graphs = graphs_for(first_runtime.runtime(), second_runtime.runtime());
     SushiProfiler::Registry registry;
     RuntimeProfilerParts parts = register_profiler_parts(registry, first_runtime.runtime());

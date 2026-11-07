@@ -1266,7 +1266,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that one worker, two workers and the whole machine agree on every output byte. */
-    TEST(Medium_Determinism, OutputIsByteEqualAcrossWorkerCounts)
+    TEST_F(Medium_Determinism, OutputIsByteEqualAcrossWorkerCounts)
     {
         const Outcome single = run_workload(1);
         const Outcome pair   = run_workload(2);
@@ -1308,7 +1308,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that a run with the background rebalancer on lands on the same bytes. */
-    TEST(Medium_Determinism, TheRebalancerDoesNotChangeTheBytes)
+    TEST_F(Medium_Determinism, TheRebalancerDoesNotChangeTheBytes)
     {
         const Outcome quiet  = run_workload(0, false);
         const Outcome moving = run_workload(0, true);

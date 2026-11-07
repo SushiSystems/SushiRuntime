@@ -193,7 +193,7 @@ TEST(Medium_RegisterProfilerParts, TheDestructorRemovesItsOwnObserverOnly)
 TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASession)
 {
     SessionPipeline first;
-    SessionPipeline second;
+    SessionPipeline second(SessionPipeline::other_scheduler_config());
     SushiProfiler::Registry registry;
     RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
     SourceHarness harness;
@@ -213,7 +213,7 @@ TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASession)
 TEST(Medium_RegisterProfilerParts, AFurtherRuntimeIsRefusedDuringASession)
 {
     SessionPipeline first;
-    SessionPipeline third;
+    SessionPipeline third(SessionPipeline::other_scheduler_config());
     SushiProfiler::Registry registry;
     RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
     SourceHarness harness;
@@ -228,7 +228,7 @@ TEST(Medium_RegisterProfilerParts, AFurtherRuntimeIsRefusedDuringASession)
 TEST(Medium_RegisterProfilerParts, RefusedPartsAttachNothing)
 {
     SessionPipeline first;
-    SessionPipeline other;
+    SessionPipeline other(SessionPipeline::other_scheduler_config());
     SushiProfiler::Registry registry;
     const RuntimeProfilerParts accepted = register_profiler_parts(registry, first.runtime());
     RuntimeProfilerParts refused = register_profiler_parts(registry, first.runtime());

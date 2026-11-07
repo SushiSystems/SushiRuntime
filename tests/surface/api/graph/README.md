@@ -249,7 +249,7 @@ kernel that ran is visible in the first word.
 | `CompileRunsNothing` | `compile()` leaves `compile_count()` at one and the buffer at zero. |
 | `ACurrentPlanIsNotBuiltAgain` | A second `compile()` builds nothing more. |
 | `RunUsesThePlanCompileBuilt` | The `run()` after `compile()` builds nothing more and executes the kernel. |
-| `CompileReturnsTheRecordersRefusal` | A graph whose recorder refused a rule returns that refusal from `compile()` and from `plan()` and builds nothing. The code is `InvalidGraph`, and the message equals the one `run()` returns. |
+| `CompileReturnsTheRecordersRefusal` | A graph whose recorder refused a rule returns that refusal from `compile()` and from `plan()` and builds nothing. The code is `InvalidAccess`, the one an empty `State` gets, and the message equals the one `run()` returns. |
 | `CompileOfAnEmptyGraphIsRefused` | A graph with nothing recorded is `InvalidGraph`, as `run()` answers. |
 | `ACompiledDynamicGraphRunsNothing` | A DynamicGraph takes `compile()` from the same driver: `compose_count()` is one after it and the buffer is still zero. |
 | `ADynamicGraphCompiledThenRunComposesOnce` | `compose_count()` is still one after the run that follows. |

@@ -227,7 +227,7 @@ TEST(Medium_RunObserver, AHandleThatOutlivesItsRuntimeRemovesNothing)
 TEST(Medium_RunObserver, AnObserverHearsOnlyItsOwnRuntime)
 {
     ObservedPipeline observed;
-    ObservedPipeline other;
+    ObservedPipeline other(ObservedPipeline::other_scheduler_config());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = observed.runtime().add_run_observer(observer);
 

@@ -521,6 +521,7 @@ TEST_F(Medium_BuilderSurface, ARunReturnsTheRefusalAndRunsNothingUntilCleared)
 
     graph.recorder().clear();
     EXPECT_EQ(graph.refusal(), nullptr);
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
     const auto valid_run = graph.run();
     ASSERT_TRUE(valid_run.has_value());
     EXPECT_EQ(words[0], before + 1u);
