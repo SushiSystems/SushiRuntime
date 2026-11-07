@@ -310,36 +310,6 @@ TEST_F(Medium_ChainedRunInProgress, AnAbandonedChainedRunLeavesNothingShowing)
     EXPECT_FALSE(engine().run_in_progress()) << "the destructor left the run showing";
 }
 
-/** @brief Tests that a scheduled run inside a chained run leaves the chained run showing. */
-TEST_F(Medium_ChainedRunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing)
-{
-    CompiledGraph scheduled = compile_host_task([] {});
-    {
-        ChainRun outer(context(), plan());
-
-        engine().execute(scheduled).value();
-
-        EXPECT_TRUE(engine().run_in_progress())
-            << "the scheduled run's end cleared the chained run's mark";
-        outer.finish().value();
-    }
-    EXPECT_FALSE(engine().run_in_progress());
-}
-
-/** @brief Tests that the end of one chained run does not clear the mark of another that is still open. */
-TEST_F(Medium_ChainedRunInProgress, OneChainedRunsEndLeavesTheOtherShowing)
-{
-    {
-        ChainRun outer(context(), plan());
-        const ChainRun inner(context(), plan());
-
-        outer.finish().value();
-
-        EXPECT_TRUE(engine().run_in_progress()) << "one chained run's end cleared the other's";
-    }
-    EXPECT_FALSE(engine().run_in_progress());
-}
-
 /** @brief Tests the engine of a host context: order, seeding, asynchronous runs, failure and cancel. */
 namespace HostEngineTests
 {

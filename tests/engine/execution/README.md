@@ -151,10 +151,14 @@ cancel that skips the nodes not yet run.
 The fixture compiles one kernel over shared USM that the context allocated on device 0 and classifies
 the plan; the plan must come out chainable, and a plan left on the scheduler fails the test.
 `AChainedRunIsInProgressUntilFinishReturns` and `AnAbandonedChainedRunLeavesNothingShowing` check the
-two ends of a `ChainRun`: `finish()`, and the destructor of a run that never finished.
-`AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing` runs a scheduled graph inside a chained
-run, and `OneChainedRunsEndLeavesTheOtherShowing` ends one `ChainRun` while a second is alive; the
-answer stays true until the last one is gone.
+two ends of a `ChainRun` over a real engine: `finish()`, and the destructor of a run that never
+finished. How nested runs count is `RunMarker`'s, and runs small in `test_run_marker.cpp`.
+
+## test_run_marker.cpp
+
+Small. `RunMarker` on its own: a fresh marker shows no run; a chained run shows until it ends; a
+scheduled run inside a chained run, or the end of one of two chained runs, leaves the other showing;
+a second scheduled run is refused; an idle change is taken only from an idle marker and is no run.
 
 ## compile_offload_host.cpp
 

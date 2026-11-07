@@ -517,7 +517,7 @@ clears the bit on every exit.
 
 #### The run marker
 
-`run_marker` is one `std::atomic<std::uint32_t>` and `run_in_progress()` is one load of it,
+`run_marker` is a `RunMarker` (`run_marker.hpp`), one `std::atomic<std::uint32_t>`, and `run_in_progress()` is one load of it,
 compared with zero once bit 1 is masked off. Bit 0 is the scheduled run. Bit 1, `K_IDLE_CHANGE`,
 is held by `begin_idle_change()` for a change no run may see half done, and is no run: it is taken
 only from an idle marker, and `submit()` and `begin_chained_run()` that find it in the value their

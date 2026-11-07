@@ -56,6 +56,7 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/execution/run_marker.hpp>
 #include <SushiRuntime/execution/scheduler_execution_engine.hpp>
 
 #include "run_observation_fill.hpp"
@@ -119,26 +120,6 @@ namespace SushiRuntime
 
         namespace
         {
-            /** @brief Bit of the run marker a scheduled run holds from submit() to complete(). */
-            constexpr std::uint32_t K_SCHEDULED_RUN = 1u;
-
-            /** @brief Bit of the run marker an idle change holds; it is not a run. */
-            constexpr std::uint32_t K_IDLE_CHANGE = 2u;
-
-            /** @brief Amount one chained run adds to the run marker while it lasts. */
-            constexpr std::uint32_t K_CHAINED_RUN = 4u;
-
-            /** @brief Waits for an idle change seen in @p prior to release the marker. */
-            void wait_for_idle_change(const std::atomic<std::uint32_t>& marker,
-                                      std::uint32_t prior) noexcept
-            {
-                if ((prior & K_IDLE_CHANGE) == 0)
-                    return;
-                // A change holds the bit for one pointer store, so the wait is a few yields.
-                while ((marker.load(std::memory_order_acquire) & K_IDLE_CHANGE) != 0)
-                    std::this_thread::yield();
-            }
-
             /**
              * @brief Clears the scheduled-run bit of a run marker on scope exit, unless disarmed.
              * @see modules/engine/execution/README.md
@@ -147,7 +128,7 @@ namespace SushiRuntime
             {
                 public:
                     /** @brief Binds the guard to @p marker, whose scheduled-run bit is set. */
-                    explicit ScheduledRunRelease(std::atomic<std::uint32_t>& marker) noexcept
+                    explicit ScheduledRunRelease(RunMarker& marker) noexcept
                         : marker_(&marker)
                     {
 
@@ -157,7 +138,7 @@ namespace SushiRuntime
                     ~ScheduledRunRelease()
                     {
                         if (marker_)
-                            marker_->fetch_and(~K_SCHEDULED_RUN, std::memory_order_acq_rel);
+                            marker_->end_scheduled();
                     }
 
                     ScheduledRunRelease(const ScheduledRunRelease&) = delete;
@@ -173,7 +154,7 @@ namespace SushiRuntime
 
                 private:
                     /** @brief The marker to clear; null once disarmed. */
-                    std::atomic<std::uint32_t>* marker_;
+                    RunMarker* marker_;
             };
         } // namespace
 
@@ -206,11 +187,10 @@ namespace SushiRuntime
             std::atomic<bool> is_shutdown{false};
 
             /**
-             * @brief Counts the runs in progress: K_SCHEDULED_RUN while a scheduled run holds
-             *        the engine, plus K_CHAINED_RUN for each live chained run.
+             * @brief Counts the runs in progress: the scheduled run and each live chained run.
              * @see modules/engine/execution/README.md
              */
-            std::atomic<std::uint32_t> run_marker{0};
+            RunMarker run_marker;
 
             /**
              * @brief Constructs the internal implementation.
@@ -473,13 +453,10 @@ namespace SushiRuntime
                                   "Received a compiled graph with no root nodes."});
 
             // An overlapping run is refused and leaves the owner's bit set (modules/engine/execution/README.md).
-            const std::uint32_t prior =
-                impl_->run_marker.fetch_or(K_SCHEDULED_RUN, std::memory_order_acq_rel);
-            if ((prior & K_SCHEDULED_RUN) != 0)
+            if (!impl_->run_marker.try_begin_scheduled())
                 return make_error(Error{ErrorCode::InvalidState,
                                   "ExecutionEngine::submit() is not reentrant: a graph run is "
                                   "already in progress on this engine."});
-            wait_for_idle_change(impl_->run_marker, prior);
 
             // The guard clears the bit only on an early exit (modules/engine/execution/README.md).
             ScheduledRunRelease submit_guard(impl_->run_marker);
@@ -625,37 +602,31 @@ namespace SushiRuntime
          */
         bool SchedulerExecutionEngine::run_in_progress() const noexcept
         {
-            // acq_rel writes, acquire load: whoever reads the marker sees what its writer did before.
-            return (impl_->run_marker.load(std::memory_order_acquire) & ~K_IDLE_CHANGE) != 0;
+            return impl_->run_marker.in_progress();
         }
 
         /** @brief Marks one chained run in progress. */
         void SchedulerExecutionEngine::begin_chained_run() noexcept
         {
-            wait_for_idle_change(
-                impl_->run_marker,
-                impl_->run_marker.fetch_add(K_CHAINED_RUN, std::memory_order_acq_rel));
+            impl_->run_marker.begin_chained();
         }
 
         /** @brief Clears the mark one begin_chained_run() set. */
         void SchedulerExecutionEngine::end_chained_run() noexcept
         {
-            impl_->run_marker.fetch_sub(K_CHAINED_RUN, std::memory_order_acq_rel);
+            impl_->run_marker.end_chained();
         }
 
         /** @brief Takes the idle-change bit only from an idle marker. */
         bool SchedulerExecutionEngine::begin_idle_change() noexcept
         {
-            std::uint32_t idle = 0;
-            return impl_->run_marker.compare_exchange_strong(idle, K_IDLE_CHANGE,
-                                                             std::memory_order_acq_rel,
-                                                             std::memory_order_acquire);
+            return impl_->run_marker.begin_idle_change();
         }
 
         /** @brief Clears the idle-change bit. */
         void SchedulerExecutionEngine::end_idle_change() noexcept
         {
-            impl_->run_marker.fetch_and(~K_IDLE_CHANGE, std::memory_order_acq_rel);
+            impl_->run_marker.end_idle_change();
         }
 
         /**
