@@ -169,14 +169,16 @@ not exist yet.
 | `AnUnownedRegionWithNothingStatedRunsOnDeviceZero` | The same node that states nothing runs on entry 0. |
 | `APlacementPastTheDeviceSetFailsTheRun` | `place_on(2)` on a two-entry set fails the run with `ErrorCode::InvalidGraph`, naming the node, the index and the device count; the node's work does not run. |
 
-### Medium_OffloadSeam
+### Small_OffloadSeam
 
 The file pins what the scheduler tells an offload coordinator. A coordinator bumps the version of
 every buffer a reported node writes and may send an offered node to another machine, so a node of
 an aborted run must reach neither call. Each aborted-run test first runs one node on a healthy run and
 asserts the count it expects to stay fixed, so a coordinator that was never called cannot pass.
 The coordinator is `InMemoryOffloadCoordinator`, which declines every offer until told to accept.
-The pool has two floating workers and the nodes are native host nodes, so no test submits to a queue.
+The pool has two floating workers over a host context, and its rounds run as jobs of a
+`SeededExecutor` that the test settles before it waits, so no thread starts. The nodes are native
+host nodes, so no test submits to a queue.
 
 | Test | What it proves |
 | --- | --- |
@@ -194,14 +196,17 @@ The poller calls `on_local_completion()` before it drops the in-flight count, so
 
 ### Execution and stop
 
-These checks are fast and deterministic; heavy load is tested by
+The `Small_` cases build the scheduler over a host context and call `set_executor()` with a
+`SeededExecutor`, so each worker round runs on the test's thread when the test settles the
+executor, and `stop()` runs the rounds left. `ExecutesExactlySubmitted` is the one case on real
+worker threads: it checks the thread shell around the same rounds. Heavy load is tested by
 `tests/engine/execution/benchmark_scheduler_execution_engine.cpp`.
 
 | Test | What it proves |
 | --- | --- |
 | `Medium_SchedulerIntegration.ExecutesExactlySubmitted` | The scheduler runs exactly the 2000 tasks submitted; the test waits on `wait_quiescent()`. |
-| `Medium_SchedulerIntegration.ALateHighPriorityTaskRunsFirstOnOneWorker` | A priority task submitted after fifty others runs first. The pool has one worker, set through `WorkerPoolSettings`, and the tasks are queued before `start()`, so the order is the scheduler's alone and the test waits with `wait_quiescent()`, not a poll. |
-| `Medium_TaskScheduler.AbruptStopDrains` | `stop()` right after `submit` drains every one of the 1000 submitted tasks, without a deadlock. |
+| `Small_TaskScheduler.ALateHighPriorityNodeRunsFirstOnOneWorker` | A priority node submitted after fifty others runs first. The pool has one worker and the nodes are queued before `start()`, so the order is the scheduler's alone. |
+| `Small_TaskScheduler.AbruptStopDrains` | `stop()` right after `submit`, before any round ran, drains every one of the 1000 submitted nodes. |
 | `Medium_TaskScheduler.AWorkerCountOfZeroAsksForOneWorkerPerLogicalCore` | A worker count of 0 gives the platform's `hardware_concurrency` count, up to the pool maximum. |
 
 ### Steal order
@@ -227,8 +232,8 @@ The scheduler is built over an empty device set, with no thread started. The lin
 | `Small_TaskScheduler.AWorkerCountInsideTheLimitsLogsNoWarning` | A request inside the limits logs no warning. |
 | `Small_TaskScheduler.APinnedWorkerWhoseCoreHasNoNumaNodeIsLogged` | A pinned worker whose core the topology does not list is mapped to NUMA node 0 and a Debug line says so, one per worker the pool kept. |
 | `Small_TaskScheduler.AFloatingPoolLogsNoCoreMapLine` | A floating pool logs no such line; the test first asserts the sink saw the constructor's own line. |
-| `Medium_TaskSchedulerCancel.LogsTheTasksASkippedRunLeftUnrun` | A cancelled run logs exactly one INFO naming the five tasks it skipped. |
-| `Medium_TaskSchedulerCancel.ARunNobodyCancelledLogsNoSkipLine` | A run nobody cancelled logs no skip line; the test first asserts the sink saw the pool's own line. |
+| `Small_TaskSchedulerCancel.LogsTheTasksASkippedRunLeftUnrun` | A cancelled run logs exactly one INFO naming the five tasks it skipped. |
+| `Small_TaskSchedulerCancel.ARunNobodyCancelledLogsNoSkipLine` | A run nobody cancelled logs no skip line; the test first asserts the sink saw the pool's own line. |
 
 ## test_thermal_proxy_strategy.cpp
 

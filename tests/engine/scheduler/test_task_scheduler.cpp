@@ -46,6 +46,7 @@
 
 #include <SushiLog/log/log_level.hpp>
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
@@ -55,7 +56,6 @@
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
-#include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
@@ -69,6 +69,8 @@
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 
+#include "support/host_context.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -252,6 +254,56 @@ namespace
                 ++lines;
         }
         return lines;
+    }
+
+    /**
+     * @brief Builds schedulers over a host context whose rounds run on a SeededExecutor.
+     *
+     * No worker thread starts: settle() runs every posted round on the test's thread.
+     */
+    class SteppedScheduler
+    {
+        public:
+            /** @brief Builds a host context of one device. */
+            SteppedScheduler() : context_(TestSupport::make_host_context())
+            {
+            }
+
+            /** @brief Builds a scheduler of @p workers floating workers on the executor, without starting it. */
+            std::unique_ptr<TaskScheduler> make(std::size_t workers)
+            {
+                auto scheduler = std::make_unique<TaskScheduler>(WorkerPoolSettings{workers, 0, PinPolicy::Float},
+                                                                 context_->topology(), context_->devices(),
+                                                                 context_->memory());
+                scheduler->set_executor(&executor_);
+                return scheduler;
+            }
+
+            /** @brief Runs every posted round, and the rounds they post, on the calling thread. */
+            void settle()
+            {
+                while (executor_.run_one())
+                {
+                }
+            }
+
+        private:
+            /// @brief Runs the rounds; declared first, so it outlives every scheduler of the test.
+            SeededExecutor executor_{TestSupport::K_HOST_RUNTIME_SEED};
+            /// @brief The host topology, device set and allocator the schedulers are built on.
+            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+    };
+
+    /** @brief Builds a host node that appends its priority to @p order when it runs.
+     *  @param order Must outlive the node. */
+    sushi_ptr<Node> make_ordered_node(int priority, std::vector<int>& order)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->submits_device_work_ = false;
+        node->metadata.priority = priority;
+        node->native_work = [&order, priority] { order.push_back(priority); };
+        return node;
     }
 
     /** @brief Returns the steal victims of every worker of @p scheduler that violate locality under @p nodes nodes. */
@@ -453,27 +505,28 @@ TEST_F(Medium_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;
 }
 
-/** @brief Runs a two-worker scheduler with an in-memory coordinator installed; see README.md. */
-class Medium_OffloadSeam : public TestSupport::RuntimeTest
+/** @brief Runs a two-worker scheduler stepped by a seeded executor, with an in-memory coordinator; see README.md. */
+class Small_OffloadSeam : public ::testing::Test
 {
     protected:
-        Medium_OffloadSeam()
-            : scheduler_(shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float}))
+        Small_OffloadSeam()
+            : scheduler_(stepped_.make(2))
         {
             scheduler_->set_offload_coordinator(&coordinator_);
             scheduler_->start();
             scheduler_->arm_for_execution();
         }
 
-        ~Medium_OffloadSeam() override
+        ~Small_OffloadSeam() override
         {
             scheduler_->stop();
         }
 
-        /** @brief Submits @p node and returns once the pool has reaped it. */
+        /** @brief Submits @p node, runs the rounds it posts and returns once the pool has reaped it. */
         void run(Node& node)
         {
             scheduler_->submit(&node);
+            stepped_.settle();
             scheduler_->wait_quiescent();
         }
 
@@ -491,6 +544,8 @@ class Medium_OffloadSeam : public TestSupport::RuntimeTest
             run(*executed);
         }
 
+        /// @brief The executor and the host parts; declared first, so they outlive the scheduler.
+        SteppedScheduler stepped_;
         /// @brief Declared before the scheduler, which keeps its address until stop().
         Internal::Graph::InMemoryOffloadCoordinator coordinator_;
         /// @brief The scheduler under test, started and armed; the host nodes of these tests use no device.
@@ -498,7 +553,7 @@ class Medium_OffloadSeam : public TestSupport::RuntimeTest
 };
 
 /** @brief Tests that a healthy run offers an offloadable node to the coordinator. */
-TEST_F(Medium_OffloadSeam, AHealthyRunOffersAnOffloadableNode)
+TEST_F(Small_OffloadSeam, AHealthyRunOffersAnOffloadableNode)
 {
     std::atomic<int> runs{0};
 
@@ -509,7 +564,7 @@ TEST_F(Medium_OffloadSeam, AHealthyRunOffersAnOffloadableNode)
 }
 
 /** @brief Tests that a cancelled run offers no node to the coordinator. */
-TEST_F(Medium_OffloadSeam, ACancelledRunOffersNoNode)
+TEST_F(Small_OffloadSeam, ACancelledRunOffersNoNode)
 {
     std::atomic<int> runs{0};
     run_a_healthy_offer(runs);
@@ -525,7 +580,7 @@ TEST_F(Medium_OffloadSeam, ACancelledRunOffersNoNode)
 }
 
 /** @brief Tests that a failed run offers no node to the coordinator. */
-TEST_F(Medium_OffloadSeam, AFailedRunOffersNoNode)
+TEST_F(Small_OffloadSeam, AFailedRunOffersNoNode)
 {
     std::atomic<int> runs{0};
     run_a_healthy_offer(runs);
@@ -542,7 +597,7 @@ TEST_F(Medium_OffloadSeam, AFailedRunOffersNoNode)
 }
 
 /** @brief Tests that a node a cancelled run skipped is not reported as completed. */
-TEST_F(Medium_OffloadSeam, ANodeSkippedByACancelledRunIsNotReportedAsCompleted)
+TEST_F(Small_OffloadSeam, ANodeSkippedByACancelledRunIsNotReportedAsCompleted)
 {
     std::atomic<int> runs{0};
     run_an_executed_node(runs);
@@ -558,7 +613,7 @@ TEST_F(Medium_OffloadSeam, ANodeSkippedByACancelledRunIsNotReportedAsCompleted)
 }
 
 /** @brief Tests that a node disabled for the step is not reported as completed. */
-TEST_F(Medium_OffloadSeam, ADisabledNodeIsNotReportedAsCompleted)
+TEST_F(Small_OffloadSeam, ADisabledNodeIsNotReportedAsCompleted)
 {
     std::atomic<int> runs{0};
     run_an_executed_node(runs);
@@ -574,7 +629,7 @@ TEST_F(Medium_OffloadSeam, ADisabledNodeIsNotReportedAsCompleted)
 }
 
 /** @brief Tests that a node whose work threw is not reported as completed. */
-TEST_F(Medium_OffloadSeam, ANodeWhoseWorkThrewIsNotReportedAsCompleted)
+TEST_F(Small_OffloadSeam, ANodeWhoseWorkThrewIsNotReportedAsCompleted)
 {
     std::atomic<int> runs{0};
     run_an_executed_node(runs);
@@ -588,7 +643,7 @@ TEST_F(Medium_OffloadSeam, ANodeWhoseWorkThrewIsNotReportedAsCompleted)
 }
 
 /** @brief Tests that an offer the coordinator declined is not counted as offloaded. */
-TEST_F(Medium_OffloadSeam, ADeclinedOfferIsNotCounted)
+TEST_F(Small_OffloadSeam, ADeclinedOfferIsNotCounted)
 {
     std::atomic<int> runs{0};
     ASSERT_EQ(scheduler_->offloaded_task_count(), 0u);
@@ -602,7 +657,7 @@ TEST_F(Medium_OffloadSeam, ADeclinedOfferIsNotCounted)
 }
 
 /** @brief Tests that an offer the coordinator took is counted as offloaded and not run by the pool. */
-TEST_F(Medium_OffloadSeam, AnAcceptedOfferIsCounted)
+TEST_F(Small_OffloadSeam, AnAcceptedOfferIsCounted)
 {
     std::atomic<int> runs{0};
     coordinator_.set_accepting(true);
@@ -619,7 +674,7 @@ TEST_F(Medium_OffloadSeam, AnAcceptedOfferIsCounted)
 }
 
 /** @brief Tests that a node the coordinator finished remotely stays counted as offloaded. */
-TEST_F(Medium_OffloadSeam, ACompletedRemoteNodeStaysCounted)
+TEST_F(Small_OffloadSeam, ACompletedRemoteNodeStaysCounted)
 {
     std::atomic<int> runs{0};
     coordinator_.set_accepting(true);
@@ -649,21 +704,20 @@ TEST(Medium_SchedulerIntegration, ExecutesExactlySubmitted)
     EXPECT_EQ(executed.load(), TOTAL);
 }
 
-/** @brief Tests that stop right after submit drains every submitted task, without deadlock. */
-TEST(Medium_TaskScheduler, AbruptStopDrains)
+/** @brief Tests that stop right after submit drains every submitted task, though no round ran before it. */
+TEST(Small_TaskScheduler, AbruptStopDrains)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    Internal::Execution::RuntimeContext& ctx = *ctx_owner;
-    TaskScheduler scheduler = SushiRuntime::Test::make_scheduler(ctx);
-    std::atomic<size_t> executed{0};
-    constexpr size_t TOTAL = 1000;
-    scheduler.start();
-    scheduler.arm_for_execution();
-    submit_counters(scheduler, executed, TOTAL);
+    SteppedScheduler stepped;
+    const auto scheduler = stepped.make(2);
+    std::atomic<int> ran{0};
+    const std::vector<sushi_ptr<Node>> nodes = counting_nodes(ran, 1000);
+    scheduler->start();
+    scheduler->arm_for_execution();
+    submit_all(*scheduler, nodes);
 
-    scheduler.stop();
+    scheduler->stop();
 
-    EXPECT_EQ(executed.load(), TOTAL) << "stop() dropped a submitted task";
+    EXPECT_EQ(ran.load(), 1000) << "stop() dropped a submitted task";
 }
 
 /** @brief Tests that a worker count of 0 asks for one worker per logical core. */
@@ -767,10 +821,11 @@ TEST(Small_TaskScheduler, AFloatingPoolLogsNoCoreMapLine)
 }
 
 /** @brief Tests that a cancelled run logs one INFO that names the number of tasks it skipped. */
-TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
+TEST(Small_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
 {
     TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
-    const auto scheduler = shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    SteppedScheduler stepped;
+    const auto scheduler = stepped.make(2);
     scheduler->start();
     scheduler->arm_for_execution();
     scheduler->request_cancellation();
@@ -778,6 +833,7 @@ TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
     const std::vector<sushi_ptr<Node>> nodes = counting_nodes(ran, 5);
 
     submit_all(*scheduler, nodes);
+    stepped.settle();
     scheduler->wait_quiescent();
     scheduler->disarm();
     scheduler->stop();
@@ -788,16 +844,18 @@ TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
 }
 
 /** @brief Tests that a run nobody cancelled logs no skip line. */
-TEST(Medium_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
+TEST(Small_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
 {
     TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
-    const auto scheduler = shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    SteppedScheduler stepped;
+    const auto scheduler = stepped.make(2);
     scheduler->start();
     scheduler->arm_for_execution();
     std::atomic<int> ran{0};
     const std::vector<sushi_ptr<Node>> nodes = counting_nodes(ran, 1);
 
     submit_all(*scheduler, nodes);
+    stepped.settle();
     scheduler->wait_quiescent();
     scheduler->disarm();
     scheduler->stop();
@@ -807,44 +865,29 @@ TEST(Medium_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
     EXPECT_EQ(count_lines(capture, SushiLog::LogLevel::Info, "scheduler", "were skipped"), 0u);
 }
 
-/** @brief Tests the scheduler for priority bypass. */
-namespace SchedulerIntegrationTests
+/**
+ * @brief Tests that a priority node submitted last runs first on one worker.
+ *
+ * The nodes are queued before the pool starts, so the order is the scheduler's choice alone.
+ */
+TEST(Small_TaskScheduler, ALateHighPriorityNodeRunsFirstOnOneWorker)
 {
-    using namespace SushiRuntime::Internal::Execution;
-    using namespace SushiRuntime::Internal::Scheduler;
-    using SushiRuntime::Test::PriorityTrackingTask;
+    SteppedScheduler stepped;
+    const auto scheduler = stepped.make(1);
+    std::vector<int> order;
+    std::vector<sushi_ptr<Node>> nodes;
+    for (int index = 0; index < 50; ++index)
+        nodes.push_back(make_ordered_node(0, order));
+    nodes.push_back(make_ordered_node(100, order));
+    scheduler->arm_for_execution();
+    submit_all(*scheduler, nodes);
 
-    /** @brief Submits @p count priority-0 tasks that record into @p order, then one priority-100 task. */
-    void submit_low_tasks_then_one_high(TaskScheduler& scheduler, std::size_t count, std::vector<int>& order,
-                                        std::mutex& order_mutex)
-    {
-        for (std::size_t index = 0; index < count; ++index)
-            scheduler.submit(new PriorityTrackingTask(0, order, order_mutex));
-        scheduler.submit(new PriorityTrackingTask(100, order, order_mutex));
-    }
+    scheduler->start();
+    stepped.settle();
+    scheduler->wait_quiescent();
+    scheduler->stop();
 
-    /**
-     * @brief Tests that a priority task submitted last runs first.
-     *
-     * The pool has one worker, and the tasks are queued before it starts, so the order is the scheduler's
-     * choice alone.
-     */
-    TEST(Medium_SchedulerIntegration, ALateHighPriorityTaskRunsFirstOnOneWorker)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler(WorkerPoolSettings{1, 0, PinPolicy::Float}, ctx.topology(), ctx.devices(),
-                                ctx.memory());
-        std::vector<int> order;
-        std::mutex order_mutex;
-        scheduler.arm_for_execution();
-        submit_low_tasks_then_one_high(scheduler, 50, order, order_mutex);
+    ASSERT_EQ(order.size(), 51u);
+    EXPECT_EQ(order.front(), 100);
+}
 
-        scheduler.start();
-        scheduler.wait_quiescent();
-        scheduler.stop();
-
-        ASSERT_EQ(order.size(), 51u);
-        EXPECT_EQ(order.front(), 100);
-    }
-} // namespace SchedulerIntegrationTests

@@ -45,6 +45,7 @@
 #include <sycl/sycl.hpp>
 #include <condition_variable>
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
@@ -297,8 +298,36 @@ namespace SushiRuntime
                  *         completion accounting — must be the scheduler's worker id,
                  *         not the EBR slot id). */
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
-                /** @brief Runs one worker thread until stop(); @p thread_id is its worker index. */
+                /** @brief Names what one round of a worker did, so its shell knows what follows. */
+                enum class WorkerRound : std::uint8_t
+                {
+                    Ran,  /**< A task ran or was offloaded. */
+                    Idle, /**< No task was found; the run is armed or events are in flight. */
+                    Park, /**< Nothing is armed, queued or in flight; the worker may sleep. */
+                    Exit, /**< stop() was asked and nothing is left; the worker ends. */
+                };
+
+                /** @brief Events in flight of each worker, kept between its rounds. */
+                std::vector<std::unique_ptr<EventPolling::ActiveEventList>> worker_events_;
+
+                /** @brief Runs the rounds when set; start() then spawns no thread. Not owned. */
+                Executor* executor_ = nullptr;
+                /** @brief Whether a round of each worker is posted to the executor and not yet run. */
+                std::unique_ptr<std::atomic<bool>[]> round_posted_;
+                /** @brief Expires with the scheduler, so a round posted after it is gone does nothing. */
+                std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+
+                /**
+                 * @brief Runs one round of worker @p thread_id: drain, poll, pick a task, run it.
+                 * @return What the round did; it never blocks or sleeps.
+                 */
+                WorkerRound run_round(int thread_id);
+                /** @brief Runs rounds of worker @p thread_id on its thread until stop(); parks and backs off between them. */
                 void dispatch_loop(int thread_id);
+                /** @brief Posts one round of worker @p thread_id to the executor unless one is posted already. */
+                void post_round(int thread_id);
+                /** @brief Posts a round of every worker to the executor; does nothing without one. */
+                void post_rounds();
                 /** @brief Looks for a task to steal from another thread's queue. */
                 Task* find_task_to_steal(int th_id);
                 /** @brief Moves pending submissions into the local worker queue. */
@@ -321,6 +350,16 @@ namespace SushiRuntime
                               const Internal::Memory::USMAllocator& memory);
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
+
+                /**
+                 * @brief Runs the worker rounds as jobs of @p executor instead of on threads.
+                 *
+                 * Called before start(). Each job runs one round of one worker and posts the next
+                 * while that worker has work, so a SeededExecutor steps the scheduler on the test's
+                 * thread. stop() runs the rounds left on the calling thread.
+                 * @param executor Must outlive the scheduler; null keeps the threads.
+                 */
+                void set_executor(Executor* executor) noexcept;
 
                 /**
                  * @brief Starts the persistent background worker threads.

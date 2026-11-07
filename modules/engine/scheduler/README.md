@@ -113,7 +113,7 @@ an entry with no event, the offload coordinator is not told, the successors are 
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
 with its task's name. The first failure of the pass is kept as a `KernelFailed` `Error` and returned
 after the backoff update, as a `std::optional<Error>` that is empty when nothing threw;
-dispatch_loop() records it in the RunOutcome. The wait on the oldest
+run_round() records it in the RunOutcome. The wait on the oldest
 event after K_STALL_DRIVE_THRESHOLD idle polls goes the same way: an event whose wait throws
 there is reaped as not executed and its error is returned. A second failure in the same pass goes
 through `keep_first_failure()`, which keeps the first and logs the second at `WARN` with both
@@ -123,7 +123,7 @@ every poll, and an event that throws each time would keep wait_quiescent() from 
 The translated call covers the status query and the wait of one entry. A pass in which nothing
 throws allocates nothing and takes no lock.
 
-A successor released by a failed entry is in the worker's deque before dispatch_loop() records the
+A successor released by a failed entry is in the worker's deque before run_round() records the
 failure, so a thief can dispatch it in that interval.
 
 ### accumulate_profiling
@@ -275,6 +275,7 @@ TaskScheduler owns a fixed-size pool of worker threads started once (start()) an
 graph runs. Each run is gated by a pair of arm_for_execution() and submit(root); the sentinel node's
 completion promise unblocks the caller. Workers steal from node-local victims first; cross-node
 steals are tracked separately so the RunReport can report the balance within and across NUMA nodes.
+A round, run_round(), never blocks; dispatch_loop() or an Executor (set_executor()) runs it.
 
 ### first_core
 

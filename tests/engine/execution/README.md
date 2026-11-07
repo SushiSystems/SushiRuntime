@@ -106,7 +106,7 @@ overhead per step that dominates the substrate, and complements the single susta
 contention in full needs hardware counters, `perf stat` and `perf c2c`. This benchmark is the
 portable measure of throughput and latency, and the harness those counters attach to. That a
 scheduler armed once runs every task of each step it is handed is held by
-`Medium_SchedulerSteps.EachStepRunsAllOfItsTasksOnTheArmedScheduler` in
+`Small_SchedulerSteps.EachStepRunsAllOfItsTasksOnTheArmedScheduler` in
 `test_scheduler_execution_engine.cpp`.
 
 ## test_execution_engine.cpp
@@ -296,11 +296,12 @@ once and replayed eight times; before each replay the host writes the word, and 
 follow. `Medium_ReplayHostWrite` has one row for a word in Shared USM and one for a word in Host USM, each
 replayed on every device queue of the context.
 
-### `Medium_SchedulerSteps`
+### `Small_SchedulerSteps`
 
-One scheduler is armed once and handed three steps of 32 counter tasks. After each step drains,
-the counter holds the tasks of every step so far. The step waits on the scheduler's quiescence
-latch, not on a clock.
+One scheduler over a host context, its rounds on a `SeededExecutor`, is armed once and handed
+three steps of 32 counting host nodes. After each step drains,
+the counter holds the tasks of every step so far. Each step settles the executor, then waits on the scheduler's
+quiescence latch, not on a clock.
 
 ### `Large_TaskSchedulerStress`
 

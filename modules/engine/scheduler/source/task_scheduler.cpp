@@ -137,9 +137,11 @@ namespace SushiRuntime
                             pool.first_core, last, machine_cores, num_workers_, first_core_);
             }
 
+            round_posted_ = std::make_unique<std::atomic<bool>[]>(num_workers_);
             for(size_t i=0; i<num_workers_; ++i)
             {
                 worker_queues[i] = make_sushi<Deque>();
+                worker_events_.push_back(std::make_unique<EventPolling::ActiveEventList>());
             }
 
             build_steal_topology();
@@ -230,6 +232,13 @@ namespace SushiRuntime
                 return;
             }
 
+            // On an executor the rounds are jobs, posted once work can be found.
+            if (executor_)
+            {
+                post_rounds();
+                return;
+            }
+
             // Workers wait; arm_for_execution() precedes submitted work (modules/engine/scheduler/README.md).
             for(size_t i=0; i<num_workers_; ++i)
             {
@@ -265,6 +274,7 @@ namespace SushiRuntime
                 running.store(true, std::memory_order_release);
             }
             pending_cv.notify_all();
+            post_rounds();
         }
 
         /**
@@ -321,7 +331,16 @@ namespace SushiRuntime
             }
             pending_cv.notify_all();
             for (size_t i = 0; i < num_workers_; ++i)
-                if (workers[i].joinable()) workers[i].join();   
+                if (workers[i].joinable()) workers[i].join();
+
+            // On an executor, the drain the threads would run happens here, on the caller.
+            if (executor_ && threads_started_.load(std::memory_order_acquire))
+            {
+                for (size_t i = 0; i < num_workers_; ++i)
+                    while (run_round(static_cast<int>(i)) != WorkerRound::Exit)
+                    {
+                    }
+            }
 
 
             for (size_t i = 0; i < num_workers_; ++i)
@@ -424,29 +443,23 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Runs a worker's idle, active and drain phases (modules/engine/scheduler/README.md).
-         * @param thread_id The ID of the worker executing this loop.
+         * @brief Runs one round of a worker's active and drain phases (modules/engine/scheduler/README.md).
+         * @param thread_id The ID of the worker the round belongs to.
          */
-        void TaskScheduler::dispatch_loop(int thread_id) 
+        TaskScheduler::WorkerRound TaskScheduler::run_round(int thread_id)
         {
-            if (static_cast<size_t>(thread_id) >= num_workers_) 
-            {
-                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Dispatch loop thread_id {} out of bounds!", thread_id);
-                return;
-            }
-
-            // The thread is registered first, so its first zone allocates nothing.
-            Internal::Profile::name_this_thread("sr-worker-" + std::to_string(thread_id));
-
             auto& my_queue = worker_queues[thread_id];
-            EventPolling::ActiveEventList active_events;
+            EventPolling::ActiveEventList& active_events = *worker_events_[thread_id];
 
-            // A pinned worker stays on core first_core_ + id (modules/engine/scheduler/README.md).
-            if (pinning_ == PinPolicy::Pin)
-                SushiRuntime::Internal::Topology::pin_current_thread_to_core(
-                    static_cast<int>(first_core_) + thread_id);
+            const bool is_running = running.load(std::memory_order_acquire);
+            const bool is_shutdown = shutdown_requested.load(std::memory_order_acquire);
+            const bool prof = profiling_active_.load(std::memory_order_acquire);
 
-            int spin_count = 0;
+            // A worker parks only with an empty deque of its own (modules/engine/scheduler/README.md).
+            if (!is_running && !is_shutdown && active_events.is_empty()
+                && my_queue->size() == 0 && my_queue->overflow_size() == 0
+                && !has_pending_submissions())
+                return WorkerRound::Park;
 
             // Clock reads are gated on profiling_active_ (modules/engine/scheduler/README.md).
             using sclock = std::chrono::steady_clock;
@@ -459,19 +472,138 @@ namespace SushiRuntime
                     std::memory_order_relaxed);
             };
 
+            drain_pending_submissions(thread_id);
+            Task* task = nullptr;
+
+            // A failed poll fails the run, not the thread (scheduler/README.md).
+            std::optional<Error> polled;
+            Result<void> poll_ran = SYCL::translate_exceptions([&]()
+            {
+                if (prof)
+                {
+                    const auto p0 = sclock::now();
+                    polled = event_poller.poll_events(active_events, *my_queue);
+                    add_ns(wt.polling_ns, p0, sclock::now());
+                }
+                else
+                    polled = event_poller.poll_events(active_events, *my_queue);
+            });
+            if (!poll_ran)
+            {
+                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "poll_events threw {}: {}; the current run is aborted.",
+                             to_string(poll_ran.error().code), poll_ran.error().message);
+                outcome_.record(std::move(poll_ran.error()));
+            }
+            else if (polled)
+            {
+                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "An event of the current run failed with {}: {}; the run is aborted.",
+                             to_string(polled->code), polled->message);
+                outcome_.record(std::move(*polled));
+            }
+
+            // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
+            if (priority_count_.load(std::memory_order_relaxed) > 0)
+            {
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
+                if (!priority_submissions.empty())
+                {
+                    task = priority_submissions.top();
+                    priority_submissions.pop();
+                    priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
+                }
+            }
+
+            if (!task)
+                task = my_queue->pop();
+
+            if (!task)
+            {
+                if (prof)
+                {
+                    const auto s0 = sclock::now();
+                    task = find_task_to_steal(thread_id);
+                    add_ns(wt.stealing_ns, s0, sclock::now());
+                }
+                else
+                    task = find_task_to_steal(thread_id);
+            }
+
+            if (!task)
+            {
+                if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
+                    return WorkerRound::Exit;
+                return WorkerRound::Idle;
+            }
+
+            if (task->is_splittable())
+            {
+                if (auto split_chunk = task->split())
+                    my_queue->push(split_chunk.value().leak());
+            }
+
+            // An offloaded task is owned by the coordinator (modules/engine/scheduler/README.md).
+            if (!offload_gate_.offer(*task, outcome_))
+            {
+                const auto b0 = prof ? sclock::now() : sclock::time_point{};
+                execute_task(task, thread_id, active_events);
+                if (prof) add_ns(wt.busy_ns, b0, sclock::now());
+            }
+            else
+            {
+                // Its quiescence count retires here (modules/engine/scheduler/README.md).
+                quiescence_.retire();
+            }
+            return WorkerRound::Ran;
+        }
+
+        /**
+         * @brief Runs a worker's rounds on its thread, parking and backing off between them
+         *        (modules/engine/scheduler/README.md).
+         * @param thread_id The ID of the worker executing this loop.
+         */
+        void TaskScheduler::dispatch_loop(int thread_id)
+        {
+            if (static_cast<size_t>(thread_id) >= num_workers_)
+            {
+                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Dispatch loop thread_id {} out of bounds!", thread_id);
+                return;
+            }
+
+            // The thread is registered first, so its first zone allocates nothing.
+            Internal::Profile::name_this_thread("sr-worker-" + std::to_string(thread_id));
+
+            // A pinned worker stays on core first_core_ + id (modules/engine/scheduler/README.md).
+            if (pinning_ == PinPolicy::Pin)
+                SushiRuntime::Internal::Topology::pin_current_thread_to_core(
+                    static_cast<int>(first_core_) + thread_id);
+
+            using sclock = std::chrono::steady_clock;
+            auto& wt = worker_time_[thread_id];
+            const EventPolling::ActiveEventList& active_events = *worker_events_[thread_id];
+            auto add_idle = [&wt](sclock::time_point a) noexcept
+            {
+                wt.idle_ns.fetch_add(static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(sclock::now() - a).count()),
+                    std::memory_order_relaxed);
+            };
+
+            int spin_count = 0;
             while (true)
             {
-                const bool is_running = running.load(std::memory_order_acquire);
-                const bool is_shutdown = shutdown_requested.load(std::memory_order_acquire);
                 const bool prof = profiling_active_.load(std::memory_order_acquire);
+                const WorkerRound round = run_round(thread_id);
+                if (round == WorkerRound::Exit)
+                    break;
+                if (round == WorkerRound::Ran)
+                {
+                    spin_count = 0;
+                    continue;
+                }
 
-                // A worker parks only with an empty deque of its own (modules/engine/scheduler/README.md).
-                if (!is_running && !is_shutdown && active_events.is_empty()
-                    && my_queue->size() == 0 && my_queue->overflow_size() == 0
-                    && !has_pending_submissions())
+                const auto idle0 = prof ? sclock::now() : sclock::time_point{};
+                if (round == WorkerRound::Park)
                 {
                     // The park has no timeout (modules/engine/scheduler/README.md).
-                    const auto idle0 = prof ? sclock::now() : sclock::time_point{};
                     std::unique_lock<std::mutex> lock(pending_mutex);
                     pending_cv.wait(lock, [this]()
                     {
@@ -480,108 +612,64 @@ namespace SushiRuntime
                                !pending_submissions.empty() ||
                                !priority_submissions.empty();
                     });
-                    if (prof) add_ns(wt.idle_ns, idle0, sclock::now());
-                    continue;
                 }
-
-                // ACTIVE / DRAIN phase: process whatever work is available.
-                drain_pending_submissions(thread_id);
-                Task* task = nullptr;
-
+                else
                 {
-                    // A failed poll fails the run, not the thread (scheduler/README.md).
-                    std::optional<Error> polled;
-                    Result<void> poll_ran = SYCL::translate_exceptions([&]()
-                    {
-                        if (prof)
-                        {
-                            const auto p0 = sclock::now();
-                            polled = event_poller.poll_events(active_events, *my_queue);
-                            add_ns(wt.polling_ns, p0, sclock::now());
-                        }
-                        else
-                            polled = event_poller.poll_events(active_events, *my_queue);
-                    });
-                    if (!poll_ran)
-                    {
-                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "poll_events threw {}: {}; the current run is aborted.",
-                                     to_string(poll_ran.error().code), poll_ran.error().message);
-                        outcome_.record(std::move(poll_ran.error()));
-                    }
-                    else if (polled)
-                    {
-                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "An event of the current run failed with {}: {}; the run is aborted.",
-                                     to_string(polled->code), polled->message);
-                        outcome_.record(std::move(*polled));
-                    }
-
-                    // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
-                    if (priority_count_.load(std::memory_order_relaxed) > 0)
-                    {
-                        SR_LOCK_WAIT("lock.pending", pending_mutex);
-                        if (!priority_submissions.empty())
-                        {
-                            task = priority_submissions.top();
-                            priority_submissions.pop();
-                            priority_count_.store(priority_submissions.size(), std::memory_order_relaxed);
-                        }
-                    }
-
-                    if (!task)
-                        task = my_queue->pop();
-
-                    if (!task)
-                    {
-                        if (prof)
-                        {
-                            const auto s0 = sclock::now();
-                            task = find_task_to_steal(thread_id);
-                            add_ns(wt.stealing_ns, s0, sclock::now());
-                        }
-                        else
-                            task = find_task_to_steal(thread_id);
-                    }
-
-                    if (task)
-                    {
-                        spin_count = 0;
-                        if (task->is_splittable())
-                        {
-                            if (auto split_chunk = task->split())
-                                my_queue->push(split_chunk.value().leak());
-                        }
-
-                        // An offloaded task is owned by the coordinator (modules/engine/scheduler/README.md).
-                        const bool offloaded = offload_gate_.offer(*task, outcome_);
-                        if (!offloaded)
-                        {
-                            const auto b0 = prof ? sclock::now() : sclock::time_point{};
-                            execute_task(task, thread_id, active_events);
-                            if (prof) add_ns(wt.busy_ns, b0, sclock::now());
-                        }
-                        else
-                        {
-                            // Its quiescence count retires here (modules/engine/scheduler/README.md).
-                            quiescence_.retire();
-                        }
-                    }
-                }
-
-                if (!task) 
-                {
-                    if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
-                        break;
-
-                    spin_count++;
-                    const auto bk0 = prof ? sclock::now() : sclock::time_point{};
                     // A worker holding in-flight events never sleeps: its successors wait on its poll.
+                    ++spin_count;
                     if (spin_count < 100 || !active_events.is_empty())
                         std::this_thread::yield();
                     else
                         std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    if (prof) add_ns(wt.idle_ns, bk0, sclock::now());
                 }
+                if (prof) add_idle(idle0);
             }
+        }
+
+        /**
+         * @brief Runs the rounds as executor jobs from now on (modules/engine/scheduler/README.md).
+         */
+        void TaskScheduler::set_executor(Executor* executor) noexcept
+        {
+            executor_ = executor;
+        }
+
+        /**
+         * @brief Posts one round of a worker; the round posts the next while the worker has work.
+         */
+        void TaskScheduler::post_round(int thread_id)
+        {
+            bool expected = false;
+            if (!round_posted_[thread_id].compare_exchange_strong(expected, true))
+                return;
+
+            std::weak_ptr<int> alive = alive_;
+            executor_->post([this, alive, thread_id]()
+            {
+                if (alive.expired())
+                    return;
+                const WorkerRound round = run_round(thread_id);
+                round_posted_[thread_id].store(false);
+
+                // A worker with events in flight polls again; one left idle waits for a submit.
+                const bool more = round == WorkerRound::Ran
+                    || !worker_events_[thread_id]->is_empty()
+                    || has_pending_submissions()
+                    || worker_queues[thread_id]->size() != 0;
+                if (more && round != WorkerRound::Exit)
+                    post_round(thread_id);
+            });
+        }
+
+        /**
+         * @brief Posts a round of every worker when the scheduler runs on an executor.
+         */
+        void TaskScheduler::post_rounds()
+        {
+            if (!executor_ || !threads_started_.load(std::memory_order_acquire))
+                return;
+            for (size_t i = 0; i < num_workers_; ++i)
+                post_round(static_cast<int>(i));
         }
 
         /** 
@@ -829,6 +917,7 @@ namespace SushiRuntime
 
             // Wake a worker up if they are heavily sleeping
             pending_cv.notify_one();
+            post_rounds();
         }
 
         /**
@@ -867,6 +956,7 @@ namespace SushiRuntime
 
             // One notify_all wakes the pool for the whole batch (modules/engine/scheduler/README.md).
             pending_cv.notify_all();
+            post_rounds();
         }
 
         /**

@@ -854,8 +854,6 @@ namespace SchedulerStepTests
 {
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Scheduler;
-    using SushiRuntime::Test::AtomicCounterTask;
-    using SushiRuntime::Test::make_scheduler;
 
     namespace
     {
@@ -863,34 +861,52 @@ namespace SchedulerStepTests
         constexpr std::size_t K_TASKS_PER_STEP = 32;
 
         /**
-         * @brief Submits one step of counter tasks and waits until every one of them has retired.
-         * @param scheduler Armed scheduler to submit to.
-         * @param executed Counter the tasks increment.
+         * @brief Submits one step of counting host nodes, runs its rounds and waits until every one has retired.
+         * @param scheduler Armed scheduler to submit to; its rounds run on @p executor.
+         * @param executor The executor the scheduler posts its rounds to.
+         * @param nodes Receives the step's nodes, which must outlive the step.
+         * @param executed Counter the nodes increment.
          * @return The counter value once the step has drained.
          */
-        std::size_t drain_step(TaskScheduler& scheduler, std::atomic<std::size_t>& executed)
+        std::size_t drain_step(TaskScheduler& scheduler, SushiRuntime::SeededExecutor& executor,
+                               std::vector<SushiRuntime::sushi_ptr<SushiRuntime::Internal::Graph::Node>>& nodes,
+                               std::atomic<std::size_t>& executed)
         {
+            using SushiRuntime::Internal::Graph::Node;
             for (std::size_t k = 0; k < K_TASKS_PER_STEP; ++k)
-                scheduler.submit(new AtomicCounterTask(executed));
+            {
+                SushiRuntime::sushi_ptr<Node> node = SushiRuntime::make_sushi<Node>();
+                node->mode = Node::ExecutionMode::Host;
+                node->submits_device_work_ = false;
+                node->native_work = [&executed] { executed.fetch_add(1, std::memory_order_relaxed); };
+                scheduler.submit(node.get());
+                nodes.push_back(std::move(node));
+            }
+            while (executor.run_one())
+            {
+            }
             scheduler.wait_quiescent();
             return executed.load(std::memory_order_acquire);
         }
     } // namespace
 
     /** @brief Tests that each of three consecutive steps runs all of its tasks and no more. */
-    TEST(Medium_SchedulerSteps, EachStepRunsAllOfItsTasksOnTheArmedScheduler)
+    TEST(Small_SchedulerSteps, EachStepRunsAllOfItsTasksOnTheArmedScheduler)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        TaskScheduler scheduler = make_scheduler(context);
+        SushiRuntime::SeededExecutor executor(TestSupport::K_HOST_RUNTIME_SEED);
+        const auto context = TestSupport::make_host_context();
+        TaskScheduler scheduler(WorkerPoolSettings{2, 0, SushiRuntime::PinPolicy::Float}, context->topology(),
+                                context->devices(), context->memory());
+        scheduler.set_executor(&executor);
+        std::vector<SushiRuntime::sushi_ptr<SushiRuntime::Internal::Graph::Node>> nodes;
         std::atomic<std::size_t> executed{0};
 
         scheduler.start();
         scheduler.arm_for_execution();
 
-        EXPECT_EQ(drain_step(scheduler, executed), K_TASKS_PER_STEP);
-        EXPECT_EQ(drain_step(scheduler, executed), 2 * K_TASKS_PER_STEP);
-        EXPECT_EQ(drain_step(scheduler, executed), 3 * K_TASKS_PER_STEP);
+        EXPECT_EQ(drain_step(scheduler, executor, nodes, executed), K_TASKS_PER_STEP);
+        EXPECT_EQ(drain_step(scheduler, executor, nodes, executed), 2 * K_TASKS_PER_STEP);
+        EXPECT_EQ(drain_step(scheduler, executor, nodes, executed), 3 * K_TASKS_PER_STEP);
 
         scheduler.stop();
     }
