@@ -350,38 +350,17 @@ handshake proofs it feeds are tested in `tests/extension/link_security/`.
 
 ## test_tcp_transport.cpp
 
-The file pins the `Transport` contract as `transport.hpp` writes it and needs no hardware. The
-suite `Medium_TransportConformanceTest` is typed over one rig, TCP on `127.0.0.1` with port 0. The
-same promises run on an `InProcessFabric` in `tests/extension/in_process_transport/README.md`. The
-tests wait on recorded events with a 10 s limit and never on a sleep.
+The file runs the `TransportContract` suite of `tests/support/transport_contract.hpp` on `TCPTransport`
+and adds the promise only a TCP writer thread can keep. The contract is one typed suite with one case
+per promise; `tests/extension/in_process_transport/README.md` lists the cases and the in-process
+instantiation, which runs small. Here the rig is TCP on `127.0.0.1` with port 0: `Medium_TCPTransport`
+instantiates `TransportContract` and `ThreadedTransportContract` on it, and an `EventRecorder` (also in
+that header) waits on recorded events with a 10 s limit, never on a sleep.
 
 | Test | What it proves |
 | --- | --- |
-| `EventRecorder` | `EventRecorder` implements `TransportEvents`, copies every event into a list and lets a test wait until the list satisfies a condition. A test may set a reaction, which runs inside the event on the transport's thread, outside the recorder's lock. |
-| `DeliversInOrderPerPeer` | Each end queues 500 control frames that carry a counter. Each receiver must see the counters in order, and the byte counters must cover 16 bytes for each frame. |
-
-### `PeerLostOnceAfterLastFrame`
-
-The worker queues 100 frames and calls `close_peer()`. The master must record the connection, the
-100 frames in order and one `ClosedByPeer` loss, 102 events in all, counted after both transports
-have stopped. The worker must record one `ClosedLocally` loss and then one `on_connect_abandoned()`,
-since its reconnect is off. A send to the closed peer returns `UnknownPeer` on both ends.
-
-| Test | What it proves |
-| --- | --- |
-| `NoCallbackAfterStop` | A thread floods the master with frames while the test stops the master. The number of events the master recorded when `stop()` returned must not grow afterwards, and `stop()` must report no loss. |
-| `SendFromCallbackAllowed` | The master sends from `on_peer_connected()` and echoes every frame from inside `on_frame()`; the worker calls `close_peer()` from inside the event of the last echo. Every send must return `Queued` and the echoes must arrive in order, which fails if a transport holds a lock across an event. |
-
-### `SendAfterStopReturnsStopped`
-
-`send()` returns `Stopped` before `start()` and after `stop()`, and `UnknownPeer` in between for an
-id that names nobody. `send_stream()` on a stopped transport destroys its source before it returns.
-A second `start()` returns `AlreadyStarted`, also after `stop()`, and a second `stop()` does
-nothing.
-
-| Test | What it proves |
-| --- | --- |
-| `ControlFrameOvertakesStream` | A stream of 8 chunks holds its second chunk until the test has queued a control frame. The control frame must arrive after at most 2 chunks, and the chunks must arrive in order with the last-chunk flag on the eighth only. |
+| `Medium_TCPTransport/TransportContract` and `ThreadedTransportContract` | Every case of the contract holds over loopback sockets. |
+| `Medium_TCPTransportStreams.ControlFrameOvertakesStream` | A stream of 8 chunks holds its second chunk until the test has queued a control frame. The control frame must arrive after at most 2 chunks, and the chunks must arrive in order with the last-chunk flag on the eighth only. |
 | `GatedSource` | `GatedSource` is the stream of that test. Its wait stands in for a writer that is busy with one chunk; a production `FrameSource` never waits. |
 
 ## test_worker_agent.cpp
