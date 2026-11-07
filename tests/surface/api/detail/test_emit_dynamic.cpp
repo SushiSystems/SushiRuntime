@@ -40,17 +40,17 @@
 
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the dynamic-node test, which runs a description on the program's runtime. */
-class Medium_EmitDynamic : public TestSupport::RuntimeTest
+/** @brief Fixture of the dynamic-node test, which runs a description on a host runtime. */
+class Small_EmitDynamic : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that the kernel runs over the live count and keeps its bindings. */
-TEST_F(Medium_EmitDynamic, TheKernelRunsOverTheLiveCount)
+TEST_F(Small_EmitDynamic, TheKernelRunsOverTheLiveCount)
 {
     constexpr std::size_t K_CAPACITY = 8;
     constexpr std::size_t K_LIVE = 5;
@@ -63,7 +63,7 @@ TEST_F(Medium_EmitDynamic, TheKernelRunsOverTheLiveCount)
         controls, nullptr, {}, {BufferRegion(words)}, K_CAPACITY,
         [words](std::size_t index) { words[index] = 1; }, K_CAPACITY);
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(description.kind, Detail::NodeKind::Dynamic);
     EXPECT_EQ(description.bindings, controls);

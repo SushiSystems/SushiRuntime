@@ -3,8 +3,10 @@
 The tests of `Buffer` and `State`, the handles of `api/data/`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
-Every test that allocates a handle takes the program's runtime from `TestSupport::RuntimeTest`. The
-tests of an adopting `Buffer` build it over a made-up address with `tests/support/adopted_handles.hpp`
+Every test that allocates a handle takes a host runtime from `TestSupport::HostRuntimeTest` and runs
+small, except the death tests, the aligned-allocation rows and the device-resident tests that run a
+kernel on the device, which take the program's runtime from `TestSupport::RuntimeTest`. The tests of
+an adopting `Buffer` build it over a made-up address with `tests/support/adopted_handles.hpp`
 and run small. The tests that stop the process are death tests and run medium.
 
 ## test_buffer.cpp
@@ -12,7 +14,8 @@ and run small. The tests that stop the process are death tests and run medium.
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
 an allocation does with a count it cannot hold, the queries both answer, which device indices and
 residencies are refused, and which element types are accepted. Most handles are shared USM on
-device 0. The device-resident handles allocate on device 0 as the `Medium_DeviceResident` tests do, so
+device 0. The device-resident handles allocate on device 0 as the `Medium_DeviceResident` and
+`Small_DeviceResident` tests do, so
 the file needs no cluster and no more devices than that file.
 
 ### `window_pattern`, `expect_every_range_call_stops`

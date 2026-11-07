@@ -38,7 +38,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -63,14 +63,14 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the rows that add a node stating parameters to a graph of the program's runtime. */
-class Medium_NodeParameterLimit : public TestSupport::RuntimeTest,
+/** @brief Fixture of the rows that add a node stating parameters to a graph of a host runtime. */
+class Small_NodeParameterLimit : public TestSupport::HostRuntimeTest,
                                   public ::testing::WithParamInterface<ParameterRow>
 {
 };
 
 /** @brief Tests that parameters up to the limit are accepted and one past it is refused. */
-TEST_P(Medium_NodeParameterLimit, ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused)
+TEST_P(Small_NodeParameterLimit, ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused)
 {
     const Runtime& rt = runtime();
     auto values = rt.buffer<std::uint32_t>(K_WIDTH).value();
@@ -87,7 +87,7 @@ TEST_P(Medium_NodeParameterLimit, ParametersUpToTheLimitAreAcceptedAndOnePastIsR
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Rows, Medium_NodeParameterLimit,
+    Rows, Small_NodeParameterLimit,
     ::testing::Values(ParameterRow{"AtTheLimit", NodeOptions::K_MAX_PARAMETERS, false, 1},
                       ParameterRow{"OnePastTheLimit", NodeOptions::K_MAX_PARAMETERS + 1, true, 0}),
     row_name);

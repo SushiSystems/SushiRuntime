@@ -38,19 +38,18 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_captured.hpp>
 
-#include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the captured-node test, which runs a description on the program's runtime. */
-class Medium_EmitCaptured : public TestSupport::RuntimeTest
+/** @brief Fixture of the captured-node test, which runs a description on a host runtime. */
+class Small_EmitCaptured : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that the kernel reads one capture and writes the other at each index. */
-TEST_F(Medium_EmitCaptured, TheKernelReceivesEachPointer)
+TEST_F(Small_EmitCaptured, TheKernelReceivesEachPointer)
 {
     constexpr std::size_t K_COUNT = 8;
     auto in = runtime().buffer<int>(K_COUNT).value();
@@ -62,7 +61,7 @@ TEST_F(Medium_EmitCaptured, TheKernelReceivesEachPointer)
         std::make_tuple(static_cast<const int*>(in.data()), out.data()),
         [](std::size_t index, const int* source, int* target) { target[index] = source[index] * 2; });
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(description.width, K_COUNT);
     EXPECT_EQ(TestSupport::contents(out), std::vector<int>(K_COUNT, 10));

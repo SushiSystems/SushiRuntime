@@ -40,6 +40,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -100,13 +101,18 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the fluent surface tests, which run on the program's runtime. */
+/** @brief Fixture of the fluent surface tests whose kernels have no host form, which run on the program's runtime. */
 class Medium_FluentAPI : public TestSupport::RuntimeTest
 {
 };
 
+/** @brief Fixture of the fluent surface tests that run on a host runtime. */
+class Small_FluentAPI : public TestSupport::HostRuntimeTest
+{
+};
+
 /** @brief Tests the RunReport fields after a multi-step run. */
-TEST_F(Medium_FluentAPI, RunReportFieldsAfterMultiStep)
+TEST_F(Small_FluentAPI, RunReportFieldsAfterMultiStep)
 {
     constexpr std::size_t N     = 32;
     constexpr std::size_t STEPS = 4;
@@ -185,7 +191,7 @@ TEST_F(Medium_FluentAPI, RangeKernelAdd)
  * @brief Tests that add(reads, writes, n, kernel) orders a writer before the reader that
  *        squares its values.
  */
-TEST_F(Medium_FluentAPI, PointerTrackedAddOrdering)
+TEST_F(Small_FluentAPI, PointerTrackedAddOrdering)
 {
     constexpr std::size_t N = 32;
     auto buf = runtime().buffer<int>(N).value();
@@ -276,7 +282,7 @@ TEST_F(Medium_FluentAPI, TrackedNdRangeOrdering)
  * @brief Tests that two writers of disjoint halves stay unordered and a whole-buffer reader runs
  *        after both.
  */
-TEST_F(Medium_FluentAPI, SubRegionDisjointWritesThenWholeRead)
+TEST_F(Small_FluentAPI, SubRegionDisjointWritesThenWholeRead)
 {
     constexpr std::size_t N = 64;
     auto buf = runtime().buffer<int>(N).value();
@@ -298,7 +304,7 @@ TEST_F(Medium_FluentAPI, SubRegionDisjointWritesThenWholeRead)
 }
 
 /** @brief Tests that a standalone Buffer is seeded on the host, used in a graph task through its data pointer and read back. */
-TEST_F(Medium_FluentAPI, BufferAllocateUseAndReadBack)
+TEST_F(Small_FluentAPI, BufferAllocateUseAndReadBack)
 {
     constexpr std::size_t N = 256;
     auto src = runtime().buffer<float>(N).value();
@@ -320,7 +326,7 @@ TEST_F(Medium_FluentAPI, BufferAllocateUseAndReadBack)
 }
 
 /** @brief Tests that moving a Buffer leaves the sender empty and the receiver holding the allocation. */
-TEST_F(Medium_FluentAPI, BufferMoveLeavesSenderEmpty)
+TEST_F(Small_FluentAPI, BufferMoveLeavesSenderEmpty)
 {
     auto buf = runtime().buffer<int>(16).value();
 
@@ -332,13 +338,13 @@ TEST_F(Medium_FluentAPI, BufferMoveLeavesSenderEmpty)
 }
 
 /** @brief Fixture of the Graph::size() tests; the parameter is how many rules the graph records. */
-class Medium_FluentGraphSize : public TestSupport::RuntimeTest,
-                               public ::testing::WithParamInterface<std::size_t>
+class Small_FluentGraphSize : public TestSupport::HostRuntimeTest,
+                              public ::testing::WithParamInterface<std::size_t>
 {
 };
 
 /** @brief Tests that Graph::size() equals the number of add() calls made so far. */
-TEST_P(Medium_FluentGraphSize, GraphSizeTracksAdds)
+TEST_P(Small_FluentGraphSize, GraphSizeTracksAdds)
 {
     auto f = runtime().state<int>(4).value();
     auto g = runtime().graph();
@@ -347,10 +353,10 @@ TEST_P(Medium_FluentGraphSize, GraphSizeTracksAdds)
     EXPECT_EQ(g.size(), GetParam());
 }
 
-INSTANTIATE_TEST_SUITE_P(Adds, Medium_FluentGraphSize, ::testing::Values(0u, 1u, 2u));
+INSTANTIATE_TEST_SUITE_P(Adds, Small_FluentGraphSize, ::testing::Values(0u, 1u, 2u));
 
 /** @brief Tests that run(0) returns immediately and reports no work. */
-TEST_F(Medium_FluentAPI, RunZeroStepsIsNoOp)
+TEST_F(Small_FluentAPI, RunZeroStepsIsNoOp)
 {
     constexpr std::size_t N = 8;
     auto field = runtime().state<int>(N).value();
@@ -364,8 +370,13 @@ TEST_F(Medium_FluentAPI, RunZeroStepsIsNoOp)
     EXPECT_EQ(TestSupport::contents(field), std::vector<int>(N, 42)) << "run(0) must not execute any steps.";
 }
 
-/** @brief Fixture of the multidimensional, variadic, wrapper and captured-argument tests. */
+/** @brief Fixture of the tiled-kernel test, which runs on the program's runtime. */
 class Medium_FluentHardening : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the multidimensional, variadic, wrapper and captured-argument tests. */
+class Small_FluentHardening : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -373,7 +384,7 @@ class Medium_FluentHardening : public TestSupport::RuntimeTest
  * @brief Tests that add_untracked(Extent<2>, kernel) iterates the whole box and writes a row-major
  *        index.
  */
-TEST_F(Medium_FluentHardening, Extent2DPerElementMap)
+TEST_F(Small_FluentHardening, Extent2DPerElementMap)
 {
     constexpr std::size_t W = 8, H = 6;
     auto buf = runtime().buffer<int>(W * H).value();
@@ -416,7 +427,7 @@ TEST_F(Medium_FluentHardening, NdRange2DTiledKernel)
 }
 
 /** @brief Tests that add_rule(Extent<2>, state, kernel) leaves S*y in row y after S steps. */
-TEST_F(Medium_FluentHardening, State2DSteppedUpdate)
+TEST_F(Small_FluentHardening, State2DSteppedUpdate)
 {
     constexpr std::size_t W = 4, H = 4, S = 3;
     auto field = runtime().state<int>(W * H).value();
@@ -438,7 +449,7 @@ TEST_F(Medium_FluentHardening, State2DSteppedUpdate)
  * @brief Tests that add(out, in0, in1, kernel) computes next = cur + a + b from previous-step
  * data.
  */
-TEST_F(Medium_FluentHardening, VariadicCoupledThreeInputs)
+TEST_F(Small_FluentHardening, VariadicCoupledThreeInputs)
 {
     constexpr std::size_t N = 32;
     auto u = runtime().state<int>(N).value();
@@ -463,7 +474,7 @@ TEST_F(Medium_FluentHardening, VariadicCoupledThreeInputs)
 }
 
 /** @brief Tests that the Reads and Writes wrappers order a writer before a dependent reader. */
-TEST_F(Medium_FluentHardening, ReadsWritesWrappersOrdering)
+TEST_F(Small_FluentHardening, ReadsWritesWrappersOrdering)
 {
     constexpr std::size_t N = 32;
     auto buf = runtime().buffer<int>(N).value();
@@ -482,7 +493,7 @@ TEST_F(Medium_FluentHardening, ReadsWritesWrappersOrdering)
  * @brief Tests that In and Out captured arguments hand the kernel raw pointers and register the
  *        dependency.
  */
-TEST_F(Medium_FluentHardening, InOutCapturedArguments)
+TEST_F(Small_FluentHardening, InOutCapturedArguments)
 {
     constexpr std::size_t N = 64;
     auto src = runtime().buffer<int>(N).value();
@@ -499,7 +510,7 @@ TEST_F(Medium_FluentHardening, InOutCapturedArguments)
 }
 
 /** @brief Tests that an interior-only update leaves the one-cell border untouched. */
-TEST_F(Medium_FluentHardening, InteriorOnlyHaloUpdate)
+TEST_F(Small_FluentHardening, InteriorOnlyHaloUpdate)
 {
     constexpr std::size_t W = 6, H = 6;
     auto buf = runtime().buffer<int>(W * H).value();
@@ -519,7 +530,7 @@ TEST_F(Medium_FluentHardening, InteriorOnlyHaloUpdate)
 }
 
 /** @brief Fixture of the State replay, run_until, coupled field, recompilation and error tests. */
-class Medium_FluentLifecycle : public TestSupport::RuntimeTest
+class Small_FluentLifecycle : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -528,7 +539,7 @@ class Medium_FluentLifecycle : public TestSupport::RuntimeTest
  *
  * One update rule increments every element by 1 each step. Verifies that the compiled plan is properly replayed and State is double-buffered so each step reads the previous field and writes the next one.
  */
-TEST_F(Medium_FluentLifecycle, StateReplayIncrement)
+TEST_F(Small_FluentLifecycle, StateReplayIncrement)
 {
     constexpr std::size_t N     = 1024;
     constexpr std::size_t STEPS = 64;
@@ -549,7 +560,7 @@ TEST_F(Medium_FluentLifecycle, StateReplayIncrement)
  *
  * Verifies that the second run resets the node state the first run consumed, ensuring continuous execution.
  */
-TEST_F(Medium_FluentLifecycle, ReplayAcrossCalls)
+TEST_F(Small_FluentLifecycle, ReplayAcrossCalls)
 {
     constexpr std::size_t N = 256;
     auto field = runtime().state<int>(N).value();
@@ -568,7 +579,7 @@ TEST_F(Medium_FluentLifecycle, ReplayAcrossCalls)
  *
  * Checks its stop condition before each step using the State the previous step produced.
  */
-TEST_F(Medium_FluentLifecycle, RunUntilStopsOnCondition)
+TEST_F(Small_FluentLifecycle, RunUntilStopsOnCondition)
 {
     constexpr std::size_t N = 64;
     auto field = runtime().state<int>(N).value();
@@ -586,7 +597,7 @@ TEST_F(Medium_FluentLifecycle, RunUntilStopsOnCondition)
  *
  * Both rules read the previous step's data, verifying the advance-after-step rule rather than per-rule swapping.
  */
-TEST_F(Medium_FluentLifecycle, CoupledFieldsAreJacobi)
+TEST_F(Small_FluentLifecycle, CoupledFieldsAreJacobi)
 {
     constexpr std::size_t N     = 128;
     constexpr std::size_t STEPS = 10;
@@ -612,7 +623,7 @@ TEST_F(Medium_FluentLifecycle, CoupledFieldsAreJacobi)
  *
  * The next run recompiles with the added rule, and existing state continues from where it left off.
  */
-TEST_F(Medium_FluentLifecycle, MutationRecompiles)
+TEST_F(Small_FluentLifecycle, MutationRecompiles)
 {
     constexpr std::size_t N = 128;
     auto a = runtime().state<int>(N).value();
@@ -635,7 +646,7 @@ TEST_F(Medium_FluentLifecycle, MutationRecompiles)
  *
  * The non-throwing run() channel reports an InvalidGraph error without throwing an exception.
  */
-TEST_F(Medium_FluentLifecycle, EmptyGraphIsInvalid)
+TEST_F(Small_FluentLifecycle, EmptyGraphIsInvalid)
 {
     auto sim = runtime().graph();
 
@@ -652,7 +663,7 @@ TEST_F(Medium_FluentLifecycle, EmptyGraphIsInvalid)
  * the Buffer was freed returns a DanglingResource error through run() instead
  * of dispatching a kernel against released memory.
  */
-TEST_F(Medium_FluentLifecycle, DanglingResourceIsReported)
+TEST_F(Small_FluentLifecycle, DanglingResourceIsReported)
 {
     constexpr std::size_t N = 64;
     auto sim = runtime().graph();

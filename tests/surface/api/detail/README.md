@@ -3,8 +3,11 @@
 The tests of the callable traits, the node emitters and the fault record of `api/detail/`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
-A test here that runs a described node takes the program's runtime from `TestSupport::RuntimeTest` and
-allocates its data through `Runtime::buffer`. A test that builds a description and reads its fields
+A test here that runs a described node allocates its data through `Runtime::buffer`. When the
+description has a host form (`NodeDescription::host_form`), the test calls it on a host runtime from
+`TestSupport::HostRuntimeTest` and runs small. A description with no host form (a raw command group,
+a queue body, a device-sized launch, a late-count resolver) takes the program's runtime from
+`TestSupport::RuntimeTest` and runs medium. A test that builds a description and reads its fields
 touches no device and runs small. Headers whose tests were removed are compiled alone by the
 `compile_*.cpp` files below.
 
@@ -161,14 +164,14 @@ not fit a `std::size_t`, and the refusal made from it.
 | `Small_LaunchReach.ReachSaturatesAtTheLargestSizeWhenTheSumWraps` | The same extent and an `NdRange<1>` at origin `SIZE_MAX - 3` reach `SIZE_MAX`, and `saturated_reach(SIZE_MAX - 7, 8)` is `SIZE_MAX`. |
 | `Small_LaunchReach.ALaunchPastItsHandleIsRefused` | `launch_refusal()` returns an `InvalidGraph` error for a wrapping extent over a handle of 8 elements. |
 | `Small_LaunchReach.ALaunchInsideItsHandleIsNotRefused` | It returns nothing for an extent that fits. |
-| `Medium_LaunchReach.ARefusedLaunchRecordsNoRule` | `add_rule(extent, state, kernel)` with a wrapping extent keeps a refusal and records no rule. A wrapped sum would be 4, which is inside the State. |
+| `Small_LaunchReachRecord.ARefusedLaunchRecordsNoRule` | `add_rule(extent, state, kernel)` with a wrapping extent keeps a refusal and records no rule. A wrapped sum would be 4, which is inside the State. |
 
 ## test_emit_state.cpp
 
 The file covers the nodes `detail/emit_state.hpp` and `detail/emit_dynamic.hpp` build for State
 and coupled rules. `seeded_state` fills the current field with the index plus `K_SEED` and the next
 field with `K_CANARY`, so an element a kernel did not write is recognisable. The cases that build a
-description outside a recorder run it with `run_description()` and read the next field, since no
+description outside a recorder call its `host_form` and read the next field, since no
 advance is registered.
 
 | Test | What it proves |
@@ -191,12 +194,12 @@ The file tests `task_node()`: a task description whose work receives the queue.
 ## test_emit_tracked.cpp
 
 The file tests `launch_node()`, `range_node()` and `raw_node()`: the width each states and the work
-each runs. The description tests are small; the run tests use the program's runtime.
+each runs. The description tests and the launch run test are small; the range and raw run tests use the program's runtime.
 
 | Test | What it proves |
 | --- | --- |
 | `Small_EmitTracked.ALaunchNodeStatesItsKindAndWidth` | A launch is a kernel node of the width it was given. |
-| `Medium_EmitTracked.ALaunchRunsOncePerIndex` | A launch over a count runs the kernel once per index. |
+| `Small_EmitTrackedRun.ALaunchRunsOncePerIndex` | A launch over a count runs the kernel once per index. |
 | `Small_EmitTracked.ARangeNodeStatesItsWidth` | A range description states the width it was given. |
 | `Medium_EmitTracked.ARangeKernelGetsTheWholeRange` | A range kernel is handed the whole range and the handler. |
 | `Small_EmitTracked.ARawNodeKeepsTheStatedWidth` | A raw command group keeps the width the caller states. |
@@ -208,7 +211,7 @@ The file tests the untracked emitters: no regions, the device stated, and the wo
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_EmitUntracked.AnUntrackedLaunchNamesItsDevice` | An untracked launch names its device, touches no region and runs its kernel. |
+| `Small_EmitUntrackedRun.AnUntrackedLaunchNamesItsDevice` | An untracked launch names its device, touches no region and runs its kernel. |
 | `Small_EmitUntracked.ARangeFormStatesItsWidthAndDevice` | The range form states the width and the device it was given. |
 | `Small_EmitUntracked.ARawFormIsUntrackedOnItsDevice` | The raw form is untracked and states the device it was given. |
 
@@ -257,7 +260,7 @@ The file tests `resolve_live_range()` and `read_late_window()`: windows inside a
 
 ## test_node_stamp.cpp
 
-The file tests the parameter limit of a node, shown through `Graph::add`: `Medium_NodeParameterLimit`
+The file tests the parameter limit of a node, shown through `Graph::add`: `Small_NodeParameterLimit`
 runs one row at `NodeOptions::K_MAX_PARAMETERS` parameters and one row past it.
 
 | Row | What it proves |

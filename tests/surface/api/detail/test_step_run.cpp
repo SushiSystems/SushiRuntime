@@ -34,17 +34,17 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the tests that run graphs of the program's runtime to a stop test or a cancel. */
-class Medium_StepRun : public TestSupport::RuntimeTest
+/** @brief Fixture of the tests that run graphs of a host runtime to a stop test or a cancel. */
+class Small_StepRun : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that run_until takes a step for each time its stop test answers false. */
-TEST_F(Medium_StepRun, RunUntilStepsOncePerFalseAnswerOfItsStopTest)
+TEST_F(Small_StepRun, RunUntilStepsOncePerFalseAnswerOfItsStopTest)
 {
     const Runtime& rt = runtime();
     auto steps = rt.buffer<int>(1).value();
@@ -61,7 +61,7 @@ TEST_F(Medium_StepRun, RunUntilStepsOncePerFalseAnswerOfItsStopTest)
 }
 
 /** @brief Tests that a graph runs after another graph's run has returned. */
-TEST_F(Medium_StepRun, AGraphRunsAfterAnotherGraphsRunHasReturned)
+TEST_F(Small_StepRun, AGraphRunsAfterAnotherGraphsRunHasReturned)
 {
     const Runtime& rt = runtime();
     auto marks = rt.buffer<int>(2).value();
@@ -81,7 +81,7 @@ TEST_F(Medium_StepRun, AGraphRunsAfterAnotherGraphsRunHasReturned)
 }
 
 /** @brief Tests that cancelling a graph that has no step pending leaves its next run untouched. */
-TEST_F(Medium_StepRun, CancellingAGraphWithNoStepPendingChangesNothing)
+TEST_F(Small_StepRun, CancellingAGraphWithNoStepPendingChangesNothing)
 {
     const Runtime& rt = runtime();
     auto mark = rt.buffer<int>(1).value();

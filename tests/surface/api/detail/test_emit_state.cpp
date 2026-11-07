@@ -45,7 +45,7 @@
 #include "description_runner.hpp"
 #include "run_recorder.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -126,14 +126,14 @@ namespace
         return widths;
     }
 
-    /** @brief Fixture of the tests that build state nodes on the program's runtime. */
-    class Medium_StateEmitters : public TestSupport::RuntimeTest
+    /** @brief Fixture of the tests that build state nodes on a host runtime. */
+    class Small_StateEmitters : public TestSupport::HostRuntimeTest
     {
     };
 } // namespace
 
 /** @brief Tests that a coupled rule with const inputs computes from both States it reads. */
-TEST_F(Medium_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
+TEST_F(Small_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 {
     const Runtime& rt = runtime();
     auto out = seeded_state(rt);
@@ -154,7 +154,7 @@ TEST_F(Medium_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 }
 
 /** @brief Tests that State, coupled and untracked nodes report the width of their launch. */
-TEST_F(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
+TEST_F(Small_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
 {
     const Runtime& rt = runtime();
     auto whole = seeded_state(rt);
@@ -185,7 +185,7 @@ TEST_F(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth
 }
 
 /** @brief Tests the State emitter over a launch, added outside a recorder. */
-TEST_F(Medium_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
+TEST_F(Small_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto field = seeded_state(runtime());
     const Detail::NodeDescription described = Detail::state_launch_node(
@@ -194,13 +194,13 @@ TEST_F(Medium_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
             next[i] = current[i] + 1u;
         });
 
-    Testing::run_description(runtime(), described);
+    described.host_form();
 
     EXPECT_EQ(next_words(field), next_after_increment_of(K_PREFIX));
 }
 
 /** @brief Tests the coupled emitter over a launch, added outside a recorder. */
-TEST_F(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
+TEST_F(Small_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
     auto out = seeded_state(runtime());
     auto input = seeded_state(runtime());
@@ -211,13 +211,13 @@ TEST_F(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
             next[i] = current[i] + 2u * other[i];
         });
 
-    Testing::run_description(runtime(), described);
+    described.host_form();
 
     EXPECT_EQ(next_words(out), seed_words_times(3u));
 }
 
 /** @brief Tests the late-bound State emitter, added outside a recorder. */
-TEST_F(Medium_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
+TEST_F(Small_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
     auto field = seeded_state(runtime());
     const Detail::NodeDescription described = Detail::dynamic_state_node(
@@ -225,7 +225,7 @@ TEST_F(Medium_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
         nullptr, std::vector<BufferRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
-    Testing::run_description(runtime(), described);
+    described.host_form();
 
     EXPECT_EQ(next_words(field), next_after_increment_of(K_PREFIX));
 }

@@ -53,8 +53,11 @@ a test could break: its name and project are constants.
 
 ## test_fluent.cpp
 
-The file covers the fluent surface the other files of this folder reach only in passing. Every test
-runs on the program's runtime, fills its buffers through `TestSupport::fill_with` and compares the
+The file covers the fluent surface the other files of this folder reach only in passing. A test whose
+kernels have a host form runs small on a host runtime (`Small_FluentAPI`, `Small_FluentGraphSize`,
+`Small_FluentHardening`, `Small_FluentLifecycle`). A test that drives a raw handler, a range kernel with a
+handler, an `NdRange` or the wall clock runs medium on the program's runtime (`Medium_FluentAPI`,
+`Medium_FluentHardening`). Every test fills its buffers through `TestSupport::fill_with` and compares the
 whole result with a vector, so no body loops.
 
 | Test | What it proves |

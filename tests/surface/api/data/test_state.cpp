@@ -39,7 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -112,14 +112,14 @@ namespace
             fields.push_back(seeded_state(rt));
     }
 
-    /** @brief Fixture of the tests that record rules on States of the program's runtime and move them. */
-    class Medium_StateMove : public TestSupport::RuntimeTest
+    /** @brief Fixture of the tests that record rules on States of a host runtime and move them. */
+    class Small_StateMove : public TestSupport::HostRuntimeTest
     {
     };
 } // namespace
 
 /** @brief Tests that a rule recorded before a move construction steps the moved-to State. */
-TEST_F(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
+TEST_F(Small_StateMove, ARuleFollowsAStateMovedAfterAdd)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -133,7 +133,7 @@ TEST_F(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
 }
 
 /** @brief Tests that a rule recorded on a vector element survives the vector reallocating. */
-TEST_F(Medium_StateMove, ARuleFollowsAStateItsVectorReallocated)
+TEST_F(Small_StateMove, ARuleFollowsAStateItsVectorReallocated)
 {
     const Runtime& rt = runtime();
     std::vector<State<Word>> fields;
@@ -149,7 +149,7 @@ TEST_F(Medium_StateMove, ARuleFollowsAStateItsVectorReallocated)
 }
 
 /** @brief Tests that a coupled rule follows the State it writes and the State it reads. */
-TEST_F(Medium_StateMove, ACoupledRuleFollowsItsMovedStates)
+TEST_F(Small_StateMove, ACoupledRuleFollowsItsMovedStates)
 {
     const Runtime& rt = runtime();
     auto out = seeded_state(rt);
@@ -171,7 +171,7 @@ TEST_F(Medium_StateMove, ACoupledRuleFollowsItsMovedStates)
 }
 
 /** @brief Tests that a late-bound State rule follows the State through a move. */
-TEST_F(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
+TEST_F(Small_StateMove, ADynamicStateRuleFollowsAMovedState)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -187,7 +187,7 @@ TEST_F(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
 }
 
 /** @brief Tests that a State assigned over after add() is refused at the next run. */
-TEST_F(Medium_StateMove, AStateAssignedOverRefusesTheRun)
+TEST_F(Small_StateMove, AStateAssignedOverRefusesTheRun)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -203,7 +203,7 @@ TEST_F(Medium_StateMove, AStateAssignedOverRefusesTheRun)
 }
 
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */
-TEST_F(Medium_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
+TEST_F(Small_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);

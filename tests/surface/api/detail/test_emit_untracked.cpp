@@ -37,19 +37,18 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
 
-#include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the test that runs an untracked description on the program's runtime. */
-class Medium_EmitUntracked : public TestSupport::RuntimeTest
+/** @brief Fixture of the test that runs an untracked description on a host runtime. */
+class Small_EmitUntrackedRun : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that an untracked launch names its device and touches no region. */
-TEST_F(Medium_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
+TEST_F(Small_EmitUntrackedRun, AnUntrackedLaunchNamesItsDevice)
 {
     auto data = runtime().buffer<int>(4).value();
     TestSupport::fill_with(data, 0);
@@ -57,7 +56,7 @@ TEST_F(Medium_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
     const Detail::NodeDescription description = Detail::untracked_launch_node(
         std::size_t{4}, 0, [words](std::size_t index) { words[index] = 1; });
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(description.kind, Detail::NodeKind::Untracked);
     EXPECT_EQ(description.device, 0u);

@@ -44,6 +44,7 @@
 
 #include "support/adopted_handles.hpp"
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -198,8 +199,8 @@ namespace DataHandlesTests
         }
     } // namespace
 
-    /** @brief Fixture of the range tests that allocate handles on the program's runtime. */
-    class Medium_DataHandles : public TestSupport::RuntimeTest
+    /** @brief Fixture of the range tests that allocate handles on a host runtime. */
+    class Small_DataHandles : public TestSupport::HostRuntimeTest
     {
     };
 
@@ -266,7 +267,7 @@ namespace DataHandlesTests
         window_row_name);
 
     /** @brief Tests that a zero-length window at the end of a Buffer is accepted. */
-    TEST_F(Medium_DataHandles, EmptyWindowAtTheEndOfABufferIsAccepted)
+    TEST_F(Small_DataHandles, EmptyWindowAtTheEndOfABufferIsAccepted)
     {
         const auto buffer = runtime().buffer<int>(K_SIZE).value();
 
@@ -274,7 +275,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that a zero-length window at the end of a State is accepted. */
-    TEST_F(Medium_DataHandles, EmptyWindowAtTheEndOfAStateIsAccepted)
+    TEST_F(Small_DataHandles, EmptyWindowAtTheEndOfAStateIsAccepted)
     {
         const auto field = runtime().state<int>(K_SIZE).value();
 
@@ -282,7 +283,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that a window which fits round-trips through write_range and read_range. */
-    TEST_F(Medium_DataHandles, FittingWindowRoundTrips)
+    TEST_F(Small_DataHandles, FittingWindowRoundTrips)
     {
         const auto buffer = runtime().buffer<int>(K_SIZE).value();
         TestSupport::fill_with(buffer, 0);
@@ -334,7 +335,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that a State and a Buffer allocated alike report the same metadata. */
-    TEST_F(Medium_DataHandles, StateAndBufferReportTheSameMetadata)
+    TEST_F(Small_DataHandles, StateAndBufferReportTheSameMetadata)
     {
         const auto buffer = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
         const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
@@ -347,7 +348,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that State::region names a byte window of the current field. */
-    TEST_F(Medium_DataHandles, StateRegionNamesAWindowOfTheCurrentField)
+    TEST_F(Small_DataHandles, StateRegionNamesAWindowOfTheCurrentField)
     {
         const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
 
@@ -359,7 +360,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that a trivially copyable struct instantiates Buffer and round-trips. */
-    TEST_F(Medium_DataHandles, TriviallyCopyableStructRoundTripsThroughABuffer)
+    TEST_F(Small_DataHandles, TriviallyCopyableStructRoundTripsThroughABuffer)
     {
         const auto buffer = runtime().buffer<Pair>(2).value();
         const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
@@ -371,7 +372,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that a trivially copyable struct instantiates State and round-trips. */
-    TEST_F(Medium_DataHandles, TriviallyCopyableStructRoundTripsThroughAState)
+    TEST_F(Small_DataHandles, TriviallyCopyableStructRoundTripsThroughAState)
     {
         const auto field = runtime().state<Pair>(2).value();
         const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
@@ -470,8 +471,13 @@ namespace DeviceResidentTests
         }
     } // namespace
 
-    /** @brief Fixture of the tests that allocate with a residency on the program's runtime. */
+    /** @brief Fixture of the tests that put a device-resident handle through a device kernel. */
     class Medium_DeviceResident : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the tests that allocate with a residency on a host runtime. */
+    class Small_DeviceResident : public TestSupport::HostRuntimeTest
     {
     };
 
@@ -494,7 +500,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that a buffer allocated on the device reports Device residency and no host access. */
-    TEST_F(Medium_DeviceResident, ABufferAllocatedOnTheDeviceIsNotHostAccessible)
+    TEST_F(Small_DeviceResident, ABufferAllocatedOnTheDeviceIsNotHostAccessible)
     {
         const auto buf = runtime().buffer<int>(16, DeviceIndex{0}, Residency::Device).value();
 
@@ -503,7 +509,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that read_range returns only the window asked for of a device-resident buffer. */
-    TEST_F(Medium_DeviceResident, ReadRangeOfADeviceBufferReturnsOnlyTheWindow)
+    TEST_F(Small_DeviceResident, ReadRangeOfADeviceBufferReturnsOnlyTheWindow)
     {
         constexpr std::size_t N = 64;
 
@@ -531,7 +537,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that the host indexes a shared buffer directly and read_range sees what it wrote. */
-    TEST_F(Medium_DeviceResident, DirectHostIndexingOfASharedBufferIsSeenByReadRange)
+    TEST_F(Small_DeviceResident, DirectHostIndexingOfASharedBufferIsSeenByReadRange)
     {
         constexpr std::size_t N = 32;
 
@@ -546,7 +552,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that host() returns a span that indexes the whole shared buffer. */
-    TEST_F(Medium_DeviceResident, HostSpanIndexesSharedBuffer)
+    TEST_F(Small_DeviceResident, HostSpanIndexesSharedBuffer)
     {
         constexpr std::size_t N = 16;
 
@@ -563,7 +569,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that a kernel writes a host-resident buffer and the host reads it by direct indexing. */
-    TEST_F(Medium_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
+    TEST_F(Small_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
     {
         constexpr std::size_t N = 64;
 

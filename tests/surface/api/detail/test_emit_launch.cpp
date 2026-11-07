@@ -37,7 +37,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -90,13 +90,13 @@ TEST(Small_LaunchReach, ALaunchInsideItsHandleIsNotRefused)
     EXPECT_FALSE(Detail::launch_refusal(inside, K_WIDTH, "add_rule", 0, "the State").has_value());
 }
 
-/** @brief Fixture of the test that records a rule on a State of the program's runtime. */
-class Medium_LaunchReach : public TestSupport::RuntimeTest
+/** @brief Fixture of the test that records a rule on a State of a host runtime. */
+class Small_LaunchReachRecord : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that a refused launch leaves no rule recorded. */
-TEST_F(Medium_LaunchReach, ARefusedLaunchRecordsNoRule)
+TEST_F(Small_LaunchReachRecord, ARefusedLaunchRecordsNoRule)
 {
     const Runtime& rt = runtime();
     auto field = rt.state<Word>(K_WIDTH).value();

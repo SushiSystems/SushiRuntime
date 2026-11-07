@@ -39,6 +39,7 @@
 
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -48,7 +49,12 @@ namespace
     /** @brief Holds the elements every launch here covers. */
     constexpr std::size_t K_COUNT = 16;
 
-    /** @brief Fixture of the tests that run a tracked description on the program's runtime. */
+    /** @brief Fixture of the test that runs a launch description on a host runtime. */
+    class Small_EmitTrackedRun : public TestSupport::HostRuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the tests that run a raw description on the program's runtime. */
     class Medium_EmitTracked : public TestSupport::RuntimeTest
     {
     };
@@ -67,7 +73,7 @@ TEST(Small_EmitTracked, ALaunchNodeStatesItsKindAndWidth)
 }
 
 /** @brief Tests that a launch over a count runs the kernel once per index. */
-TEST_F(Medium_EmitTracked, ALaunchRunsOncePerIndex)
+TEST_F(Small_EmitTrackedRun, ALaunchRunsOncePerIndex)
 {
     auto data = runtime().buffer<int>(K_COUNT).value();
     TestSupport::fill_with(data, 0);
@@ -76,7 +82,7 @@ TEST_F(Medium_EmitTracked, ALaunchRunsOncePerIndex)
         {}, {BufferRegion(words)}, K_COUNT,
         [words](std::size_t index) { words[index] += static_cast<int>(index); });
 
-    Testing::run_description(runtime(), description);
+    description.host_form();
 
     EXPECT_EQ(TestSupport::contents(data), TestSupport::ramp<int>(K_COUNT));
 }
