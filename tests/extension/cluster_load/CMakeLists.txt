@@ -8,4 +8,5 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_cluster_statistics.cpp
         compile_placement_decision.cpp
+        test_in_memory_offload_policy.cpp
         test_offload_policy.cpp)
