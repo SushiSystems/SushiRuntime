@@ -38,6 +38,9 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiLog/log/log_capture.hpp>
+#include <SushiLog/log/log_level.hpp>
+
 #include <SushiRuntime/transport/endpoint.hpp>
 #include <SushiRuntime/network_socket/socket.hpp>
 
@@ -57,6 +60,15 @@ namespace
 
     /** @brief Loopback address the IPv6 tests bind. */
     constexpr const char* K_IPV6_LOOPBACK = "::1";
+
+    /** @brief Holds the OS error the refusing option setter reports. */
+    constexpr int K_REFUSED_OPTION = 4242;
+
+    /** @brief Refuses every option with K_REFUSED_OPTION, as an OS that cannot set it would. */
+    int refuse_option(NativeSocketHandle /*handle*/, int /*level*/, int /*name*/, int /*value*/)
+    {
+        return K_REFUSED_OPTION;
+    }
 
     /**
      * @brief Connects a client to a listener and accepts the other end.
@@ -303,6 +315,48 @@ TEST_F(Medium_ListeningSocketTest, ConnectingByNameReachesTheListener)
     ASSERT_TRUE(named.is_ok()) << describe(named);
     EXPECT_EQ(peer.host, K_IPV4_LOOPBACK);
     EXPECT_EQ(peer.port, listener_.local_endpoint().port);
+}
+
+/** @brief Checks that a refused TCP_NODELAY on connect is logged once and the connection stands. */
+TEST_F(Medium_ListeningSocketTest, ARefusedNoDelayOnConnectIsLoggedOnceAndTheConnectionStands)
+{
+    SushiLog::LogCapture capture;
+    Socket client;
+
+    const SocketResult connected =
+        client.connect(listener_.local_endpoint(), K_EVENT_LIMIT, refuse_option);
+
+    ASSERT_TRUE(connected.is_ok()) << describe(connected);
+    EXPECT_TRUE(client.is_open());
+    const std::vector<SushiLog::CapturedRecord> records = capture.records();
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
+    EXPECT_NE(records[0].message.find("TCP_NODELAY could not be set on the connection with " +
+                                      listener_.local_endpoint().to_string()),
+              std::string::npos)
+        << records[0].message;
+    EXPECT_NE(records[0].message.find("(os error 4242)"), std::string::npos) << records[0].message;
+}
+
+/** @brief Checks that a refused TCP_NODELAY on accept is logged once and the connection stands. */
+TEST_F(Medium_ListeningSocketTest, ARefusedNoDelayOnAcceptIsLoggedOnceAndTheConnectionStands)
+{
+    SushiLog::LogCapture capture;
+    Socket client;
+    Socket server;
+    ASSERT_TRUE(client.connect(listener_.local_endpoint(), K_EVENT_LIMIT).is_ok());
+
+    const SocketResult accepted = listener_.accept(server, K_EVENT_LIMIT, refuse_option);
+
+    ASSERT_TRUE(accepted.is_ok()) << describe(accepted);
+    EXPECT_TRUE(server.is_open());
+    const std::vector<SushiLog::CapturedRecord> records = capture.records();
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
+    EXPECT_NE(records[0].message.find("a client of " + listener_.local_endpoint().to_string()),
+              std::string::npos)
+        << records[0].message;
+    EXPECT_NE(records[0].message.find("(os error 4242)"), std::string::npos) << records[0].message;
 }
 
 /** @brief Checks that `localhost` resolves to the IPv4 loopback among its addresses. */

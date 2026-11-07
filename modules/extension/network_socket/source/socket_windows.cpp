@@ -312,6 +312,7 @@ namespace SushiRuntime
              * @param connected Receives the socket when the status is Ok; closed otherwise.
              */
             SocketResult connect_one(const addrinfo& address, std::chrono::milliseconds timeout,
+                                     const SocketOptionSetter& set_option,
                                      SOCKET& connected)
             {
                 const int   length = static_cast<int>(address.ai_addrlen);
@@ -354,8 +355,10 @@ namespace SushiRuntime
                 }
 
                 // A frame is written whole, so Nagle's delay only adds latency.
-                if (!set_option(socket, IPPROTO_TCP, TCP_NODELAY, 1))
-                    Detail::report_no_delay_failure(text, ::WSAGetLastError());
+                const int no_delay_error = set_option(from_native(socket), IPPROTO_TCP,
+                                                      TCP_NODELAY, 1);
+                if (no_delay_error != 0)
+                    Detail::report_no_delay_failure(text, no_delay_error);
                 connected = socket;
                 return SocketResult();
             }
@@ -420,6 +423,17 @@ namespace SushiRuntime
                 return SocketResult();
             }
         } // namespace
+
+        /**
+         * @brief Sets one integer option through setsockopt.
+         */
+        int set_socket_option(NativeSocketHandle handle, int level, int name, int value) noexcept
+        {
+            if (::setsockopt(to_native(handle), level, name, reinterpret_cast<const char*>(&value),
+                             sizeof(value)) == 0)
+                return 0;
+            return ::WSAGetLastError();
+        }
 
         /**
          * @brief Returns the system text of a Winsock error, in English where installed.
@@ -488,7 +502,8 @@ namespace SushiRuntime
         /**
          * @brief Resolves the endpoint and connects to the first address that accepts.
          */
-        SocketResult Socket::connect(const Endpoint& remote, std::chrono::milliseconds timeout)
+        SocketResult Socket::connect(const Endpoint& remote, std::chrono::milliseconds timeout,
+                                     const SocketOptionSetter& set_option)
         {
             if (is_open())
                 return Detail::socket_failure(SocketStatus::InvalidArgument, "connect", 0,
@@ -504,7 +519,7 @@ namespace SushiRuntime
             for (const addrinfo* entry = list.first(); entry != nullptr; entry = entry->ai_next)
             {
                 SOCKET connected = INVALID_SOCKET;
-                result = connect_one(*entry, timeout, connected);
+                result = connect_one(*entry, timeout, set_option, connected);
                 if (result.is_ok())
                 {
                     handle_ = from_native(connected);
@@ -677,7 +692,8 @@ namespace SushiRuntime
         /**
          * @brief Waits for one connection and returns it non-blocking with Nagle off.
          */
-        SocketResult Listener::accept(Socket& accepted, std::chrono::milliseconds timeout)
+        SocketResult Listener::accept(Socket& accepted, std::chrono::milliseconds timeout,
+                                      const SocketOptionSetter& set_option)
         {
             const SOCKET listening = to_native(handle_);
             for (;;)
@@ -707,9 +723,11 @@ namespace SushiRuntime
                                               local_.to_string());
                 }
 
-                if (!set_option(socket, IPPROTO_TCP, TCP_NODELAY, 1))
+                const int no_delay_error = set_option(from_native(socket), IPPROTO_TCP,
+                                                      TCP_NODELAY, 1);
+                if (no_delay_error != 0)
                     Detail::report_no_delay_failure("a client of " + local_.to_string(),
-                                                    ::WSAGetLastError());
+                                                    no_delay_error);
                 accepted = Socket(from_native(socket));
                 return SocketResult();
             }

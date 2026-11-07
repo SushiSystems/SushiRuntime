@@ -22,6 +22,8 @@ same on `::1` and is reported as skipped, with the OS error, on a machine where 
 | --- | --- |
 | `ALargeWriteArrivesWholeThroughAnExactRead` | The payload is 4 MiB and 3 bytes, more than the OS buffers of a loopback connection hold, so the write has to wait for the reader and the read has to collect many pieces. A thread writes while the test thread reads. |
 | `AReplyArrivesWholeThroughAnExactRead` | A 5-byte reply from the accepted end arrives whole at the client. |
+| `ARefusedNoDelayOnConnectIsLoggedOnceAndTheConnectionStands` | `connect()` given a setter that returns an OS error 4242 still returns `Ok` with an open socket, and `LogCapture` holds one `WARN` that names the listener's address and `(os error 4242)`. |
+| `ARefusedNoDelayOnAcceptIsLoggedOnceAndTheConnectionStands` | The same for `accept()`: the accepted socket is open, and the one `WARN` names `a client of` the listener's address and `(os error 4242)`. |
 | `PeerEndpointNamesTheClient` | The accepted end names the client by the loopback host and a non-zero port. |
 | `AnIdleReadTimesOut` | `read_exact` with nothing to read returns `Timeout` and no bytes. |
 | `AnIdleAcceptTimesOut` | `accept` with no client returns `Timeout` and leaves the socket closed. |
@@ -39,5 +41,5 @@ same on `::1` and is reported as skipped, with the OS error, on a machine where 
 
 Each file includes one header alone, `network_socket_log_category.hpp` and `socket_option_report.hpp`, so
 the header carries every include it needs. The first holds a constant, which has no behaviour of its own
-to test. The second logs a refused `TCP_NODELAY`, which the OS never refuses on loopback; its only caller
-is the connection setup, and no test can make that call fail.
+to test. The second logs a refused `TCP_NODELAY`; the two `ARefusedNoDelay...` tests in `test_socket.cpp`
+reach it through a setter that refuses.

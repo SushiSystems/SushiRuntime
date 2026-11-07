@@ -34,6 +34,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,6 +116,23 @@ namespace SushiRuntime
                 return status == SocketStatus::Ok;
             }
         };
+
+        /**
+         * @brief Sets one integer option on an open socket.
+         *
+         * The first parameter is the socket the option applies to, then the protocol level of
+         * the option (IPPROTO_TCP), the option (TCP_NODELAY) and the integer it is set to.
+         * @return 0 when the OS took the option, else the errno or WSAGetLastError() value.
+         */
+        using SocketOptionSetter = std::function<int(NativeSocketHandle handle, int level,
+                                                     int name, int value)>;
+
+        /**
+         * @brief Sets one integer option through the OS; the default of every SocketOptionSetter.
+         * @return 0 when the OS took the option, else the errno or WSAGetLastError() value.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API int set_socket_option(NativeSocketHandle handle, int level,
+                                                              int name, int value) noexcept;
 
         /**
          * @brief Returns the OS text of an error code, in English where the OS has it.
@@ -251,11 +269,15 @@ namespace SushiRuntime
                 /**
                  * @brief Resolves @p remote and connects to the first address that accepts.
                  * @param timeout Limit for each address, not for the whole call.
+                 * @param set_option Sets TCP_NODELAY on the connected socket; a failure is logged
+                 *        and the connection stands.
                  * @pre is_open() is false.
                  * @return The failure of the last address tried when none accepts.
                  */
                 [[nodiscard]] SocketResult connect(const Endpoint& remote,
-                                                   std::chrono::milliseconds timeout);
+                                                   std::chrono::milliseconds timeout,
+                                                   const SocketOptionSetter& set_option =
+                                                       set_socket_option);
 
                 /**
                  * @brief Reads until @p destination is full.
@@ -369,9 +391,13 @@ namespace SushiRuntime
                  * @brief Waits for one connection and returns it non-blocking.
                  * @param accepted Receives the connection; a socket it held is closed.
                  * @param timeout Longest wait before Timeout, so the caller can poll a stop flag.
+                 * @param set_option Sets TCP_NODELAY on the accepted socket; a failure is logged
+                 *        and the connection stands.
                  */
                 [[nodiscard]] SocketResult accept(Socket& accepted,
-                                                  std::chrono::milliseconds timeout);
+                                                  std::chrono::milliseconds timeout,
+                                                  const SocketOptionSetter& set_option =
+                                                      set_socket_option);
 
                 /**
                  * @brief Releases the OS socket; does nothing when it is not open.

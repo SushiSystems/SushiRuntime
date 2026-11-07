@@ -327,7 +327,7 @@ namespace SushiRuntime
              * @param connected Receives the descriptor when the status is Ok; closed otherwise.
              */
             SocketResult connect_one(const addrinfo& address, std::chrono::milliseconds timeout,
-                                     int& connected)
+                                     const SocketOptionSetter& set_option, int& connected)
             {
                 std::string text = to_address_text(address.ai_addr, address.ai_addrlen);
 
@@ -369,8 +369,10 @@ namespace SushiRuntime
                 }
 
                 // A frame is written whole, so Nagle's delay only adds latency.
-                if (!set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1))
-                    Detail::report_no_delay_failure(text, errno);
+                const int no_delay_error = set_option(static_cast<NativeSocketHandle>(descriptor),
+                                                      IPPROTO_TCP, TCP_NODELAY, 1);
+                if (no_delay_error != 0)
+                    Detail::report_no_delay_failure(text, no_delay_error);
                 connected = descriptor;
                 return SocketResult();
             }
@@ -438,6 +440,16 @@ namespace SushiRuntime
         } // namespace
 
         /**
+         * @brief Sets one integer option through setsockopt.
+         */
+        int set_socket_option(NativeSocketHandle handle, int level, int name, int value) noexcept
+        {
+            if (::setsockopt(to_native(handle), level, name, &value, sizeof(value)) == 0)
+                return 0;
+            return errno;
+        }
+
+        /**
          * @brief Returns the strerror text of an errno value.
          */
         std::string describe_os_error(int os_error)
@@ -483,7 +495,8 @@ namespace SushiRuntime
         /**
          * @brief Resolves the endpoint and connects to the first address that accepts.
          */
-        SocketResult Socket::connect(const Endpoint& remote, std::chrono::milliseconds timeout)
+        SocketResult Socket::connect(const Endpoint& remote, std::chrono::milliseconds timeout,
+                                     const SocketOptionSetter& set_option)
         {
             if (is_open())
                 return Detail::socket_failure(SocketStatus::InvalidArgument, "connect", 0,
@@ -497,7 +510,7 @@ namespace SushiRuntime
             for (const addrinfo* entry = list.first(); entry != nullptr; entry = entry->ai_next)
             {
                 int connected = K_NO_DESCRIPTOR;
-                result = connect_one(*entry, timeout, connected);
+                result = connect_one(*entry, timeout, set_option, connected);
                 if (result.is_ok())
                 {
                     handle_ = connected;
@@ -666,7 +679,8 @@ namespace SushiRuntime
         /**
          * @brief Waits for one connection and returns it non-blocking with Nagle off.
          */
-        SocketResult Listener::accept(Socket& accepted, std::chrono::milliseconds timeout)
+        SocketResult Listener::accept(Socket& accepted, std::chrono::milliseconds timeout,
+                                      const SocketOptionSetter& set_option)
         {
             const int listening = to_native(handle_);
             for (;;)
@@ -697,8 +711,11 @@ namespace SushiRuntime
                                               local_.to_string());
                 }
 
-                if (!set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1))
-                    Detail::report_no_delay_failure("a client of " + local_.to_string(), errno);
+                const int no_delay_error = set_option(static_cast<NativeSocketHandle>(descriptor),
+                                                      IPPROTO_TCP, TCP_NODELAY, 1);
+                if (no_delay_error != 0)
+                    Detail::report_no_delay_failure("a client of " + local_.to_string(),
+                                                    no_delay_error);
                 accepted = Socket(static_cast<NativeSocketHandle>(descriptor));
                 return SocketResult();
             }
