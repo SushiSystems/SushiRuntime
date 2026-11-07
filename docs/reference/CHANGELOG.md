@@ -4,10 +4,11 @@
 
 - 2026-11-07 — device: Moved the NUMA routing of `DeviceQueueSet` into `NUMARouteTable`, which is built from NUMA ids alone; the set routes every request as before (RW-103, `numa_route_table.hpp`).
 - 2026-11-07 — machine: Added `admits_class()` and `admits()`, which decide whether a `DeviceFilter` accepts one device; discovery calls them and keeps the same devices as before (RW-103, `device_filter.hpp`).
+- 2026-11-07 — api: Added `AdvancedControls::install_offload()`, which installs or removes the coordinator the runs of a runtime offer their nodes to; a runtime starts with none, as before (RW-107, `advanced_controls.hpp`).
+- 2026-11-07 — network_socket: Gave `Socket::connect()` and `Listener::accept()` a `SocketOptionSetter` parameter whose default, `set_socket_option()`, calls the system; a call that passes nothing behaves as before (RW-106, `socket.hpp`).
 - 2026-11-07 — transport: Added `RecordingTransportEvents`, the in-memory adapter of the `TransportEvents` port, beside the port (RW-105, `recording_transport_events.hpp`).
 - 2026-11-07 — task: Added `RefusingOffloadSink`, an `OffloadSink` whose `resubmit()` throws and counts (RW-105, `refusing_offload_sink.hpp`).
 - 2026-11-07 — cluster_load: Added `InMemoryOffloadPolicy`, the in-memory adapter of the `OffloadPolicy` port (RW-105, `in_memory_offload_policy.hpp`).
-- 2026-11-07 — network_socket: Gave `Socket::connect()` and `Listener::accept()` a `SocketOptionSetter` parameter whose default, `set_socket_option()`, calls the system; a call that passes nothing behaves as before (RW-106, `socket.hpp`).
 - 2026-11-07 — core: Added `AssertionHandlerSlot`, which holds a handler and reports a failure without stopping, and a `version_matches()` form over two versions; the existing calls behave as before (RW-101, `assert.hpp`, `version.hpp`).
 - 2026-11-07 — measurement: Made `CompletionSignal::wait_for()` with a zero budget read the flag and no clock; a positive budget behaves as before (RW-101, `completion_signal.hpp`).
 - 2026-11-07 — execution: Moved the run-observer list out of `RuntimeContext` into `RunObserverRegistry`, so the gate rules run in tests with no device; the context behaves as before (RW-102).

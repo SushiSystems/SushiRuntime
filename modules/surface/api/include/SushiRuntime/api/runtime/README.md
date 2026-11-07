@@ -84,6 +84,14 @@ A caller that reserved cores for its own threads uses `worker_pool()` to verify 
 took effect: a range that did not fit the machine is clamped, and `worker_pool()` reports the
 clamped result, not the request.
 
+### install_offload
+
+`install_offload()` hands the runtime an `Internal::Graph::OffloadCoordinator` that the runs offer
+their nodes to, and null removes it. A runtime starts with none. A test installs the in-memory
+coordinator of `task` through it to see what a run offers. Installing or removing
+one makes every compiled plan stale, so each graph compiles again on its next run. The call is not
+refused while a run is in flight; the caller makes sure none is.
+
 ## placement_scope.hpp
 
 ### PlacementScope

@@ -31,6 +31,8 @@
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
 
 #include <cstddef>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
@@ -44,6 +46,7 @@
 #include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -85,5 +88,10 @@ namespace SushiRuntime
     std::size_t AdvancedControls::device_to_host_bytes() const noexcept
     {
         return Internal::ContextAccess::context(context_).transfers().device_to_host();
+    }
+
+    void AdvancedControls::install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> coordinator) const
+    {
+        Internal::ContextAccess::context(context_).install_offload(std::move(coordinator));
     }
 } // namespace SushiRuntime

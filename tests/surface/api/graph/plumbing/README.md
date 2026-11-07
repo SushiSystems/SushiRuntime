@@ -124,11 +124,13 @@ The file tests PlanCache through Graph: a plan is compiled once and again only w
 | --- | --- |
 | `CompilesOnlyWhenTheGraphChanges` | Runs reuse the plan, and a new node compiles it again. That an observer compiles nothing is held for both graph types by `AnObserverRebuildsNothing` in `test_step_driver.cpp`. |
 | `ARuleChangeDuringACompileRecompilesOnTheNextRun` | A `Testing::HookedCopyTask` sets an empty rule set while `PlanCache::build()` copies it, after the build read the placement record. The next run compiles once more and the run after it does not. |
+| `Regression_TheCoordinatorSeesTheRulesTheCompileRead` | A rule change made while the compile copies the task does not reach that compile's `prepare()`: the next compile, which reads the newer set, prepares with other rules than the first. |
+| `Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion` | A region rebuilt after a new node is prepared again. |
+| `Regression_InstallingOrRemovingACoordinatorRecompiles` | Installing a coordinator, and removing it, each make the next run compile again. |
 
-Three promises have no test here: that a coordinator is prepared with the rules the compile read, that a
-dynamic graph hands the nodes of each rebuilt region to the coordinator, and that installing or removing
-a coordinator makes the plan stale. A coordinator is installed through `Internal::ContextAccess`, which a
-test of the api module does not reach.
+The three regression tests install the in-memory coordinator of `task` through
+`AdvancedControls::install_offload()` for their own scope and remove it after, since the runtime is
+the program's.
 
 ## test_step_driver.cpp
 

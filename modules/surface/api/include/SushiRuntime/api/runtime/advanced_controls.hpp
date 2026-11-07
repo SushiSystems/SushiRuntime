@@ -49,6 +49,12 @@ namespace SushiRuntime
 {
     class Runtime;
 
+    namespace Internal::Graph
+    {
+        /// @brief Names the port that may run graph nodes elsewhere, in task/offload_coordinator.hpp.
+        class OffloadCoordinator;
+    } // namespace Internal::Graph
+
     /**
      * @brief Answers questions about a runtime's devices, workers and counters, and hands
      *        out the queue of a device.
@@ -106,6 +112,15 @@ namespace SushiRuntime
              * @return A cumulative count; implicit shared-USM migration is not in it.
              */
             [[nodiscard]] SUSHIRUNTIME_API std::size_t device_to_host_bytes() const noexcept;
+
+            /**
+             * @brief Installs the coordinator this runtime's runs offer their nodes to; null removes it.
+             * @param coordinator Co-owned while installed; a runtime starts with none.
+             * @pre No run of this runtime is in flight.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            SUSHIRUNTIME_API void
+            install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> coordinator) const;
 
         private:
             friend class Runtime;
