@@ -23,7 +23,7 @@ It includes no header of `topology`, `execution`, `scheduler`, `graph`, `memory`
 caller turns whatever it discovered into descriptors; the module never asks the machine what
 devices exist.
 
-The source is `modules/platform/device/source/device_queue_set.cpp`.
+The sources are `modules/platform/device/source/device_queue_set.cpp` and `numa_route_table.cpp`.
 
 ## Public headers
 
@@ -32,6 +32,7 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 | `device/device_descriptor.hpp` | `DeviceDescriptor`, a SYCL device with its `DeviceDescription` |
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
+| `device/numa_route_table.hpp` | `NUMARouteTable`, the routes from a NUMA node to its devices, built from NUMA ids alone |
 
 ## Behaviour of the set
 
@@ -105,8 +106,9 @@ stays valid.
 
 ### NUMA routing
 
-The constructor builds a table with one route per NUMA node, from node 0 to the highest node
-that holds a device. A route is the ascending list of the device indices on that node. A node
+The constructor builds a `NUMARouteTable` from the NUMA node of each device, with one route per
+NUMA node, from node 0 to the highest node that holds a device. The table holds values and touches
+no device, so its decisions are tested without one. A route is the ascending list of the device indices on that node. A node
 in that range with no device, and every id outside the range (negative ids included), takes the
 fallback route: all devices.
 

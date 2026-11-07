@@ -6,11 +6,19 @@ with the rest; `sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs o
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
-## compile_device_filter.cpp
+## test_device_filter.cpp
 
-Includes `device_filter.hpp` alone, so the build fails if the header misses an include. The
-promise that a default filter admits every device class needs a `Runtime`, which sits above this
-tier; it moves to the `surface/api` runtime tests in job M7.
+The file tests `admits_class()` and `admits()`, which decide on values which devices a
+`DeviceFilter` accepts. That a default runtime drives a device of every class the machine has is
+tested through `Runtime` in `tests/surface/api/runtime/test_runtime_config.cpp`
+(`Medium_DefaultDeviceFilter`).
+
+| Test | What it proves |
+| --- | --- |
+| `Small_DeviceFilterClass.TheDefaultFilterAcceptsTheClass` | Rows of the four classes: the default filter accepts each, with or without fp64. |
+| `Small_DeviceFilterClass.AFilterThatAdmitsNoClassAcceptsOnlyAnUnlistedClass` | Rows of the four classes: a filter with every listed class off accepts only `DeviceKind::Other`. |
+| `Small_DeviceFilter.TurningOneClassOffDropsThatClassAlone` | A filter with the GPU class off drops a GPU and keeps a CPU and an accelerator. |
+| `Small_DeviceFilter.RequireFp64DropsADeviceWithoutIt` | With `require_fp64` set, a device without fp64 is dropped and one with it is kept. |
 
 ## test_node_facts.cpp
 

@@ -347,24 +347,6 @@ TEST_P(Medium_DeviceQueueSetProfiling, TheFlagOfTheSetDecidesEveryPlainQueue)
 INSTANTIATE_TEST_SUITE_P(Flags, Medium_DeviceQueueSetProfiling, ::testing::Values(true, false),
                          [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "WithProfiling" : "WithoutProfiling"; });
 
-TEST_F(Medium_DeviceQueueSet, DeviceForNUMAReturnsTheFirstDeviceOfTheNode)
-{
-    DeviceQueueSet set(describe_first_device_on({2, 0, 2}), false);
-
-    EXPECT_EQ(set.device_for_numa(0), 1u);
-    EXPECT_EQ(set.device_for_numa(2), 0u);
-}
-
-TEST_F(Medium_DeviceQueueSet, DeviceForNUMAFallsBackToDeviceZeroWhereNoDeviceSits)
-{
-    DeviceQueueSet set(describe_first_device_on({2, 0, 2}), false);
-
-    EXPECT_EQ(set.device_for_numa(1), 0u);
-    EXPECT_EQ(set.device_for_numa(3), 0u);
-    EXPECT_EQ(set.device_for_numa(999), 0u);
-    EXPECT_EQ(set.device_for_numa(-5), 0u);
-}
-
 TEST_F(Medium_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
 {
     DeviceQueueSet set(describe_first_device_on({1, -1, 4096}), false);
@@ -373,14 +355,6 @@ TEST_F(Medium_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
     EXPECT_EQ(set.devices()[1].numa_node, 0);
     EXPECT_EQ(set.devices()[2].numa_node, 0);
     EXPECT_EQ(set.device_for_numa(0), 1u);
-}
-
-TEST_F(Medium_DeviceQueueSet, QueueOrNUMALocalReturnsTheNamedDevice)
-{
-    DeviceQueueSet set(describe_first_device_on({0, 2, 2}), false);
-
-    EXPECT_EQ(&set.queue_or_numa_local(2, 0), &set.queue(2));
-    EXPECT_EQ(&set.queue_or_numa_local(0, 2), &set.queue(0));
 }
 
 class Medium_DeviceQueueSetRotation : public DeviceFixture, public ::testing::WithParamInterface<RotationRow>

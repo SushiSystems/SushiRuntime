@@ -48,11 +48,23 @@ A `LogCapture` at `Info` sees the constructor's device line, and each test asser
 A `LogCapture` at `Debug` starts after construction. The first request for an in-order profiling
 queue logs one `DEBUG` with the flavour and the build time; a second request logs nothing.
 
-### The NUMA routing tests
+### `AnInvalidNUMAIDInADescriptorBecomesNodeZero`
 
-`DeviceForNUMA*`, `AnInvalidNUMAIDInADescriptorBecomesNodeZero` and `QueueOrNUMALocalReturnsTheNamedDevice`
-decide on values but build their set from SYCL devices, so they stay medium until the module builds a
-route table from NUMA ids.
+The wiring check of the NUMA routes: the set writes the node the route table places each device on
+into its inventory, and resolves node 0 through the table. The routing decisions themselves are
+tested small in `test_numa_route_table.cpp`.
+
+## test_numa_route_table.cpp
+
+The file tests NUMARouteTable over NUMA ids given as values, with no device.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_NUMARouteTableLookup.ResolvesTheFirstDeviceOfTheNodeOrDeviceZero` | Rows over devices on nodes 2, 0 and 2: node 0 resolves to device 1 and node 2 to device 0; a node with no device, an id past the table and a negative id resolve to device 0. |
+| `Small_NUMARouteTablePlacement.PlacesAnInvalidIDOnNodeZero` | Rows: an id in range stays, and -1 and 4096 are placed on node 0. |
+| `Small_NUMARouteTable.DevicesOnAnInvalidIDServeNodeZero` | Devices that report -1 and 4096 serve node 0, and the device on node 1 serves node 1. |
+| `Small_NUMARouteTable.ANamedDeviceWinsOverTheRotation` | `device_or_next()` returns the device it is given, whatever node the rotation would run over. |
+| `Small_NUMARouteTable.NamesTheNodesThatHoldNoDevice` | Over devices on nodes 3 and 0 the table has four nodes, two populated, and names nodes 1 and 2 as empty. |
 
 ## test_queue_flavour.cpp
 

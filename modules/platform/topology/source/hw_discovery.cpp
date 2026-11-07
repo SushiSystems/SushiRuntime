@@ -44,6 +44,8 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/machine/device_filter.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
 namespace SushiRuntime
@@ -92,6 +94,18 @@ namespace SushiRuntime
                     /** @brief Holds the loaded topology, or null. */
                     hwloc_topology_t topology_ = nullptr;
             };
+
+            /** @brief Returns the class SYCL reports for a device. */
+            DeviceKind kind_of(const sycl::device& device)
+            {
+                if (device.is_cpu())
+                    return DeviceKind::CPU;
+                if (device.is_gpu())
+                    return DeviceKind::GPU;
+                if (device.is_accelerator())
+                    return DeviceKind::Accelerator;
+                return DeviceKind::Other;
+            }
 
             /** @brief Spells a filter as "cpu=yes, gpu=no, accelerator=no, require_fp64=no". */
             std::string describe(const DeviceFilter& config)
@@ -208,12 +222,11 @@ namespace SushiRuntime
 
                 for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
                 {
-                    if (dev.is_cpu() && !config.include_cpu) continue;
-                    if (dev.is_gpu() && !config.include_gpu) continue;
-                    if (dev.is_accelerator() && !config.include_accelerator) continue;
+                    const DeviceKind kind = kind_of(dev);
+                    if (!admits_class(config, kind)) continue;
 
                     // fp64 is checked at discovery, not at kernel launch (modules/platform/topology/README.md).
-                    if (config.require_fp64 && !dev.has(sycl::aspect::fp64))
+                    if (!admits(config, kind, dev.has(sycl::aspect::fp64)))
                     {
                         SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping device [{}]: no fp64 support and require_fp64 is set.",
                                     dev.get_info<sycl::info::device::name>());

@@ -13,7 +13,7 @@ header. It depends on no other module of the repository.
 
 | Header | Holds |
 | --- | --- |
-| `device_filter.hpp` | `DeviceFilter`, the device classes and features a runtime accepts |
+| `device_filter.hpp` | `DeviceFilter`, the device classes and features a runtime accepts, and `admits_class()` and `admits()`, which apply it to one device |
 | `device_kind.hpp` | `DeviceKind`, the class of a compute device |
 | `device_description.hpp` | `DeviceDescription`, the inventory record of one device |
 | `pin_policy.hpp` | `PinPolicy`, the choice between bound and floating workers |
@@ -28,10 +28,14 @@ descriptions, `scheduler` reads the policy and fills the pool, and `api` passes 
 from the caller, so the module sits in the foundation tier, below the four. `api` fills `NodeFacts`
 and returns it from `Runtime::topology()`; `wire` and `cluster_load` will read it.
 
-The module has no source and no test program: its headers define plain records, and the header
-check of the build compiles each one alone.
+The module has no source: its headers define plain records and the constexpr functions of
+`device_filter.hpp`. Its tests are in `tests/foundation/machine/`.
 
 ## device_filter.hpp
+
+`admits_class()` returns whether a filter accepts a device class; a device SYCL reports under no
+listed class (`DeviceKind::Other`) is always accepted. `admits()` adds the fp64 check. Discovery
+calls both, so the decision is the same values-only function the tests call.
 
 ### require_fp64
 

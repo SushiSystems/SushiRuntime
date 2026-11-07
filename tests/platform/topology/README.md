@@ -45,7 +45,10 @@ discovery tests enumerate the SYCL devices of the machine they run on.
 A filter that excludes every device class gives an empty vector from both `probe_all_devices` and
 `enumerate`. In this module an empty result is a value: `DeviceQueueSet` accepts it and stays empty.
 The failure for it, `ErrorCode::Unsupported`, is returned by `RuntimeContext::create()`, and
-`tests/surface/api/runtime/test_runtime_config.cpp` covers it.
+`tests/surface/api/runtime/test_runtime_config.cpp` covers it. Which device a filter admits is
+decided by `admits_class()` and `admits()` of `machine`, tested small in
+`tests/foundation/machine/test_device_filter.cpp`; this test stays medium as the wiring check of
+both accessors over the real devices.
 
 Discovery itself returns `ErrorCode::Unsupported` only when SYCL enumeration
 throws. No test reaches that path, because a test cannot make `sycl::device::get_devices` fail.
@@ -54,8 +57,8 @@ throws. No test reaches that path, because a test cannot make `sycl::device::get
 
 Both read the real devices. The first probes every device without a filter and asserts that no PCI
 address repeats; nodes without one are skipped. The second asserts that every node the GPU-only filter
-admits is a GPU. The module has no function that filters or deduplicates a list of nodes, so neither
-runs over fabricated nodes.
+admits is a GPU. The class decision is `admits_class()`, tested small in `machine`; the module has no
+function that deduplicates a list of nodes, so the first does not run over fabricated nodes.
 
 ### `LogicalIDsAreSequential` and `EveryDeviceIsNamed`
 

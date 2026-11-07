@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-07 — device: Moved the NUMA routing of `DeviceQueueSet` into `NUMARouteTable`, which is built from NUMA ids alone; the set routes every request as before (RW-103, `numa_route_table.hpp`).
+- 2026-11-07 — machine: Added `admits_class()` and `admits()`, which decide whether a `DeviceFilter` accepts one device; discovery calls them and keeps the same devices as before (RW-103, `device_filter.hpp`).
 - 2026-11-07 — transport: Added `RecordingTransportEvents`, the in-memory adapter of the `TransportEvents` port, beside the port (RW-105, `recording_transport_events.hpp`).
 - 2026-11-07 — task: Added `RefusingOffloadSink`, an `OffloadSink` whose `resubmit()` throws and counts (RW-105, `refusing_offload_sink.hpp`).
 - 2026-11-07 — cluster_load: Added `InMemoryOffloadPolicy`, the in-memory adapter of the `OffloadPolicy` port (RW-105, `in_memory_offload_policy.hpp`).

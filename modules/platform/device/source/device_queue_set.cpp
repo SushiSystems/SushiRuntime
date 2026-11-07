@@ -39,7 +39,6 @@
 
 #include <SushiLog/text/value_text.hpp>
 
-#include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -107,21 +106,6 @@ namespace SushiRuntime
                 return sycl::queue(device, rethrow_async_errors, properties_of(flavour));
             }
 
-            /**
-             * @brief Returns this thread's next rotation position and advances it.
-             * @param is_fallback True to advance the one cursor every device-less node shares.
-             * @pre numa_node is in [0, K_MAX_NUMA_NODES) unless is_fallback.
-             */
-            std::size_t next_rotation(bool is_fallback, int numa_node) noexcept
-            {
-                static thread_local std::size_t numa_cursors[K_MAX_NUMA_NODES] = {0};
-                static thread_local std::size_t fallback_cursor = 0;
-
-                if (is_fallback)
-                    return fallback_cursor++;
-                return numa_cursors[static_cast<std::size_t>(numa_node)]++;
-            }
-
             /** @brief Returns the name of a SYCL backend as the device line prints it. */
             const char* backend_name(sycl::backend backend) noexcept
             {
@@ -167,10 +151,6 @@ namespace SushiRuntime
                     return "unknown";
                 }
             }
-
-            /** @brief Names the broken precondition of a NUMA lookup on an empty set. */
-            constexpr const char* K_EMPTY_SET_MESSAGE =
-                "The device set holds no device, so no NUMA node resolves to one.";
         } // namespace
 
         template <typename Visitor>
@@ -199,8 +179,7 @@ namespace SushiRuntime
                 DeviceDescription& info = descriptor.info;
                 info.index = index;
 
-                if (info.numa_node < 0
-                    || static_cast<std::size_t>(info.numa_node) >= K_MAX_NUMA_NODES)
+                if (NUMARouteTable::placed_node(info.numa_node) != info.numa_node)
                 {
                     SR_LOG_WARN(K_DEVICE_LOG_CATEGORY, "Device {} reported invalid NUMA {}. Falling back to NUMA 0 for "
                                 "queue mapping.",
@@ -231,7 +210,12 @@ namespace SushiRuntime
                 infos_.push_back(std::move(info));
             }
 
-            build_numa_routes();
+            std::vector<int> device_nodes;
+            device_nodes.reserve(infos_.size());
+            for (const DeviceDescription& info : infos_)
+                device_nodes.push_back(info.numa_node);
+            numa_routes_ = NUMARouteTable(device_nodes);
+            log_numa_routes();
         }
 
         DeviceQueueSet::~DeviceQueueSet()
@@ -317,15 +301,13 @@ namespace SushiRuntime
 
         std::size_t DeviceQueueSet::device_for_numa(int numa_node) const
         {
-            const NUMARoute& route = route_for(numa_node);
-            SR_VERIFY(!route.devices.empty(), K_EMPTY_SET_MESSAGE);
-            return route.devices.front();
+            return numa_routes_.device_for(numa_node);
         }
 
         sycl::queue& DeviceQueueSet::queue_or_numa_local(std::optional<std::size_t> device,
                                                          int fallback_numa)
         {
-            return queue(device ? *device : next_device_for_numa(fallback_numa));
+            return queue(numa_routes_.device_or_next(device, fallback_numa));
         }
 
         std::vector<sycl::queue> DeviceQueueSet::plain_queues() const
@@ -388,60 +370,9 @@ namespace SushiRuntime
             return slots_[index * K_FLAVOUR_COUNT + plain_offsets_[index]];
         }
 
-        const DeviceQueueSet::NUMARoute& DeviceQueueSet::route_for(int numa_node) const noexcept
+        void DeviceQueueSet::log_numa_routes() const
         {
-            if (numa_node < 0 || static_cast<std::size_t>(numa_node) >= numa_routes_.size())
-                return outside_route_;
-            return numa_routes_[static_cast<std::size_t>(numa_node)];
-        }
-
-        std::size_t DeviceQueueSet::next_device_for_numa(int numa_node) const
-        {
-            const NUMARoute& route = route_for(numa_node);
-            SR_VERIFY(!route.devices.empty(), K_EMPTY_SET_MESSAGE);
-
-            const std::size_t position = next_rotation(route.is_fallback, numa_node);
-            return route.devices[position % route.devices.size()];
-        }
-
-        void DeviceQueueSet::build_numa_routes()
-        {
-            outside_route_.is_fallback = true;
-            outside_route_.devices.reserve(infos_.size());
-
-            std::size_t node_count = 0;
-            for (const DeviceDescription& info : infos_)
-            {
-                outside_route_.devices.push_back(info.index);
-                // numa_node was clamped to [0, K_MAX_NUMA_NODES) by the constructor.
-                const std::size_t node = static_cast<std::size_t>(info.numa_node);
-                if (node + 1 > node_count)
-                    node_count = node + 1;
-            }
-
-            numa_routes_.resize(node_count);
-            for (const DeviceDescription& info : infos_)
-            {
-                NUMARoute& route = numa_routes_[static_cast<std::size_t>(info.numa_node)];
-                route.devices.push_back(info.index);
-            }
-
-            [[maybe_unused]] std::size_t populated = 0;
-            std::string empty_nodes;
-            for (std::size_t node = 0; node < node_count; ++node)
-            {
-                if (!numa_routes_[node].devices.empty())
-                {
-                    ++populated;
-                    continue;
-                }
-
-                numa_routes_[node] = outside_route_;
-                if (!empty_nodes.empty())
-                    empty_nodes += ", ";
-                empty_nodes += std::to_string(node);
-            }
-
+            const std::string empty_nodes = numa_routes_.empty_nodes();
             if (!empty_nodes.empty())
                 SR_LOG_WARN(K_DEVICE_LOG_CATEGORY, "No device sits on NUMA node(s) {}; a request for one of them is "
                             "served from all {} devices in rotation.",
@@ -449,7 +380,7 @@ namespace SushiRuntime
 
             SR_LOG_INFO(K_DEVICE_LOG_CATEGORY, "Device set ready. Total devices: {}, NUMA domains: {}. A NUMA id outside "
                         "[0, {}) is served from all devices in rotation.",
-                        infos_.size(), populated, node_count);
+                        infos_.size(), numa_routes_.populated_count(), numa_routes_.node_count());
         }
     } // namespace Device
 } // namespace SushiRuntime

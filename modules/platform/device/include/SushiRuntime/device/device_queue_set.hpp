@@ -41,6 +41,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
+#include <SushiRuntime/device/numa_route_table.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 namespace SushiRuntime
@@ -149,13 +150,6 @@ namespace SushiRuntime
                     std::atomic<bool> built{false};   /**< Set after queue is constructed. */
                 };
 
-                /** @brief Lists the devices a NUMA node's requests are served from. */
-                struct NUMARoute
-                {
-                    std::vector<std::size_t> devices; /**< Device indices, ascending. */
-                    bool is_fallback = false;         /**< True when the node has no device. */
-                };
-
                 /** @brief Counts the flavours: in-order or not, times profiling or not. */
                 static constexpr std::size_t K_FLAVOUR_COUNT = 4;
 
@@ -178,17 +172,8 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] const LazyQueue& plain_slot(std::size_t index) const noexcept;
 
-                /** @brief Returns the route of a NUMA node; any id is accepted. */
-                [[nodiscard]] const NUMARoute& route_for(int numa_node) const noexcept;
-
-                /**
-                 * @brief Returns the next device of a NUMA node's rotation on this thread.
-                 * @pre The set holds a device.
-                 */
-                [[nodiscard]] std::size_t next_device_for_numa(int numa_node) const;
-
-                /** @brief Fills numa_routes_ and outside_route_ from infos_, and logs them. */
-                void build_numa_routes();
+                /** @brief Logs the NUMA routes of the set once they are built. */
+                void log_numa_routes() const;
 
                 /** @brief Calls visit(device info, queue) for every queue built so far. */
                 template <typename Visitor>
@@ -211,11 +196,8 @@ namespace SushiRuntime
                 /// @brief Queue table, K_FLAVOUR_COUNT slots per device; never resized.
                 std::vector<LazyQueue> slots_;
 
-                /// @brief Route of each NUMA node from 0 to the highest one that holds a device.
-                std::vector<NUMARoute> numa_routes_;
-
-                /// @brief Route of every NUMA id outside numa_routes_: all devices.
-                NUMARoute outside_route_;
+                /// @brief Routes of every NUMA node to the devices that serve it.
+                NUMARouteTable numa_routes_;
         };
     } // namespace Device
 } // namespace SushiRuntime
