@@ -398,17 +398,17 @@ at or below K_THROTTLING_RATE.
 
 ### WorkloadCoordinator
 
-WorkloadCoordinator runs a dedicated coordinator thread that calls
-RebalanceStrategy::evaluate_and_rebalance every 5 ms through beat(), pausing on a HeartbeatClock
-(SystemHeartbeatClock unless another is given; ManualHeartbeatClock steps it by hand). The strategy
+WorkloadCoordinator calls RebalanceStrategy::evaluate_and_rebalance through beat() on each beat of a
+HeartbeatDrive, every 5 ms: ThreadHeartbeatDrive beats on a thread of its own and pauses on a
+HeartbeatClock (SystemHeartbeatClock unless another is given; ManualHeartbeatClock steps it by
+hand); ExecutorHeartbeatDrive beats as an executor job when a Clock reaches the next beat. The strategy
 inspects live telemetry through TelemetryProvider and issues migrations through TaskMigrator, and can be
 swapped at runtime while the coordinator is running.
 
 ### strategy_mtx_
 
-strategy_mtx_ guards strategy_ against a concurrent set_strategy() destroying the object the monitor
-thread is mid-call on. It is held only across the fast evaluate_and_rebalance call and the swap,
-never across the pause between two beats.
+strategy_mtx_ guards strategy_ against a set_strategy() destroying the object a beat is mid-call on.
+It is held only across the evaluate_and_rebalance call and the swap, never between two beats.
 
 ## Implementation
 
