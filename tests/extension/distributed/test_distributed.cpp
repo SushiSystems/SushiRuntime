@@ -945,7 +945,7 @@ namespace EndToEndTests
         {
             std::atomic<int> runs{0};
             InProcessFabric fabric;
-            Runtime runtime = Runtime::create().value();
+            Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
             LocalWorker worker(InProcessTransport::make_worker(fabric), state_step_kernels(runs));
 
             Cluster cluster =
@@ -1000,7 +1000,7 @@ namespace EndToEndTests
             std::atomic<int> local_runs{0};
             std::atomic<int> worker_runs{0};
 
-            Runtime master_runtime = Runtime::create().value();
+            Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
             RuntimeContext& master_context =
                 SushiRuntime::Internal::ContextAccess::context(master_runtime);
             sycl::queue& queue = master_context.devices().queue(0);
@@ -1253,7 +1253,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 1024;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -1296,7 +1296,7 @@ namespace EndToEndTests
         constexpr float K_AUTHORITATIVE = 7.0f;
         constexpr float K_POISON = 999.0f;
         constexpr float K_FRESH = 42.0f;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
@@ -1357,7 +1357,7 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 16;
         constexpr std::uint64_t K_GPU_MEMORY = 8ull << 30;
         constexpr std::uint64_t K_CPU_MEMORY = 32ull << 30;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1500,7 +1500,7 @@ namespace EndToEndTests
         void expect_pinned_to_second_worker(PlacementTarget target)
         {
             constexpr std::size_t K_COUNT = 16;
-            Runtime master_runtime = Runtime::create().value();
+            Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
             RuntimeContext& master_context =
                 SushiRuntime::Internal::ContextAccess::context(master_runtime);
             sycl::queue& queue = master_context.devices().queue(0);
@@ -1576,7 +1576,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 16;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1625,7 +1625,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         constexpr std::chrono::milliseconds K_BOUND{30};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1669,7 +1669,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 16;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1751,7 +1751,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         USMFloats out(master_context.devices().queue(0), 16, K_UNWRITTEN);
@@ -1776,7 +1776,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         USMFloats out(master_context.devices().queue(0), 16, K_UNWRITTEN);
@@ -1810,7 +1810,7 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 16;
         constexpr std::chrono::milliseconds K_RULE_DEADLINE{50};
         constexpr std::chrono::milliseconds K_SLACK{150};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1868,7 +1868,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         constexpr float K_FROM_WORKER = 42.0f;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1932,7 +1932,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 16;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -2024,7 +2024,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 16;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -2204,7 +2204,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         EXPECT_EQ(master_context.offload(), nullptr);
 
@@ -2264,7 +2264,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 128;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -2356,7 +2356,7 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 64;
         constexpr std::size_t K_STEPS = 2;
         InProcessFabric fabric;
-        Runtime runtime = Runtime::create().value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
 
         auto field = cluster.share(runtime.state<int>(K_COUNT).value());
@@ -2408,7 +2408,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         InProcessFabric taken_fabric;
         RecordingTransportEvents taken_events;
@@ -2441,7 +2441,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 128;
         constexpr std::size_t K_RUNS = 2;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -2491,7 +2491,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         TCPMasterOptions network;
         network.bind = Endpoint{"0.0.0.0", 0};
@@ -2621,7 +2621,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 128;
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -2680,7 +2680,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         InProcessFabric fabric;
         Cluster source = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric)).value();
@@ -2706,7 +2706,7 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         const auto refusal_of = [&master_runtime](ClusterOptions options)
         {
@@ -2754,7 +2754,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         InProcessFabric fabric;
-        Runtime runtime = Runtime::create().value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
         auto buffer = runtime.buffer<float>(8, DeviceIndex{0}, Residency::Device).value();
         auto field = runtime.state<float>(8, DeviceIndex{0}, Residency::Device).value();
@@ -3258,7 +3258,7 @@ namespace FaultInjectionTests
             constexpr std::size_t K_TASKS = 4;
 
             std::atomic<int> worker_runs{0};
-            Runtime master_runtime = Runtime::create().value();
+            Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
             RuntimeContext& master_context =
                 SushiRuntime::Internal::ContextAccess::context(master_runtime);
             sycl::queue& queue = master_context.devices().queue(0);
@@ -3337,7 +3337,7 @@ namespace FaultInjectionTests
             std::atomic<int> worker_runs{0};
             const auto dropped = std::make_shared<std::atomic<int>>(0);
 
-            Runtime master_runtime = Runtime::create().value();
+            Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
             RuntimeContext& master_context =
                 SushiRuntime::Internal::ContextAccess::context(master_runtime);
             sycl::queue& queue = master_context.devices().queue(0);

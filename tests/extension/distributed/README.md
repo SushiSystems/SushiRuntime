@@ -54,7 +54,12 @@ fabric and over TCP, and that a registered task is offloaded, are held by
 
 The file runs offload end to end on a real SYCL device, with a master and its workers in one
 process. Most tests use a real `WorkerAgent` on the in-process fabric; the tests that need a worker
-to misbehave use `ScriptedWorker`. Every test skips when SYCL reports no device.
+to misbehave use `ScriptedWorker`. Every test skips when SYCL reports no device. The master is the
+program's one runtime, `TestSupport::RuntimeEnvironment::runtime()`; a test attaches its cluster to
+it and detaches when the cluster handle ends. A runtime of its own is kept by each in-process
+worker, by the CPU-only master of the settings test, by the second runtime of the two attach
+refusals, by the TCP fault fixture and by `ClusterHandleOutlivesRuntime`, which destroys its
+runtime.
 
 Float buffers hold whole numbers below 2^24, which float addition keeps exact, so `K_TOLERANCE` is
 0 and a comparison is an equality.
