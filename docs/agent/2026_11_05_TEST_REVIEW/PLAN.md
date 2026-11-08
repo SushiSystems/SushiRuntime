@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — not started; the owner chooses inline or parallel
+**Status:** Open — paused on 2026-11-09 at fb71cfd3; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -41,7 +41,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | partly done: the splits and the merge by 26816063, `make_host_context()` by 37246149; EpochManager is off process-wide state (decision 39); the stale includes outside the split files are dropped (30 files, each still passes `clang -fsyntax-only`); the split files keep theirs |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
 | R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | partly done: topology and the in-memory queue factory; RW-131 done (decision 57); `InMemoryQueueFactory::make()` still builds a CPU queue |
-| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 and 56; left: the raw bodies of test_runtime_context.cpp and test_distributed.cpp, the medium audit's remaining LOGIC cases, the recount |
+| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the rounds and the two shells as classes of their own, the medium audit's remaining LOGIC cases, the recount |
 
 ## Acceptance
 
@@ -58,3 +58,21 @@ writes each add. Nothing in a module job changes production code except a seam a
 
 The owner chooses inline or parallel mode. SushiBLAS and SushiAI build on this repository's fixture base
 and adapters; their plans wait on T1 and T2.
+
+## Resume
+
+Worker 8, 2026-11-09, stopped near the end of its context at a clean, pushed tree. Done: RW-131
+(decision 57, closed), the raw bodies of `test_runtime_context.cpp` (decision 58), the master
+runtimes of `test_distributed.cpp` (decision 59) and the coordinator's two drive modes (decision 60).
+Next, in this order:
+
+1. RW-129 rest: the in-process worker runtimes of `test_distributed.cpp` move to
+   `Runtime::create_host()` once each test kernel they register has a host form
+   (`register_host_kernel`, decision 44); the CPU-only master, the two second runtimes, the TCP fault
+   fixture and `ClusterHandleOutlivesRuntime` need a ruling. Close RW-129 after.
+2. The rounds and the two shells of `TaskScheduler` (`task_scheduler_rounds.cpp`,
+   `task_scheduler_threads.cpp`, `task_scheduler_executor.cpp`) as classes of their own over the
+   state the rounds share.
+3. Job 4 of worker 8: the remaining LOGIC cases of the medium audit (session scratchpad
+   `J16/sushiruntime/medium_audit.md`).
+4. Job 5 of worker 8: the per-module recount in `REPORT.md`.
