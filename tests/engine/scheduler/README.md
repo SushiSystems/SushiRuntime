@@ -149,6 +149,19 @@ reversed range. All tests are deterministic.
 | --- | --- |
 | `CountsEvaluationsAndMigratesNothing` | The recording strategy counts its evaluations and asks for no migration. |
 
+## test_dispatch_placement.cpp
+
+`place_for_dispatch()` (`dispatch_placement.hpp`) places a graph node at its first dispatch, over a
+`USMAllocator` on host memory of two devices; nothing builds a queue.
+
+| Test | What it proves |
+| --- | --- |
+| `CachesTheDefaultDeviceOfARegionlessNode` | A node with no region and nothing stated is cached on device 0 and marked placed. |
+| `CachesTheOwnerOfTheNodesRegion` | The device the placement rule picks, the owner of the written region, is the one cached. |
+| `APlacedNodeKeepsItsDeviceOnALaterDispatch` | A placed node is not placed again: after its region's owner changes, a second call keeps the first device. |
+| `RefusesAPlacementPastTheDeviceCount` | `place_on(2)` with two devices is refused with `InvalidGraph`, naming the index and the count, and nothing is cached. |
+| `RefusesANodeWhoseRegionsSpanTwoDevices` | A node that writes on device 0 and reads on device 1 is refused with `InvalidGraph`, and nothing is cached. |
+
 ## test_task_scheduler.cpp
 
 The file builds each scheduler from a topology view over `InMemoryTopologyProvider` and
@@ -157,26 +170,19 @@ because a module test names no execution header. The device set of `Hardware` bu
 through an `InMemoryQueueFactory` and its allocator takes host memory, so no fixture touches an
 accelerator.
 
-### Small_NodePlacement
+### Small_NodePlacement and Medium_NodePlacement
 
 The pool has two floating workers over a device set of two host entries on NUMA node 0, and its
-rounds run on a `SeededExecutor` the fixture drains after each submission. The in-memory factory
-builds each entry its own host queue, and two queues compare equal only when they are copies of
-one another, so the queue a node receives names its entry. Each node is a host node that submits
-device work, so the scheduler picks a queue for it, and its work records the queue it receives.
-`USMAllocator::adopt()` records a host address as owned by an entry; the host allocator answers
-that every pair of entries shares a context.
+rounds run on a `SeededExecutor` the fixture drains after each submission. The device set builds
+no queue until one is asked for. Each node is a host node that submits device work, so the
+scheduler places it and then asks the set for a queue; its work records the queue it receives.
+The placement rules themselves are `Small_DispatchPlacement` in `test_dispatch_placement.cpp` and
+`Small_NodePlacementRule` in the task tests.
 
 | Test | What it proves |
 | --- | --- |
-| `RegionlessNodesRunOnDeviceZero` | Two nodes with no region and no placement both receive entry 0. The test first asserts that the two entries' queues differ. |
-| `APlacedNodeRunsOnItsDevice` | A node placed with `place_on(1)` receives entry 1. |
-| `ANodeKeepsItsDeviceOnEveryStep` | A node dispatched four times receives the same entry each time. |
-| `ANodeOverAnOwnedRegionRunsOnTheOwner` | A node that writes an owned address and states no device runs on the owner. |
-| `AStatedPlacementInTheOwnersContextOutranksTheOwner` | A node that states entry 0, in the owner's SYCL context, runs on entry 0 and not on the owner. |
-| `AnUnownedRegionLeavesTheStatedPlacementInForce` | A host address with no record has no owner, so the node runs on the placement it states. |
-| `AnUnownedRegionWithNothingStatedRunsOnDeviceZero` | The same node that states nothing runs on entry 0. |
-| `APlacementPastTheDeviceSetFailsTheRun` | `place_on(2)` on a two-entry set fails the run with `ErrorCode::InvalidGraph`, naming the node, the index and the device count; the node's work does not run. |
+| `Small_NodePlacement.APlacementPastTheDeviceSetFailsTheRun` | `place_on(2)` on a two-entry set fails the run with `ErrorCode::InvalidGraph`, naming the node, the index and the device count; the node's work does not run, and no queue is built. |
+| `Medium_NodePlacement.APlacedNodeIsHandedTheQueueOfItsDevice` | The queue-building path: a node placed with `place_on(1)` receives entry 1's queue. The in-memory factory builds each entry its own host queue, and the test first asserts that the two entries' queues differ. |
 
 ### Small_OffloadSeam
 

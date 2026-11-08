@@ -175,13 +175,6 @@ namespace SushiRuntime
                 const QueueFlavour plain{factory_->needs_in_order(index), profiling};
                 const std::size_t offset = offset_of(plain);
 
-                LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
-                std::call_once(slot.once, [this, &slot, index, plain]()
-                {
-                    slot.queue.emplace(factory_->make(index, plain, nullptr));
-                    slot.built.store(true, std::memory_order_release);
-                });
-
                 info.driver_version = factory_->driver_version(index);
                 SR_LOG_INFO(K_DEVICE_LOG_CATEGORY,
                             "Device: {} | Backend: {} | Driver: {} | NUMA: {} | Memory: {} MB | "
@@ -260,7 +253,7 @@ namespace SushiRuntime
             require_index(second);
             if (slots_.empty())
                 return true;
-            return plain_slot(first).queue->get_context() == plain_slot(second).queue->get_context();
+            return plain_queue(first).get_context() == plain_queue(second).get_context();
         }
 
         std::uint64_t DeviceQueueSet::free_memory(std::size_t index) const
@@ -270,7 +263,7 @@ namespace SushiRuntime
                 return infos_[index].memory_bytes;
             try
             {
-                const sycl::device device = plain_slot(index).queue->get_device();
+                const sycl::device device = plain_queue(index).get_device();
 #if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
                 if (device.has(sycl::aspect::ext_intel_free_memory))
                     return device.get_info<sycl::ext::intel::info::device::free_memory>();
@@ -288,7 +281,7 @@ namespace SushiRuntime
         sycl::queue& DeviceQueueSet::queue(std::size_t index)
         {
             require_queue(index);
-            return *slots_[index * K_FLAVOUR_COUNT + plain_offsets_[index]].queue;
+            return plain_queue(index);
         }
 
         sycl::queue& DeviceQueueSet::queue(std::size_t index, QueueFlavour flavour)
@@ -296,30 +289,20 @@ namespace SushiRuntime
             require_queue(index);
 
             const std::size_t offset = offset_for(index, flavour);
-            LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
-            std::call_once(slot.once, [this, index, offset, flavour, &slot]()
-            {
-                const sycl::context context = plain_slot(index).queue->get_context();
+            if (offset == plain_offsets_[index])
+                return plain_queue(index);
 
-                const auto started = std::chrono::steady_clock::now();
-                slot.queue.emplace(factory_->make(index, flavour_of(offset), &context));
-                const double build_ms = std::chrono::duration<double, std::milli>(
-                                            std::chrono::steady_clock::now() - started)
-                                            .count();
-                const QueueFlavour served = flavour_of(offset);
-                SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
-                             "Device {} ({}): built a queue of flavour in_order={} profiling={} "
-                             "in {} ms on first use.",
-                             index, infos_[index].name, served.in_order, served.profiling,
-                             SushiLog::fixed(build_ms, 3));
-                if (served.in_order != flavour.in_order)
+            const sycl::context context = plain_queue(index).get_context();
+            LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
+            std::call_once(slot.once, [this, index, offset, flavour, &context, &slot]()
+            {
+                build_slot(slot, index, offset, &context);
+                if (flavour_of(offset).in_order != flavour.in_order)
                     SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
                                  "Device {} ({}): an out-of-order queue was requested and an "
                                  "in-order one is served, since the device's plain queue is "
                                  "in order.",
                                  index, infos_[index].name);
-                // Stored last: readers that skip call_once read only this flag.
-                slot.built.store(true, std::memory_order_release);
             });
             return *slot.queue;
         }
@@ -352,7 +335,7 @@ namespace SushiRuntime
             const std::size_t devices_with_slots = slots_.size() / K_FLAVOUR_COUNT;
             queues.reserve(devices_with_slots);
             for (std::size_t index = 0; index < devices_with_slots; ++index)
-                queues.push_back(*plain_slot(index).queue);
+                queues.push_back(plain_queue(index));
             return queues;
         }
 
@@ -406,15 +389,37 @@ namespace SushiRuntime
         std::size_t DeviceQueueSet::offset_for(std::size_t index,
                                                QueueFlavour flavour) const noexcept
         {
-            // A device whose plain queue is in-order never gets an out-of-order one.
-            const std::size_t forced = plain_offsets_[index] & K_IN_ORDER_OFFSET;
-            return offset_of(flavour) | forced;
+            const bool plain_in_order = (plain_offsets_[index] & K_IN_ORDER_OFFSET) != 0;
+            return offset_of(served_flavour(flavour, plain_in_order));
         }
 
-        const DeviceQueueSet::LazyQueue&
-        DeviceQueueSet::plain_slot(std::size_t index) const noexcept
+        sycl::queue& DeviceQueueSet::plain_queue(std::size_t index) const
         {
-            return slots_[index * K_FLAVOUR_COUNT + plain_offsets_[index]];
+            const std::size_t offset = plain_offsets_[index];
+            LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
+            std::call_once(slot.once, [this, index, offset, &slot]()
+            {
+                build_slot(slot, index, offset, nullptr);
+            });
+            return *slot.queue;
+        }
+
+        void DeviceQueueSet::build_slot(LazyQueue& slot, std::size_t index, std::size_t offset,
+                                        const sycl::context* shared_context) const
+        {
+            const QueueFlavour flavour = flavour_of(offset);
+            const auto started = std::chrono::steady_clock::now();
+            slot.queue.emplace(factory_->make(index, flavour, shared_context));
+            const double build_ms = std::chrono::duration<double, std::milli>(
+                                        std::chrono::steady_clock::now() - started)
+                                        .count();
+            SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
+                         "Device {} ({}): built a queue of flavour in_order={} profiling={} "
+                         "in {} ms on first use.",
+                         index, infos_[index].name, flavour.in_order, flavour.profiling,
+                         SushiLog::fixed(build_ms, 3));
+            // Stored last: readers that skip call_once read only this flag.
+            slot.built.store(true, std::memory_order_release);
         }
 
         void DeviceQueueSet::log_numa_routes() const

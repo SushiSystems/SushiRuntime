@@ -27,7 +27,7 @@
  * @author Mustafa Garip
  */
 
-#include "dispatch_placement.hpp"
+#include <SushiRuntime/scheduler/dispatch_placement.hpp>
 
 #include <optional>
 #include <vector>
@@ -74,6 +74,10 @@ namespace SushiRuntime
         Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
                                 std::size_t device_count)
         {
+            // The placement found at the first dispatch holds for every later step of the node.
+            if (node.locality_checked_)
+                return {};
+
             void* anchor = nullptr;
             if (!node.io_writes_.empty())
                 anchor = node.io_writes_.front().base;
@@ -105,7 +109,6 @@ namespace SushiRuntime
                         "pass place_on() an index below {}.",
                         placement, device_count, device_count)});
 
-            // The placement found here holds for every later step of the node.
             node.cached_queue_index_ = static_cast<int>(placement);
             node.locality_checked_ = true;
             return {};

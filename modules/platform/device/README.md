@@ -76,8 +76,8 @@ carried.
 
 `QueueFactory` answers, per device, whether its plain queue must run in order and which driver
 it reports, and builds a queue of a flavour, in a given context or in its own. The set asks it
-for every queue it holds: the plain queues at construction, a lazy flavour in the context of the
-device's plain queue on first use.
+for every queue it holds, and builds none at construction: a plain queue on its first use, a
+lazy flavour on its first use in the context of the device's plain queue.
 
 `SYCLQueueFactory` builds on the SYCL devices it was given; a device that is neither a CPU nor a
 GPU needs an in-order plain queue, and every queue rethrows its asynchronous errors when asked.
@@ -102,7 +102,7 @@ visit. `shares_context(first, second)` answers whether two devices share a SYCL 
 pair of a host set; `free_memory(index)` answers the device's free memory, or the memory its description
 states for a host device. Neither builds a queue the set does not hold. No caller asks a set whether it holds queues: a copy goes through `USMAllocator::copy()`
 to the memory source, and a device's driver is `DeviceDescription::driver_version`, which the
-device set reads once when it builds the queue.
+device set reads from the factory at construction, without building a queue.
 
 ### One slot per flavour
 
@@ -122,7 +122,8 @@ On a CPU or a GPU the slots hold:
 On a profiling set, `queue(i, {false, false})` is an out-of-order queue without profiling.
 
 A device whose plain queue is in-order never gets an out-of-order queue, so `in_order = false`
-resolves to the in-order slot there. On such a device, the in-order slot and the plain queue are one
+resolves to the in-order slot there. `served_flavour(asked, plain_in_order)` (`queue_flavour.hpp`)
+holds that rule as a value function. On such a device, the in-order slot and the plain queue are one
 queue, and the in-order profiling slot and the profiling queue are one queue.
 
 `has_profiling_queue(i)` is true once either profiling slot of device `i` is built. It builds
@@ -131,7 +132,7 @@ nothing.
 ### Thread safety of the lazy build
 
 Each slot holds a `std::optional<sycl::queue>`, a `std::once_flag` and a `std::atomic<bool>`.
-`queue(index, flavour)` builds through `std::call_once` on the slot's flag, so two threads that
+`queue()` in either form builds through `std::call_once` on the slot's flag, so two threads that
 ask for the same unbuilt queue get one queue, and the second waits for the first. If the build
 throws, the flag stays unset and the next call tries again.
 

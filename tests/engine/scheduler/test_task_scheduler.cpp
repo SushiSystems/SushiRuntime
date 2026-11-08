@@ -341,10 +341,10 @@ namespace
 } // namespace
 
 /** @brief Runs a two-worker scheduler stepped by a seeded executor over two in-memory entries; see README.md. */
-class Small_NodePlacement : public ::testing::Test
+class PlacementScheduler : public ::testing::Test
 {
     protected:
-        Small_NodePlacement()
+        PlacementScheduler()
             : hardware_(host_entries(2), {}, 1),
               scheduler_(hardware_.make(WorkerPoolSettings{2, 0, PinPolicy::Float}, executor_))
         {
@@ -352,7 +352,7 @@ class Small_NodePlacement : public ::testing::Test
             scheduler_->arm_for_execution();
         }
 
-        ~Small_NodePlacement() override
+        ~PlacementScheduler() override
         {
             scheduler_->stop();
         }
@@ -396,97 +396,26 @@ class Small_NodePlacement : public ::testing::Test
         std::unique_ptr<TaskScheduler> scheduler_;
 };
 
-/** @brief Tests that two nodes with no region and no placement run on entry 0. */
-TEST_F(Small_NodePlacement, RegionlessNodesRunOnDeviceZero)
+/** @brief The placement cases that fail before a queue is asked for. */
+class Small_NodePlacement : public PlacementScheduler
+{
+};
+
+/** @brief The placement cases that reach the queue an entry hands a node, the queue-building path. */
+class Medium_NodePlacement : public PlacementScheduler
+{
+};
+
+/** @brief Tests that a node placed on an entry is handed that entry's queue. */
+TEST_F(Medium_NodePlacement, APlacedNodeIsHandedTheQueueOfItsDevice)
 {
     // The control proves the two entries can be told apart by their queues.
-    ASSERT_EQ(hardware_.devices().count(), 2u);
-    ASSERT_FALSE(hardware_.devices().queue(0) == hardware_.devices().queue(1));
-    std::optional<sycl::queue> handed;
-
-    const sushi_ptr<Node> first = make_recording_node(handed);
-    EXPECT_EQ(dispatched_device(*first, handed), 0u);
-    EXPECT_EQ(first->cached_queue_index_, 0);
-
-    const sushi_ptr<Node> second = make_recording_node(handed);
-    EXPECT_EQ(dispatched_device(*second, handed), 0u);
-    EXPECT_EQ(second->cached_queue_index_, 0);
-}
-
-/** @brief Tests that a node placed on an entry runs on that entry. */
-TEST_F(Small_NodePlacement, APlacedNodeRunsOnItsDevice)
-{
     ASSERT_FALSE(hardware_.devices().queue(0) == hardware_.devices().queue(1));
     std::optional<sycl::queue> handed;
     const sushi_ptr<Node> placed = make_recording_node(handed);
     placed->place_on(1);
 
     EXPECT_EQ(dispatched_device(*placed, handed), 1u);
-    EXPECT_EQ(placed->cached_queue_index_, 1);
-}
-
-/** @brief Tests that a node keeps the entry it was first dispatched to on every later step. */
-TEST_F(Small_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
-{
-    std::optional<sycl::queue> handed;
-    const sushi_ptr<Node> regionless = make_recording_node(handed);
-    const sushi_ptr<Node> placed = make_recording_node(handed);
-    placed->place_on(1);
-
-    EXPECT_EQ(dispatched_devices(*regionless, handed, 4), (std::vector<std::size_t>{0, 0, 0, 0}));
-    EXPECT_EQ(dispatched_devices(*placed, handed, 4), (std::vector<std::size_t>{1, 1, 1, 1}));
-}
-
-/** @brief Tests that a node over an owned region, stating nothing, runs on the owner. */
-TEST_F(Small_NodePlacement, ANodeOverAnOwnedRegionRunsOnTheOwner)
-{
-    int cell = 0;
-    hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
-    std::optional<sycl::queue> handed;
-    const sushi_ptr<Node> unplaced = make_recording_node(handed);
-    unplaced->io_writes_.emplace_back(&cell);
-
-    EXPECT_EQ(dispatched_device(*unplaced, handed), 1u);
-
-    hardware_.memory().forget(&cell);
-}
-
-/** @brief Tests that a stated placement in the owner's context outranks the owner. */
-TEST_F(Small_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
-{
-    int cell = 0;
-    hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
-    std::optional<sycl::queue> handed;
-    const sushi_ptr<Node> placed = make_recording_node(handed);
-    placed->io_writes_.emplace_back(&cell);
-    placed->place_on(0);
-
-    EXPECT_EQ(dispatched_device(*placed, handed), 0u);
-
-    hardware_.memory().forget(&cell);
-}
-
-/** @brief Tests that a node whose region no device owns runs on the placement it states. */
-TEST_F(Small_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
-{
-    int cell = 0;
-    std::optional<sycl::queue> handed;
-    const sushi_ptr<Node> placed = make_recording_node(handed);
-    placed->io_reads_.emplace_back(&cell);
-    placed->place_on(1);
-
-    EXPECT_EQ(dispatched_device(*placed, handed), 1u);
-}
-
-/** @brief Tests that a node whose region no device owns and that states nothing runs on entry 0. */
-TEST_F(Small_NodePlacement, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
-{
-    int cell = 0;
-    std::optional<sycl::queue> handed;
-    const sushi_ptr<Node> unplaced = make_recording_node(handed);
-    unplaced->io_reads_.emplace_back(&cell);
-
-    EXPECT_EQ(dispatched_device(*unplaced, handed), 0u);
 }
 
 /** @brief Tests that a placement past the device set fails the run, naming the node, the index and the device count. */

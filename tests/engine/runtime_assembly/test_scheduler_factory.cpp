@@ -31,13 +31,15 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/seeded_executor.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 
@@ -46,6 +48,26 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
+
+namespace
+{
+    /** @brief Builds @p count host nodes that add one to @p executed and submit no device work.
+     *  @param executed Must outlive the nodes. */
+    std::vector<sushi_ptr<Internal::Graph::Node>> counting_nodes(std::atomic<std::size_t>& executed,
+                                                                 std::size_t count)
+    {
+        std::vector<sushi_ptr<Internal::Graph::Node>> nodes;
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
+            node->mode = Internal::Graph::Node::ExecutionMode::Host;
+            node->submits_device_work_ = false;
+            node->native_work = [&executed] { executed.fetch_add(1, std::memory_order_relaxed); };
+            nodes.push_back(std::move(node));
+        }
+        return nodes;
+    }
+} // namespace
 
 /** @brief Tests that the scheduler runs every task submitted, then stops. */
 TEST(Small_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
@@ -56,11 +78,12 @@ TEST(Small_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
     Internal::Scheduler::TaskScheduler scheduler = make_scheduler(*context);
     scheduler.set_executor(&executor);
     std::atomic<std::size_t> executed{0};
+    const std::vector<sushi_ptr<Internal::Graph::Node>> nodes = counting_nodes(executed, K_TASKS);
 
     scheduler.start();
     scheduler.arm_for_execution();
-    for (std::size_t index = 0; index < K_TASKS; ++index)
-        scheduler.submit(new AtomicCounterTask(executed));
+    for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
+        scheduler.submit(node.get());
     while (executor.run_one())
     {
     }

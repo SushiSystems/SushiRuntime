@@ -189,7 +189,8 @@ namespace SushiRuntime
 
             /**
              * @brief Builds every part of a host context but the engine: host devices whose
-             *        queues are host queues of an InMemoryQueueFactory, and host USM.
+             *        queues, built on first use, are host queues of an InMemoryQueueFactory,
+             *        and host USM.
              * @param provider Queried during construction only; not stored.
              * @param distance_model Must not be null.
              * @param host_devices The devices the context stands for; not empty.

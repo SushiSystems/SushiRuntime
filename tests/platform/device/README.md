@@ -36,12 +36,14 @@ and the lookups on an empty set.
 
 ### The in-memory set
 
-Small. `InMemorySet` builds a set over an `InMemoryQueueFactory`, so the queue table, the
-profiling flag, the in-order rule and the log lines run with no accelerator; the factory's
-`builds()` shows each queue the set asked for. `TheDeviceLineNamesTheBackendAndTheDriver` reads
-the constructor's device line through a `LogCapture` at `Info`. A `LogCapture` at `Debug` that
-starts after construction sees the first request for an in-order profiling queue log one `DEBUG`
-with the flavour and the build time, and a second request log nothing.
+`InMemorySet` builds a set over an `InMemoryQueueFactory`; the factory's `builds()` shows each
+queue the set asked for. The `Small_DeviceQueueSet` cases build no queue: construction asks for
+none, `TheDeviceLineNamesTheBackendAndTheDriver` reads the constructor's device line through a
+`LogCapture` at `Info`, and an index past the set has no profiling queue. Every case that asks
+for a queue is `Medium_DeviceQueueSetBuild`, the queue-building path: the plain queue built once
+on first use, the lazy flavours in the plain queue's context, the in-order rule as the factory
+sees it, the profiling flag, and the `DEBUG` line of a first build. The in-order rule itself is
+`Small_QueueFlavourServed`, rows over `served_flavour()` in `test_queue_flavour.cpp`.
 
 ### `AnInvalidNUMAIDInADescriptionBecomesNodeZero`
 

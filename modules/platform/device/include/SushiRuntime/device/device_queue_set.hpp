@@ -23,7 +23,7 @@
 
 /**
  * @file device_queue_set.hpp
- * @brief Declares DeviceQueueSet, the device inventory and the SYCL queues built on it.
+ * @brief Declares DeviceQueueSet, the device inventory and the SYCL queues built on it on first use.
  * @author Mustafa Garip
  * @see modules/platform/device/README.md
  */
@@ -53,23 +53,23 @@ namespace SushiRuntime
         /**
          * @brief Owns the device inventory and every SYCL queue of every device.
          *
-         * The set is immutable after construction, so a reference it returns stays
-         * valid until the set is destroyed. Every member is safe to call from several
-         * threads at once.
+         * Construction builds no queue: each queue is built once, on its first use. A
+         * reference the set returns stays valid until the set is destroyed. Every member is
+         * safe to call from several threads at once.
          */
         class SUSHIRUNTIME_API DeviceQueueSet final
         {
             public:
                 /**
-                 * @brief Builds the plain queue of every device and the NUMA routing table.
+                 * @brief Holds the devices of the descriptors and builds the NUMA routing table.
                  * @param devices The inventory, in the order that fixes each device's index.
                  * @param profiling True to build every plain queue with enable_profiling.
                  */
                 DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling);
 
                 /**
-                 * @brief Builds the plain queue of every device through a factory, and the
-                 *        NUMA routing table.
+                 * @brief Holds the factory every queue is built through, and builds the NUMA
+                 *        routing table; no queue is built until one is asked for.
                  * @param devices The inventory, in the order that fixes each device's index.
                  * @param factory Builds every queue of the set; holds a device per entry of
                  *                @p devices. Must not be null.
@@ -108,7 +108,7 @@ namespace SushiRuntime
                 [[nodiscard]] bool is_gpu(std::size_t index) const;
 
                 /**
-                 * @brief Returns the plain queue of a device, built at construction.
+                 * @brief Returns the plain queue of a device, building it on first use.
                  * @pre index names a device of the set.
                  */
                 [[nodiscard]] sycl::queue& queue(std::size_t index);
@@ -116,7 +116,8 @@ namespace SushiRuntime
                 /**
                  * @brief Returns whether two devices share one SYCL context.
                  *
-                 * The devices of a host set share the host's one memory, so the answer is true.
+                 * Builds the two plain queues when they are not built yet. The devices of a host
+                 * set share the host's one memory, so the answer is true.
                  * @pre first and second name devices of the set.
                  */
                 [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const;
@@ -125,7 +126,8 @@ namespace SushiRuntime
                  * @brief Returns the free memory of a device in bytes, its total when the
                  *        runtime has no query for it, and 0 when it cannot be read.
                  *
-                 * A host device answers the memory its description states.
+                 * Builds the device's plain queue when it is not built yet. A host device
+                 * answers the memory its description states.
                  * @pre index names a device of the set.
                  */
                 [[nodiscard]] std::uint64_t free_memory(std::size_t index) const;
@@ -162,7 +164,8 @@ namespace SushiRuntime
                 [[nodiscard]] sycl::queue& queue_or_numa_local(std::optional<std::size_t> device,
                                                                int fallback_numa);
 
-                /** @brief Returns a copy of every plain queue handle, in device order. */
+                /** @brief Returns a copy of every plain queue handle, in device order, building
+                 *         the plain queues not built yet. */
                 [[nodiscard]] std::vector<sycl::queue> plain_queues() const;
 
                 /**
@@ -211,10 +214,18 @@ namespace SushiRuntime
                                                      QueueFlavour flavour) const noexcept;
 
                 /**
-                 * @brief Returns the plain-queue slot of a device.
-                 * @pre index < count().
+                 * @brief Returns the plain queue of a device, building it once on first use.
+                 * @pre index < count() and the set holds a factory.
                  */
-                [[nodiscard]] const LazyQueue& plain_slot(std::size_t index) const noexcept;
+                [[nodiscard]] sycl::queue& plain_queue(std::size_t index) const;
+
+                /**
+                 * @brief Builds one queue into a slot through the factory and logs the build.
+                 * @param shared_context Context to build in; null gives the queue its own.
+                 * @pre Called once per slot, under the slot's once flag.
+                 */
+                void build_slot(LazyQueue& slot, std::size_t index, std::size_t offset,
+                                const sycl::context* shared_context) const;
 
                 /** @brief Logs the NUMA routes of the set once they are built. */
                 void log_numa_routes() const;
@@ -237,8 +248,8 @@ namespace SushiRuntime
                 /// @brief Per device, the offset of its plain queue among the device's slots.
                 std::vector<std::uint8_t> plain_offsets_;
 
-                /// @brief Queue table, K_FLAVOUR_COUNT slots per device; never resized.
-                std::vector<LazyQueue> slots_;
+                /// @brief Queue table, K_FLAVOUR_COUNT slots per device, each filled on first use.
+                mutable std::vector<LazyQueue> slots_;
 
                 /// @brief Routes of every NUMA node to the devices that serve it.
                 NUMARouteTable numa_routes_;

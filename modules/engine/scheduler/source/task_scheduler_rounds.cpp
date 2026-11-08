@@ -61,7 +61,7 @@
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/scheduler/steal_order.hpp>
 #include <SushiRuntime/scheduler/worker_pool_sizing.hpp>
-#include "dispatch_placement.hpp"
+#include <SushiRuntime/scheduler/dispatch_placement.hpp>
 #include "dispatch_queue_selection.hpp"
 #include "host_node_run.hpp"
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
@@ -347,7 +347,7 @@ namespace SushiRuntime
                 }
 
                 // A node is placed once, at its first dispatch (modules/engine/scheduler/README.md).
-                if (node && !node->locality_checked_)
+                if (node)
                 {
                     const Result<void> placed =
                         place_for_dispatch(*node, memory_, devices_.count());

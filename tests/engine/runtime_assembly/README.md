@@ -21,4 +21,4 @@ The file tests make_scheduler(): a scheduler over a context that runs what it is
 
 | Test | What it proves |
 | --- | --- |
-| `TheSchedulerRunsWhatItIsGiven` | Small, over a host context, its rounds on a `SeededExecutor`: the scheduler runs every task submitted, then stops. |
+| `TheSchedulerRunsWhatItIsGiven` | Small, over a host context, its rounds on a `SeededExecutor`: the scheduler runs every task submitted, then stops. The tasks are host nodes that submit no device work, so no queue is built. |

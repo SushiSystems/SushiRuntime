@@ -32,6 +32,7 @@
 
 #include <cstddef>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
@@ -42,15 +43,16 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Checks that a node's regions share one device and caches the device it runs on.
-         * @param node Its cached queue index and its checked flag are written on success.
+         * @brief Checks that a node's regions share one device and caches the device it runs on;
+         *        a node already placed keeps its device and is not checked again.
+         * @param node Its cached index and checked flag are written on success.
          * @param memory Asked which device owns each region of the node.
          * @param device_count Devices the runtime holds; a placement at or past it is refused.
          * @return Nothing, or an InvalidGraph error; nothing is cached then.
-         * @see modules/engine/scheduler/README.md
          */
-        [[nodiscard]] Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
-                                std::size_t device_count);
+        [[nodiscard]] SUSHIRUNTIME_API Result<void>
+        place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
+                           std::size_t device_count);
 
     } // namespace Scheduler
 } // namespace SushiRuntime

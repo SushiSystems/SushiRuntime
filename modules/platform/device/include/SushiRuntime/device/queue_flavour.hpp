@@ -58,5 +58,17 @@ namespace SushiRuntime
         {
             return !(left == right);
         }
+
+        /**
+         * @brief Returns the flavour a device serves for a request: the one asked, in order
+         *        whenever the device's plain queue runs in order.
+         * @param asked The flavour the caller asks for.
+         * @param plain_in_order True when the device's plain queue runs in order.
+         */
+        [[nodiscard]] constexpr QueueFlavour served_flavour(QueueFlavour asked,
+                                                            bool plain_in_order) noexcept
+        {
+            return QueueFlavour{asked.in_order || plain_in_order, asked.profiling};
+        }
     } // namespace Device
 } // namespace SushiRuntime

@@ -497,20 +497,34 @@ namespace
     };
 } // namespace
 
-/** @brief Tests that the set builds each plain queue once, at construction, with the set's profiling flag. */
-TEST(Small_DeviceQueueSet, BuildsEveryPlainQueueOnceAtConstruction)
+/** @brief Tests that building the set builds no queue. */
+TEST(Small_DeviceQueueSet, BuildsNoQueueAtConstruction)
+{
+    InMemorySet built({0, 0}, {true, false}, true);
+
+    EXPECT_TRUE(built.factory->builds().empty());
+    EXPECT_FALSE(built.set.has_profiling_queue(0));
+    EXPECT_FALSE(built.set.has_profiling_queue(1));
+}
+
+/** @brief Tests that a device's plain queue is built once, on first use, in its own context and with the set's profiling flag. */
+TEST(Medium_DeviceQueueSetBuild, BuildsAPlainQueueOnceOnFirstUse)
 {
     InMemorySet built({0, 0}, {}, true);
 
+    sycl::queue& first = built.set.queue(1);
+    sycl::queue& second = built.set.queue(1);
+
+    EXPECT_EQ(&first, &second);
     const std::vector<QueueBuild> builds = built.factory->builds();
-    ASSERT_EQ(builds.size(), 2u);
-    EXPECT_EQ(builds[1].device, 1u);
-    EXPECT_TRUE(builds[1].flavour.profiling);
-    EXPECT_FALSE(builds[1].shared);
+    ASSERT_EQ(builds.size(), 1u);
+    EXPECT_EQ(builds[0].device, 1u);
+    EXPECT_TRUE(builds[0].flavour.profiling);
+    EXPECT_FALSE(builds[0].shared);
 }
 
 /** @brief Tests that the plain queues of two devices differ. */
-TEST(Small_DeviceQueueSet, ThePlainQueuesOfTwoDevicesDiffer)
+TEST(Medium_DeviceQueueSetBuild, ThePlainQueuesOfTwoDevicesDiffer)
 {
     InMemorySet built({0, 0});
 
@@ -518,7 +532,7 @@ TEST(Small_DeviceQueueSet, ThePlainQueuesOfTwoDevicesDiffer)
 }
 
 /** @brief Tests that a lazy flavour is built once, in the context of its device's plain queue. */
-TEST(Small_DeviceQueueSet, ALazyFlavourIsBuiltOnceInThePlainQueuesContext)
+TEST(Medium_DeviceQueueSetBuild, ALazyFlavourIsBuiltOnceInThePlainQueuesContext)
 {
     InMemorySet built({0});
 
@@ -533,7 +547,7 @@ TEST(Small_DeviceQueueSet, ALazyFlavourIsBuiltOnceInThePlainQueuesContext)
 }
 
 /** @brief Tests that a device whose plain queue is in order is never served an out-of-order queue. */
-TEST(Small_DeviceQueueSet, ADeviceThatNeedsInOrderIsServedInOrder)
+TEST(Medium_DeviceQueueSetBuild, ADeviceThatNeedsInOrderIsServedInOrder)
 {
     InMemorySet built({0}, {true});
 
@@ -546,7 +560,7 @@ TEST(Small_DeviceQueueSet, ADeviceThatNeedsInOrderIsServedInOrder)
 }
 
 /** @brief Tests that an in-order queue without profiling leaves has_profiling_queue false. */
-TEST(Small_DeviceQueueSet, AnInOrderBuildWithoutProfilingLeavesTheProfilingFlagFalse)
+TEST(Medium_DeviceQueueSetBuild, AnInOrderBuildWithoutProfilingLeavesTheProfilingFlagFalse)
 {
     InMemorySet built({0});
 
@@ -557,7 +571,7 @@ TEST(Small_DeviceQueueSet, AnInOrderBuildWithoutProfilingLeavesTheProfilingFlagF
 }
 
 /** @brief Tests that building a profiling queue turns has_profiling_queue true. */
-TEST(Small_DeviceQueueSet, AProfilingBuildTurnsTheProfilingFlagTrue)
+TEST(Medium_DeviceQueueSetBuild, AProfilingBuildTurnsTheProfilingFlagTrue)
 {
     InMemorySet built({0});
 
@@ -567,7 +581,7 @@ TEST(Small_DeviceQueueSet, AProfilingBuildTurnsTheProfilingFlagTrue)
 }
 
 /** @brief Tests that a profiling build on one device leaves the other devices without one. */
-TEST(Small_DeviceQueueSet, TheProfilingFlagBelongsToItsDevice)
+TEST(Medium_DeviceQueueSetBuild, TheProfilingFlagBelongsToItsDevice)
 {
     InMemorySet built({0, 0});
 
@@ -583,7 +597,7 @@ TEST(Small_DeviceQueueSet, AnIndexPastTheSetHasNoProfilingQueue)
     InMemorySet built({0});
 
     EXPECT_FALSE(built.set.has_profiling_queue(built.set.count()));
-    EXPECT_EQ(built.factory->builds().size(), 1u);
+    EXPECT_TRUE(built.factory->builds().empty());
 }
 
 /** @brief Tests that the device line the constructor logs names the backend and the driver. */
@@ -598,7 +612,7 @@ TEST(Small_DeviceQueueSet, TheDeviceLineNamesTheBackendAndTheDriver)
 }
 
 /** @brief Tests that the first build of a lazy queue flavour logs one DEBUG with the flavour and the build time. */
-TEST(Small_DeviceQueueSet, TheFirstBuildOfALazyQueueFlavourIsLogged)
+TEST(Medium_DeviceQueueSetBuild, TheFirstBuildOfALazyQueueFlavourIsLogged)
 {
     InMemorySet built({0});
     SushiRuntime::TestRunner::LogCapture capture(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
@@ -612,7 +626,7 @@ TEST(Small_DeviceQueueSet, TheFirstBuildOfALazyQueueFlavourIsLogged)
 }
 
 /** @brief Tests that a second request for a built flavour logs nothing. */
-TEST(Small_DeviceQueueSet, ASecondRequestForABuiltFlavourLogsNothing)
+TEST(Medium_DeviceQueueSetBuild, ASecondRequestForABuiltFlavourLogsNothing)
 {
     InMemorySet built({0});
     (void)built.set.queue(0, QueueFlavour{true, true});

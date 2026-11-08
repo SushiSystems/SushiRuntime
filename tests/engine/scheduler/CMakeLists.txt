@@ -11,6 +11,7 @@ sushiruntime_add_module_tests(
         compile_rebalancer_interfaces.cpp
         compile_scheduler_log_category.cpp
         compile_worker_pool_settings.cpp
+        test_dispatch_placement.cpp
         test_dispatch_record.cpp
         test_event_polling.cpp
         test_failure_naming.cpp
