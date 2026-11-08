@@ -31,17 +31,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstdlib>
 #include <functional>
 #include <numeric>
 #include <string>
 #include <tuple>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -63,9 +60,6 @@
 #include <SushiRuntime/topology/hwloc_numa_reader.hpp>
 #include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
-#include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include <SushiRuntime/topology/matrix_distance_model.hpp>
-#include <SushiRuntime/topology/remapping_topology_provider.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -74,6 +68,7 @@
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
+#include "support/context_environment.hpp"
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 
@@ -90,47 +85,6 @@ namespace ProfilingQueueTests
         /** @brief Names the out-of-order profiling queue of a device. */
         constexpr Internal::Device::QueueFlavour K_PROFILING_FLAVOUR{false, true};
 
-        /** @brief Lists, per device, whether its profiling queue has been built. */
-        std::vector<bool> profiling_queue_flags(const Internal::Device::DeviceQueueSet& devices)
-        {
-            std::vector<bool> flags;
-            for (std::size_t i = 0; i < devices.count(); ++i)
-                flags.push_back(devices.has_profiling_queue(i));
-            return flags;
-        }
-
-        /** @brief Returns the flags of @p count devices of which only device 0 is built. */
-        std::vector<bool> only_device_zero(std::size_t count)
-        {
-            std::vector<bool> flags(count, false);
-            flags[0] = true;
-            return flags;
-        }
-
-        /** @brief One action on a fresh context and whether it builds the profiling queue of device 0. */
-        struct LazyBuildRow
-        {
-            const char* action;                                      /**< Names the action. */
-            void (*act)(Internal::Device::DeviceQueueSet& devices);  /**< Runs the action. */
-            bool builds_device_zero;                                 /**< Whether the action builds device 0's queue. */
-        };
-
-        /** @brief Does nothing to the context. */
-        void ask_nothing(Internal::Device::DeviceQueueSet&)
-        {
-        }
-
-        /** @brief Asks for the plain queue of device 0. */
-        void ask_for_the_plain_queue(Internal::Device::DeviceQueueSet& devices)
-        {
-            static_cast<void>(devices.queue(0));
-        }
-
-        /** @brief Asks for the profiling queue of device 0. */
-        void ask_for_the_profiling_queue(Internal::Device::DeviceQueueSet& devices)
-        {
-            static_cast<void>(devices.queue(0, K_PROFILING_FLAVOUR));
-        }
     } // namespace
 
     /**
@@ -139,8 +93,7 @@ namespace ProfilingQueueTests
      */
     TEST(Medium_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
 
         sycl::queue& plain = context.devices().queue(0);
         EXPECT_FALSE(plain.has_property<sycl::property::queue::enable_profiling>())
@@ -152,34 +105,10 @@ namespace ProfilingQueueTests
             << "the two queues must share one context so USM stays legal on either";
     }
 
-    /** @brief Tests that a profiling queue is built only when asked for, and only on the device asked. */
-    TEST(Medium_ProfilingQueue, AProfilingQueueIsBuiltOnlyWhenItIsAskedFor)
-    {
-        const LazyBuildRow rows[] = {
-            {"no request", &ask_nothing, false},
-            {"the plain queue", &ask_for_the_plain_queue, false},
-            {"the profiling queue of device 0", &ask_for_the_profiling_queue, true},
-        };
-
-        for (const LazyBuildRow& row : rows)
-        {
-            const auto context_owner = SushiRuntime::Test::make_context();
-            Internal::Device::DeviceQueueSet& devices = (*context_owner).devices();
-            const std::size_t count = devices.count();
-
-            row.act(devices);
-
-            EXPECT_EQ(profiling_queue_flags(devices),
-                      row.builds_device_zero ? only_device_zero(count) : std::vector<bool>(count, false))
-                << row.action;
-        }
-    }
-
     /** @brief Tests that the profiling flavour is a queue of its own, apart from the plain one. */
     TEST(Medium_ProfilingQueue, TheProfilingFlavourIsNotThePlainQueue)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
 
         EXPECT_FALSE(context.devices().queue(0) == context.devices().queue(0, K_PROFILING_FLAVOUR))
             << "a plain queue records no timestamps, so the profiling flavour cannot alias it";
@@ -193,8 +122,7 @@ namespace ProfilingQueueTests
     {
         constexpr std::size_t N = 256;
 
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        RuntimeContext& context = TestSupport::ContextEnvironment::context();
         sycl::queue& plain = context.devices().queue(0);
         sycl::queue& profiling = context.devices().queue(0, K_PROFILING_FLAVOUR);
 
@@ -259,21 +187,12 @@ namespace TopologyTests
             return honoured;
         }
 
-        /** @brief Holds a context for the tests of the allocator that run on it. */
+        /** @brief Hands the tests of the allocator that run on a device the program's one context. */
         class ContextFixture : public ::testing::Test
         {
             protected:
-                /** @brief Builds the context. */
-                void SetUp() override
-                {
-                    context_owner_ = SushiRuntime::Test::make_context();
-                }
-
                 /** @brief Returns the context. */
-                RuntimeContext& context() { return *context_owner_; }
-
-            private:
-                std::shared_ptr<RuntimeContext> context_owner_; /**< The context of the test. */
+                RuntimeContext& context() { return TestSupport::ContextEnvironment::context(); }
         };
 
         /** @brief Holds a host context for the tests of the allocator that need no device. */
@@ -451,8 +370,7 @@ namespace TopologyTests
     /** @brief Tests that an aligned allocation on a device index past the last one stops. */
     TEST(Medium_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
+        RuntimeContext& ctx = TestSupport::ContextEnvironment::context();
         const std::size_t missing_device = ctx.devices().count();
 
         EXPECT_DEATH(static_cast<void>(ctx.memory().allocate(
@@ -665,54 +583,6 @@ namespace TopologyAbstractionTests
     using namespace SushiRuntime::Internal::Topology;
 
     /**
-     * @brief Verifies that RuntimeContext correctly utilizes an injected distance model over concrete
-     *        hwloc.
-     *
-     * Injects a synthetic distance model into the RuntimeContext and ensures its reported NUMA distances match the injected values.
-     */
-    TEST(Medium_RuntimeContextTopology, InjectedDistanceModelDrivesRuntimeContext)
-    {
-        auto provider = std::make_shared<HwlocTopologyProvider>();
-        auto distance = std::make_shared<MatrixDistanceModel>(
-            std::vector<std::vector<int>>{{10, 21},
-                                          {21, 10}});
-
-        const auto ctx_owner = SushiRuntime::Test::make_context({}, provider, distance);
-        RuntimeContext& ctx = *ctx_owner;
-
-        EXPECT_EQ(ctx.topology().numa_distance(0, 0), 10);
-        EXPECT_EQ(ctx.topology().numa_distance(0, 1), 21);
-    }
-
-    /** @brief Fixture of the rows that route a queue through one synthetic NUMA node. */
-    class Medium_RuntimeContextSyntheticNUMA : public ::testing::TestWithParam<int>
-    {
-    };
-
-    TEST_P(Medium_RuntimeContextSyntheticNUMA, RoutesAQueueThatRunsAHostTask)
-    {
-        constexpr int FAKE_NODES = 2;
-
-        auto provider = std::make_shared<RemappingTopologyProvider>(
-            std::make_shared<HwlocTopologyProvider>(), FAKE_NODES);
-        auto distance = std::make_shared<MatrixDistanceModel>(
-            std::vector<std::vector<int>>{{10, 21},
-                                          {21, 10}});
-        const auto ctx_owner = SushiRuntime::Test::make_context({}, provider, distance);
-        std::atomic<bool> ran{false};
-
-        sycl::queue& q = (*ctx_owner).devices().queue_or_numa_local(std::nullopt, GetParam());
-        q.submit([&ran](sycl::handler& h)
-        {
-            SushiRuntime::Detail::enqueue_host_task(h, [&ran] { ran.store(true); });
-        }).wait();
-
-        EXPECT_TRUE(ran.load()) << "Synthetic NUMA node " << GetParam() << " produced no working queue.";
-    }
-
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_RuntimeContextSyntheticNUMA, ::testing::Values(0, 1));
-
-    /**
      * @brief Verifies that a GPU node carrying no PCI address is placed on the fallback NUMA node.
      *
      * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
@@ -744,7 +614,7 @@ namespace OffloadSeamShutdownTests
         using SushiRuntime::sushi_ptr;
         using SushiRuntime::Internal::Graph::Node;
 
-        /** @brief Records, in its first stop(), whether the worker pool still runs a node. */
+        /** @brief Hands the pool a probe node in its first stop(); the probe records that it ran. */
         class PoolProbingCoordinator final : public SushiRuntime::Internal::Graph::OffloadCoordinator
         {
             public:
@@ -769,89 +639,64 @@ namespace OffloadSeamShutdownTests
 
                 }
 
-                /** @brief Hands the pool a probe node on the first call and waits for it to run. */
+                /** @brief Resubmits a probe node on the first call and returns without waiting. */
                 void stop() noexcept override
                 {
-                    std::unique_lock<std::mutex> lock(mutex_);
                     if (++stop_calls_ > 1 || sink_ == nullptr)
                         return;
 
                     probe_ = make_sushi<Node>();
                     probe_->mode = Node::ExecutionMode::Host;
                     probe_->submits_device_work_ = false;
-                    probe_->native_work = [this] { mark_probe_ran(); };
+                    probe_->native_work = [this] { probe_ran_ = true; };
 
                     // resubmit() consumes one reference, as it does for a node try_offload() accepted.
                     probe_->add_ref();
-                    lock.unlock();
                     sink_->resubmit(*probe_);
-                    lock.lock();
-                    pool_ran_probe_ = probe_ran_cv_.wait_for(lock, K_PROBE_BUDGET,
-                                                             [this] { return probe_ran_; });
                 }
 
                 /** @brief Returns how many times stop() was called. */
-                [[nodiscard]] int stop_calls() const
+                [[nodiscard]] int stop_calls() const noexcept
                 {
-                    std::lock_guard<std::mutex> lock(mutex_);
                     return stop_calls_;
                 }
 
-                /** @brief Returns whether the pool ran the probe before the first stop() returned. */
-                [[nodiscard]] bool pool_ran_probe() const
+                /** @brief Returns whether the pool ran the probe the first stop() handed it. */
+                [[nodiscard]] bool probe_ran() const noexcept
                 {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    return pool_ran_probe_;
+                    return probe_ran_;
                 }
 
             private:
-                /** @brief Runs on a pool worker as the probe node's work. */
-                void mark_probe_ran()
-                {
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        probe_ran_ = true;
-                    }
-                    probe_ran_cv_.notify_all();
-                }
-
-                /// @brief Longest wait for the probe; a stopped pool never runs it.
-                static constexpr std::chrono::seconds K_PROBE_BUDGET{10};
-
-                /// @brief Guards every member below.
-                mutable std::mutex mutex_;
-                /// @brief Signalled when the probe node has run.
-                std::condition_variable probe_ran_cv_;
                 /// @brief The scheduler, as bind() received it.
                 SushiRuntime::Internal::Graph::OffloadSink* sink_ = nullptr;
                 /// @brief The node the first stop() hands to the pool.
                 sushi_ptr<Node> probe_;
                 /// @brief Calls of stop().
                 int stop_calls_ = 0;
-                /// @brief Set by the probe node on a pool worker.
+                /// @brief Set by the probe node when the pool runs it.
                 bool probe_ran_ = false;
-                /// @brief Whether the probe ran within the budget of the first stop().
-                bool pool_ran_probe_ = false;
         };
     } // namespace
 
     /**
-     * @brief shutdown() stops the installed coordinator while the worker pool still runs.
+     * @brief shutdown() stops the installed coordinator while the worker pool still runs, so a node
+     *        the coordinator hands back during its stop() runs.
      */
-    TEST(Medium_RuntimeContextOffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
+    TEST(Small_RuntimeContextOffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
     {
         const std::shared_ptr<PoolProbingCoordinator> coordinator =
             std::make_shared<PoolProbingCoordinator>();
 
         {
-            const auto context_owner = SushiRuntime::Test::make_context();
+            const auto context_owner = TestSupport::make_host_context();
             SushiRuntime::Internal::Execution::RuntimeContext& context = *context_owner;
             context.install_offload(coordinator);
 
             context.shutdown();
 
             EXPECT_EQ(coordinator->stop_calls(), 1) << "shutdown() did not stop the coordinator";
-            EXPECT_TRUE(coordinator->pool_ran_probe())
+            EXPECT_TRUE(coordinator->probe_ran())
                 << "the worker pool had stopped before the coordinator's stop() returned";
         }
 

@@ -172,7 +172,9 @@ the g1 node event records design spec in the version history, built as task 3 of
 the g1 node event records plan spec in the version history. A profiled node needs the
 SYCL `command_submit`, `command_start` and `command_end` times, which only a queue built with
 `enable_profiling` exposes. The plain queue that `devices().queue(index)` returns must stay
-unchanged for every existing consumer.
+unchanged for every existing consumer. The medium cases run on the program's one device context,
+`TestSupport::ContextEnvironment`; no body builds a context of its own. That a profiling queue is
+built only when asked for is a promise of `DeviceQueueSet`, tested in `tests/platform/device/`.
 
 ### `ProfilingQueueAddsThePropertyAndSharesTheContext`
 
@@ -180,12 +182,6 @@ The plain queue carries no
 `enable_profiling` property and the profiling queue carries it once built. The two share one
 `sycl::context`, so USM allocated through the plain queue stays legally accessible from the
 profiling queue.
-
-### `AProfilingQueueIsBuiltOnlyWhenItIsAskedFor`
-
-One row per action on a fresh context: no request, the plain queue of device 0, and the profiling
-queue of device 0. Only the last builds a profiling queue, and only on device 0. The profiling flavour
-waits for the first run of a plan that records timing, which only an added `RunObserver` causes.
 
 ### `TheProfilingFlavourIsNotThePlainQueue`
 
@@ -209,9 +205,9 @@ mapping alone are tested in `tests/platform/topology/`.
 mapped to a NUMA node by hwloc. Its fixture skips when there is no CUDA device. The NUMA mapping test
 skips only under WSL, which gives hwloc no PCI devices and shows itself in `WSL_DISTRO_NAME`; on Windows it never skips.
 
-The file validates the injectable topology abstraction, `TopologyProvider` and
-`NUMADistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
-the real hwloc path cannot do on a machine with one socket.
+The injectable topology abstraction, `TopologyProvider` and `NUMADistanceModel`, is tested small in
+`tests/platform/topology/test_topology_view.cpp`, and the NUMA routes in
+`tests/platform/device/test_numa_route_table.cpp`.
 
 `RuntimeContext::shutdown()` must stop the installed offload coordinator before the engine stops
 the worker pool, as the destructor does. A coordinator returns the nodes it still holds through the
@@ -221,13 +217,14 @@ the seam in `tests/engine/scheduler/test_task_scheduler.cpp`.
 
 ### `PoolProbingCoordinator`
 
-In its first `stop()` the fake hands a probe node to the sink's `resubmit()` and waits up to ten
-seconds for a worker to run it. The probe was never accepted by `try_offload()`; the fake adds the
+In its first `stop()` the fake hands a probe node to the sink's `resubmit()` and returns. The probe was never accepted by `try_offload()`; the fake adds the
 one reference `resubmit()` consumes. A later `stop()` only counts the call.
 
 ### `ShutdownStopsCoordinatorBeforeEngine`
 
-The stop count is 1 after `shutdown()` and the probe has run, which only a live pool can do. The
+Small, on a host context whose scheduler rounds run on a `SeededExecutor`; stopping the engine runs
+the rounds left on the caller. The stop count is 1 after `shutdown()` and the probe has run, which
+only a pool that had not stopped can do. The
 count is 2 after the context is destroyed: the destructor stops the coordinator again, which
 `OffloadCoordinator::stop()` allows.
 
