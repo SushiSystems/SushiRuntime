@@ -163,7 +163,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a lock taken with no one holding it writes no zone. */
-TEST_F(Medium_PendingMutexLockWait, AnUncontendedLockWritesNone)
+TEST_F(Small_PendingMutexLockWait, AnUncontendedLockWritesNone)
 {
     CountingMutex mutex;
 

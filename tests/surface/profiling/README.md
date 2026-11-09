@@ -369,7 +369,7 @@ own on a manual tick source, not the process-wide one (decision 70).
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_PendingMutexLockWait.AnUncontendedLockWritesNone` | A lock taken with no one holding it writes no zone. |
+| `Small_PendingMutexLockWait.AnUncontendedLockWritesNone` | A lock taken with no one holding it writes no zone. |
 | `Medium_PendingMutexLockWait.AContendedLockWritesAZone` | A lock taken while another thread holds the mutex writes one zone. |
 | `Small_PendingMutexLockWait.TheGuardReleasesTheMutexAtTheEndOfItsScope` | The guard releases the mutex when its scope ends, so the next lock is uncontended. |
 
