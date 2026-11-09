@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — paused on 2026-11-09 at fb71cfd3; see Resume
+**Status:** Open — paused on 2026-11-09 at 822ea0fb; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -61,18 +61,19 @@ and adapters; their plans wait on T1 and T2.
 
 ## Resume
 
-Worker 8, 2026-11-09, stopped near the end of its context at a clean, pushed tree. Done: RW-131
-(decision 57, closed), the raw bodies of `test_runtime_context.cpp` (decision 58), the master
-runtimes of `test_distributed.cpp` (decision 59) and the coordinator's two drive modes (decision 60).
-Next, in this order:
+Worker 9, 2026-11-09, stopped at a clean, pushed tree (822ea0fb). Done: RW-129 closed (decisions 61
+to 63: the in-process workers of `test_distributed.cpp` run on host runtimes, and the promise lost with
+`InjectedDistanceModelDrivesRuntimeContext` is `Small_RuntimeContextTopology.InjectedProviderAndDistanceModelDriveTheContext`).
+Not done, each with its reason in the decision named:
 
-1. RW-129 rest: the in-process worker runtimes of `test_distributed.cpp` move to
-   `Runtime::create_host()` once each test kernel they register has a host form
-   (`register_host_kernel`, decision 44); the CPU-only master, the two second runtimes, the TCP fault
-   fixture and `ClusterHandleOutlivesRuntime` need a ruling. Close RW-129 after.
-2. The rounds and the two shells of `TaskScheduler` (`task_scheduler_rounds.cpp`,
+1. `InMemoryQueueFactory::make()` without a sycl queue (decision 64): needs a ruling on a queue
+   abstraction across the engine.
+2. RW-128 (decision 65): needs the SushiProfiler pin bumped and a ruling on how the runtime reaches
+   its collector.
+3. The rounds and the two shells of `TaskScheduler` (`task_scheduler_rounds.cpp`,
    `task_scheduler_threads.cpp`, `task_scheduler_executor.cpp`) as classes of their own over the
-   state the rounds share.
-3. Job 4 of worker 8: the remaining LOGIC cases of the medium audit (session scratchpad
+   state the rounds share: not started; it moves about 750 lines and ~50 shared members, so it is
+   its own task.
+4. Job 4: the remaining LOGIC cases of the medium audit (session scratchpad
    `J16/sushiruntime/medium_audit.md`).
-4. Job 5 of worker 8: the per-module recount in `REPORT.md`.
+5. Job 5: the per-module recount in `REPORT.md`.
