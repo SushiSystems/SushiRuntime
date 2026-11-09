@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/usm_registry.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/memory/usm_source.hpp>
@@ -59,8 +60,11 @@ namespace SushiRuntime
                 /**
                  * @brief Takes the source to allocate from; a device's index is the source's.
                  * @param source Not null; the allocator owns it for its whole life.
+                 * @param collector The collector the allocator's zones and values record into; it must
+                 *                  outlive the allocator.
                  */
-                explicit USMAllocator(std::unique_ptr<USMSource> source);
+                explicit USMAllocator(std::unique_ptr<USMSource> source,
+                                      Profile::Collector& collector = Profile::process_collector());
 
                 /** @brief Leaves live allocations alone; live_count() says how many remain. */
                 ~USMAllocator() = default;
@@ -179,6 +183,9 @@ namespace SushiRuntime
 
                 /** @brief The memory of every device, fixed at construction; never null. */
                 std::unique_ptr<USMSource> source_;
+
+                /** @brief The collector the allocator's zones and values record into. */
+                Profile::Collector& collector_;
 
                 /** @brief Every live address, allocated here or adopted, and its device. */
                 USMRegistry registry_;

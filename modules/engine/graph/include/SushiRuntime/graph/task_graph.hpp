@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -181,10 +182,12 @@ namespace SushiRuntime
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  * @pre Every node is inserted first; not thread-safe against add_node() or
                  *        add_task().
+                 * @param collector Takes the compile's zone and values.
                  * @return The plan, or an InvalidGraph error that names one node of a cycle.
                  * @see modules/engine/graph/README.md
                  */
-                [[nodiscard]] Result<CompiledGraph> compile();
+                [[nodiscard]] Result<CompiledGraph>
+                compile(Profile::Collector& collector = Profile::process_collector());
 
                 /**
                  * @brief Hands off the built nodes without finalising a plan.

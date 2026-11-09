@@ -733,6 +733,12 @@ a `sycl::exception` from a queue build is `DeviceLost`, any other exception is
 `AllocationFailed`, and an empty or failed enumeration is `Unsupported`. The private constructor
 takes the finished parts and cannot fail.
 
+#### Profile collector
+
+A context holds the `Internal::Profile::Collector` its zones, values and counters record into; `create()`
+and `create_host()` take it last and default to the process-wide one. `profile_collector()` returns it,
+and the device set, the allocator and the scheduler record into it.
+
 #### Transfer counters
 
 `transfers`, an `Internal::Observability::TransferCounters`, counts only the explicit transfers the

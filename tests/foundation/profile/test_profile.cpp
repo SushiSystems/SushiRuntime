@@ -121,7 +121,7 @@ namespace
 TEST_F(Small_Profile, AZoneWritesAZoneEvent)
 {
     {
-        SR_ZONE("profile.test.zone");
+        SR_ZONE(::SushiRuntime::Internal::Profile::process_collector(), "profile.test.zone");
     }
 
     EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Zone}));
@@ -130,7 +130,7 @@ TEST_F(Small_Profile, AZoneWritesAZoneEvent)
 /** @brief Tests that a value writes one event of the value kind. */
 TEST_F(Small_Profile, AValueWritesAValueEvent)
 {
-    SR_VALUE("profile.test.value", "", 1.5);
+    SR_VALUE(::SushiRuntime::Internal::Profile::process_collector(), "profile.test.value", "", 1.5);
 
     EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Value}));
 }
@@ -138,7 +138,7 @@ TEST_F(Small_Profile, AValueWritesAValueEvent)
 /** @brief Tests that a counter writes one event of the counter kind. */
 TEST_F(Small_Profile, ACounterWritesACounterEvent)
 {
-    SR_COUNTER("profile.test.counter", "B", Add, 64.0);
+    SR_COUNTER(::SushiRuntime::Internal::Profile::process_collector(), "profile.test.counter", "B", Add, 64.0);
 
     EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Counter}));
 }

@@ -167,7 +167,12 @@ offload tests and `RuntimeContext::install_offload()` cover what it carries.
 
 ## test_runtime_context.cpp
 
-The file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
+`Small_RuntimeContextCollector` covers the collector a `RuntimeContext` records into: a context built with
+none reports the process-wide one, and a host context built over a `SushiProfiler::Collector` on a
+`ManualTickSource` shows the `wait.queues` zone of its device set in that collector, stamped by the manual
+clock. The zone is a level 2 zone, so the case skips when the build compiles fewer levels.
+
+The rest of the file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
 the g1 node event records design spec in the version history, built as task 3 of
 the g1 node event records plan spec in the version history. A profiled node needs the
 SYCL `command_submit`, `command_start` and `command_end` times, which only a queue built with

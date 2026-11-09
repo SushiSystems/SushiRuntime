@@ -700,13 +700,13 @@ namespace SushiRuntime
             const std::function<const Recorder*(RegionKey)>& recorder_of,
             const ContextHandle& context)
         {
-            SR_ZONE("region.commit");
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            SR_ZONE(runtime.profile_collector(), "region.commit");
 
             // A composer that never composed, or was moved from, holds no state yet.
             if (state_ == nullptr)
                 state_ = std::make_unique<Detail::RegionComposerState>();
-            return state_->commit(dirty, dropped, recorder_of, label_, id_.value(),
-                                  Internal::ContextAccess::context(context));
+            return state_->commit(dirty, dropped, recorder_of, label_, id_.value(), runtime);
         }
 
         bool RegionComposer::placement_changed(const ContextHandle& context) const noexcept

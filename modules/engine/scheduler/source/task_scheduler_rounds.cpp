@@ -277,7 +277,7 @@ namespace SushiRuntime
         {
             if (!task) return;
 
-            SR_ZONE_FINE("dispatch.task");
+            SR_ZONE_FINE(collector_, "dispatch.task");
 
             // An aborting run executes no more kernels (modules/engine/scheduler/README.md).
             if (outcome_.is_aborting())
@@ -341,7 +341,7 @@ namespace SushiRuntime
                     // The step is captured now, not read at reap, so a later round's step cannot land on this record.
                     const std::uint32_t step =
                         profiling ? current_dispatch_step_.load(std::memory_order_acquire) : 0;
-                    run_host_node(*node, profiling, step, active_ledger_);
+                    run_host_node(*node, profiling, step, active_ledger_, collector_);
                     events.push(completed_host_event(task));
                     return;
                 }
@@ -377,7 +377,7 @@ namespace SushiRuntime
                 sycl::event e;
                 std::vector<sycl::event> handed_over;
                 {
-                    SR_ZONE_FINE("dispatch.submit");
+                    SR_ZONE_FINE(collector_, "dispatch.submit");
                     e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
                                                      (profiling && host) ? &handed_over : nullptr);
                 }

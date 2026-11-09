@@ -266,7 +266,8 @@ namespace SushiRuntime
 
     Result<void> Runtime::wait() const
     {
-        SR_ZONE("wait.runtime");
-        return Internal::ContextAccess::context(context_).devices().wait_all();
+        Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
+        SR_ZONE(context.profile_collector(), "wait.runtime");
+        return context.devices().wait_all();
     }
 } // namespace SushiRuntime

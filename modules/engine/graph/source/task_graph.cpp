@@ -502,12 +502,13 @@ namespace SushiRuntime
 
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
+         * @param collector The collector the zone and the values record into.
          * @return The compiled graph ready to run, empty when no node was added, or an
          *         InvalidGraph error for no root or a cycle.
          */
-        Result<CompiledGraph> TaskGraph::compile()
+        Result<CompiledGraph> TaskGraph::compile(Profile::Collector& collector)
         {
-            SR_ZONE("plan.compile");
+            SR_ZONE(collector, "plan.compile");
 
             CompiledGraph graph;
             
@@ -632,8 +633,8 @@ namespace SushiRuntime
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
 
-            SR_VALUE("graph.nodes", "nodes", static_cast<double>(graph.all_nodes.size()));
-            SR_VALUE("graph.roots", "nodes", static_cast<double>(graph.roots.size()));
+            SR_VALUE(collector, "graph.nodes", "nodes", static_cast<double>(graph.all_nodes.size()));
+            SR_VALUE(collector, "graph.roots", "nodes", static_cast<double>(graph.roots.size()));
 
             // One line per compile for what the dependency tracker could not see (modules/engine/graph/README.md).
             const std::uint32_t untracked = impl_->untracked_regions.exchange(0, std::memory_order_relaxed);

@@ -46,12 +46,18 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiProfiler/clock/manual_tick_source.hpp>
+#include <SushiProfiler/collector/collector.hpp>
+#include <SushiProfiler/collector/collector_settings.hpp>
+#include <SushiProfiler/collector/drain_batch.hpp>
+
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
@@ -768,3 +774,49 @@ namespace RunObserverWiringTests
         EXPECT_FALSE(context().wants_device_timing());
     }
 } // namespace RunObserverWiringTests
+
+using SushiRuntime::Internal::Execution::RuntimeContext;
+
+namespace
+{
+    /** @brief Builds a host context that records into @p collector. */
+    std::shared_ptr<RuntimeContext> context_recording_into(SushiRuntime::Internal::Profile::Collector& collector)
+    {
+        return RuntimeContext::create_host(
+                   1, std::make_shared<SushiRuntime::SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED),
+                   std::make_shared<SushiRuntime::ManualClock>(), nullptr, nullptr, collector)
+            .value();
+    }
+} // namespace
+
+/** @brief Tests that a context built with no collector records into the process-wide one. */
+TEST(Small_RuntimeContextCollector, TheDefaultIsTheProcessWideCollector)
+{
+    const std::shared_ptr<RuntimeContext> context = TestSupport::make_host_context();
+
+    EXPECT_EQ(&context->profile_collector(), &SushiRuntime::Internal::Profile::process_collector());
+}
+
+#if SR_ENABLE_PROFILER
+
+/** @brief Tests that a zone the context's device set opens lands in the injected collector, stamped by its clock. */
+TEST(Small_RuntimeContextCollector, AnInjectedCollectorSeesTheZonesOfTheContext)
+{
+    if (SushiRuntime::Internal::Profile::K_COMPILED_LEVEL < 2)
+        GTEST_SKIP() << "The wait.queues zone is compiled in at level 2.";
+    SushiProfiler::ManualTickSource ticks(100U);
+    SushiProfiler::Collector collector(ticks);
+    ASSERT_TRUE(collector.open(SushiProfiler::CollectorSettings{}));
+    const std::shared_ptr<RuntimeContext> context = context_recording_into(collector);
+
+    ASSERT_TRUE(context->devices().wait_all().has_value());
+
+    SushiProfiler::DrainBatch batch;
+    collector.drain(batch);
+    ASSERT_EQ(batch.threads.size(), 1U);
+    ASSERT_EQ(batch.threads[0].events.size(), 1U);
+    EXPECT_EQ(batch.threads[0].events[0].begin, 100U);
+    EXPECT_EQ(batch.threads[0].events[0].end, 100U);
+}
+
+#endif // SR_ENABLE_PROFILER

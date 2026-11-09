@@ -97,7 +97,7 @@ namespace SushiRuntime
             if (th_id < 0 || static_cast<size_t>(th_id) >= num_workers_)
                 return nullptr;
 
-            SR_ZONE_DETAIL("worker.steal");
+            SR_ZONE_DETAIL(collector_, "worker.steal");
 
             const std::vector<int>& order = victim_order_[th_id];
             const int total = static_cast<int>(order.size());

@@ -21,6 +21,6 @@ sushiruntime_add_module(
         task_scheduler_stealing.cpp
         task_scheduler_threads.cpp
         worker_pool_sizing.cpp
-    DEPENDS core log sycl task machine report
-    PRIVATE_DEPENDS observability topology memory device region work_stealing profile
+    DEPENDS core log sycl task machine report profile
+    PRIVATE_DEPENDS observability topology memory device region work_stealing
     PUBLIC_EXTERNAL SushiLog::text)

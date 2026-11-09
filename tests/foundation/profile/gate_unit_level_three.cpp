@@ -42,8 +42,8 @@ namespace ProfileGateTests
 {
     void record_at_level_three()
     {
-        SR_ZONE("gate.three.stage");
-        SR_ZONE_FINE("gate.three.fine");
-        SR_ZONE_DETAIL("gate.three.detail");
+        SR_ZONE(::SushiRuntime::Internal::Profile::process_collector(), "gate.three.stage");
+        SR_ZONE_FINE(::SushiRuntime::Internal::Profile::process_collector(), "gate.three.fine");
+        SR_ZONE_DETAIL(::SushiRuntime::Internal::Profile::process_collector(), "gate.three.detail");
     }
 } // namespace ProfileGateTests

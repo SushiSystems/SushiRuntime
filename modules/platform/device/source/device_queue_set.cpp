@@ -137,16 +137,18 @@ namespace SushiRuntime
             }
         }
 
-        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling)
+        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling,
+                                       Profile::Collector& collector)
             // Either helper may run first: each touches only its own field of a descriptor.
             : DeviceQueueSet(descriptions_of(devices),
-                             std::make_unique<SYCLQueueFactory>(devices_of(devices)), profiling)
+                             std::make_unique<SYCLQueueFactory>(devices_of(devices)), profiling, collector)
         {
         }
 
         DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescription> devices,
-                                       std::unique_ptr<QueueFactory> factory, bool profiling)
-            : factory_(std::move(factory))
+                                       std::unique_ptr<QueueFactory> factory, bool profiling,
+                                       Profile::Collector& collector)
+            : factory_(std::move(factory)), collector_(collector)
         {
             SR_VERIFY(factory_ != nullptr, "A device set needs a queue factory.");
             SR_VERIFY(factory_->count() == devices.size(),
@@ -195,7 +197,9 @@ namespace SushiRuntime
             log_numa_routes();
         }
 
-        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescription> host_devices)
+        DeviceQueueSet::DeviceQueueSet(std::vector<DeviceDescription> host_devices,
+                                       Profile::Collector& collector)
+            : collector_(collector)
         {
             const std::size_t device_count = host_devices.size();
 
@@ -341,7 +345,7 @@ namespace SushiRuntime
 
         Result<void> DeviceQueueSet::wait_all()
         {
-            SR_ZONE_FINE("wait.queues");
+            SR_ZONE_FINE(collector_, "wait.queues");
             return first_failure_of([](sycl::queue& built) { built.wait_and_throw(); });
         }
 

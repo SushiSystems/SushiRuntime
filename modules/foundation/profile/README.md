@@ -24,13 +24,15 @@ nothing, the library builds without SushiProfiler present, and the `profiling` m
 
 | Name | What it does |
 | --- | --- |
-| `SR_ZONE(name)` | Records the rest of the scope as a stage zone, level 1, in the group `Runtime` |
-| `SR_ZONE_FINE(name)` | The same at level 2; the per-dispatch zones |
-| `SR_ZONE_DETAIL(name)` | The same at level 3; the work-stealing search |
-| `SR_VALUE(name, unit, value)` | Records a sample, level 1 |
-| `SR_COUNTER(name, unit, op, value)` | Records a value folded per period by the counter operation `op` (`Add`, `Set`, `Max`, `Min`), level 1 |
-| `SR_INSTANT(name)` | Records an occurrence, level 1 |
-| `SR_LOCK_WAIT(name, mutex)` | Locks `mutex` for the rest of the scope and records a zone only when the lock was contended |
+| `Internal::Profile::Collector` | The collector a record goes to: `SushiProfiler::Collector`, or an empty stand-in when the profiler is off |
+| `Internal::Profile::process_collector()` | The process-wide collector, the default a `RuntimeContext` records into |
+| `SR_ZONE(collector, name)` | Records the rest of the scope as a stage zone of `collector`, level 1, in the group `Runtime` |
+| `SR_ZONE_FINE(collector, name)` | The same at level 2; the per-dispatch zones |
+| `SR_ZONE_DETAIL(collector, name)` | The same at level 3; the work-stealing search |
+| `SR_VALUE(collector, name, unit, value)` | Records a sample into `collector`, level 1 |
+| `SR_COUNTER(collector, name, unit, op, value)` | Records a value into `collector`, folded per period by the counter operation `op` (`Add`, `Set`, `Max`, `Min`), level 1 |
+| `SR_INSTANT(name)` | Records an occurrence into the process-wide collector, level 1 |
+| `SR_LOCK_WAIT(name, mutex)` | Locks `mutex` for the rest of the scope and records a zone into the process-wide collector only when the lock was contended |
 | `Internal::Profile::current_thread_index()` | The profiler's index of the calling thread, or 0 when it has none |
 | `Internal::Profile::name_this_thread(name)` | Registers the calling thread and names it, so its first zone allocates nothing |
 
@@ -47,8 +49,13 @@ zone at a compiled-in level costs one relaxed load and a branch while no session
 under 25 ns while one does (the profiler's budget, not a measurement of this runtime). A zone above
 the compiled level is an empty object and registers no site.
 
-With `SR_ENABLE_PROFILER` off, `SR_VALUE` and `SR_COUNTER` evaluate nothing, since their operand
-is only named in `sizeof`, and `SR_LOCK_WAIT` is a plain `std::lock_guard`. The file that uses it
+A runtime unit records into the collector of the `RuntimeContext` it runs under, never the global
+one, so a caller can hand a context a collector of its own (`RuntimeContext::create_host()` takes
+it as its last argument). The `SR_ZONE` family, `SR_VALUE` and `SR_COUNTER` take that collector
+first. `SR_INSTANT` and `SR_LOCK_WAIT` still reach the process-wide one.
+
+With `SR_ENABLE_PROFILER` off, the `SR_ZONE` family, `SR_VALUE` and `SR_COUNTER` evaluate nothing,
+since the collector and the value are only named in `sizeof`, and `SR_LOCK_WAIT` is a plain `std::lock_guard`. The file that uses it
 includes `<mutex>`; the header does not.
 
 ## Tests

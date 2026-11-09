@@ -53,7 +53,8 @@ namespace SushiRuntime
          * @brief Runs a host node on the calling thread and, under profiling, records its span.
          */
         void run_host_node(Internal::Graph::Node& node, bool profiling, std::uint32_t step,
-                           const std::atomic<Internal::Observability::ProfilingLedger*>& ledger)
+                           const std::atomic<Internal::Observability::ProfilingLedger*>& ledger,
+                           Profile::Collector& collector)
         {
             if (!profiling)
             {
@@ -63,7 +64,7 @@ namespace SushiRuntime
 
             const auto h0 = std::chrono::steady_clock::now();
             {
-                SR_ZONE_FINE("dispatch.host");
+                SR_ZONE_FINE(collector, "dispatch.host");
                 node.execute_native();
             }
             const auto h1 = std::chrono::steady_clock::now();

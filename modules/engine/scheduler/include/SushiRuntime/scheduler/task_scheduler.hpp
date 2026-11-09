@@ -52,6 +52,7 @@
 #include <SushiRuntime/scheduler/offload_gate.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
@@ -197,6 +198,8 @@ namespace SushiRuntime
                 Internal::Device::DeviceQueueSet& devices_;
                 /** @brief Allocator asked which device owns a node's USM. */
                 const Internal::Memory::USMAllocator& memory_;
+                /** @brief Collector the scheduler's dispatch and steal zones record into. */
+                Profile::Collector& collector_;
                 /**
                  * @brief Offers each offloadable node to the installed coordinator at dispatch.
                  * @see modules/engine/scheduler/README.md
@@ -343,11 +346,13 @@ namespace SushiRuntime
                  * @param topology Must outlive the scheduler.
                  * @param devices Must outlive the scheduler.
                  * @param memory Must outlive the scheduler.
+                 * @param collector Takes the dispatch and steal zones; must outlive the scheduler.
                  */
                 TaskScheduler(const WorkerPoolSettings& pool,
                               const Internal::Topology::TopologyView& topology,
                               Internal::Device::DeviceQueueSet& devices,
-                              const Internal::Memory::USMAllocator& memory);
+                              const Internal::Memory::USMAllocator& memory,
+                              Profile::Collector& collector = Profile::process_collector());
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
 

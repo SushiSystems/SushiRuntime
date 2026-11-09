@@ -45,25 +45,57 @@
 /** @brief The group every runtime zone is charged to. */
 #define SR_PROFILE_GROUP "Runtime"
 
-/** @brief Records the rest of the scope as a stage zone, level 1. */
-#define SR_ZONE(name) \
-    SP_ZONE_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 1, name, SR_PROFILE_GROUP)
+/** @brief Pastes two tokens after expanding them. */
+#define SR_PROFILE_JOIN(left, right) SR_PROFILE_JOIN_INNER(left, right)
 
-/** @brief Records the rest of the scope as a fine zone, level 2. */
-#define SR_ZONE_FINE(name) \
-    SP_ZONE_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 2, name, SR_PROFILE_GROUP)
+/** @brief Pastes two tokens. */
+#define SR_PROFILE_JOIN_INNER(left, right) left##right
 
-/** @brief Records the rest of the scope as a per-element zone, level 3. */
-#define SR_ZONE_DETAIL(name) \
-    SP_ZONE_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 3, name, SR_PROFILE_GROUP)
+/** @brief Declares the site and handle of record @p id; the handle is empty when @p compiled_in is false. */
+#define SR_PROFILE_SITE(id, compiled_in, name, group, level, role, op, unit) \
+    static constexpr ::SushiProfiler::Site SR_PROFILE_JOIN(sr_site_, id){ \
+        name, group, __FILE__, __LINE__, level, ::SushiProfiler::SiteRole::role, \
+        ::SushiProfiler::CounterOp::op, unit}; \
+    static ::SushiProfiler::SiteSlot<compiled_in> SR_PROFILE_JOIN(sr_handle_, id) \
+    { \
+        &SR_PROFILE_JOIN(sr_site_, id) \
+    }
 
-/** @brief Records @p value as a sample of @p unit, level 1. */
-#define SR_VALUE(name, unit, value) \
-    SP_VALUE_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 1, name, unit, value)
+/** @brief Declares zone @p id of @p level into @p collector, compiled in when @p level is at most the compiled level. */
+#define SR_PROFILE_ZONE(id, collector, level, name) \
+    SR_PROFILE_SITE(id, ((level) <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL), name, \
+                    SR_PROFILE_GROUP, level, Zone, Add, nullptr); \
+    [[maybe_unused]] const ::SushiProfiler::ScopedZone< \
+        ((level) <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL)> \
+        SR_PROFILE_JOIN(sr_zone_, id)(collector, SR_PROFILE_JOIN(sr_handle_, id))
 
-/** @brief Records @p value at a counter folded per period by CounterOp @p op, level 1. */
-#define SR_COUNTER(name, unit, op, value) \
-    SP_COUNTER_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 1, name, unit, op, value)
+/** @brief Declares a level 1 value or counter site @p id and records @p value into @p collector through @p record. */
+#define SR_PROFILE_SAMPLE(id, collector, role, op, record, name, unit, value) \
+    do \
+    { \
+        if constexpr (1 <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL) \
+        { \
+            SR_PROFILE_SITE(id, true, name, nullptr, 1, role, op, unit); \
+            ::SushiProfiler::record((collector), SR_PROFILE_JOIN(sr_handle_, id), value); \
+        } \
+    } while (false)
+
+/** @brief Records the rest of the scope as a stage zone, level 1, into @p collector. */
+#define SR_ZONE(collector, name) SR_PROFILE_ZONE(__COUNTER__, collector, 1, name)
+
+/** @brief Records the rest of the scope as a fine zone, level 2, into @p collector. */
+#define SR_ZONE_FINE(collector, name) SR_PROFILE_ZONE(__COUNTER__, collector, 2, name)
+
+/** @brief Records the rest of the scope as a per-element zone, level 3, into @p collector. */
+#define SR_ZONE_DETAIL(collector, name) SR_PROFILE_ZONE(__COUNTER__, collector, 3, name)
+
+/** @brief Records @p value as a sample of @p unit, level 1, into @p collector. */
+#define SR_VALUE(collector, name, unit, value) \
+    SR_PROFILE_SAMPLE(__COUNTER__, collector, Value, Add, record_value, name, unit, value)
+
+/** @brief Records @p value at a counter folded per period by CounterOp @p op, level 1, into @p collector. */
+#define SR_COUNTER(collector, name, unit, op, value) \
+    SR_PROFILE_SAMPLE(__COUNTER__, collector, Counter, op, record_counter, name, unit, value)
 
 /** @brief Records an occurrence now, level 1. */
 #define SR_INSTANT(name) \
@@ -77,6 +109,15 @@ namespace SushiRuntime
 {
     namespace Internal::Profile
     {
+        /** @brief The collector the runtime records into. */
+        using Collector = ::SushiProfiler::Collector;
+
+        /** @brief Returns the process-wide collector, the one a runtime records into unless it is given another. */
+        [[nodiscard]] inline Collector& process_collector()
+        {
+            return Collector::instance();
+        }
+
         /**
          * @brief Returns the profiler's index of the calling thread, or 0 when it has none.
          *
@@ -100,12 +141,12 @@ namespace SushiRuntime
 #else // SR_ENABLE_PROFILER
 
 #define SR_PROFILE_GROUP "Runtime"
-#define SR_ZONE(name) static_cast<void>(0)
-#define SR_ZONE_FINE(name) static_cast<void>(0)
-#define SR_ZONE_DETAIL(name) static_cast<void>(0)
-/** @brief Evaluates nothing: the unevaluated operand keeps a variable only a value reads from being reported unused. */
-#define SR_VALUE(name, unit, value) static_cast<void>(sizeof(value))
-#define SR_COUNTER(name, unit, op, value) static_cast<void>(sizeof(value))
+/** @brief Evaluates nothing: the unevaluated operands keep a collector or a value only a record reads from being reported unused. */
+#define SR_ZONE(collector, name) static_cast<void>(sizeof(collector))
+#define SR_ZONE_FINE(collector, name) static_cast<void>(sizeof(collector))
+#define SR_ZONE_DETAIL(collector, name) static_cast<void>(sizeof(collector))
+#define SR_VALUE(collector, name, unit, value) static_cast<void>(sizeof(collector) + sizeof(value))
+#define SR_COUNTER(collector, name, unit, op, value) static_cast<void>(sizeof(collector) + sizeof(value))
 #define SR_INSTANT(name) static_cast<void>(0)
 
 /** @brief Pastes two tokens after expanding them. */
@@ -127,6 +168,18 @@ namespace SushiRuntime
 {
     namespace Internal::Profile
     {
+        /** @brief Stands in for the collector: without the profiler nothing records. */
+        struct Collector
+        {
+        };
+
+        /** @brief Returns the one stand-in collector. */
+        [[nodiscard]] inline Collector& process_collector() noexcept
+        {
+            static Collector collector;
+            return collector;
+        }
+
         /** @brief Returns 0: without the profiler no thread has an index. */
         [[nodiscard]] inline std::uint32_t current_thread_index() noexcept
         {

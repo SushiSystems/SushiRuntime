@@ -45,6 +45,7 @@
 #include <SushiRuntime/device/numa_route_table.hpp>
 #include <SushiRuntime/device/queue_factory.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 
 namespace SushiRuntime
 {
@@ -64,19 +65,21 @@ namespace SushiRuntime
                  * @brief Holds the devices of the descriptors and builds the NUMA routing table.
                  * @param devices The inventory, in the order that fixes each device's index.
                  * @param profiling True to build every plain queue with enable_profiling.
+                 * @param collector The collector the set's zones record into; it must outlive the set.
                  */
-                DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling);
+                DeviceQueueSet(std::vector<DeviceDescriptor> devices, bool profiling,
+                               Profile::Collector& collector = Profile::process_collector());
 
                 /**
-                 * @brief Holds the factory every queue is built through, and builds the NUMA
-                 *        routing table; no queue is built until one is asked for.
+                 * @brief Holds the factory every queue is built through and the NUMA routing table; builds no queue.
                  * @param devices The inventory, in the order that fixes each device's index.
-                 * @param factory Builds every queue of the set; holds a device per entry of
-                 *                @p devices. Must not be null.
+                 * @param factory Builds every queue; holds one device per entry of @p devices; not null.
                  * @param profiling True to build every plain queue with enable_profiling.
+                 * @param collector The collector the set's zones record into; it must outlive the set.
                  */
                 DeviceQueueSet(std::vector<DeviceDescription> devices,
-                               std::unique_ptr<QueueFactory> factory, bool profiling);
+                               std::unique_ptr<QueueFactory> factory, bool profiling,
+                               Profile::Collector& collector = Profile::process_collector());
 
                 /**
                  * @brief Builds a set of host devices that holds no queue and makes no device.
@@ -84,8 +87,10 @@ namespace SushiRuntime
                  * count(), devices() and the NUMA routes answer as for any set; a call that
                  * returns a queue stops the process, and wait_all() has nothing to wait on.
                  * @param host_devices The inventory, in the order that fixes each device's index.
+                 * @param collector The collector the set's zones record into; it must outlive the set.
                  */
-                explicit DeviceQueueSet(std::vector<DeviceDescription> host_devices);
+                explicit DeviceQueueSet(std::vector<DeviceDescription> host_devices,
+                                        Profile::Collector& collector = Profile::process_collector());
 
                 /** @brief Waits for every built queue; logs a failure and never throws. */
                 ~DeviceQueueSet();
@@ -256,6 +261,9 @@ namespace SushiRuntime
 
                 /// @brief Builds every queue of the set; null for a set of host devices.
                 std::unique_ptr<QueueFactory> factory_;
+
+                /** @brief The collector the set's zones record into. */
+                Profile::Collector& collector_;
         };
     } // namespace Device
 } // namespace SushiRuntime

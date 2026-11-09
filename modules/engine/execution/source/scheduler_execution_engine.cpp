@@ -201,7 +201,7 @@ namespace SushiRuntime
              */
             Impl(RuntimeContext& context)
                 : scheduler(worker_pool_settings(context.settings()), context.topology(),
-                            context.devices(), context.memory()),
+                            context.devices(), context.memory(), context.profile_collector()),
                   devices(context.devices()),
                   context(context)
             {
@@ -361,7 +361,7 @@ namespace SushiRuntime
         void SchedulerExecutionEngine::collect_profiling(Internal::Graph::CompiledGraph& graph,
                                                          RunObservation& observation) const
         {
-            SR_ZONE_FINE("run.collect");
+            SR_ZONE_FINE(impl_->context.profile_collector(), "run.collect");
             fill_observation(graph, observation);
         }
 
@@ -384,10 +384,11 @@ namespace SushiRuntime
                 idle_ms     += split.idle_ns / 1.0e6;
             }
             impl_->scheduler.reset_worker_times();
-            SR_VALUE("worker.busy", "ms", busy_ms);
-            SR_VALUE("worker.stealing", "ms", stealing_ms);
-            SR_VALUE("worker.polling", "ms", polling_ms);
-            SR_VALUE("worker.idle", "ms", idle_ms);
+            Profile::Collector& collector = impl_->context.profile_collector();
+            SR_VALUE(collector, "worker.busy", "ms", busy_ms);
+            SR_VALUE(collector, "worker.stealing", "ms", stealing_ms);
+            SR_VALUE(collector, "worker.polling", "ms", polling_ms);
+            SR_VALUE(collector, "worker.idle", "ms", idle_ms);
         }
 
         /**
@@ -444,7 +445,7 @@ namespace SushiRuntime
          */
         Result<void> SchedulerExecutionEngine::submit(Internal::Graph::CompiledGraph& graph)
         {
-            SR_ZONE("run.submit");
+            SR_ZONE(impl_->context.profile_collector(), "run.submit");
 
             if (impl_->is_shutdown.load(std::memory_order_acquire))
                 return make_error(Error{ErrorCode::InvalidState, "Execute called after shutdown."});
@@ -548,18 +549,18 @@ namespace SushiRuntime
          */
         Result<void> SchedulerExecutionEngine::complete()
         {
-            SR_ZONE("run.wait");
+            SR_ZONE(impl_->context.profile_collector(), "run.wait");
 
             const ScheduledRunRelease release_guard(impl_->run_marker);
 
             {
-                SR_ZONE_FINE("run.wait.latch");
+                SR_ZONE_FINE(impl_->context.profile_collector(), "run.wait.latch");
                 impl_->completion.wait();
             }
 
             // The pool drains before the caller may destroy the graph (modules/engine/execution/README.md).
             {
-                SR_ZONE_FINE("run.wait.quiesce");
+                SR_ZONE_FINE(impl_->context.profile_collector(), "run.wait.quiesce");
                 impl_->scheduler.wait_quiescent();
             }
 
@@ -569,7 +570,7 @@ namespace SushiRuntime
             // The queues are drained of their asynchronous errors whether or not a task failed.
             Result<void> raised;
             {
-                SR_ZONE_FINE("run.wait.errors");
+                SR_ZONE_FINE(impl_->context.profile_collector(), "run.wait.errors");
                 raised = impl_->devices.raise_asynchronous_errors();
             }
 

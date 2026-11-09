@@ -79,4 +79,4 @@ commit  = "97668009bb213e280701429d20ac9164a068ca88"
 # package to CMake as SushiProfiler_DIR.
 [sushisystems.sushiprofiler]
 version = "v0.4.1"
-commit  = "fa97fde6d8b495a1856159c9929a000a817e5450"
+commit  = "332311d22894e6579209e1b186797719345af0b9"

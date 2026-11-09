@@ -103,10 +103,9 @@ namespace SushiRuntime
         {
             using Internal::Graph::TaskGraph;
 
-            SR_ZONE("plan.build");
-
             Internal::Execution::RuntimeContext& runtime =
                 Internal::ContextAccess::context(context);
+            SR_ZONE(runtime.profile_collector(), "plan.build");
             const auto build_started = std::chrono::steady_clock::now();
             const char* const reason = rebuild_reason(recorder, runtime);
             auto built = std::make_unique<Detail::PlanCacheState>();
@@ -137,19 +136,19 @@ namespace SushiRuntime
             if (refusal)
                 return make_error(std::move(*refusal));
             // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
-            Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile();
+            Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile(runtime.profile_collector());
             if (!compiled)
                 return make_error(std::move(compiled.error()));
             built->plan = std::move(*compiled);
             {
-                SR_ZONE_FINE("plan.prepare");
+                SR_ZONE_FINE(runtime.profile_collector(), "plan.prepare");
                 runtime.execution_engine().prepare(built->plan, built->placement->rules);
                 built->plan.label = label_;
                 built->plan.graph_id = id_.value();
                 built->plan.capture_base_state();
             }
             {
-                SR_ZONE_FINE("plan.classify");
+                SR_ZONE_FINE(runtime.profile_collector(), "plan.classify");
                 built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
             }
             state_ = std::move(built);

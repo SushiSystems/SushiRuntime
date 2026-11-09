@@ -42,8 +42,8 @@ namespace ProfileGateTests
 {
     void record_at_level_two()
     {
-        SR_ZONE("gate.two.stage");
-        SR_ZONE_FINE("gate.two.fine");
-        SR_ZONE_DETAIL("gate.two.detail");
+        SR_ZONE(::SushiRuntime::Internal::Profile::process_collector(), "gate.two.stage");
+        SR_ZONE_FINE(::SushiRuntime::Internal::Profile::process_collector(), "gate.two.fine");
+        SR_ZONE_DETAIL(::SushiRuntime::Internal::Profile::process_collector(), "gate.two.detail");
     }
 } // namespace ProfileGateTests

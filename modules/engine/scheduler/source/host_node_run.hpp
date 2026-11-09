@@ -33,6 +33,8 @@
 #include <atomic>
 #include <cstdint>
 
+#include <SushiRuntime/profile/profile.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Graph { struct Node; }
@@ -46,9 +48,11 @@ namespace SushiRuntime
          * @param profiling The run's profiling flag, read once for the dispatch.
          * @param step The run step the dispatch belongs to; used only under profiling.
          * @param ledger Loaded after the node ran; the span is recorded when it holds a ledger.
+         * @param collector Takes the dispatch zone.
          */
         void run_host_node(Internal::Graph::Node& node, bool profiling, std::uint32_t step,
-                           const std::atomic<Internal::Observability::ProfilingLedger*>& ledger);
+                           const std::atomic<Internal::Observability::ProfilingLedger*>& ledger,
+                           Profile::Collector& collector);
 
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

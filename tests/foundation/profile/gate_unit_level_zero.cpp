@@ -42,8 +42,8 @@ namespace ProfileGateTests
 {
     void record_at_level_zero()
     {
-        SR_ZONE("gate.zero.stage");
-        SR_ZONE_FINE("gate.zero.fine");
-        SR_VALUE("gate.zero.value", "", 1.0);
+        SR_ZONE(::SushiRuntime::Internal::Profile::process_collector(), "gate.zero.stage");
+        SR_ZONE_FINE(::SushiRuntime::Internal::Profile::process_collector(), "gate.zero.fine");
+        SR_VALUE(::SushiRuntime::Internal::Profile::process_collector(), "gate.zero.value", "", 1.0);
     }
 } // namespace ProfileGateTests

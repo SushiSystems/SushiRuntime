@@ -90,15 +90,16 @@ namespace SushiRuntime
             }
         } // namespace
 
-        USMAllocator::USMAllocator(std::unique_ptr<USMSource> source) : source_(std::move(source))
+        USMAllocator::USMAllocator(std::unique_ptr<USMSource> source, Profile::Collector& collector)
+            : source_(std::move(source)), collector_(collector)
         {
             SR_VERIFY(source_ != nullptr, "USMAllocator: pass a USM source, not null.");
         }
 
         void* USMAllocator::allocate(const USMRequest& request)
         {
-            SR_ZONE_FINE("memory.allocate");
-            SR_VALUE("memory.allocate_bytes", "bytes", static_cast<double>(request.bytes));
+            SR_ZONE_FINE(collector_, "memory.allocate");
+            SR_VALUE(collector_, "memory.allocate_bytes", "bytes", static_cast<double>(request.bytes));
 
             require_device(request.device_index);
             void* const address = source_->allocate(request);
@@ -119,7 +120,7 @@ namespace SushiRuntime
             if (!address)
                 return;
 
-            SR_ZONE_FINE("memory.release");
+            SR_ZONE_FINE(collector_, "memory.release");
 
             // Counted before the load: zero read after a store means no call holds the old one.
             observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);

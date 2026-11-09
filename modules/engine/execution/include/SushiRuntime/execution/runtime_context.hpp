@@ -43,6 +43,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
@@ -84,8 +85,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Creates a runtime context and scans for hardware matching config.
-                 * @param provider Topology source; null selects the hwloc default.
-                 * @param distance_model NUMA distance model; null selects the hwloc default.
+                 * @param provider,distance_model Topology and NUMA distances; null selects the hwloc default.
+                 * @param collector Takes the context's zones, values and counters; it must outlive the context.
                  * @return The context, or Unsupported when no device passes config or cannot be listed,
                  *         DeviceLost when a queue cannot be built, AllocationFailed when memory or a thread is refused.
                  * @see modules/engine/execution/README.md
@@ -94,21 +95,23 @@ namespace SushiRuntime
                 create(const DeviceFilter& config = {},
                        std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
                        std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
-                       const RuntimeSettings& settings = {});
+                       const RuntimeSettings& settings = {},
+                       Profile::Collector& collector = Profile::process_collector());
 
                 /**
                  * @brief Builds a host context, with no SYCL device, queue or offload.
                  * @param device_count Host devices the context stands for; at least 1.
-                 * @param executor Runs every node; not null.
-                 * @param clock Times every recorded dispatch; not null.
+                 * @param executor,clock The executor that runs every node and the clock that times it; not null.
                  * @param provider,distance_model Topology and NUMA distances; null keeps the host's own.
+                 * @param collector Takes the context's zones, values and counters; it must outlive the context.
                  * @see modules/engine/execution/README.md
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
                 create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
                             std::shared_ptr<const Clock> clock,
                             std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
-                            std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model = nullptr);
+                            std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model = nullptr,
+                            Profile::Collector& collector = Profile::process_collector());
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
@@ -123,6 +126,12 @@ namespace SushiRuntime
                  * @see modules/engine/execution/README.md
                  */
                 const RuntimeSettings& settings() const noexcept;
+
+                /**
+                 * @brief Returns the collector this context records its zones, values and counters into.
+                 * @return A reference valid for this context's lifetime.
+                 */
+                [[nodiscard]] Profile::Collector& profile_collector() const noexcept;
 
                 /** @brief Returns the core-to-NUMA map and the NUMA distances. */
                 [[nodiscard]] const Internal::Topology::TopologyView& topology() const noexcept;

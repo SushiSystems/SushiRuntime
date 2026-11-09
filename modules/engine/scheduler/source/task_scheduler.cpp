@@ -83,8 +83,9 @@ namespace SushiRuntime
         TaskScheduler::TaskScheduler(const WorkerPoolSettings& pool,
                                      const Internal::Topology::TopologyView& topology,
                                      Internal::Device::DeviceQueueSet& devices,
-                                     const Internal::Memory::USMAllocator& memory)
-            : topology_(topology), devices_(devices), memory_(memory)
+                                     const Internal::Memory::USMAllocator& memory,
+                                     Profile::Collector& collector)
+            : topology_(topology), devices_(devices), memory_(memory), collector_(collector)
         {
             const PoolSize size = size_worker_pool(pool, std::thread::hardware_concurrency());
             num_workers_ = size.workers;

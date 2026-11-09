@@ -90,19 +90,20 @@ namespace SushiRuntime
 
             /**
              * @brief Writes the counts only the runtime sees as profiler counters, into the run's period.
+             * @param collector The collector the counters record into.
              * @param before The scheduler counters at the start of the run.
              * @param after The scheduler counters at its end.
              */
-            void write_run_counters(const ExecutionMetrics& before, const ExecutionMetrics& after,
-                                    std::size_t tasks, std::size_t host_to_device,
-                                    std::size_t device_to_host)
+            void write_run_counters(Internal::Profile::Collector& collector, const ExecutionMetrics& before,
+                                    const ExecutionMetrics& after, std::size_t tasks,
+                                    std::size_t host_to_device, std::size_t device_to_host)
             {
                 const std::size_t steals = (after.local_steals - before.local_steals) +
                                            (after.remote_steals - before.remote_steals);
-                SR_COUNTER("run.tasks", "tasks", Add, static_cast<double>(tasks));
-                SR_COUNTER("run.steals", "tasks", Add, static_cast<double>(steals));
-                SR_COUNTER("transfer.h2d_bytes", "bytes", Add, static_cast<double>(host_to_device));
-                SR_COUNTER("transfer.d2h_bytes", "bytes", Add, static_cast<double>(device_to_host));
+                SR_COUNTER(collector, "run.tasks", "tasks", Add, static_cast<double>(tasks));
+                SR_COUNTER(collector, "run.steals", "tasks", Add, static_cast<double>(steals));
+                SR_COUNTER(collector, "transfer.h2d_bytes", "bytes", Add, static_cast<double>(host_to_device));
+                SR_COUNTER(collector, "transfer.d2h_bytes", "bytes", Add, static_cast<double>(device_to_host));
             }
 
             /**
@@ -230,7 +231,8 @@ namespace SushiRuntime
                                RunReport& report, std::size_t expected_invocations,
                                StepSync sync)
         {
-            SR_ZONE("run.steps");
+            RuntimeContext& context = Internal::ContextAccess::context(*target.context);
+            SR_ZONE(context.profile_collector(), "run.steps");
 
             CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
@@ -241,7 +243,6 @@ namespace SushiRuntime
             // State views point at their current and next buffers before the first step.
             steps.resync();
 
-            RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             engine.reset_cancellation();
 
@@ -274,7 +275,8 @@ namespace SushiRuntime
             report.layer = chained ? ExecutionLayer::Chain : ExecutionLayer::Scheduler;
 
             // Only explicit transfers are counted; implicit USM migration is not.
-            write_run_counters(before, after, total_tasks, transfers.host_to_device() - h2d_before,
+            write_run_counters(context.profile_collector(), before, after, total_tasks,
+                               transfers.host_to_device() - h2d_before,
                                transfers.device_to_host() - d2h_before);
 
             engine.write_run_values();
@@ -284,9 +286,9 @@ namespace SushiRuntime
 
         Result<void> submit_step(const StepTarget& target, AsyncRunState& state)
         {
-            SR_ZONE("run.submit_step");
-
             RuntimeContext& context = Internal::ContextAccess::context(*target.context);
+            SR_ZONE(context.profile_collector(), "run.submit_step");
+
             ExecutionEngine& engine = context.execution_engine();
             CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
@@ -318,9 +320,9 @@ namespace SushiRuntime
         Result<void> finish_step(const StepTarget& target, const AsyncRunState& state,
                                  RunReport& report)
         {
-            SR_ZONE("run.finish_step");
-
             RuntimeContext& context = Internal::ContextAccess::context(*target.context);
+            SR_ZONE(context.profile_collector(), "run.finish_step");
+
             ExecutionEngine& engine = context.execution_engine();
             const StepMachinery& steps = *target.steps;
 
@@ -334,7 +336,7 @@ namespace SushiRuntime
 
             report.cancelled = engine.is_cancelled();
             const Internal::Observability::TransferCounters& transfers = context.transfers();
-            write_run_counters(before, after, state.task_count,
+            write_run_counters(context.profile_collector(), before, after, state.task_count,
                                transfers.host_to_device() - state.host_to_device_before,
                                transfers.device_to_host() - state.device_to_host_before);
 

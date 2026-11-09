@@ -178,12 +178,14 @@ namespace SushiRuntime
             Impl(const RuntimeSettings& runtime_settings,
                  Internal::Topology::TopologyProvider& provider,
                  std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
-                 std::vector<Internal::Device::DeviceDescriptor> descriptors)
-                : settings(runtime_settings),
+                 std::vector<Internal::Device::DeviceDescriptor> descriptors,
+                 Profile::Collector& profile)
+                : collector(profile),
+                  settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
-                  devices(std::move(descriptors), false),
+                  devices(std::move(descriptors), false, profile),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      Internal::Memory::make_sycl_usm_source(devices.plain_queues())))
+                      Internal::Memory::make_sycl_usm_source(devices.plain_queues()), profile))
             {
             }
 
@@ -198,14 +200,16 @@ namespace SushiRuntime
             Impl(const RuntimeSettings& runtime_settings,
                  Internal::Topology::TopologyProvider& provider,
                  std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
-                 std::vector<DeviceDescription> host_devices)
-                : settings(runtime_settings),
+                 std::vector<DeviceDescription> host_devices,
+                 Profile::Collector& profile)
+                : collector(profile),
+                  settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(host_devices,
                           std::make_unique<Internal::Device::InMemoryQueueFactory>(host_devices.size()),
-                          false),
+                          false, profile),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      Internal::Memory::make_host_usm_source(devices.count())))
+                      Internal::Memory::make_host_usm_source(devices.count()), profile))
             {
             }
 
@@ -246,6 +250,9 @@ namespace SushiRuntime
 
             Impl(const Impl&) = delete;
             Impl& operator=(const Impl&) = delete;
+
+            /** @brief The collector the context's zones, values and counters record into. */
+            Profile::Collector& collector;
 
             /** @brief Runtime settings, fixed at construction (modules/engine/execution/README.md). */
             RuntimeSettings settings;
@@ -312,7 +319,8 @@ namespace SushiRuntime
         RuntimeContext::create(const DeviceFilter& config,
                                std::shared_ptr<Internal::Topology::TopologyProvider> provider,
                                std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
-                               const RuntimeSettings& settings)
+                               const RuntimeSettings& settings,
+                               Profile::Collector& collector)
         {
             SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Initializing compute stack...");
 
@@ -337,7 +345,7 @@ namespace SushiRuntime
                 }
 
                 context = std::shared_ptr<RuntimeContext>(new RuntimeContext(make_sushi<Impl>(
-                    settings, *provider, std::move(distance_model), std::move(*descriptors))));
+                    settings, *provider, std::move(distance_model), std::move(*descriptors), collector)));
 
                 // The engine reads the context while it is built, so impl_ is complete first.
                 auto engine = std::make_unique<SchedulerExecutionEngine>(*context);
@@ -355,7 +363,8 @@ namespace SushiRuntime
         RuntimeContext::create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
                                     std::shared_ptr<const Clock> clock,
                                     std::shared_ptr<Internal::Topology::TopologyProvider> provider,
-                                    std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model)
+                                    std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
+                                    Profile::Collector& collector)
         {
             SR_VERIFY(device_count > 0,
                       "RuntimeContext::create_host: pass a device count of at least 1.");
@@ -374,7 +383,7 @@ namespace SushiRuntime
             if (!distance_model)
                 distance_model = std::move(machine.distance_model);
             std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
-                settings, *provider, std::move(distance_model), std::move(machine.devices))));
+                settings, *provider, std::move(distance_model), std::move(machine.devices), collector)));
             const std::weak_ptr<RuntimeContext> observed = context;
             context->impl_->engine = std::make_unique<HostExecutionEngine>(
                 std::move(executor), std::move(clock), device_count,
@@ -396,6 +405,11 @@ namespace SushiRuntime
         const RuntimeSettings& RuntimeContext::settings() const noexcept
         {
             return impl_->settings;
+        }
+
+        Profile::Collector& RuntimeContext::profile_collector() const noexcept
+        {
+            return impl_->collector;
         }
 
         const Internal::Topology::TopologyView& RuntimeContext::topology() const noexcept

@@ -59,6 +59,7 @@ namespace SushiRuntime
          */
         ChainRun::ChainRun(RuntimeContext& context, Internal::Graph::CompiledGraph& graph)
             : graph_(graph),
+              collector_(context.profile_collector()),
               queue_(context.devices().queue(graph.chain.queue_index,
                                          Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
@@ -114,7 +115,7 @@ namespace SushiRuntime
          */
         Result<void> ChainRun::submit_step(std::uint32_t step)
         {
-            SR_ZONE("chain.submit_step");
+            SR_ZONE(collector_, "chain.submit_step");
             for (Internal::Graph::Node* node : graph_.chain.order)
             {
                 // The step machinery wrote enabled on this thread before this step.
@@ -141,7 +142,7 @@ namespace SushiRuntime
          */
         Result<void> ChainRun::wait()
         {
-            SR_ZONE("chain.wait");
+            SR_ZONE(collector_, "chain.wait");
             // The asynchronous handler rethrows here, where the wait is.
             return SYCL::translate_exceptions([this]() { queue_.wait_and_throw(); });
         }
@@ -221,7 +222,7 @@ namespace SushiRuntime
          */
         void ChainRun::record_events()
         {
-            SR_ZONE_FINE("chain.record_events");
+            SR_ZONE_FINE(collector_, "chain.record_events");
 
             Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             const std::uint32_t device = static_cast<std::uint32_t>(graph_.chain.queue_index);
