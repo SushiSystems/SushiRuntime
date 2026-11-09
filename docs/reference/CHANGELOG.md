@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-09 — api: Timed `run_for` on the clock the runtime context holds, so a host runtime on a `ManualClock` ends a budgeted run when a step body advances it (RW-111, `aa51520e`).
 - 2026-11-09 — tests: Ran the uncontended lock-wait case small; the profile gate cases already run small on a collector (RW-115, `d6cbbdbd`).
 - 2026-11-09 — tests: Ran the null Win32 handle, file descriptor, offset and UUID refusals of an import small on `descriptor_refusal()` and `device_refusal()`; the import test keeps the region row as its wiring (RW-112, `883bd791`).
 - 2026-11-09 — tests: Ran every host-reachable profiling case small on a host runtime and a collector of its own; the cases that need a device, a thread or `dispatch.submit` stay medium (RW-132, `a0197e27`).
