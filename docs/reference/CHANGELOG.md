@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-09 — tests: Ran the uncontended lock-wait case small; the profile gate cases already run small on a collector (RW-115, `d6cbbdbd`).
 - 2026-11-09 — tests: Ran the null Win32 handle, file descriptor, offset and UUID refusals of an import small on `descriptor_refusal()` and `device_refusal()`; the import test keeps the region row as its wiring (RW-112, `883bd791`).
 - 2026-11-09 — tests: Ran every host-reachable profiling case small on a host runtime and a collector of its own; the cases that need a device, a thread or `dispatch.submit` stay medium (RW-132, `a0197e27`).
 - 2026-11-09 — runtime: Recorded the zones, values and counters of a runtime into the collector its context holds, the process-wide one by default (RW-128, `224b5203`).
