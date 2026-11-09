@@ -124,6 +124,7 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 70. Ruled on 2026-11-09 by the orchestrator, applied by the worker (RW-128 reopened as RW-132, because a closed id cannot be reopened by a command): `SR_INSTANT(collector, name)` and `SR_LOCK_WAIT(collector, name, mutex)` take the collector first, like the other macros, so no macro reaches the process-wide collector. SushiProfiler's `ContendedLock` has no collector form, so `profile/collector_lock.hpp` holds `CollectorLock`: one `try_lock`, and a zone in the collector only on a wait. `PendingWork` takes the collector of its scheduler and its nine acquisitions record into it. `tests/foundation/profile/test_collector_lock.cpp` tests the guard small on a `BusyMutex` that refuses a set number of `try_lock` calls; the lock-wait cases of `test_lock_wait.cpp` keep real contention, medium, and lock into a `SushiProfiler::Collector` on a `ManualTickSource`. Left on the process-wide collector, with `process_collector()` passed explicitly: the three `test_profile.cpp` cases that read a thread name or a thread index, which `Collector::register_this_thread()` and `set_thread_name()` keep in process-wide state.
 71. Ruled on 2026-11-09 by the orchestrator, applied by the worker (RW-132, part): `HostRuntimeConfig::profile_collector` (a forward-declared `SushiProfiler::Collector*`, null for the process-wide one) hands a host runtime a collector, so a test can start a session over it with `Session::start(config, registry, collector)`. Public header change; it names the type without including a profiler header. `SessionTests::HostSession` (`profiled_pipelines.hpp`) owns the collector, a host runtime and a session helper. The tick source is `TestSupport::SteppingTickSource`, not `ManualTickSource`: a manual source gives every nested zone the same stamp, so a zone tree cannot be told from its order. Converted to `Small_`: the six `PlanZones` cases, three `RunZones` cases (scheduler path, caller's thread, runtime wait) and four `RunCounters` cases. Not converted, 28 of the 41: they need a device (`DeviceTimingWindow`, `RuntimeSession*`, the transfer bytes, USM allocator zones), a thread (worker names, the chain path), or a path the host runtime does not take (`dispatch.submit`). RW-132 stays open; nothing built or run.
 72. Ruled on 2026-11-09 by the orchestrator, applied by the worker (the includes of `task_scheduler.hpp`): the header keeps what its declarations name (`<cstddef>`, `<cstdint>`, `<memory>`, `<optional>`, `<vector>`, `core/executor.hpp`, `core/export.hpp`, `core/span.hpp`, `core/sushi_ptr.hpp`, `pin_policy.hpp`, `profile.hpp`, `rebalancer_interfaces.hpp`, `worker_pool_settings.hpp`, `offload_sink.hpp`) and forward-declares `PlacementRules` and `ProfilingLedger`. Removed: `<array>`, `<deque>`, `<mutex>`, `<atomic>`, `<thread>`, `<queue>`, `<exception>`, `<condition_variable>`, `<sycl/sycl.hpp>`, `core/common.hpp`, `event_polling.hpp`, `offload_gate.hpp`, `quiescence_latch.hpp` and `run_outcome.hpp`. A grep of the nine dependants for the symbols of each removed header found two files that used one transitively: `task_scheduler.cpp` now includes `<cstddef>`, `<memory>` and `<vector>`, and `scheduler_execution_engine.cpp` includes `<sycl/sycl.hpp>`. The mutex, thread and atomic users already include their own. Each dependant still passes `clang -fsyntax-only`; the build verifies.
+73. Ruled on 2026-11-09 by the orchestrator, applied by the worker (jobs 4 and 5 of the plan): the per-module recount is the last section of this report, 1545 Small, 397 Medium, 14 Large and 15 other C++ cases at 5f686063 (the Python rows carried over). Job 4, the medium audit's remaining LOGIC cases, is partly done: the lock-guard cases run small on a `BusyMutex` (decision 70) and 13 profiling cases run small on a host runtime (decision 71). Not done: the other 28 profiling cases, the worker and second runtimes of `test_distributed.cpp` (decision 59), `ChainRun` and the task bodies of `test_scheduler_execution_engine.cpp` (decision 64) and the device-bound cases of `platform/topology`, `surface/api` and `extension/distributed`; the audit table `medium_audit.md` of the orchestrator's scratchpad was not available to this worker, so the cases were found by the suites' fixtures, not by the table.
 
 ## Medium audit
 
@@ -3607,21 +3608,21 @@ check_naming: collect skips files under third_party, build, build-asan, build-ts
 check_naming: main checks modules when no path is named | contract | medium
 ```
 
-## Cases per module and size, 2026-11-07, recounted after the executor, cache and agent moves
+## Cases per module and size, 2026-11-09, recounted after the scheduler split, the collector and the host profiling cases
 
-Counted statically from the source, no test run: one case for each `TEST`, `TEST_F`, `TEST_P`, `TYPED_TEST` and `TYPED_TEST_P` under `tests/`, by the prefix of its suite name (`Small_`, `Medium_`, `Large_`). A parametrised case counts once, not once per row. "Other" holds `Benchmark_`, `Performance_` and `Stress_` suites and suites with no size prefix. The Python rows count `def test_` by the file-level size marker, so a class-level marker reads as other. The share is a reading, never a target (testing skill, "Suite shape"); a module with a low small share holds a boundary or a seam still to build.
+Counted statically from the source, no test run: one case for each `TEST`, `TEST_F`, `TEST_P`, `TYPED_TEST` and `TYPED_TEST_P` under `tests/`, by the prefix of its suite name (`Small_`, `Medium_`, `Large_`). A parametrised case counts once, not once per row. "Other" holds `Benchmark_`, `Performance_` and `Stress_` suites and suites with no size prefix. The C++ rows were recounted at 5f686063 by `scratchpad/recount.py`, the same pattern as the first count. The Python rows were not recounted: no Python test changed since 2026-11-07, so they are carried over. The Python rows count `def test_` by the file-level size marker, so a class-level marker reads as other. The share is a reading, never a target (testing skill, "Suite shape"); a module with a low small share holds a boundary or a seam still to build.
 
 | Module | Small | Medium | Large | Other | Total | Small share |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `applications/examples` | 4 | 2 | 0 | 0 | 6 | 67% |
 | `cli (python)` | 13 | 81 | 0 | 39 | 133 | 10% |
 | `engine/dependency_tracking` | 12 | 0 | 0 | 0 | 12 | 100% |
-| `engine/execution` | 50 | 22 | 10 | 8 | 90 | 56% |
+| `engine/execution` | 61 | 15 | 10 | 8 | 94 | 65% |
 | `engine/graph` | 26 | 2 | 0 | 0 | 28 | 93% |
 | `engine/probe_tasks` | 0 | 3 | 0 | 0 | 3 | 0% |
 | `engine/region_boundary` | 4 | 0 | 0 | 0 | 4 | 100% |
-| `engine/runtime_assembly` | 0 | 2 | 0 | 0 | 2 | 0% |
-| `engine/scheduler` | 64 | 33 | 0 | 0 | 97 | 66% |
+| `engine/runtime_assembly` | 1 | 1 | 0 | 0 | 2 | 50% |
+| `engine/scheduler` | 103 | 11 | 0 | 0 | 114 | 90% |
 | `engine/task` | 74 | 9 | 0 | 0 | 83 | 89% |
 | `engine/work_stealing` | 2 | 1 | 0 | 0 | 3 | 67% |
 | `extension/buffer_exchange` | 33 | 0 | 0 | 0 | 33 | 100% |
@@ -3647,27 +3648,27 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `foundation/machine` | 6 | 0 | 0 | 0 | 6 | 100% |
 | `foundation/measurement` | 9 | 1 | 0 | 0 | 10 | 90% |
 | `foundation/placement` | 26 | 0 | 0 | 0 | 26 | 100% |
-| `foundation/profile` | 13 | 1 | 0 | 0 | 14 | 93% |
+| `foundation/profile` | 15 | 1 | 0 | 0 | 16 | 94% |
 | `foundation/region` | 9 | 0 | 0 | 0 | 9 | 100% |
 | `foundation/report` | 19 | 1 | 0 | 0 | 20 | 95% |
 | `foundation/sycl` | 5 | 1 | 0 | 0 | 6 | 83% |
 | `foundation/test_runner` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `foundation/thread_barrier` | 1 | 1 | 0 | 0 | 2 | 50% |
-| `foundation/usm_guard` | 0 | 3 | 0 | 0 | 3 | 0% |
-| `platform/device` | 15 | 15 | 0 | 0 | 30 | 50% |
+| `foundation/usm_guard` | 3 | 1 | 0 | 0 | 4 | 75% |
+| `platform/device` | 25 | 16 | 0 | 0 | 41 | 61% |
 | `platform/memory` | 40 | 12 | 2 | 0 | 54 | 74% |
 | `platform/numa_lookup` | 3 | 0 | 0 | 0 | 3 | 100% |
 | `platform/observability` | 31 | 2 | 0 | 0 | 33 | 94% |
-| `platform/topology` | 27 | 16 | 0 | 0 | 43 | 63% |
+| `platform/topology` | 36 | 13 | 0 | 0 | 49 | 73% |
 | `surface/api` | 431 | 123 | 0 | 4 | 558 | 77% |
 | `surface/context` | 1 | 0 | 0 | 0 | 1 | 100% |
 | `surface/context_access` | 0 | 0 | 0 | 0 | 0 | 0% |
 | `surface/engine_handles` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `surface/interop` | 6 | 0 | 0 | 0 | 6 | 100% |
 | `surface/memory_exchange` | 9 | 4 | 0 | 0 | 13 | 69% |
-| `surface/profiling` | 112 | 51 | 2 | 1 | 166 | 67% |
+| `surface/profiling` | 125 | 38 | 2 | 1 | 166 | 75% |
 | `tools (python)` | 746 | 86 | 0 | 0 | 832 | 90% |
-| **all** | 2216 | 611 | 14 | 54 | 2895 | 77% |
+| **all** | 2304 | 564 | 14 | 54 | 2936 | 78% |
 
-Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (the TCP transport, the cluster and the worker main are the sockets and processes it exists to check; its executor and agent logic runs small in `dispatch_executor`, `master_link` and `cluster_monitor`), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
+Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (the TCP transport, the cluster and the worker main are the sockets and processes it exists to check; its executor and agent logic runs small in `dispatch_executor`, `master_link` and `cluster_monitor`), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/execution` (the SYCL queue is its currency, decision 64; RW-129 left `ChainRun` and the task bodies), `engine/scheduler` (90% since the rounds run on an executor), `platform/device` (the SYCL queue factory is its boundary), `surface/profiling` (28 of its medium cases need a device or a thread, RW-132), and `cli (python)`.
 
