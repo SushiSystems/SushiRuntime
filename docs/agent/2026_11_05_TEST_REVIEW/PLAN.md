@@ -69,7 +69,7 @@ uncontended lock-wait case by d6cbbdbd, RW-115 closed) and R6. Nothing built or 
 1. R4: the build, `sr test -l small` and `sr test -l medium`, per-module counts. The orchestrator runs them.
 2. RW-111 is ruled (decision 75): `run_for` reads the runtime context's clock, and a test advances a `ManualClock` to end a budget. Its
    new case is unverified until the build.
-3. RW-117 stays a decision: SushiLog takes no clock, so the entry belongs to SushiLog and is not this plan's to close.
+3. RW-117 stays open (decision 77): SushiLog takes no clock, so the entry belongs to SushiLog and is not this plan's to close.
    RW-125 is ruled (decision 76): its done-when is decision 74's rule, and it is closed.
 4. Unverified until the build: the six new `Small_DescriptorRefusal` and `Small_DeviceRefusal` rows, and the reduced
    `Medium_InteropImport` suite, which now holds one region row in place of the parameterised refusals.
