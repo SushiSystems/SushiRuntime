@@ -221,6 +221,12 @@ the report must say cancelled after exactly three steps. A deadline computed as 
 these budgets and landed in the past, which ended the run after one step. The task throws after a
 thousand steps, so a `cancel()` that reached nothing fails the test and does not hang it.
 
+### `ABudgetedRunForStopsWhenTheRuntimesClockPassesTheBudget`
+
+The host task advances the fixture's `ManualClock` by 10 ms per step, and `run_for(35 ms)` must run
+four steps, the fourth ending with the clock at 40 ms. The run is not cancelled, so the budget on
+the runtime's clock ended it, and no wall time passed into the decision.
+
 ### Step hooks
 
 A hook writes the count of finished steps and that count plus 100 into two host words. One kernel

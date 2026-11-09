@@ -35,6 +35,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -249,6 +250,20 @@ namespace SushiRuntime
              * @see modules/engine/execution/README.md
              */
             [[nodiscard]] virtual bool run_in_progress() const noexcept { return false; }
+
+            /**
+             * @brief Returns the clock a run on this engine is timed against.
+             *
+             * Default returns a SteadyClock, so engines that time nothing themselves and test
+             * doubles need not implement it. Any thread may call it.
+             * @return A reference valid for the engine's lifetime.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] virtual const Clock& clock() const noexcept
+            {
+                static const SteadyClock steady;
+                return steady;
+            }
 
             /**
              * @brief Marks one chained run in progress; does nothing by default.

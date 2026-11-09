@@ -199,7 +199,7 @@ namespace
 
     /**
      * @brief Expects run_for(budget) to run until its host task cancels it at the third step.
-     * @param budget A budget no steady_clock time point can hold once added to now().
+     * @param budget A budget no clock time can hold once added to now().
      */
     template <class Budget>
     void expect_run_for_lasts_until_cancelled(const Runtime& rt, Budget budget)
@@ -595,6 +595,30 @@ TEST_P(Small_RunDriverBudgets, ABudgetPastTheClocksRangeRunsUntilCancelled)
 
 INSTANTIATE_TEST_SUITE_P(Rows, Small_RunDriverBudgets,
                          ::testing::Values(Overflow::Hours, Overflow::Nanoseconds));
+
+/** @brief Tests that run_for reads the runtime's clock: a step body advances it, the budget ends the run. */
+TEST_F(Small_RunDriver, ABudgetedRunForStopsWhenTheRuntimesClockPassesTheBudget)
+{
+    constexpr std::uint64_t STEP_NS = 10'000'000;
+    constexpr int STEPS_WITHIN_BUDGET = 4;
+
+    auto buf = runtime().buffer<int>(N).value();
+    std::atomic<int> steps{0};
+    auto g = runtime().graph();
+    g.add_host(Reads{}, Writes(buf), [this, &steps]()
+    {
+        steps.fetch_add(1, std::memory_order_relaxed);
+        clock().advance(STEP_NS);
+    });
+
+    const auto report = g.run_for(std::chrono::nanoseconds(35'000'000));
+
+    ASSERT_TRUE(report.has_value()) << report.error().message;
+    EXPECT_FALSE(report->cancelled);
+    EXPECT_EQ(steps.load(), STEPS_WITHIN_BUDGET)
+        << "steps of 10 ms on a 35 ms budget end after the fourth, when the clock reads 40 ms";
+    EXPECT_EQ(clock().now_ns(), STEPS_WITHIN_BUDGET * STEP_NS);
+}
 
 /** @brief Tests that step hooks feed eight replays of one plan, in the order added. */
 TEST_P(Small_RunDriverGraphKinds, StepHooksFeedEveryReplayInTheOrderAdded)

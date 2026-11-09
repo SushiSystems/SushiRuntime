@@ -372,6 +372,11 @@ namespace SushiRuntime
             return Internal::ContextAccess::context(context).execution_engine().run_in_progress();
         }
 
+        const Clock& run_clock(const ContextHandle& context) noexcept
+        {
+            return Internal::ContextAccess::context(context).execution_engine().clock();
+        }
+
         void cancel_run(const ContextHandle& context) noexcept
         {
             Internal::ContextAccess::context(context).execution_engine().cancel();

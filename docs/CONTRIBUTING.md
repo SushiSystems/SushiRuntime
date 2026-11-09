@@ -108,8 +108,9 @@ A comment says what a thing does, in Doxygen form. The reason for a design goes 
 
 ```cpp
             /**
-             * @brief Runs steps until a wall-clock budget elapses.
-             * @param budget Wall-clock limit; at least one step always runs.
+             * @brief Runs steps until a budget elapses on the runtime's clock.
+             * @param budget Limit on the clock the runtime holds, the steady clock unless a
+             *        host runtime was given another; at least one step always runs.
              * @return The RunReport, or the Error that ended the run.
              */
             template <class Rep, class Period>

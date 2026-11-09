@@ -450,7 +450,7 @@ on another machine when a cluster is attached; see
 | Call | Runs |
 | --- | --- |
 | `run()`, `run(steps)` | One step, or a fixed number |
-| `run_for(budget)` | Steps until a wall-clock budget elapses; at least one |
+| `run_for(budget)` | Steps until a budget elapses on the runtime's clock; at least one |
 | `run_until(done)` | Steps until `done()` returns true |
 | `run_async()` | One step, without waiting; returns a `RunHandle` |
 

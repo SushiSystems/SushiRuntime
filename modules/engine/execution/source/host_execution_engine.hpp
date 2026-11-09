@@ -106,6 +106,9 @@ namespace SushiRuntime
                 /** @brief Reports whether a run is between submit() and the end of complete(). */
                 [[nodiscard]] bool run_in_progress() const noexcept override;
 
+                /** @brief Returns the clock the engine was bound to. */
+                [[nodiscard]] const Clock& clock() const noexcept override { return *clock_; }
+
                 /** @brief Refuses every later run. */
                 void shutdown() override;
 

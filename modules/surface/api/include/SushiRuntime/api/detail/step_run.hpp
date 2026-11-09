@@ -38,6 +38,7 @@
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/run_report.hpp>
@@ -149,6 +150,12 @@ namespace SushiRuntime
 
         /** @brief Returns whether a run is in flight on a runtime. */
         [[nodiscard]] SUSHIRUNTIME_API bool run_in_progress(const ContextHandle& context) noexcept;
+
+        /**
+         * @brief Returns the clock a runtime times its runs against.
+         * @return A reference valid while the runtime's context is alive.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API const Clock& run_clock(const ContextHandle& context) noexcept;
 
         /** @brief Asks the run in flight on a runtime to stop. */
         SUSHIRUNTIME_API void cancel_run(const ContextHandle& context) noexcept;

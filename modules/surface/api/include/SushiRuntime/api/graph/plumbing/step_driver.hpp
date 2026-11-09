@@ -35,6 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -47,6 +48,7 @@
 #include <SushiRuntime/api/detail/step_run.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -114,8 +116,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Runs steps until a wall-clock budget elapses.
-                 * @param budget Wall-clock limit; at least one step always runs.
+                 * @brief Runs steps until a budget elapses on the runtime's clock.
+                 * @param budget Limit on the clock the runtime holds, the steady clock unless a
+                 *        host runtime was given another; at least one step always runs.
                  * @return The RunReport, or the Error that ended the run.
                  */
                 template <class Rep, class Period>
@@ -126,9 +129,10 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Runs steps until a wall-clock budget elapses, into a report the caller
-                 *        owns.
-                 * @param budget Wall-clock limit; at least one step always runs.
+                 * @brief Runs steps until a budget elapses on the runtime's clock, into a report
+                 *        the caller owns.
+                 * @param budget Limit on the clock the runtime holds, the steady clock unless a
+                 *        host runtime was given another; at least one step always runs.
                  * @param reuse The report to overwrite; its previous contents are lost.
                  * @return A pointer to reuse, or the Error that ended the run.
                  */
@@ -378,35 +382,44 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Returns the time point a budget ends at, saturated at the clock's last.
-                 * @param now A time point not before the clock's epoch.
-                 * @return now for a budget of zero or less, and time_point::max() for a budget
-                 *         that ends within a second of it or past it.
+                 * @brief Returns the time a budget ends at, saturated at the last time a clock holds.
+                 * @param now_ns The clock's time in nanoseconds.
+                 * @return now_ns for a budget of zero or less, and UINT64_MAX for a budget that
+                 *         ends within a second of the clock's last time or past it.
                  */
                 template <class Rep, class Period>
-                static std::chrono::steady_clock::time_point
-                deadline_after(std::chrono::steady_clock::time_point now,
-                               std::chrono::duration<Rep, Period> budget) noexcept
+                static std::uint64_t
+                deadline_after(std::uint64_t now_ns, std::chrono::duration<Rep, Period> budget) noexcept
                 {
-                    using clock = std::chrono::steady_clock;
-                    using Seconds = std::chrono::duration<long double>;
+                    using Nanoseconds = std::chrono::duration<long double, std::nano>;
+                    constexpr std::uint64_t NS_PER_SECOND = 1'000'000'000;
+                    constexpr std::uint64_t LAST_NS = std::numeric_limits<std::uint64_t>::max();
+                    // The count of a budget is a signed nanosecond count, so it caps the room.
+                    constexpr std::uint64_t CAST_LIMIT_NS =
+                        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 
                     if (budget <= std::chrono::duration<Rep, Period>::zero())
-                        return now;
-                    const clock::duration room = clock::time_point::max() - now;
-                    if (Seconds(budget) >= Seconds(room) - Seconds(1))
-                        return clock::time_point::max();
-                    return now + std::chrono::duration_cast<clock::duration>(budget);
+                        return now_ns;
+                    const std::uint64_t room = (LAST_NS - now_ns) < CAST_LIMIT_NS
+                        ? (LAST_NS - now_ns) : CAST_LIMIT_NS;
+                    if (Nanoseconds(budget) >= Nanoseconds(room) - Nanoseconds(NS_PER_SECOND))
+                        return LAST_NS;
+                    return now_ns + static_cast<std::uint64_t>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(budget).count());
                 }
 
-                /** @brief Returns the test that continues a run until budget has elapsed. */
+                /**
+                 * @brief Returns the test that continues a run until budget has elapsed on the
+                 *        clock the runtime holds.
+                 */
                 template <class Rep, class Period>
-                static auto within(std::chrono::duration<Rep, Period> budget) noexcept
+                auto within(std::chrono::duration<Rep, Period> budget) noexcept
                 {
-                    const auto deadline = deadline_after(std::chrono::steady_clock::now(), budget);
-                    return [deadline](std::size_t completed)
+                    const Clock& clock = Detail::run_clock(owner().run_context());
+                    const std::uint64_t deadline = deadline_after(clock.now_ns(), budget);
+                    return [&clock, deadline](std::size_t completed)
                     {
-                        return completed == 0 || std::chrono::steady_clock::now() < deadline;
+                        return completed == 0 || clock.now_ns() < deadline;
                     };
                 }
 

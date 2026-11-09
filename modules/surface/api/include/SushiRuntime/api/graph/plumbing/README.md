@@ -351,7 +351,7 @@ Graph and DynamicGraph take every run entry from the driver, so the two cannot d
 | --- | --- | --- |
 | `run()`, `run(steps)` | `Result<RunReport>` | One step, or a fixed number of steps |
 | `run(reuse)`, `run(steps, reuse)` | `Result<RunReport*>` | The same, into a report the caller owns |
-| `run_for(budget)`, `run_for(budget, reuse)` | As `run` | Steps until the wall-clock budget elapses; at least one |
+| `run_for(budget)`, `run_for(budget, reuse)` | As `run` | Steps until the budget elapses on the runtime's clock; at least one |
 | `run_until(done)`, `run_until(done, reuse)` | As `run` | Steps until `done()` is true |
 | `run_async()` | `Result<RunHandle<Owner>>` | One step, without waiting |
 
@@ -365,9 +365,10 @@ and of RunHandle is built by Detail::error_without_throwing() of `core/error.hpp
 code with an empty message when the text cannot be allocated. run_until() moves its stop test,
 so the stop test must be nothrow move constructible, and a `static_assert` says so.
 
-run_for(budget) stops at `now + budget`. A budget the steady clock cannot add to now, such as
-`std::chrono::hours::max()`, saturates at the clock's last time point, and a budget of zero or less
-ends at now, so the run is one step.
+run_for(budget) stops at `now + budget` on the clock the runtime holds: the steady clock, or the
+`Clock` a host runtime was given, which a test advances inside a step body. A budget the clock
+cannot add to now, such as `std::chrono::hours::max()`, saturates at the clock's last time, and a
+budget of zero or less ends at now, so the run is one step.
 
 ### guarded
 
