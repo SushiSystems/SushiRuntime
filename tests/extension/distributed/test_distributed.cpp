@@ -248,27 +248,20 @@ namespace EndToEndTests
                             [left, right](std::size_t index) { return left[index] + right[index]; });
         }
 
-        /** @brief Returns the vector-add kernel; it counts each run in @p runs. */
-        KernelRegistry::Kernel vec_add_kernel(std::atomic<int>& runs)
+        /** @brief Returns the vector-add host kernel; it counts each run in @p runs. */
+        KernelRegistry::HostKernel vec_add_kernel(std::atomic<int>& runs)
         {
-            return [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                           span<const BufferView> outputs, const NodeOptions&) -> sycl::event
+            return [&runs](span<const BufferView> inputs, span<const BufferView> outputs,
+                           const NodeOptions&)
             {
                 const float* left = inputs[0].as<const float>();
                 const float* right = inputs[1].as<const float>();
                 float* sum = outputs[0].as<float>();
                 const std::size_t count = outputs[0].size_bytes / sizeof(float);
-                std::atomic<int>* counter = &runs;
 
-                return queue.submit([&](sycl::handler& handler)
-                {
-                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
-                    {
-                        for (std::size_t index = 0; index < count; ++index)
-                            sum[index] = left[index] + right[index];
-                        counter->fetch_add(1, std::memory_order_relaxed);
-                    });
-                });
+                for (std::size_t index = 0; index < count; ++index)
+                    sum[index] = left[index] + right[index];
+                runs.fetch_add(1, std::memory_order_relaxed);
             };
         }
 
@@ -279,7 +272,7 @@ namespace EndToEndTests
         sushi_ptr<KernelRegistry> vec_add_kernels(std::atomic<int>& runs)
         {
             sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
-            kernels->register_kernel(K_VEC_ADD, vec_add_kernel(runs));
+            kernels->register_host_kernel(K_VEC_ADD, vec_add_kernel(runs));
             return kernels;
         }
 
@@ -290,25 +283,18 @@ namespace EndToEndTests
         sushi_ptr<KernelRegistry> state_step_kernels(std::atomic<int>& runs)
         {
             sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
-            kernels->register_kernel(
+            kernels->register_host_kernel(
                 K_STATE_STEP,
-                [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                        span<const BufferView> outputs, const NodeOptions&) -> sycl::event
+                [&runs](span<const BufferView> inputs, span<const BufferView> outputs,
+                        const NodeOptions&)
                 {
                     const int* current = inputs[0].as<const int>();
                     int* next = outputs[0].as<int>();
                     const std::size_t count = outputs[0].size_bytes / sizeof(int);
-                    std::atomic<int>* counter = &runs;
 
-                    return queue.submit([&](sycl::handler& handler)
-                    {
-                        SushiRuntime::Detail::enqueue_host_task(handler, [=]
-                        {
-                            for (std::size_t index = 0; index < count; ++index)
-                                next[index] = current[index] + static_cast<int>(index % 7);
-                            counter->fetch_add(1, std::memory_order_relaxed);
-                        });
-                    });
+                    for (std::size_t index = 0; index < count; ++index)
+                        next[index] = current[index] + static_cast<int>(index % 7);
+                    runs.fetch_add(1, std::memory_order_relaxed);
                 });
             return kernels;
         }
@@ -481,8 +467,8 @@ namespace EndToEndTests
                 }
 
             private:
-                /// @brief The worker's own runtime; declared first, destroyed last.
-                Runtime runtime_ = Runtime::create().value();
+                /// @brief The worker's host runtime; its kernels have a host form. Declared first, destroyed last.
+                Runtime runtime_ = Runtime::create_host().value();
 
                 /// @brief The agent under test.
                 WorkerAgent agent_;
@@ -2944,25 +2930,18 @@ namespace FaultInjectionTests
         sushi_ptr<KernelRegistry> vec_double_kernels(std::atomic<int>& runs)
         {
             sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
-            kernels->register_kernel(
+            kernels->register_host_kernel(
                 K_VEC_DOUBLE,
-                [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                        span<const BufferView> outputs, const NodeOptions&) -> sycl::event
+                [&runs](span<const BufferView> inputs, span<const BufferView> outputs,
+                        const NodeOptions&)
                 {
                     const float* in = inputs[0].as<const float>();
                     float* out = outputs[0].as<float>();
                     const std::size_t count = outputs[0].size_bytes / sizeof(float);
-                    std::atomic<int>* counter = &runs;
 
-                    return queue.submit([&](sycl::handler& handler)
-                    {
-                        SushiRuntime::Detail::enqueue_host_task(handler, [=]
-                        {
-                            for (std::size_t index = 0; index < count; ++index)
-                                out[index] = in[index] * 2.0f;
-                            counter->fetch_add(1, std::memory_order_relaxed);
-                        });
-                    });
+                    for (std::size_t index = 0; index < count; ++index)
+                        out[index] = in[index] * 2.0f;
+                    runs.fetch_add(1, std::memory_order_relaxed);
                 });
             return kernels;
         }
@@ -3074,8 +3053,8 @@ namespace FaultInjectionTests
                 }
 
             private:
-                /// @brief The worker's own runtime; declared first, destroyed last.
-                Runtime runtime_ = Runtime::create().value();
+                /// @brief The worker's host runtime; its kernels have a host form. Declared first, destroyed last.
+                Runtime runtime_ = Runtime::create_host().value();
 
                 /// @brief The agent under test.
                 WorkerAgent agent_;
