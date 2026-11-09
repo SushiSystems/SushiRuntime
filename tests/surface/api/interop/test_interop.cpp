@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -244,87 +243,18 @@ TEST_F(Medium_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
     EXPECT_EQ(buffer.size(), 0u);
 }
 
-/** @brief Holds one descriptor that import_device refuses: how it differs from an acceptable one and what the refusal says. */
-struct RefusedDescriptor
-{
-    const char* name;                       /**< Names the row. */
-    void (*break_it)(ExternalMemoryDescriptor&); /**< Breaks one field of an acceptable descriptor. */
-    std::size_t count;                      /**< The element count the import asks for. */
-    std::vector<std::string> message_holds; /**< Parts the refusal's message must carry. */
-    bool needs_uuid;                        /**< Whether the row needs a device that reports a UUID. */
-};
-
-/** @brief Returns the rows of descriptors that import_device refuses by the field at fault. */
-std::vector<RefusedDescriptor> refused_descriptors()
-{
-    std::vector<RefusedDescriptor> rows;
-#if defined(_WIN32)
-    rows.push_back({"ANullWin32HandleIsRefusedByName",
-                    [](ExternalMemoryDescriptor& d) { d.handle = 0; }, 4,
-                    {"descriptor.handle is null"}, false});
-#else
-    rows.push_back({"AFileDescriptorAboveIntIsRefusedWithItsValue",
-                    [](ExternalMemoryDescriptor& d)
-                    {
-                        d.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
-                    },
-                    4,
-                    {"descriptor.handle is " +
-                     std::to_string(static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1)},
-                    false});
-#endif
-    rows.push_back({"ARegionPastTheAllocationIsRefusedWithItsNumbers",
-                    [](ExternalMemoryDescriptor& d) { d.offset = 60; }, 4,
-                    {"16 bytes at offset 60", "allocation of 64 bytes"}, false});
-    rows.push_back({"AnOffsetPastTheAllocationIsRefusedWithoutWrapping",
-                    [](ExternalMemoryDescriptor& d) { d.offset = K_ALLOCATION_BYTES + 1; }, 0,
-                    {"offset 65"}, false});
-    rows.push_back({"AnotherDevicesUUIDIsRefusedWithBothUUIDs",
-                    [](ExternalMemoryDescriptor& d)
-                    {
-                        d.device.bytes[15] = static_cast<std::uint8_t>(d.device.bytes[15] ^ 0xFFu);
-                    },
-                    4, {"descriptor.device is", "and device"}, true});
-    return rows;
-}
-
-/** @brief Fixture of the descriptor refusals; the parameter is the row. */
-class Medium_InteropImportRefusedDescriptor : public Medium_InteropImport,
-                                              public ::testing::WithParamInterface<RefusedDescriptor>
-{
-    protected:
-        /** @brief Skips a row that needs a UUID on a device that reports none. */
-        void SetUp() override
-        {
-            Medium_InteropImport::SetUp();
-            if (IsSkipped())
-                return;
-            if (GetParam().needs_uuid &&
-                !runtime().interop().capabilities(DeviceIndex{index_}).value().device_uuid)
-                GTEST_SKIP() << "the importing device reports no UUID";
-        }
-};
-
-/** @brief Tests that import_device refuses the descriptor with InvalidAccess and names the field at fault. */
-TEST_P(Medium_InteropImportRefusedDescriptor, IsRefusedWithInvalidAccess)
+/** @brief Tests that import_device refuses a region past the allocation with InvalidAccess, naming the numbers; the other refusals are Small_DescriptorRefusal rows. */
+TEST_F(Medium_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
 {
     ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime(), index_);
-    GetParam().break_it(descriptor);
+    descriptor.offset = 60;
 
-    const auto imported =
-        runtime().interop().import_device<float>(descriptor, GetParam().count, DeviceIndex{index_});
+    const auto imported = runtime().interop().import_device<float>(descriptor, 4, DeviceIndex{index_});
 
     ASSERT_FALSE(imported.has_value());
     EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
-    expect_message_holds(imported.error().message, GetParam().message_holds);
+    expect_message_holds(imported.error().message, {"16 bytes at offset 60", "allocation of 64 bytes"});
 }
-
-INSTANTIATE_TEST_SUITE_P(Fields, Medium_InteropImportRefusedDescriptor,
-                         ::testing::ValuesIn(refused_descriptors()),
-                         [](const ::testing::TestParamInfo<RefusedDescriptor>& info)
-                         {
-                             return std::string(info.param.name);
-                         });
 
 /** @brief Fixture of the borrow tests; the memory they borrow is a Residency::Host buffer of the runtime, which records its kind. */
 class Small_InteropBorrow : public TestSupport::HostRuntimeTest

@@ -28,6 +28,12 @@ The file runs `descriptor_refusal()` and `device_refusal()` on values alone, wit
 | `ARegionPastTheAllocationIsRefused` | A region that ends past `allocation_bytes` is refused with InvalidAccess. |
 | `ADescriptorTheDeviceImportsIsNotRefused` | A descriptor of a kind the device imports, inside its allocation, passes. |
 | `ADeviceWithNoUuidIsRefused` | A device that reports no UUID is refused with InvalidAccess (suite `Small_DeviceRefusal`). |
+| `ANullWin32HandleIsRefusedByName` | A null `OpaqueWin32` handle is refused with InvalidAccess, and the message says `descriptor.handle is null`. |
+| `AFileDescriptorAboveIntIsRefusedWithItsValue` | An `OpaqueFd` handle of `INT_MAX + 1` is refused, and the message carries the value. |
+| `ARegionPastTheAllocationIsRefusedWithItsNumbers` | Sixteen bytes at offset 60 of a 64-byte allocation are refused, and the message carries the byte count, the offset and the allocation size. |
+| `AnOffsetPastTheAllocationIsRefusedWithoutWrapping` | An offset of 65 in a 64-byte allocation with zero bytes is refused with its offset; the subtraction that follows cannot wrap. |
+| `AnotherDevicesUUIDIsRefusedWithBothUUIDs` | A descriptor whose last UUID byte is inverted is refused, and the message carries `descriptor.device is` and `and device` (suite `Small_DeviceRefusal`). |
+| `TheDevicesOwnUUIDIsNotRefused` | A descriptor naming the device's own UUID passes (suite `Small_DeviceRefusal`). |
 
 ## test_capability_cache.cpp
 

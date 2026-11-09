@@ -37,13 +37,13 @@ body.
 | --- | --- |
 | `ADeviceWithoutImportIsRefusedByItsIndex` | The capability is checked before the descriptor. The refusal is `ErrorCode::Unsupported` and its message carries the device index and `device_import is false`. |
 | `ZeroElementsImportNothingAndReturnAnEmptyBuffer` | `import_device` with a count of zero, on the first device that imports, returns a buffer that is empty and has size zero. |
-| `IsRefusedWithInvalidAccess` | Rows of one descriptor each broken in one field. A null Win32 handle (Windows) or a file descriptor above `INT_MAX` (elsewhere) is refused naming the handle. Four floats at offset 60 end at byte 76 of a 64-byte allocation, and the message carries the byte count, the offset and the allocation size. An offset of 65 with zero bytes is refused with its offset, since the check compares the offset first and the subtraction that follows cannot wrap. A descriptor with the last byte of its device UUID inverted is refused with both UUIDs. |
+| `ARegionPastTheAllocationIsRefusedWithItsNumbers` | Four floats at offset 60 end at byte 76 of a 64-byte allocation; `import_device` refuses it with `InvalidAccess`, and the message carries the byte count, the offset and the allocation size. It keeps the wiring of the refusal; the other fields are small rows of `test_descriptor_refusal.cpp`. |
 
 The checks on the kind, the region and the device live in pure functions of
 `modules/surface/memory_exchange/include/SushiRuntime/memory_exchange/descriptor_refusal.hpp`, whose small rows are in
 `tests/surface/memory_exchange/test_descriptor_refusal.cpp`: an unspecified kind, a kind the device
-does not import, a region past the allocation, and a device with no UUID. This file keeps only the
-rows that file does not yet hold, as medium rows through the import; RW-112 moves them there. A
+does not import, a null Win32 handle, a file descriptor above `INT_MAX`, a region and an offset past the allocation, and
+a device UUID that differs. This file keeps the one region row as the import's wiring. A
 device that reports no UUID is refused with its own message; no test here reaches that case, because
 a device cannot be made to drop its UUID.
 
