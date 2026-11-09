@@ -38,6 +38,8 @@
 #include <optional>
 #include <utility>
 #include <vector>
+
+#include <sycl/sycl.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>

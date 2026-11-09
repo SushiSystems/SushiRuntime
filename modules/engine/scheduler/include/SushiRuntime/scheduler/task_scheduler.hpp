@@ -31,34 +31,26 @@
 #pragma once
 
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
-#include <mutex>
-#include <atomic>
-#include <thread>
+#include <optional>
 #include <vector>
-#include <queue>
-#include <exception>
-#include <sycl/sycl.hpp>
-#include <condition_variable>
-#include <SushiRuntime/core/common.hpp>
+
 #include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
-#include <SushiRuntime/scheduler/event_polling.hpp>
-#include <SushiRuntime/scheduler/offload_gate.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
-#include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/profile/profile.hpp>
-#include <SushiRuntime/scheduler/run_outcome.hpp>
+#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 
 namespace SushiRuntime
 {
+    class PlacementRules;
+
     /** @brief Declares the graph types this header names only by pointer or reference. */
     namespace Internal::Graph
     {
@@ -67,6 +59,7 @@ namespace SushiRuntime
         class OffloadCoordinator;
     }
 
+    namespace Internal::Observability { class ProfilingLedger; }
     namespace Internal::Topology { class TopologyView; }
     namespace Internal::Device { class DeviceQueueSet; }
     namespace Internal::Memory { class USMAllocator; }

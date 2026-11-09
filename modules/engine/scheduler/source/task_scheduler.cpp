@@ -27,8 +27,11 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
+#include <memory>
 #include <new>
 #include <thread>
+#include <vector>
 #include <optional>
 #include <mutex>
 #include <deque>
