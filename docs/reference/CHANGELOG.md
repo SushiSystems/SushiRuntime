@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-09 — tests: Replaced the done-when of RW-125 by the rule of decision 74, every host-reachable case small and every device-bound case medium, and closed it (RW-125, `f53935cd`).
 - 2026-11-09 — api: Timed `run_for` on the clock the runtime context holds, so a host runtime on a `ManualClock` ends a budgeted run when a step body advances it (RW-111, `aa51520e`).
 - 2026-11-09 — tests: Ran the uncontended lock-wait case small; the profile gate cases already run small on a collector (RW-115, `d6cbbdbd`).
 - 2026-11-09 — tests: Ran the null Win32 handle, file descriptor, offset and UUID refusals of an import small on `descriptor_refusal()` and `device_refusal()`; the import test keeps the region row as its wiring (RW-112, `883bd791`).

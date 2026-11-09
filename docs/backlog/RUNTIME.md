@@ -6,7 +6,6 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | RW-79 | P2 | open | Build the global handle design, phases H0 to H9 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
 | RW-93 | P2 | open | Use the non-deprecated parallel_for overload in distributed_kernels.hpp | test_distributed_kernels.cpp compiles under -Werror with SR_ENABLE_DISTRIBUTED on |  | `applications/examples/distributed_kernels.hpp` | 2026-11-06 |
-| RW-125 | P1 | open | Move every logic test that only a device or a thread could reach onto its seam as small | Every host-reachable case runs small and every device-bound case runs medium, by the rule of decision 74 |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 
