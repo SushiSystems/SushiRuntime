@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-09 — tests: Ran the in-process workers of the distributed tests on host runtimes, through host kernels (RW-129, `77ffb871`).
 - 2026-11-09 — runtime: Built each queue of a device set on its first use, so placement and scheduler construction build none (RW-131, `393aa6a9`).
 - 2026-11-07 — tests: Moved the arithmetic of the raw, range and queue test kernels into host functions with small rows; those launch kinds keep no host form (RW-126, `84484f43`).
 - 2026-11-07 — distributed: Made `WorkerAgent::stop()` of an agent with `own_threads` false close the master's connection at once, in place of waiting up to 2 s for a loss (RW-130, `df27871c`).
