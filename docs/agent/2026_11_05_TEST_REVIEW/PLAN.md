@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — paused on 2026-11-09 after decision 73; see Resume
+**Status:** Open — S2, R5, R2, R3, V1 and R6 closed on 2026-11-09; R4 (the build) waits on the orchestrator; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -34,14 +34,14 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: `test_test_budget_settings.py` deleted (decision 15); the three resizes applied by 0e276549 (RW-95, decision 16) |
 | S1 | The clock, the executor, the host USM source and host device set, the host runtime and the threadless transport (decision 33) | M1 to M14 | done: ce70e55b, da4525a5, 42195e98, 565948f1, 958c0976, c156df96, fixed by e6ec9548 |
 | S2 | Host forms for NdRange, raw command group, queue body, device-sized and late-count launches (decision 34) | S1 | done: dynamic, device-sized and late-count get host forms (db46c0e6, 7d4c949d); an NdRange, a raw command group and a queue body get none by decisions 42 and 47 (their arithmetic is host functions of `tests/support/kernel_math.hpp`, the launch tests stay the medium boundary); RW-126 is closed |
-| V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | partly done: every folder but `extension/distributed` moved; the cases left medium wait on RW-126 to RW-129 |
+| V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | done as far as a host seam reaches: every folder moved; RW-112 (import refusals, 883bd791) and the uncontended lock-wait case (d6cbbdbd) are the last two; what stays medium is device-bound by decisions 26 to 28, 62, 64, 66 and 74 (for example `test_task_submission.cpp` submits to a real `sycl::queue`, `test_worker_main.cpp` and `test_socket.cpp` start processes and sockets). Open: RW-111 (a `run_for` clock is a public-interface change that would stop a host runtime on a `ManualClock`), RW-117 (SushiLog takes no clock) and RW-125, whose done-when reads the audit table that this worker could not reach |
 | V2 | One `sr build --distributed`, `sr test -l small` and `sr test -l medium --distributed`, fixed until green | V1 | done: small 1310 of 1310, medium 432 of 432 at e6ec9548 |
 | R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | done: 37246149; the `sycl_usm_source.hpp` SYCL include stays, decision 37 says why |
 | R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | done: RW-126, RW-127, RW-129 and RW-130 closed; the four platform ports, the `Clock` port, the scheduler rounds, the TaskScheduler split (decision 68) and the recount (decision 73) are in. The cases left medium are boundaries by decisions 62, 64, 66 and 74: `ChainRun` and the task bodies keep `sycl::queue&`, the worker-side TCP fixture, the CPU-only master and the destroy-order case need their own runtime |
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | done: the splits and the merge by 26816063, `make_host_context()` by 37246149, EpochManager off process-wide state (decision 39), the stale includes dropped (30 files), and the eleven split files checked: every standard and support header they include is named in their bodies (`support/runtime_environment.hpp` serves `RuntimeTest`) |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
 | R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | done: topology on `DeviceDescriptor`, placement and the device set build no queue at construction (RW-131, decision 57); `InMemoryQueueFactory::make()` and `InMemoryEventReadiness` keep `sycl::queue` and `sycl::event` in their port signatures, ruled as the runtime's execution currency (decisions 64, 66), so the factory's contract rows and `RecordsEveryBuildInOrder` are `Medium_` (decision 69) |
-| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the medium audit's remaining LOGIC cases, the recount; RW-128 closed by the runtime holding its collector (decision 67, 224b5203) and reopened as RW-132 (decision 70), the rounds and the two shells are classes of their own (decision 68), `task_scheduler.hpp` slimmed (decision 72), the recount done (decision 73) |
+| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | done: decisions 55 to 60, 62 and 67 to 74; RW-128 and RW-129 closed, the task_scheduler.cpp split is classes of their own (decisions 56, 68, 72), the recount is the last section of the report (decision 73); the audit's remaining LOGIC cases are the device-bound ones decision 74 leaves medium |
 
 ## Acceptance
 
@@ -61,16 +61,15 @@ and adapters; their plans wait on T1 and T2.
 
 ## Resume
 
-Worker 11, 2026-11-09, after decision 73. Done: `RecordsEveryBuildInOrder` is medium (decision 69, 00daae25);
-`SR_INSTANT` and `SR_LOCK_WAIT` take the collector, `CollectorLock` and `PendingWork` hold it, RW-128 is reopened as
-RW-132 (decision 70, 64f3a915); `HostRuntimeConfig::profile_collector`, `HostSession`, and 13 plan, run-zone and
-counter cases small (decision 71, 5f686063); `task_scheduler.hpp` includes only what it names (decision 72, c9221184);
-the recount (decision 73, d53718e8). Nothing built or run: the orchestrator runs one build, small and medium. Not done:
+Worker 12, 2026-11-09, after decision 74. Closed in the plan: S2, R5, R2, R3 (the rows were stale; RW-126, RW-128,
+RW-129 and RW-131 are closed and decisions 42, 47, 64, 66 and 74 settle what stays medium), V1 (RW-112 by 883bd791, the
+uncontended lock-wait case by d6cbbdbd, RW-115 closed) and R6. Nothing built or run; the new and changed test files pass
+`clang -fsyntax-only`. Not done:
 
-1. RW-132 stays open: 28 of the 41 profiling cases (`DeviceTimingWindow`, `RuntimeSession*`, the transfer bytes, the USM
-   allocator zones, worker names, the chain path, `dispatch.submit`) need a device, a thread or a path the host runtime
-   does not take. Closing it waits on a host path for them or an owner ruling that leaves them medium.
-2. Job 4: the other remaining LOGIC cases of the medium audit (the audit table was not in this worker's reach); the
-   worker and second runtimes of `test_distributed.cpp` (decision 59); `ChainRun` and the task bodies (decision 64).
-3. Unverified until the build: the 13 converted profiling cases assume the host runtime writes `run.submit`,
-   `run.wait`, `plan.*`, `wait.queues` and the worker values as the device runtime does.
+1. R4: the build, `sr test -l small` and `sr test -l medium`, per-module counts. The orchestrator runs them.
+2. RW-111 stays open: `run_for` reads `std::chrono::steady_clock` in `step_driver.hpp`; a clock seam is a public-interface
+   change, and a host runtime's `ManualClock` never advances, so a budgeted `run_for` there would not end. It needs a ruling.
+3. RW-117 stays a decision: SushiLog takes no clock. RW-125 stays open: its done-when is read from the medium audit table,
+   which is not in the repository.
+4. Unverified until the build: the six new `Small_DescriptorRefusal` and `Small_DeviceRefusal` rows, and the reduced
+   `Medium_InteropImport` suite, which now holds one region row in place of the parameterised refusals.
