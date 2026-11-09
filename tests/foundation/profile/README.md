@@ -42,7 +42,18 @@ The file tests the `SR_ZONE` family at the level this build compiles, and the tw
 | `Small_Profile.AnInstantWritesAnInstantEvent` | An instant writes one event of the instant kind. |
 | `Small_Profile.TheThreadIndexIsTheOneItsDrainedEntryCarries` | `current_thread_index()` of a registered thread equals the index its drained entry carries. |
 | `Medium_Profile.NamingAThreadPutsTheNameInTheDrain` | `name_this_thread()` registers the thread and the drain carries the name. |
-| `Small_ProfileLockWait.TheLockIsReleasedAtTheEndOfItsScope` | A lock taken through `SR_LOCK_WAIT` is released at the end of its scope. |
+
+## test_collector_lock.cpp
+
+The guard behind `SR_LOCK_WAIT`, on a `BusyMutex` that refuses a set number of `try_lock` calls, and a collector of
+its own on a `ManualTickSource`. No test starts a thread; the lock a real contention takes is tested in
+`tests/surface/profiling` (decision 70).
+
+| Test | What it proves |
+| --- | --- |
+| `Small_CollectorLock.TheLockIsReleasedAtTheEndOfItsScope` | A lock taken through `SR_LOCK_WAIT` is released at the end of its scope. |
+| `Small_CollectorLock.AFreeMutexWritesNothing` | A mutex granted at the first `try_lock` writes no event. |
+| `Small_CollectorLock.ABusyMutexWritesOneWaitAndStillLocks` | A mutex that refuses the first `try_lock` is locked and writes one wait event. |
 
 ## test_profile_keys.cpp
 

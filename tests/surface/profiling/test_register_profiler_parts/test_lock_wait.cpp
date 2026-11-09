@@ -36,6 +36,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiProfiler/clock/manual_tick_source.hpp>
 #include <SushiProfiler/collector/collector.hpp>
 #include <SushiProfiler/events/trace_event.hpp>
 
@@ -67,10 +68,10 @@ namespace
             std::atomic<std::size_t> failed_tries_{0};   /**< try_lock calls that failed. */
     };
 
-    /** @brief Locks @p mutex for the rest of the call through the front, as the scheduler does. */
-    void lock_and_release(CountingMutex& mutex)
+    /** @brief Locks @p mutex for the rest of the call through the front, as the scheduler does, recording into @p collector. */
+    void lock_and_release(SushiRuntime::Internal::Profile::Collector& collector, CountingMutex& mutex)
     {
-        SR_LOCK_WAIT("lock.test", mutex);
+        SR_LOCK_WAIT(collector, "lock.test", mutex);
     }
 
     /** @brief Holds a mutex on its own thread until another thread's try_lock on it has failed. */
@@ -114,43 +115,50 @@ namespace
             std::thread thread_;               /**< The thread that holds it. */
     };
 
-    /** @brief Opens the collector before each test and closes and empties it after. */
-    class Medium_PendingMutexLockWait : public ::testing::Test
+    /** @brief Owns a collector on a manual clock and opens it before each test. */
+    class LockWaitCollector : public ::testing::Test
     {
         protected:
             void SetUp() override
             {
-                close_and_empty();
-                ASSERT_TRUE(SushiProfiler::Collector::instance().open(SushiProfiler::CollectorSettings{}));
+                ASSERT_TRUE(collector_.open(SushiProfiler::CollectorSettings{}));
             }
 
             void TearDown() override
             {
-                close_and_empty();
+                collector_.close();
             }
 
+            /** @brief Returns the collector the locks record into. */
+            SushiRuntime::Internal::Profile::Collector& collector() { return collector_; }
+
             /** @brief Returns how many lock-wait zones named lock.test every thread wrote since the last drain. */
-            static std::size_t waits_written()
+            std::size_t waits_written()
             {
                 SushiProfiler::DrainBatch batch;
-                SushiProfiler::Collector::instance().drain(batch);
+                collector_.drain(batch);
                 std::size_t waits = 0;
                 for (const SushiProfiler::ThreadDrain& thread : batch.threads)
                     for (const SushiProfiler::TraceEvent& event : thread.events)
-                        if (SushiProfiler::Collector::instance().sites().info(SushiProfiler::site_of(event)).name ==
+                        if (collector_.sites().info(SushiProfiler::site_of(event)).name ==
                             "lock.test")
                             ++waits;
                 return waits;
             }
 
         private:
-            /** @brief Closes the collector and discards what its rings hold. */
-            static void close_and_empty()
-            {
-                SushiProfiler::Collector::instance().close();
-                SushiProfiler::DrainBatch discarded;
-                SushiProfiler::Collector::instance().drain(discarded);
-            }
+            SushiProfiler::ManualTickSource ticks_;     /**< The clock the collector stamps with; it never moves. */
+            SushiProfiler::Collector collector_{ticks_}; /**< The collector the locks record into. */
+    };
+
+    /** @brief The lock-wait tests that start a thread. */
+    class Medium_PendingMutexLockWait : public LockWaitCollector
+    {
+    };
+
+    /** @brief The lock-wait tests that start none. */
+    class Small_PendingMutexLockWait : public LockWaitCollector
+    {
     };
 } // namespace
 
@@ -159,8 +167,8 @@ TEST_F(Medium_PendingMutexLockWait, AnUncontendedLockWritesNone)
 {
     CountingMutex mutex;
 
-    lock_and_release(mutex);
-    lock_and_release(mutex);
+    lock_and_release(collector(), mutex);
+    lock_and_release(collector(), mutex);
 
     EXPECT_EQ(mutex.failed_tries(), 0u);
     EXPECT_EQ(waits_written(), 0u);
@@ -172,18 +180,18 @@ TEST_F(Medium_PendingMutexLockWait, AContendedLockWritesAZone)
     CountingMutex mutex;
     const MutexHolder holder(mutex);
 
-    lock_and_release(mutex);
+    lock_and_release(collector(), mutex);
 
     EXPECT_EQ(mutex.failed_tries(), 1u);
     EXPECT_EQ(waits_written(), 1u) << "one wait, one zone";
 }
 
 /** @brief Tests that the guard releases the mutex when its scope ends, so the next lock is uncontended. */
-TEST(Small_PendingMutexLockWait, TheGuardReleasesTheMutexAtTheEndOfItsScope)
+TEST_F(Small_PendingMutexLockWait, TheGuardReleasesTheMutexAtTheEndOfItsScope)
 {
     CountingMutex mutex;
 
-    lock_and_release(mutex);
+    lock_and_release(collector(), mutex);
 
     EXPECT_TRUE(mutex.try_lock()) << "the scope released it";
     mutex.unlock();

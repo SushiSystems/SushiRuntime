@@ -60,6 +60,7 @@ namespace SushiRuntime
                   Profile::Collector& collector)
                 : size(size_worker_pool(pool, std::thread::hardware_concurrency())),
                   pinning(pool.pinning),
+                  pending(collector),
                   run(collector),
                   rounds(size, pinning, topology, devices, memory, pending, run),
                   threads(rounds, pending, run, pinning, size.first_core),

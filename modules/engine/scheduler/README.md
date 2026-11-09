@@ -622,7 +622,7 @@ host node submits no dispatch, so its `launched_width` and `live_width` stay `K_
 `execute_task()` opens the fine zone `dispatch.task`; the inline host body is inside `dispatch.host`
 and a device or host-with-queue submission inside `dispatch.submit`. The search for a task to steal is
 the detail zone `worker.steal`. Each of the nine acquisitions of `PendingWork::mutex_` goes through
-`SR_LOCK_WAIT("lock.pending", ...)`, so a contended one writes a `lock.pending` zone and an
+`SR_LOCK_WAIT(collector_, "lock.pending", ...)`, with the collector `PendingWork` is built over, so a contended one writes a `lock.pending` zone and an
 uncontended one writes nothing. The park on the condition variable is not one of them: the worker is
 idle by design and the wait needs a `std::unique_lock`.
 

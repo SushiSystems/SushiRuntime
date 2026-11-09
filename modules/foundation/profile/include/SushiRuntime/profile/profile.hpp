@@ -39,8 +39,10 @@
 #if SR_ENABLE_PROFILER
 
 #include <SushiProfiler/collector/collector.hpp>
-#include <SushiProfiler/lock_wait/contended_lock.hpp>
-#include <SushiProfiler/zones/macros.hpp>
+#include <SushiProfiler/zones/records.hpp>
+#include <SushiProfiler/zones/zone.hpp>
+
+#include <SushiRuntime/profile/collector_lock.hpp>
 
 /** @brief The group every runtime zone is charged to. */
 #define SR_PROFILE_GROUP "Runtime"
@@ -97,13 +99,30 @@
 #define SR_COUNTER(collector, name, unit, op, value) \
     SR_PROFILE_SAMPLE(__COUNTER__, collector, Counter, op, record_counter, name, unit, value)
 
-/** @brief Records an occurrence now, level 1. */
-#define SR_INSTANT(name) \
-    SP_INSTANT_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, 1, name)
+/** @brief Declares a level 1 instant site @p id and records an occurrence now into @p collector. */
+#define SR_PROFILE_INSTANT(id, collector, name) \
+    do \
+    { \
+        if constexpr (1 <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL) \
+        { \
+            SR_PROFILE_SITE(id, true, name, nullptr, 1, Instant, Add, nullptr); \
+            ::SushiProfiler::record_instant((collector), SR_PROFILE_JOIN(sr_handle_, id)); \
+        } \
+    } while (false)
 
-/** @brief Locks @p mutex for the rest of the scope and records its wait when it was contended. */
-#define SR_LOCK_WAIT(name, mutex) \
-    SP_LOCK_WAIT_AT(::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, name, mutex)
+/** @brief Records an occurrence now, level 1, into @p collector. */
+#define SR_INSTANT(collector, name) SR_PROFILE_INSTANT(__COUNTER__, collector, name)
+
+/** @brief Declares lock wait site @p id and locks @p mutex for the rest of the scope, recording a contended wait into @p collector. */
+#define SR_PROFILE_LOCK_WAIT(id, collector, name, mutex) \
+    SR_PROFILE_SITE(id, (1 <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL), name, "Lock wait", 1, \
+                    LockWait, Add, nullptr); \
+    const ::SushiRuntime::Internal::Profile::CollectorLock< \
+        std::remove_reference_t<decltype(mutex)>, (1 <= ::SushiRuntime::Internal::Profile::K_COMPILED_LEVEL)> \
+        SR_PROFILE_JOIN(sr_lock_, id)((collector), (mutex), SR_PROFILE_JOIN(sr_handle_, id))
+
+/** @brief Locks @p mutex for the rest of the scope and records its wait into @p collector when it was contended. */
+#define SR_LOCK_WAIT(collector, name, mutex) SR_PROFILE_LOCK_WAIT(__COUNTER__, collector, name, mutex)
 
 namespace SushiRuntime
 {
@@ -147,7 +166,7 @@ namespace SushiRuntime
 #define SR_ZONE_DETAIL(collector, name) static_cast<void>(sizeof(collector))
 #define SR_VALUE(collector, name, unit, value) static_cast<void>(sizeof(collector) + sizeof(value))
 #define SR_COUNTER(collector, name, unit, op, value) static_cast<void>(sizeof(collector) + sizeof(value))
-#define SR_INSTANT(name) static_cast<void>(0)
+#define SR_INSTANT(collector, name) static_cast<void>(sizeof(collector))
 
 /** @brief Pastes two tokens after expanding them. */
 #define SR_PROFILE_JOIN(left, right) SR_PROFILE_JOIN_INNER(left, right)
@@ -156,11 +175,12 @@ namespace SushiRuntime
 #define SR_PROFILE_JOIN_INNER(left, right) left##right
 
 /**
- * @brief Locks @p mutex for the rest of the scope; with no profiler the lock is a plain one.
+ * @brief Locks @p mutex for the rest of the scope; with no profiler the lock is a plain one and @p collector is not read.
  *
  * The file that uses it includes <mutex>; this header does not.
  */
-#define SR_LOCK_WAIT(name, mutex) \
+#define SR_LOCK_WAIT(collector, name, mutex) \
+    static_cast<void>(sizeof(collector)); \
     const std::lock_guard<std::remove_reference_t<decltype(mutex)>> \
         SR_PROFILE_JOIN(sr_lock_wait_guard_, __LINE__)(mutex)
 

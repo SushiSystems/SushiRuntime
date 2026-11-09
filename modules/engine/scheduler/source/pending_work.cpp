@@ -41,7 +41,7 @@ namespace SushiRuntime
         void PendingWork::push(Task* task)
         {
             {
-                SR_LOCK_WAIT("lock.pending", mutex_);
+                SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
                 if (task->priority() > 0)
                 {
                     priority_.push(task);
@@ -61,7 +61,7 @@ namespace SushiRuntime
             std::size_t normal_added = 0;
             std::size_t priority_added = 0;
             {
-                SR_LOCK_WAIT("lock.pending", mutex_);
+                SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
                 for (Internal::Graph::Node* node : roots)
                 {
                     if (!node) continue;
@@ -91,7 +91,7 @@ namespace SushiRuntime
         void PendingWork::push_rescued(const std::vector<Task*>& tasks)
         {
             {
-                SR_LOCK_WAIT("lock.pending", mutex_);
+                SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
                 for (Task* task : tasks)
                     priority_.push(task);
                 priority_count_.store(priority_.size(), std::memory_order_relaxed);
@@ -102,7 +102,7 @@ namespace SushiRuntime
         void PendingWork::take_batch(std::vector<Task*>& batch, std::size_t limit)
         {
             batch.clear();
-            SR_LOCK_WAIT("lock.pending", mutex_);
+            SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
             if (normal_.empty()) return;
             const std::size_t grab_count = std::min(limit, normal_.size());
             batch.reserve(grab_count);
@@ -119,7 +119,7 @@ namespace SushiRuntime
 
         Task* PendingWork::take_priority()
         {
-            SR_LOCK_WAIT("lock.pending", mutex_);
+            SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
             if (priority_.empty())
                 return nullptr;
             Task* task = priority_.top();
@@ -147,7 +147,7 @@ namespace SushiRuntime
         void PendingWork::arm()
         {
             {
-                SR_LOCK_WAIT("lock.pending", mutex_);
+                SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
                 running_.store(true, std::memory_order_release);
             }
             cv_.notify_all();
@@ -155,14 +155,14 @@ namespace SushiRuntime
 
         void PendingWork::disarm() noexcept
         {
-            SR_LOCK_WAIT("lock.pending", mutex_);
+            SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
             running_.store(false, std::memory_order_release);
         }
 
         void PendingWork::request_shutdown()
         {
             {
-                SR_LOCK_WAIT("lock.pending", mutex_);
+                SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
                 shutdown_requested_.store(true, std::memory_order_release);
                 running_.store(false, std::memory_order_release);
             }
@@ -182,7 +182,7 @@ namespace SushiRuntime
 
         void PendingWork::release_all()
         {
-            SR_LOCK_WAIT("lock.pending", mutex_);
+            SR_LOCK_WAIT(collector_, "lock.pending", mutex_);
             while (!normal_.empty())
             {
                 Task* task = normal_.front();

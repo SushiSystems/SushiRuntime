@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         gate_unit_level_three.cpp
         gate_unit_level_two.cpp
         gate_unit_level_zero.cpp
+        test_collector_lock.cpp
         test_profile.cpp
         test_profile_gate.cpp
         test_profile_keys.cpp)

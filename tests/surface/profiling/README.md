@@ -360,7 +360,8 @@ The counters and values the runtime writes at the end of every run.
 
 ## test_register_profiler_parts/test_lock_wait.cpp
 
-SR_LOCK_WAIT, the front the scheduler locks its submission mutex with.
+SR_LOCK_WAIT, the front the scheduler locks its submission mutex with. The tests lock into a collector of their
+own on a manual tick source, not the process-wide one (decision 70).
 
 | Test | What it proves |
 | --- | --- |

@@ -31,8 +31,9 @@ nothing, the library builds without SushiProfiler present, and the `profiling` m
 | `SR_ZONE_DETAIL(collector, name)` | The same at level 3; the work-stealing search |
 | `SR_VALUE(collector, name, unit, value)` | Records a sample into `collector`, level 1 |
 | `SR_COUNTER(collector, name, unit, op, value)` | Records a value into `collector`, folded per period by the counter operation `op` (`Add`, `Set`, `Max`, `Min`), level 1 |
-| `SR_INSTANT(name)` | Records an occurrence into the process-wide collector, level 1 |
-| `SR_LOCK_WAIT(name, mutex)` | Locks `mutex` for the rest of the scope and records a zone into the process-wide collector only when the lock was contended |
+| `SR_INSTANT(collector, name)` | Records an occurrence into `collector`, level 1 |
+| `SR_LOCK_WAIT(collector, name, mutex)` | Locks `mutex` for the rest of the scope and records a zone into `collector` only when the lock was contended |
+| `Internal::Profile::CollectorLock` | The guard behind `SR_LOCK_WAIT` (`collector_lock.hpp`): one `try_lock`, and a zone in the collector only when it had to wait |
 | `Internal::Profile::current_thread_index()` | The profiler's index of the calling thread, or 0 when it has none |
 | `Internal::Profile::name_this_thread(name)` | Registers the calling thread and names it, so its first zone allocates nothing |
 
@@ -52,10 +53,10 @@ the compiled level is an empty object and registers no site.
 A runtime unit records into the collector of the `RuntimeContext` it runs under, never the global
 one, so a caller can hand a context a collector of its own (`RuntimeContext::create_host()` takes
 it as its last argument). The `SR_ZONE` family, `SR_VALUE` and `SR_COUNTER` take that collector
-first. `SR_INSTANT` and `SR_LOCK_WAIT` still reach the process-wide one.
+first, and so do `SR_INSTANT` and `SR_LOCK_WAIT`; no macro reaches the process-wide collector.
 
 With `SR_ENABLE_PROFILER` off, the `SR_ZONE` family, `SR_VALUE` and `SR_COUNTER` evaluate nothing,
-since the collector and the value are only named in `sizeof`, and `SR_LOCK_WAIT` is a plain `std::lock_guard`. The file that uses it
+since the collector and the value are only named in `sizeof`, and `SR_INSTANT` only names the collector, and `SR_LOCK_WAIT` is a plain `std::lock_guard`. The file that uses it
 includes `<mutex>`; the header does not.
 
 ## Tests

@@ -36,6 +36,7 @@
 #include <queue>
 #include <vector>
 
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/task/task.hpp>
 
@@ -113,7 +114,10 @@ namespace SushiRuntime
         class PendingWork final
         {
             public:
-                PendingWork() = default;
+                /** @brief Builds the queues empty; the lock waits record into @p collector, which must outlive them. */
+                explicit PendingWork(Profile::Collector& collector) noexcept : collector_(collector) {}
+
+
                 PendingWork(const PendingWork&) = delete;
                 PendingWork& operator=(const PendingWork&) = delete;
                 PendingWork(PendingWork&&) = delete;
@@ -166,6 +170,7 @@ namespace SushiRuntime
                 void release_all();
 
             private:
+                Profile::Collector& collector_;
                 SubmissionQueue normal_;
                 std::priority_queue<Task*, std::vector<Task*>, TaskPriorityCompare> priority_;
                 std::mutex mutex_;

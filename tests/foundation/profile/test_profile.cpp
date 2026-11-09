@@ -29,7 +29,6 @@
  */
 
 #include <algorithm>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -146,7 +145,7 @@ TEST_F(Small_Profile, ACounterWritesACounterEvent)
 /** @brief Tests that an instant writes one event of the instant kind. */
 TEST_F(Small_Profile, AnInstantWritesAnInstantEvent)
 {
-    SR_INSTANT("profile.test.instant");
+    SR_INSTANT(::SushiRuntime::Internal::Profile::process_collector(), "profile.test.instant");
 
     EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Instant}));
 }
@@ -155,7 +154,7 @@ TEST_F(Small_Profile, AnInstantWritesAnInstantEvent)
 TEST_F(Small_Profile, TheThreadIndexIsTheOneItsDrainedEntryCarries)
 {
     SushiRuntime::Internal::Profile::name_this_thread("profile.test");
-    SR_INSTANT("profile.test.tick");
+    SR_INSTANT(::SushiRuntime::Internal::Profile::process_collector(), "profile.test.tick");
 
     const SushiProfiler::DrainBatch batch = drained();
     const SushiProfiler::ThreadDrain* entry = thread_named(batch, "profile.test");
@@ -170,24 +169,11 @@ TEST_F(Medium_Profile, NamingAThreadPutsTheNameInTheDrain)
     std::thread named([]()
     {
         SushiRuntime::Internal::Profile::name_this_thread("profile.named");
-        SR_INSTANT("profile.named.tick");
+        SR_INSTANT(::SushiRuntime::Internal::Profile::process_collector(), "profile.named.tick");
     });
     named.join();
 
     const std::vector<std::string> names = thread_names(drained());
 
     EXPECT_EQ(std::count(names.begin(), names.end(), "profile.named"), 1);
-}
-
-/** @brief Tests that a lock taken through SR_LOCK_WAIT is released at the end of its scope. */
-TEST(Small_ProfileLockWait, TheLockIsReleasedAtTheEndOfItsScope)
-{
-    std::mutex mutex;
-    {
-        SR_LOCK_WAIT("profile.test.lock", mutex);
-        EXPECT_FALSE(mutex.try_lock()) << "the scope holds the mutex";
-    }
-
-    EXPECT_TRUE(mutex.try_lock()) << "the scope released it";
-    mutex.unlock();
 }
