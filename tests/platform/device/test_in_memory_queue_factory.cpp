@@ -55,8 +55,12 @@ namespace
 
 namespace TestSupport
 {
-    /** @brief Runs the QueueFactory contract on the in-memory factory. */
-    INSTANTIATE_TYPED_TEST_SUITE_P(Small_InMemoryQueueFactory, QueueFactoryContract, ::InMemoryFactoryMaker, );
+    /**
+     * @brief Runs the QueueFactory contract on the in-memory factory.
+     * @note Medium: make() returns a sycl::queue, which the factory builds on the CPU device. The runtime
+     *       keeps sycl::queue as its execution currency (decision 64), so the rows that build one need a device.
+     */
+    INSTANTIATE_TYPED_TEST_SUITE_P(Medium_InMemoryQueueFactory, QueueFactoryContract, ::InMemoryFactoryMaker, );
 } // namespace TestSupport
 
 /** @brief Tests that the factory records every build in order, with its device, flavour and context. */
