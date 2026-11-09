@@ -38,6 +38,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 
 namespace SushiRuntime
 {

@@ -155,12 +155,11 @@ namespace
 } // namespace
 
 /** @brief Tests that on the worker pool a run writes run.submit and run.wait under run.steps, with their children. */
-TEST(Small_RunZones, TheSchedulerPathWritesSubmitAndWaitUnderTheRun)
+TEST(Medium_RunZones, TheSchedulerPathWritesSubmitAndWaitUnderTheRun)
 {
-    HostSession host;
-    SessionPipeline pipeline(host.runtime());
+    SessionPipeline pipeline;
 
-    const RunRecord record = record_two_runs(host, pipeline);
+    const RunRecord record = record_two_runs_on_device(pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     expect_submit_and_wait_under_the_run(record, record.periods[0]);

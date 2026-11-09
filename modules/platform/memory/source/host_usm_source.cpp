@@ -110,7 +110,6 @@ namespace SushiRuntime
 
         HostUSMSource::HostUSMSource(std::size_t device_count) : device_count_(device_count)
         {
-            SR_VERIFY(device_count > 0, "HostUSMSource: pass a device count of at least 1.");
         }
 
         std::size_t HostUSMSource::device_count() const noexcept

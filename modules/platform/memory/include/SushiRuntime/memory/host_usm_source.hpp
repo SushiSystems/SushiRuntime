@@ -45,7 +45,7 @@ namespace SushiRuntime
          *
          * Every device shares one context, and owners resolve as on a device. It makes no device
          * and starts no thread.
-         * @param device_count The devices the source stands for; at least 1.
+         * @param device_count The devices the source stands for; 0 refuses every request.
          * @see modules/platform/memory/README.md
          */
         [[nodiscard]] SUSHIRUNTIME_API std::unique_ptr<USMSource>

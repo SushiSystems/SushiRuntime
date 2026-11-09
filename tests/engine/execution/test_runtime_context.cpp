@@ -713,13 +713,13 @@ namespace OffloadSeamShutdownTests
      * @brief shutdown() stops the installed coordinator while the worker pool still runs, so a node
      *        the coordinator hands back during its stop() runs.
      */
-    TEST(Small_RuntimeContextOffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
+    TEST(Medium_RuntimeContextOffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
     {
         const std::shared_ptr<PoolProbingCoordinator> coordinator =
             std::make_shared<PoolProbingCoordinator>();
 
         {
-            const auto context_owner = TestSupport::make_host_context();
+            const auto context_owner = SushiRuntime::Test::make_context();
             SushiRuntime::Internal::Execution::RuntimeContext& context = *context_owner;
             context.install_offload(coordinator);
 

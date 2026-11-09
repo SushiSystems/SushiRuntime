@@ -86,3 +86,11 @@ TEST(Small_HostUSMSource, CountsTheDevicesItWasMadeWith)
 
     EXPECT_EQ(source->device_count(), 3u);
 }
+
+/** @brief Tests that a source can stand for a machine with no device. */
+TEST(Small_HostUSMSource, AMachineWithNoDeviceMakesAnEmptySource)
+{
+    const std::unique_ptr<USMSource> source = make_host_usm_source(0);
+
+    EXPECT_EQ(source->device_count(), 0u);
+}
