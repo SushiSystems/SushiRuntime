@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — paused on 2026-11-09 after decision 68; see Resume
+**Status:** Open — paused on 2026-11-09 after decision 73; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -41,7 +41,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | partly done: the splits and the merge by 26816063, `make_host_context()` by 37246149; EpochManager is off process-wide state (decision 39); the stale includes outside the split files are dropped (30 files, each still passes `clang -fsyntax-only`); the split files keep theirs |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
 | R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | partly done: topology and the in-memory queue factory; RW-131 done (decision 57); `InMemoryQueueFactory::make()` still builds a CPU queue, so its contract rows are `Medium_` (decisions 64, 66) |
-| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the medium audit's remaining LOGIC cases, the recount; RW-128 closed by the runtime holding its collector (decision 67, 224b5203), the rounds and the two shells are classes of their own (decision 68) |
+| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the medium audit's remaining LOGIC cases, the recount; RW-128 closed by the runtime holding its collector (decision 67, 224b5203) and reopened as RW-132 (decision 70), the rounds and the two shells are classes of their own (decision 68), `task_scheduler.hpp` slimmed (decision 72), the recount done (decision 73) |
 
 ## Acceptance
 
@@ -61,13 +61,16 @@ and adapters; their plans wait on T1 and T2.
 
 ## Resume
 
-Worker 10, 2026-11-09, after decision 68. Done: the in-memory queue factory contract is `Medium_` (decision 66); the
-runtime holds its collector, the SushiProfiler pin is 332311d and RW-128 is closed (decision 67); `TaskScheduler`
-composes `PendingWork`, `RunState`, `WorkerRounds`, `WorkerThreads` and `ExecutorRounds` (decision 68). Nothing built
-or run: the orchestrator rebuilds the SushiProfiler package, then one build, small and medium. Not done:
+Worker 11, 2026-11-09, after decision 73. Done: `RecordsEveryBuildInOrder` is medium (decision 69, 00daae25);
+`SR_INSTANT` and `SR_LOCK_WAIT` take the collector, `CollectorLock` and `PendingWork` hold it, RW-128 is reopened as
+RW-132 (decision 70, 64f3a915); `HostRuntimeConfig::profile_collector`, `HostSession`, and 13 plan, run-zone and
+counter cases small (decision 71, 5f686063); `task_scheduler.hpp` includes only what it names (decision 72, c9221184);
+the recount (decision 73, d53718e8). Nothing built or run: the orchestrator runs one build, small and medium. Not done:
 
-1. The 41 profiling LOGIC cases of RW-128 (`Session::start` with an injected collector) still run on the
-   process-wide collector; RW-128 was closed as ordered, and the cases are job 4.
-2. Job 4: the remaining LOGIC cases of the medium audit (session scratchpad `J16/sushiruntime/medium_audit.md`).
-3. Job 5: the per-module recount in `REPORT.md`.
-4. `SR_INSTANT` and `SR_LOCK_WAIT` still reach the process-wide collector.
+1. RW-132 stays open: 28 of the 41 profiling cases (`DeviceTimingWindow`, `RuntimeSession*`, the transfer bytes, the USM
+   allocator zones, worker names, the chain path, `dispatch.submit`) need a device, a thread or a path the host runtime
+   does not take. Closing it waits on a host path for them or an owner ruling that leaves them medium.
+2. Job 4: the other remaining LOGIC cases of the medium audit (the audit table was not in this worker's reach); the
+   worker and second runtimes of `test_distributed.cpp` (decision 59); `ChainRun` and the task bodies (decision 64).
+3. Unverified until the build: the 13 converted profiling cases assume the host runtime writes `run.submit`,
+   `run.wait`, `plan.*`, `wait.queues` and the worker values as the device runtime does.
