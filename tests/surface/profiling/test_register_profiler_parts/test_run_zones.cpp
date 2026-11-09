@@ -54,8 +54,17 @@ namespace
     /** @brief The deepest zone level this library was compiled at; 0 when profiling is off. */
     constexpr int K_LIBRARY_LEVEL = SR_ENABLE_PROFILER != 0 ? SR_PROFILE_LEVEL : 0;
 
-    /** @brief Records two periods around two runs of @p pipeline with no source. */
-    RunRecord record_two_runs(SessionPipeline& pipeline)
+    /** @brief Records two periods around two runs of @p pipeline on @p host with no source. */
+    RunRecord record_two_runs(HostSession& host, SessionPipeline& pipeline)
+    {
+        return host.record_periods_without_source(0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
+                                             {
+                                                 EXPECT_TRUE(pipeline.graph().run().has_value());
+                                             });
+    }
+
+    /** @brief Records two periods around two runs of @p pipeline on the program's device runtime with no source. */
+    RunRecord record_two_runs_on_device(SessionPipeline& pipeline)
     {
         return record_periods_without_source(0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
                                              {
@@ -146,11 +155,12 @@ namespace
 } // namespace
 
 /** @brief Tests that on the worker pool a run writes run.submit and run.wait under run.steps, with their children. */
-TEST(Medium_RunZones, TheSchedulerPathWritesSubmitAndWaitUnderTheRun)
+TEST(Small_RunZones, TheSchedulerPathWritesSubmitAndWaitUnderTheRun)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     expect_submit_and_wait_under_the_run(record, record.periods[0]);
@@ -162,7 +172,7 @@ TEST_F(Medium_RunZonesAtLevelTwo, DispatchZonesAreWritten)
 {
     SessionPipeline pipeline;
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs_on_device(pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     const std::set<std::string> sites = zone_sites(record, record.periods[1]);
@@ -175,7 +185,7 @@ TEST_F(Medium_RunZonesBelowLevelThree, TheStealZoneIsAbsent)
 {
     SessionPipeline pipeline;
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs_on_device(pipeline);
 
     EXPECT_FALSE(any_period_has_zone(record, "worker.steal"));
 }
@@ -187,7 +197,7 @@ TEST(Medium_RunZones, TheChainPathWritesItsOwnZones)
     // The events are read only while a run is timed, and an added observer is what wants the timing (R20, R21).
     const RunObserverHandle observer = pipeline.runtime().add_run_observer(std::make_shared<RecordingObserver>());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs_on_device(pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     const std::set<std::string> sites = zone_sites(record, record.periods[1]);
@@ -203,17 +213,18 @@ TEST(Medium_RunZones, WorkerThreadsCarryTheirNames)
 {
     SessionPipeline pipeline;
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs_on_device(pipeline);
 
     EXPECT_GE(threads_named(record, "sr-worker-"), 1u) << "a worker that recorded a zone has the name sr-worker-N";
 }
 
 /** @brief Tests that the stage zones of a blocking run are written on the caller's thread, not on a worker's. */
-TEST(Medium_RunZones, TheRunZonesAreOnTheCallersThread)
+TEST(Small_RunZones, TheRunZonesAreOnTheCallersThread)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     const auto trees = trees_holding(record, record.periods[1], "run.steps");
     ASSERT_EQ(trees.size(), 1u);
@@ -221,11 +232,12 @@ TEST(Medium_RunZones, TheRunZonesAreOnTheCallersThread)
 }
 
 /** @brief Tests that Runtime::wait writes wait.runtime around wait.queues. */
-TEST(Medium_RunZones, RuntimeWaitWritesWaitRuntimeAroundWaitQueues)
+TEST(Small_RunZones, RuntimeWaitWritesWaitRuntimeAroundWaitQueues)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 1, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
         {
             EXPECT_TRUE(pipeline.graph().run().has_value());

@@ -33,7 +33,8 @@ test program shares; a medium test that needs either derives its fixture from `T
 never builds its own. A test that needs another configuration asks the environment for the runtime
 of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer), made once per
 shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
-scheduler (true). `buffer_contents.hpp` reads, fills and windows a buffer's contents,
+scheduler (true). `stepping_tick_source.hpp` is a SushiProfiler tick source that moves by one on every reading, so the zones of a
+collector built over it nest the same on every run, and `buffer_contents.hpp` reads, fills and windows a buffer's contents,
 `slot_buffers.hpp` makes one device, one shared and one host counter buffer, and
 `adopted_handles.hpp` builds a `Buffer` or `State` over a made-up address with
 `RecordingAllocationOwner`, `installed_offload.hpp` installs an offload coordinator on a runtime for one

@@ -40,7 +40,6 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "profiled_pipelines.hpp"
-#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
@@ -49,10 +48,10 @@ using SushiProfiler::RunRecord;
 
 namespace
 {
-    /** @brief Records two periods around two runs of @p pipeline and no source, so only the runtime's own zones are written. */
-    RunRecord record_two_runs(SessionPipeline& pipeline)
+    /** @brief Records two periods around two runs of @p pipeline on @p host and no source, so only the runtime's own zones are written. */
+    RunRecord record_two_runs(HostSession& host, SessionPipeline& pipeline)
     {
-        return record_periods_without_source(0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
+        return host.record_periods_without_source(0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
                                              {
                                                  EXPECT_TRUE(pipeline.graph().run().has_value());
                                              });
@@ -72,11 +71,12 @@ namespace
 } // namespace
 
 /** @brief Tests that a build writes plan.compile inside plan.build, and the build covers the compile's time. */
-TEST(Medium_PlanZones, ABuildWritesPlanBuildAroundPlanCompile)
+TEST(Small_PlanZones, ABuildWritesPlanBuildAroundPlanCompile)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     const SushiProfiler::ZoneTree* tree = tree_with(record, record.periods[0], "plan.compile");
@@ -91,11 +91,12 @@ TEST(Medium_PlanZones, ABuildWritesPlanBuildAroundPlanCompile)
 }
 
 /** @brief Tests that a build writes the prepare and classify steps in the tree of its compile. */
-TEST(Medium_PlanZones, ABuildWritesItsPrepareAndClassifySteps)
+TEST(Small_PlanZones, ABuildWritesItsPrepareAndClassifySteps)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     const SushiProfiler::ZoneTree* tree = tree_with(record, record.periods[0], "plan.compile");
@@ -105,22 +106,24 @@ TEST(Medium_PlanZones, ABuildWritesItsPrepareAndClassifySteps)
 }
 
 /** @brief Tests that a second run writes no plan.build, because the plan is cached. */
-TEST(Medium_PlanZones, TheSecondRunWritesNoBuildBecauseThePlanIsCached)
+TEST(Small_PlanZones, TheSecondRunWritesNoBuildBecauseThePlanIsCached)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
     EXPECT_EQ(tree_with(record, record.periods[1], "plan.build"), nullptr);
 }
 
 /** @brief Tests that building a plan writes the node and root counts as values. */
-TEST(Medium_PlanZones, ABuildWritesTheNodeAndRootCountsAsValues)
+TEST(Small_PlanZones, ABuildWritesTheNodeAndRootCountsAsValues)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_two_runs(pipeline);
+    const RunRecord record = record_two_runs(host, pipeline);
 
     const auto nodes = sample_total(record, "graph.nodes");
     const auto roots = sample_total(record, "graph.roots");
@@ -144,13 +147,11 @@ namespace
 } // namespace
 
 /** @brief Tests that nothing of the plan is written while the gate is closed. */
-TEST(Medium_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
+TEST(Small_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
 {
-    SessionPipeline pipeline;
-    SushiProfiler::Collector& collector = SushiProfiler::Collector::instance();
-    collector.close();
-    SushiProfiler::DrainBatch discarded;
-    collector.drain(discarded);
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
+    SushiProfiler::Collector& collector = host.collector();
     ASSERT_TRUE(collector.open(SushiProfiler::CollectorSettings{}));
     collector.pause();
 
@@ -163,15 +164,16 @@ TEST(Medium_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
 }
 
 /** @brief Tests that a graph of regions writes region.commit when it composes its plan. */
-TEST(Medium_PlanZones, ADynamicGraphWritesRegionCommit)
+TEST(Small_PlanZones, ADynamicGraphWritesRegionCommit)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
+    HostSession host;
+    Runtime& runtime = host.runtime();
     auto buffer = runtime.buffer<float>(64).value();
     float* data = buffer.data();
     auto graph = runtime.dynamic_graph();
     graph.region(0).add(std::size_t{64}, Reads{}, Writes(buffer), [data](std::size_t i) { data[i] = 1.0f; });
 
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 1, [&graph](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(graph.run().has_value()); });
 
     ASSERT_EQ(record.periods.size(), 1u);

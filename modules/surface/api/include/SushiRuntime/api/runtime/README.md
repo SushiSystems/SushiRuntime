@@ -45,8 +45,9 @@ the same types, so a value passes to it without a conversion.
 
 ### HostRuntimeConfig
 
-The settings `create_host()` reads: the device count, the executor, the clock, the machine's name
-and its labels.
+The settings `create_host()` reads: the device count, the executor, the clock, the machine's name,
+its labels and the collector the runtime's zones, values and counters record into (`profile_collector`, null for the
+process-wide one; a forward-declared `SushiProfiler::Collector`, so the header includes no profiler header).
 
 ## advanced_controls.hpp
 

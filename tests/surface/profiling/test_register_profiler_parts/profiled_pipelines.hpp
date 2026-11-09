@@ -39,6 +39,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiProfiler/collector/collector.hpp>
 #include <SushiProfiler/config/profiler_config.hpp>
 #include <SushiProfiler/json/json_reader.hpp>
 #include <SushiProfiler/periods/period_timeline.hpp>
@@ -46,10 +47,12 @@
 #include <SushiProfiler/registry/registry.hpp>
 #include <SushiProfiler/session/session.hpp>
 
+#include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/runtime_environment.hpp"
+#include "support/stepping_tick_source.hpp"
 
 namespace ProfilingPipelines
 {
@@ -491,4 +494,74 @@ namespace SessionTests
         timeline.mark();
         return std::move(start.session->stop().record);
     }
+
+    /**
+     * @brief Owns a collector on a stepping tick source and a host runtime that records into it.
+     *
+     * No device, queue or thread: the runtime runs its nodes on a SeededExecutor, so a session over the
+     * collector sees only this runtime's zones, values and counters (decision 70, RW-132).
+     */
+    class HostSession
+    {
+        public:
+            /** @brief Makes the collector and a host runtime of one device that records into it. */
+            HostSession() : executor_(std::make_shared<SushiRuntime::SeededExecutor>()), runtime_(make_runtime())
+            {
+            }
+
+            HostSession(const HostSession&) = delete;
+            HostSession& operator=(const HostSession&) = delete;
+            HostSession(HostSession&&) = delete;
+            HostSession& operator=(HostSession&&) = delete;
+
+            /** @brief Returns the host runtime. */
+            SushiRuntime::Runtime& runtime() noexcept { return runtime_; }
+
+            /** @brief Returns the collector the runtime records into. */
+            SushiProfiler::Collector& collector() noexcept { return collector_; }
+
+            /** @brief Returns the executor that runs the runtime's nodes. */
+            SushiRuntime::SeededExecutor& executor() noexcept { return *executor_; }
+
+            /**
+             * @brief Records periods as record_periods_without_source() does, over the session's collector.
+             * @return The record the session returns.
+             */
+            template <class RunPeriod>
+            SushiProfiler::RunRecord record_periods_without_source(std::uint32_t warmup, std::uint32_t active,
+                                                                   RunPeriod&& run_period)
+            {
+                const SushiProfiler::Registry registry;
+                SushiProfiler::ProfilerConfig config = session_config(warmup, active);
+                config.sources.clear();
+                SushiProfiler::SessionStart start = SushiProfiler::Session::start(config, registry, collector_);
+                EXPECT_TRUE(start.ok()) << start.error;
+                if (!start.ok())
+                    return {};
+
+                SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
+                for (std::uint32_t period = 0; period < warmup + active; ++period)
+                {
+                    timeline.mark();
+                    run_period(period, timeline);
+                }
+                timeline.mark();
+                return std::move(start.session->stop().record);
+            }
+
+        private:
+            /** @brief Builds the host runtime over the collector. */
+            SushiRuntime::Runtime make_runtime()
+            {
+                SushiRuntime::HostRuntimeConfig config;
+                config.executor = executor_;
+                config.profile_collector = &collector_;
+                return SushiRuntime::Runtime::create_host(config).value();
+            }
+
+            TestSupport::SteppingTickSource ticks_;               /**< Stamps the collector. */
+            SushiProfiler::Collector collector_{ticks_};           /**< Takes the runtime's zones; outlives the runtime. */
+            std::shared_ptr<SushiRuntime::SeededExecutor> executor_; /**< Runs the runtime's nodes. */
+            SushiRuntime::Runtime runtime_;                        /**< The host runtime. */
+    };
 } // namespace SessionTests

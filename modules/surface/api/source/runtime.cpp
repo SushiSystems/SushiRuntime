@@ -206,9 +206,15 @@ namespace SushiRuntime
         if (config.device_count == 0)
             return make_error(Error{ErrorCode::InvalidArgument,
                                     "HostRuntimeConfig::device_count is 0; pass at least 1."});
+#if SR_ENABLE_PROFILER
+        Internal::Profile::Collector& collector =
+            config.profile_collector != nullptr ? *config.profile_collector : Internal::Profile::process_collector();
+#else
+        Internal::Profile::Collector& collector = Internal::Profile::process_collector();
+#endif
         Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
             Internal::Execution::RuntimeContext::create_host(config.device_count, config.executor,
-                                                             config.clock);
+                                                             config.clock, nullptr, nullptr, collector);
         if (!context)
             return make_error(std::move(context.error()));
         return Internal::ContextAccess::handle(std::move(*context));

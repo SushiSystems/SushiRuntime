@@ -322,12 +322,12 @@ The zones the runtime writes while it builds the plan of a graph.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_PlanZones.ABuildWritesPlanBuildAroundPlanCompile` | A build writes plan.compile inside plan.build, and the build covers the compile's time. |
-| `Medium_PlanZones.ABuildWritesItsPrepareAndClassifySteps` | A build writes the prepare and classify steps in the tree of its compile. |
-| `Medium_PlanZones.TheSecondRunWritesNoBuildBecauseThePlanIsCached` | A second run writes no plan.build, because the plan is cached. |
-| `Medium_PlanZones.ABuildWritesTheNodeAndRootCountsAsValues` | Building a plan writes the node and root counts as values. |
-| `Medium_PlanZones.NoZoneIsWrittenWhileTheGateIsClosed` | Nothing of the plan is written while the gate is closed. |
-| `Medium_PlanZones.ADynamicGraphWritesRegionCommit` | A graph of regions writes region.commit when it composes its plan. |
+| `Small_PlanZones.ABuildWritesPlanBuildAroundPlanCompile` | A build writes plan.compile inside plan.build, and the build covers the compile's time. |
+| `Small_PlanZones.ABuildWritesItsPrepareAndClassifySteps` | A build writes the prepare and classify steps in the tree of its compile. |
+| `Small_PlanZones.TheSecondRunWritesNoBuildBecauseThePlanIsCached` | A second run writes no plan.build, because the plan is cached. |
+| `Small_PlanZones.ABuildWritesTheNodeAndRootCountsAsValues` | Building a plan writes the node and root counts as values. |
+| `Small_PlanZones.NoZoneIsWrittenWhileTheGateIsClosed` | Nothing of the plan is written while the gate is closed. |
+| `Small_PlanZones.ADynamicGraphWritesRegionCommit` | A graph of regions writes region.commit when it composes its plan. |
 
 
 ## test_register_profiler_parts/test_run_zones.cpp
@@ -336,13 +336,13 @@ The zones the runtime writes while it runs a graph on the worker pool and on the
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RunZones.TheSchedulerPathWritesSubmitAndWaitUnderTheRun` | On the worker pool a run writes run.submit and run.wait under run.steps, with their children. |
+| `Small_RunZones.TheSchedulerPathWritesSubmitAndWaitUnderTheRun` | On the worker pool a run writes run.submit and run.wait under run.steps, with their children. |
 | `Medium_RunZonesAtLevelTwo.DispatchZonesAreWritten` | The dispatches of a run write dispatch.task and dispatch.submit on the worker threads. |
 | `Medium_RunZonesBelowLevelThree.TheStealZoneIsAbsent` | The per-element zones of the steal path are not compiled into a library below level 3. |
 | `Medium_RunZones.TheChainPathWritesItsOwnZones` | On the in-order chain a run writes its own zones and none of the pool's. |
 | `Medium_RunZones.WorkerThreadsCarryTheirNames` | A worker thread of the pool carries its name in the record. |
-| `Medium_RunZones.TheRunZonesAreOnTheCallersThread` | The stage zones of a blocking run are written on the caller's thread, not on a worker's. |
-| `Medium_RunZones.RuntimeWaitWritesWaitRuntimeAroundWaitQueues` | Runtime::wait writes wait.runtime around wait.queues. |
+| `Small_RunZones.TheRunZonesAreOnTheCallersThread` | The stage zones of a blocking run are written on the caller's thread, not on a worker's. |
+| `Small_RunZones.RuntimeWaitWritesWaitRuntimeAroundWaitQueues` | Runtime::wait writes wait.runtime around wait.queues. |
 
 
 ## test_register_profiler_parts/test_run_counters.cpp
@@ -352,11 +352,15 @@ The counters and values the runtime writes at the end of every run.
 | Test | What it proves |
 | --- | --- |
 | `Medium_RunCounters.TransferBytesMatchTheExplicitCopies` | A run that copies a known number of bytes writes counters of exactly those bytes. |
-| `Medium_RunCounters.ARunThatCopiesNothingWritesZeroBytes` | A run that copies nothing writes counters of zero, not no counter. |
-| `Medium_RunCounters.TheTaskCountIsWrittenPerRun` | The task count of every run is written as a counter. |
-| `Medium_RunCounters.WorkerBucketSumsAreWrittenOnEveryRun` | The worker time is written as four values on every run, with no observer added. |
-| `Medium_RunCounters.AnUnobservedRunReportsNoStaleWorkerTime` | The worker values of a run that recorded no timing are zero, not the time of an earlier run. |
+| `Small_RunCounters.ARunThatCopiesNothingWritesZeroBytes` | A run that copies nothing writes counters of zero, not no counter. |
+| `Small_RunCounters.TheTaskCountIsWrittenPerRun` | The task count of every run is written as a counter. |
+| `Small_RunCounters.WorkerBucketSumsAreWrittenOnEveryRun` | The worker time is written as four values on every run, with no observer added. |
+| `Small_RunCounters.AnUnobservedRunReportsNoStaleWorkerTime` | The worker values of a run that recorded no timing are zero, not the time of an earlier run. |
 
+
+`Small_PlanZones`, `Small_RunZones` and `Small_RunCounters` run on `SessionTests::HostSession`
+(`profiled_pipelines.hpp`): a host runtime that records into a `SushiProfiler::Collector` of its own, stamped by
+`TestSupport::SteppingTickSource`, and a session started over that collector. They touch no device and no thread (decision 71).
 
 ## test_register_profiler_parts/test_lock_wait.cpp
 

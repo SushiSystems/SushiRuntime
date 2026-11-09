@@ -39,6 +39,11 @@
 #include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/machine/node_label.hpp>
 
+namespace SushiProfiler
+{
+    class Collector;
+} // namespace SushiProfiler
+
 namespace SushiRuntime
 {
     /**
@@ -64,5 +69,12 @@ namespace SushiRuntime
 
         /** @brief Labels the machine reports in NodeFacts, in order. */
         std::vector<NodeLabel> labels;
+
+        /**
+         * @brief Takes the runtime's zones, values and counters; null keeps the process-wide collector.
+         *
+         * The collector must outlive the runtime. A build without the profiler ignores it.
+         */
+        SushiProfiler::Collector* profile_collector = nullptr;
     };
 } // namespace SushiRuntime

@@ -85,11 +85,12 @@ TEST(Medium_RunCounters, TransferBytesMatchTheExplicitCopies)
 }
 
 /** @brief Tests that a run that copies nothing writes counters of zero, not no counter. */
-TEST(Medium_RunCounters, ARunThatCopiesNothingWritesZeroBytes)
+TEST(Small_RunCounters, ARunThatCopiesNothingWritesZeroBytes)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(pipeline.graph().run().has_value()); });
 
     EXPECT_EQ(sample_total(record, "transfer.h2d_bytes").first, 0.0);
@@ -97,11 +98,12 @@ TEST(Medium_RunCounters, ARunThatCopiesNothingWritesZeroBytes)
 }
 
 /** @brief Tests that the task count of every run is written as a counter. */
-TEST(Medium_RunCounters, TheTaskCountIsWrittenPerRun)
+TEST(Small_RunCounters, TheTaskCountIsWrittenPerRun)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 3, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(pipeline.graph().run().has_value()); });
 
     const auto tasks = sample_total(record, "run.tasks");
@@ -141,11 +143,12 @@ namespace
 } // namespace
 
 /** @brief Tests that the worker time is written as four values on every run, with no observer added. */
-TEST(Medium_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
+TEST(Small_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
 
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 3, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(pipeline.graph().run().has_value()); });
 
     expect_one_value_per_run(record, "worker.busy", 3u);
@@ -155,14 +158,15 @@ TEST(Medium_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
 }
 
 /** @brief Tests that the worker values of a run that recorded no timing are zero, not the time of an earlier run. */
-TEST(Medium_RunCounters, AnUnobservedRunReportsNoStaleWorkerTime)
+TEST(Small_RunCounters, AnUnobservedRunReportsNoStaleWorkerTime)
 {
-    SessionPipeline pipeline;
+    HostSession host;
+    SessionPipeline pipeline(host.runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
     // The first run records timing and so accumulates worker time; the second has no observer.
-    const RunRecord record = record_periods_without_source(
+    const RunRecord record = host.record_periods_without_source(
         0, 2, [&pipeline, &handle](std::uint32_t period, SushiProfiler::PeriodTimeline&)
         { run_unobserved_from(pipeline, handle, 1, period); });
 
