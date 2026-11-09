@@ -58,6 +58,8 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_numa_reader.hpp>
+#include <SushiRuntime/topology/in_memory_topology_provider.hpp>
+#include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -602,6 +604,28 @@ namespace TopologyAbstractionTests
 
         EXPECT_FALSE(nodes[0].pci_address.has_value());
         EXPECT_EQ(nodes[0].numa_node_id, 0);
+    }
+
+    /**
+     * @brief Verifies that the context factory forwards an injected provider and distance model.
+     *
+     * The context reads its core-to-NUMA map from the provider and its distances from the model,
+     * so a two-node map and a 10/21 matrix show up unchanged in the context's topology.
+     */
+    TEST(Small_RuntimeContextTopology, InjectedProviderAndDistanceModelDriveTheContext)
+    {
+        auto provider = std::make_shared<InMemoryTopologyProvider>(
+            std::vector<HardwareNode>{}, std::vector<int>{0, 1});
+        auto distance = std::make_shared<MatrixDistanceModel>(
+            std::vector<std::vector<int>>{{10, 21}, {21, 10}});
+
+        const auto context = RuntimeContext::create_host(
+            1, std::make_shared<SushiRuntime::SeededExecutor>(0),
+            std::make_shared<SushiRuntime::ManualClock>(), provider, distance).value();
+
+        EXPECT_EQ(context->topology().numa_distance(0, 0), 10);
+        EXPECT_EQ(context->topology().numa_distance(0, 1), 21);
+        EXPECT_EQ(context->topology().numa_distance(1, 0), 21);
     }
 } // namespace TopologyAbstractionTests
 

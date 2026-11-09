@@ -353,7 +353,9 @@ namespace SushiRuntime
 
         Result<std::shared_ptr<RuntimeContext>>
         RuntimeContext::create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
-                                    std::shared_ptr<const Clock> clock)
+                                    std::shared_ptr<const Clock> clock,
+                                    std::shared_ptr<Internal::Topology::TopologyProvider> provider,
+                                    std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model)
         {
             SR_VERIFY(device_count > 0,
                       "RuntimeContext::create_host: pass a device count of at least 1.");
@@ -367,9 +369,12 @@ namespace SushiRuntime
 
             Internal::Topology::HostTopology machine =
                 Internal::Topology::make_host_topology(device_count);
+            if (!provider)
+                provider = std::move(machine.provider);
+            if (!distance_model)
+                distance_model = std::move(machine.distance_model);
             std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
-                settings, *machine.provider, std::move(machine.distance_model),
-                std::move(machine.devices))));
+                settings, *provider, std::move(distance_model), std::move(machine.devices))));
             const std::weak_ptr<RuntimeContext> observed = context;
             context->impl_->engine = std::make_unique<HostExecutionEngine>(
                 std::move(executor), std::move(clock), device_count,

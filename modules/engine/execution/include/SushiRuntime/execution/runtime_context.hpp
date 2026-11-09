@@ -97,16 +97,18 @@ namespace SushiRuntime
                        const RuntimeSettings& settings = {});
 
                 /**
-                 * @brief Builds a host context, with no SYCL device, queue or offload: every node
-                 *        runs as a job of the executor.
+                 * @brief Builds a host context, with no SYCL device, queue or offload.
                  * @param device_count Host devices the context stands for; at least 1.
                  * @param executor Runs every node; not null.
                  * @param clock Times every recorded dispatch; not null.
+                 * @param provider,distance_model Topology and NUMA distances; null keeps the host's own.
                  * @see modules/engine/execution/README.md
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
                 create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
-                            std::shared_ptr<const Clock> clock);
+                            std::shared_ptr<const Clock> clock,
+                            std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
+                            std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model = nullptr);
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
