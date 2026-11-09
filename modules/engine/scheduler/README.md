@@ -107,7 +107,7 @@ the terminal sentinel is reaped.
 ### poll_events: an event that throws
 
 get_info and wait() can throw. An entry whose query or wait throws is turned, in that pass, into
-what skipped_event() of task_scheduler.cpp builds for a task whose work threw: ready, with no event,
+what skipped_event() of worker_rounds.cpp builds for a task whose work threw: ready, with no event,
 not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
@@ -223,7 +223,7 @@ loads.
 record() keeps the first `Error` and drops later ones; error() returns it as a
 `std::optional<Error>`, empty while no task has failed. A failure aborts only the current run.
 Remaining tasks drain without executing so the DAG still reaches the sentinel, and the worker
-pool stays alive and re-armable. It is distinct from shutdown_requested, which permanently tears
+pool stays alive and re-armable. It is distinct from shutdown_requested_, which permanently tears
 the pool down. arm_for_execution() calls clear_failure() at the start of each round.
 
 ### A cancellation
@@ -275,7 +275,9 @@ TaskScheduler owns a fixed-size pool of worker threads started once (start()) an
 graph runs. Each run is gated by a pair of arm_for_execution() and submit(root); the sentinel node's
 completion promise unblocks the caller. Workers steal from node-local victims first; cross-node
 steals are tracked separately so the RunReport can report the balance within and across NUMA nodes.
-A round, run_round(), never blocks; dispatch_loop() or an Executor (set_executor()) runs it.
+TaskScheduler composes `PendingWork` (the injector queues and the run flags), `RunState`, `WorkerRounds` (the deques
+and `run_round()`, which never blocks) and the two shells that run the rounds, `WorkerThreads` and `ExecutorRounds`
+(set_executor()). All five are private to the module; the public interface is TaskScheduler's.
 
 ### first_core
 
@@ -298,8 +300,6 @@ A vector with a read cursor backs the injector. It has no block boundaries, so p
 the cursor. When the queue drains, it clears and reuses the same storage. Capacity settles at the
 high-water mark, and the queue allocates nothing after that.
 
-The interface is the subset of std::deque the injector uses.
-
 ### SubmissionQueue: rewind
 
 When pop_front() drains the queue it rewinds to the front of the same buffer. clear() keeps the
@@ -311,19 +311,19 @@ A queue that never empties would otherwise keep the consumed prefix forever. Dro
 memmove within the existing buffer, not a reallocation, and the threshold keeps it off the path a
 small queue takes.
 
-### pending_count_ and priority_count_
+### normal_count_ and priority_count_
 
 Every worker checks the injectors on every dispatch iteration, but the common steady state is "both
-empty": priority bypass is rare and external submissions arrive in bursts. Taking pending_mutex
+empty": priority bypass is rare and external submissions arrive in bursts. Taking PendingWork::mutex_
 unconditionally turned that check into a single global cache line ping-ponging across all cores,
 throttling submit throughput. The two counters shadow the container sizes and are mutated only under
-pending_mutex, so the hot path can read them relaxed and skip the lock entirely when they are zero.
+PendingWork::mutex_, so the hot path can read them relaxed and skip the lock entirely when they are zero.
 A stale zero is harmless: the enqueuer always notifies and the loop re-checks. A stale non-zero,
 which is rare, just takes the lock and finds nothing.
 
 ### pinning_
 
-pinning_ is read by dispatch_loop() on every worker and by build_steal_topology(). Both run after
+pinning is read by WorkerThreads::dispatch_loop() on every worker and by the WorkerRounds constructor. Both run after
 the constructor has written it and it is never mutated afterwards, so no synchronisation is needed.
 It is copied from the WorkerPoolSettings the constructor receives, so the worker's first action
 reads a member of the scheduler.
@@ -368,7 +368,7 @@ point where quiescence is guaranteed.
 
 ### submit_batch
 
-Each step re-injects every root through submit(), paying one pending_mutex acquire and one
+Each step re-injects every root through submit(), paying one PendingWork::mutex_ acquire and one
 condition-variable notify per root. submit_batch() collapses a step's whole root set into one lock
 acquisition, one inflight_ increment and one wake burst, so the injector cost does not scale with
 root fan-out. It is semantically identical to calling submit() per root: same add_ref, same
@@ -441,7 +441,7 @@ leaves placement to the OS.
 
 #### Steal topology
 
-`build_steal_topology()` runs once, at construction. For each worker, all other workers are
+The `WorkerRounds` constructor builds the steal order once. For each worker, all other workers are
 ordered by ascending NUMA distance from that worker's node, with ties broken randomly to
 spread contention. Node-local victims therefore lead every list, and `local_tier_len_`
 records how many there are. If the provider exposes no CPU topology, every worker maps to
@@ -468,7 +468,7 @@ submitted.
 #### Arm, disarm, stop
 
 `running` is one term of the idle wait predicate, so `arm_for_execution()`, `disarm()` and
-`stop()` change it under `pending_mutex`. `arm_for_execution()` also clears the previous
+`stop()` change it under `PendingWork::mutex_`. `arm_for_execution()` also clears the previous
 round's failure and publishes the plan's profiling flag to the poller before workers run, so
 completion writes a record per dispatch under profiling and reads no timestamps otherwise.
 
@@ -482,12 +482,12 @@ the owning `SchedulerExecutionEngine` did not call `shutdown()`.
 External submissions go into a dedicated injector queue. Pushing them straight into a
 per-worker deque would violate the single-producer constraint of the Chase-Lev deques.
 
-`pending_count_` and `priority_count_` shadow the sizes of the two injector queues. They are
-the source of truth for emptiness and are changed only under `pending_mutex`, so they can be
+`normal_count_` and `priority_count_` shadow the sizes of the two injector queues. They are
+the source of truth for emptiness and are changed only under `PendingWork::mutex_`, so they can be
 read without it. That keeps the idle and shutdown liveness checks off the global lock, which
 an armed, idle pool polls often between runs. In `drain_pending_submissions()` it lets a
 worker skip the mutex entirely when the injector is empty, the steady-state case; the
-declaration of `pending_count_` says why a stale read is safe. In the dispatch loop it keeps
+declaration of `normal_count_` says why a stale read is safe. In the dispatch loop it keeps
 the per-iteration cost of the priority check at one relaxed atomic load, because a priority
 submission is rare.
 
@@ -520,13 +520,13 @@ The idle branch was unreachable after the first run while the armed flag was nev
 which is why the omission never showed; `disarm()` makes the branch reachable, so the check
 has to be there.
 
-The park has no timeout. Every term of the predicate is changed under `pending_mutex`, by
+The park has no timeout. Every term of the predicate is changed under `PendingWork::mutex_`, by
 `arm_for_execution`, `stop`, `submit`, `submit_batch`, `drain_pending_submissions` and the
 rebalancer's rescue path, so a state change cannot be missed and a periodic re-check would
 find nothing.
 
 This is the co-tenancy guarantee for a pool that is not running. A 10 ms poll cost every
-worker a wakeup and a `pending_mutex` acquisition a hundred times a second while the runtime
+worker a wakeup and a `PendingWork::mutex_` acquisition a hundred times a second while the runtime
 did nothing: cache and lock traffic against the host's own threads on a machine where the
 runtime is a guest, and enough to keep a laptop out of its deep idle states. A parked worker
 costs nothing.
@@ -621,7 +621,7 @@ host node submits no dispatch, so its `launched_width` and `live_width` stay `K_
 
 `execute_task()` opens the fine zone `dispatch.task`; the inline host body is inside `dispatch.host`
 and a device or host-with-queue submission inside `dispatch.submit`. The search for a task to steal is
-the detail zone `worker.steal`. Each of the nine acquisitions of `pending_mutex` goes through
+the detail zone `worker.steal`. Each of the nine acquisitions of `PendingWork::mutex_` goes through
 `SR_LOCK_WAIT("lock.pending", ...)`, so a contended one writes a `lock.pending` zone and an
 uncontended one writes nothing. The park on the condition variable is not one of them: the worker is
 idle by design and the wait needs a `std::unique_lock`.
@@ -727,7 +727,7 @@ A task that throws fails only its run. The dispatch runs inside
 thrown into an `Error`: `KernelFailed`, or `AllocationFailed` for refused memory. name_failure()
 puts the task's name in the message, and an `Error` a dispatch step returned keeps its code. The
 first one is recorded in the scheduler's
-`RunOutcome`, but `shutdown_requested` is not latched, so the pool survives and can be re-armed for
+`RunOutcome`, but `shutdown_requested_` is not latched, so the pool survives and can be re-armed for
 the next graph. The failed task is pushed to the poller as ready so its successors still
 fire; with the skip path for an aborting run, the whole DAG drains to the sentinel.
 
@@ -746,7 +746,7 @@ increment and decrement, because it is where tasks are born as successors and re
 completion.
 
 `submit_batch()` mirrors `submit()` per node, with the same `add_ref`, priority split and
-quiescence count, and spreads the fixed cost over the whole root set: one `pending_mutex`
+quiescence count, and spreads the fixed cost over the whole root set: one `PendingWork::mutex_`
 acquisition, one `inflight_` increment and one wake burst, where there would be one of each
 per root. The `inflight_` increment stays inside the locked region, so tasks are counted
 before any worker can drain them, the same happens-before `submit()` relies on. Roots are

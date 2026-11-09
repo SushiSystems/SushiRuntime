@@ -31,7 +31,7 @@ under every frame, a throughput trade that gains a simulation frame nothing.
 
 A task exception must abort only its own run and must not kill the worker pool. The run that threw
 surfaces the error to the caller, and a fresh graph on the same `Runtime` must still run and produce
-correct results afterwards. The defect this file guards against latched `shutdown_requested` on a
+correct results afterwards. The defect this file guards against latched `shutdown_requested_` on a
 single throw and left the pool dead for good.
 
 | Test | What it proves |

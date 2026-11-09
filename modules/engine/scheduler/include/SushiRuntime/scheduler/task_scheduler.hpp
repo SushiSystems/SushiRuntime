@@ -77,22 +77,6 @@ namespace SushiRuntime
         class Task;
 
         /**
-         * @brief Orders the global priority queue so its top is the highest-priority task.
-         *
-         * Returns true when @p a has a lower priority than @p b, which std::priority_queue
-         * reads as "a comes out after b". A null pointer compares below every task.
-         */
-        struct TaskPriorityCompare
-        {
-            bool operator()(const Task* a, const Task* b) const
-            {
-                if (!a) return true;
-                if (!b) return false;
-                return a->priority() < b->priority();
-            }
-        };
-
-        /**
          * @brief Schedules tasks on a persistent, NUMA-aware work-stealing worker pool.
          * @see modules/engine/scheduler/README.md
          */
@@ -106,240 +90,14 @@ namespace SushiRuntime
                  * @return The first bound core index; meaningless when pinning() is Float.
                  * @see modules/engine/scheduler/README.md
                  */
-                std::size_t first_core() const noexcept { return first_core_; }
+                std::size_t first_core() const noexcept;
 
                 /**
                  * @brief Whether workers are bound to cores or left to the OS.
                  * @return The pin policy in effect for this scheduler's workers.
                  */
-                PinPolicy pinning() const noexcept { return pinning_; }
+                PinPolicy pinning() const noexcept;
 
-            private:
-                /** @brief Number of workers in the pool, fixed at construction. */
-                size_t num_workers_ = 0;
-
-                /** @brief List of queues for each worker thread. */
-                std::array<sushi_ptr<Deque>, K_MAX_WORKER_THREADS> worker_queues;
-                /**
-                 * @brief Holds each worker's scratch for the drain_pending_submissions batch.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                std::array<std::vector<Task*>, K_MAX_WORKER_THREADS> drain_scratch_;
-                /**
-                 * @brief Implements a task FIFO that does not allocate in the steady state.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                class SubmissionQueue
-                {
-                    public:
-                        bool empty() const noexcept { return head_ >= items_.size(); }
-                        std::size_t size() const noexcept { return items_.size() - head_; }
-                        Task* front() const noexcept { return items_[head_]; }
-                        void push_back(Task* task) { items_.push_back(task); }
-
-                        void pop_front() noexcept
-                        {
-                            ++head_;
-                            if (head_ >= items_.size())
-                            {
-                                // Drained: rewind into the same buffer; clear() keeps capacity.
-                                items_.clear();
-                                head_ = 0;
-                            }
-                            else if (head_ >= K_COMPACT_AFTER && head_ * 2 >= items_.size())
-                            {
-                                // The consumed prefix is dropped by a move inside the same buffer.
-                                items_.erase(items_.begin(),
-                                             items_.begin() + static_cast<std::ptrdiff_t>(head_));
-                                head_ = 0;
-                            }
-                        }
-
-                    private:
-                        static constexpr std::size_t K_COMPACT_AFTER = 1024;
-                        std::vector<Task*> items_;
-                        std::size_t        head_ = 0;
-                };
-
-                /** @brief Global injector queue for thread-safe external submissions. */
-                SubmissionQueue pending_submissions;
-                /** @brief Global priority queue for high-priority task bypass. */
-                std::priority_queue<Task*, std::vector<Task*>, TaskPriorityCompare> priority_submissions;
-                /** @brief Guards the injector queues. */
-                std::mutex pending_mutex;
-                std::condition_variable pending_cv;
-                /**
-                 * @brief Shadow the sizes of the two injector queues for lock-free reads.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                std::atomic<size_t> pending_count_{0};
-                std::atomic<size_t> priority_count_{0};
-                /**
-                 * @brief Controls the worker loop.
-                 *
-                 * Workers exit their loop when this is false AND no inflight events
-                 * or pending submissions remain. Use arm_for_execution() to reset it
-                 * for a new execution round without recreating threads.
-                 */
-                std::atomic<bool> running{false};
-                /** @brief Signals that the pool should drain and shut down. */
-                std::atomic<bool> shutdown_requested{false};
-                /**
-                 * @brief Set when start() spawns the workers; a later start() returns at once.
-                 */
-                std::atomic<bool> threads_started_{false};
-                /** @brief Failure and cancellation of the active run. */
-                RunOutcome outcome_;
-                /** @brief Poller to track SYCL events. */
-                EventPolling event_poller;
-                /** @brief Core-to-NUMA map and NUMA distances the steal order is built from. */
-                const Internal::Topology::TopologyView& topology_;
-                /** @brief Device queues every dispatch is submitted to. */
-                Internal::Device::DeviceQueueSet& devices_;
-                /** @brief Allocator asked which device owns a node's USM. */
-                const Internal::Memory::USMAllocator& memory_;
-                /** @brief Collector the scheduler's dispatch and steal zones record into. */
-                Profile::Collector& collector_;
-                /**
-                 * @brief Offers each offloadable node to the installed coordinator at dispatch.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                OffloadGate offload_gate_;
-
-                /**
-                 * @brief Holds whether workers bind to cores, copied from WorkerPoolSettings.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                PinPolicy pinning_ = PinPolicy::Pin;
-
-                /**
-                 * @brief First core of the range workers bind into, worker i on
-                 *        (first_core_ + i).
-                 *
-                 * Copied from WorkerPoolSettings and then clamped into the machine's
-                 * core count, so this is the range actually in effect rather than the
-                 * one requested. Meaningless under PinPolicy::Float.
-                 */
-                std::size_t first_core_ = 0;
-
-                /** @brief Worker threads. */
-                std::array<std::thread, K_MAX_WORKER_THREADS> workers;
-                /**
-                 * @brief Holds one worker's completed-task counter on its own cache line.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                struct alignas(K_CACHE_LINE_SIZE) WorkerCompletedCounter
-                {
-                    std::atomic<size_t> value{0};
-                };
-                WorkerCompletedCounter worker_completed_tasks[K_MAX_WORKER_THREADS];
-
-                /**
-                 * @brief Per-worker accumulated time buckets (nanoseconds).
-                 *
-                 * Each element is its own cache line, so the worker that owns an index
-                 * is the only writer and there is no false sharing. Relaxed atomics:
-                 * a worker accumulates only its own bucket and the engine reads them at
-                 * a run boundary, with no cross-worker ordering requirement.
-                 */
-                struct alignas(K_CACHE_LINE_SIZE) WorkerTimeBuckets
-                {
-                    std::atomic<std::uint64_t> busy_ns{0};
-                    std::atomic<std::uint64_t> stealing_ns{0};
-                    std::atomic<std::uint64_t> polling_ns{0};
-                    std::atomic<std::uint64_t> idle_ns{0};
-                };
-                WorkerTimeBuckets worker_time_[K_MAX_WORKER_THREADS];
-
-                /** @brief Whether the active run accumulates per-worker time buckets. */
-                std::atomic<bool> profiling_active_{false};
-
-                /** @brief The armed round's event ledger, or null when it does not profile. */
-                std::atomic<Internal::Observability::ProfilingLedger*> active_ledger_{nullptr};
-
-                /** @brief Tasks the run skipped because it was aborting or cancelled, since the last take. */
-                std::atomic<std::uint64_t> skipped_aborted_{0};
-
-                /** @brief Tasks the run skipped because their late-bound control was off, since the last take. */
-                std::atomic<std::uint64_t> skipped_disabled_{0};
-
-                /**
-                 * @brief Logs and clears what the finished run left unrun and how often a poll
-                 *        had to wait on its oldest event.
-                 */
-                void log_run_tail() noexcept;
-
-                /** @brief Counter arm_for_execution() draws the next round's step from. */
-                std::atomic<std::uint32_t> next_dispatch_step_{0};
-                /** @brief This round's step, captured into each event a worker dispatches this round. */
-                std::atomic<std::uint32_t> current_dispatch_step_{0};
-
-                /**
-                 * @brief Counts tasks submitted for the run but not yet reaped.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                QuiescenceLatch quiescence_;
-
-                // --- NUMA-aware hierarchical stealing (built once at construction) ---
-                /** @brief NUMA node of each worker (= node of the core it is pinned to). */
-                std::vector<int> worker_numa_;
-                /** @brief Per-worker steal victim ids ordered by ascending NUMA distance. */
-                std::vector<std::vector<int>> victim_order_;
-                /** @brief Number of leading entries in victim_order_[i] that are node-local. */
-                std::vector<int> local_tier_len_;
-
-                /** @brief Precomputes worker_numa_, victim_order_ and local_tier_len_. */
-                void build_steal_topology();
-
-                /** @brief Successful steals from a node-local victim. */
-                std::atomic<size_t> local_steals_{0};
-                /** @brief Successful steals from a remote-node victim. */
-                std::atomic<size_t> remote_steals_{0};
-
-                /** @brief Executes a single task and tracks its events.
-                 *  @param worker_id The id of the executing worker (for per-worker
-                 *         completion accounting — must be the scheduler's worker id,
-                 *         not the EBR slot id). */
-                void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
-                /** @brief Names what one round of a worker did, so its shell knows what follows. */
-                enum class WorkerRound : std::uint8_t
-                {
-                    Ran,  /**< A task ran or was offloaded. */
-                    Idle, /**< No task was found; the run is armed or events are in flight. */
-                    Park, /**< Nothing is armed, queued or in flight; the worker may sleep. */
-                    Exit, /**< stop() was asked and nothing is left; the worker ends. */
-                };
-
-                /** @brief Events in flight of each worker, kept between its rounds. */
-                std::vector<std::unique_ptr<EventPolling::ActiveEventList>> worker_events_;
-
-                /** @brief Runs the rounds when set; start() then spawns no thread. Not owned. */
-                Executor* executor_ = nullptr;
-                /** @brief Whether a round of each worker is posted to the executor and not yet run. */
-                std::unique_ptr<std::atomic<bool>[]> round_posted_;
-                /** @brief Expires with the scheduler, so a round posted after it is gone does nothing. */
-                std::shared_ptr<int> alive_ = std::make_shared<int>(0);
-
-                /**
-                 * @brief Runs one round of worker @p thread_id: drain, poll, pick a task, run it.
-                 * @return What the round did; it never blocks or sleeps.
-                 */
-                WorkerRound run_round(int thread_id);
-                /** @brief Runs rounds of worker @p thread_id on its thread until stop(); parks and backs off between them. */
-                void dispatch_loop(int thread_id);
-                /** @brief Posts one round of worker @p thread_id to the executor unless one is posted already. */
-                void post_round(int thread_id);
-                /** @brief Posts a round of every worker to the executor; does nothing without one. */
-                void post_rounds();
-                /** @brief Looks for a task to steal from another thread's queue. */
-                Task* find_task_to_steal(int th_id);
-                /** @brief Moves pending submissions into the local worker queue. */
-                void drain_pending_submissions(int thread_id);
-                /** @brief Checks whether there are pending submissions left in the injector queue. */
-                bool has_pending_submissions();
-
-
-            public:
                 /**
                  * @brief Sizes the worker pool and builds its steal order; starts no thread.
                  * @param pool Copied; the range it asks for is clamped to the machine's cores.
@@ -392,21 +150,13 @@ namespace SushiRuntime
                 void set_profiling_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept;
 
                 /** @brief Resets the per-run step counter, to 0. */
-                void reset_dispatch_step() noexcept { next_dispatch_step_.store(0, std::memory_order_release); }
+                void reset_dispatch_step() noexcept;
 
                 /** @brief Draws this round's step; call exactly once per root-injecting submit(), not per arm. */
-                void advance_dispatch_step() noexcept
-                {
-                    current_dispatch_step_.store(
-                        next_dispatch_step_.fetch_add(1, std::memory_order_acq_rel),
-                        std::memory_order_release);
-                }
+                void advance_dispatch_step() noexcept;
 
                 /** @brief The step this round's dispatches must stamp into their event records. */
-                std::uint32_t current_dispatch_step() const noexcept
-                {
-                    return current_dispatch_step_.load(std::memory_order_acquire);
-                }
+                std::uint32_t current_dispatch_step() const noexcept;
 
                 /**
                  * @brief Returns the pool to its parked state after a run quiesces.
@@ -448,7 +198,7 @@ namespace SushiRuntime
                  * instead of success. Cleared each round by arm_for_execution().
                  * @return True if the current run has failed.
                  */
-                bool run_failed() const { return outcome_.has_failed(); }
+                bool run_failed() const;
 
                 /**
                  * @brief Returns the first failure recorded during the current run.
@@ -456,7 +206,7 @@ namespace SushiRuntime
                  * The value is visible once run_failed() reads true.
                  * @return The failure, or nothing when the run did not fail.
                  */
-                [[nodiscard]] std::optional<Error> run_error() const { return outcome_.error(); }
+                [[nodiscard]] std::optional<Error> run_error() const;
 
                 /**
                  * @brief Requests cancellation of the active run. Thread-safe.
@@ -464,16 +214,16 @@ namespace SushiRuntime
                  * Remaining tasks drain without executing and the run completes
                  * (the sentinel still fires); the driver stops launching new steps.
                  */
-                void request_cancellation() noexcept { outcome_.cancel(); }
+                void request_cancellation() noexcept;
 
                 /**
                  * @brief Reports whether the active run has been cancelled.
                  * @return True if request_cancellation() was called and not yet reset.
                  */
-                bool run_cancelled() const { return outcome_.is_cancelled(); }
+                bool run_cancelled() const;
 
                 /** @brief Clears the cancellation flag at the start of a fresh run. */
-                void reset_cancellation() { outcome_.clear_cancellation(); }
+                void reset_cancellation();
 
                 size_t worker_count() const override;
                 size_t queue_size(int worker_id) const override;
@@ -490,9 +240,9 @@ namespace SushiRuntime
                 std::vector<int> steal_victim_order(int worker_id) const;
 
                 /** @brief Count of successful steals from a node-local victim. */
-                size_t local_steal_count() const  { return local_steals_.load(std::memory_order_relaxed); }
+                size_t local_steal_count() const;
                 /** @brief Count of successful steals that had to cross to a remote node. */
-                size_t remote_steal_count() const { return remote_steals_.load(std::memory_order_relaxed); }
+                size_t remote_steal_count() const;
 
                 /**
                  * @brief One worker's accumulated time split, in nanoseconds.
@@ -537,10 +287,7 @@ namespace SushiRuntime
                  * @brief Returns how many dispatched nodes a coordinator has taken so far.
                  * @return A lifetime total; diff two readings to measure one run.
                  */
-                [[nodiscard]] std::uint64_t offloaded_task_count() const noexcept
-                {
-                    return offload_gate_.accepted_count();
-                }
+                [[nodiscard]] std::uint64_t offloaded_task_count() const noexcept;
 
                 /**
                  * @brief Lets the installed coordinator mark the nodes a worker may run.
@@ -571,6 +318,12 @@ namespace SushiRuntime
                  * @param node Accepted by the coordinator's try_offload().
                  */
                 void fail(Internal::Graph::Node& node, Error error) override;
+
+            private:
+                /** @brief The pieces the scheduler composes (modules/engine/scheduler/README.md). */
+                struct Parts;
+
+                std::unique_ptr<Parts> parts_;
         };
 
     } // namespace Scheduler

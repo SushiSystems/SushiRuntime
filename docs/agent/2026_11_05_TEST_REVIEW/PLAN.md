@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — paused on 2026-11-09 at 822ea0fb; see Resume
+**Status:** Open — paused on 2026-11-09 after decision 68; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -40,8 +40,8 @@ writes each add. Nothing in a module job changes production code except a seam a
 | R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | partly done: scheduler guard checked (decision 40); `Clock` port and contract exist (decision 41); NdRange index math host-callable (decision 42); RW-127 done (decisions 43 and 44); RW-126 done (decision 47, 84484f43); RW-130 done (decision 46); RW-129 begun, scheduler rounds on the executor (decision 48); the four platform ports done (decisions 49 to 51); host contexts hold host queues through the queue port, `Small_NodePlacement`, `Small_SchedulerFactory` and the range coverage case small (decisions 52, 53); left in RW-129: `RunObserver`, `CollectProfiling`, `ChainedRunInProgress`, `TaskGraphTest`, `EventPolling` (needs an event-readiness port), `WorkloadCoordinator` (needs the heartbeat as an executor task) and the raw bodies of `test_scheduler_execution_engine`, `test_runtime_context` and `test_distributed`; the TaskScheduler split and the recount not started |
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | partly done: the splits and the merge by 26816063, `make_host_context()` by 37246149; EpochManager is off process-wide state (decision 39); the stale includes outside the split files are dropped (30 files, each still passes `clang -fsyntax-only`); the split files keep theirs |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
-| R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | partly done: topology and the in-memory queue factory; RW-131 done (decision 57); `InMemoryQueueFactory::make()` still builds a CPU queue |
-| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the rounds and the two shells as classes of their own, the medium audit's remaining LOGIC cases, the recount |
+| R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | partly done: topology and the in-memory queue factory; RW-131 done (decision 57); `InMemoryQueueFactory::make()` still builds a CPU queue, so its contract rows are `Medium_` (decisions 64, 66) |
+| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 to 60; `test_runtime_context.cpp` raw bodies done (750c8a31), `test_distributed.cpp` master runtimes shared (36d0ae01), coordinator drive modes split (fb71cfd3); left: the worker and second runtimes of `test_distributed.cpp` (decision 59), the medium audit's remaining LOGIC cases, the recount; RW-128 closed by the runtime holding its collector (decision 67, 224b5203), the rounds and the two shells are classes of their own (decision 68) |
 
 ## Acceptance
 
@@ -61,19 +61,13 @@ and adapters; their plans wait on T1 and T2.
 
 ## Resume
 
-Worker 9, 2026-11-09, stopped at a clean, pushed tree (822ea0fb). Done: RW-129 closed (decisions 61
-to 63: the in-process workers of `test_distributed.cpp` run on host runtimes, and the promise lost with
-`InjectedDistanceModelDrivesRuntimeContext` is `Small_RuntimeContextTopology.InjectedProviderAndDistanceModelDriveTheContext`).
-Not done, each with its reason in the decision named:
+Worker 10, 2026-11-09, after decision 68. Done: the in-memory queue factory contract is `Medium_` (decision 66); the
+runtime holds its collector, the SushiProfiler pin is 332311d and RW-128 is closed (decision 67); `TaskScheduler`
+composes `PendingWork`, `RunState`, `WorkerRounds`, `WorkerThreads` and `ExecutorRounds` (decision 68). Nothing built
+or run: the orchestrator rebuilds the SushiProfiler package, then one build, small and medium. Not done:
 
-1. `InMemoryQueueFactory::make()` without a sycl queue (decision 64): needs a ruling on a queue
-   abstraction across the engine.
-2. RW-128 (decision 65): needs the SushiProfiler pin bumped and a ruling on how the runtime reaches
-   its collector.
-3. The rounds and the two shells of `TaskScheduler` (`task_scheduler_rounds.cpp`,
-   `task_scheduler_threads.cpp`, `task_scheduler_executor.cpp`) as classes of their own over the
-   state the rounds share: not started; it moves about 750 lines and ~50 shared members, so it is
-   its own task.
-4. Job 4: the remaining LOGIC cases of the medium audit (session scratchpad
-   `J16/sushiruntime/medium_audit.md`).
-5. Job 5: the per-module recount in `REPORT.md`.
+1. The 41 profiling LOGIC cases of RW-128 (`Session::start` with an injected collector) still run on the
+   process-wide collector; RW-128 was closed as ordered, and the cases are job 4.
+2. Job 4: the remaining LOGIC cases of the medium audit (session scratchpad `J16/sushiruntime/medium_audit.md`).
+3. Job 5: the per-module recount in `REPORT.md`.
+4. `SR_INSTANT` and `SR_LOCK_WAIT` still reach the process-wide collector.

@@ -38,6 +38,8 @@
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 
+#include "task_scheduler_parts.hpp"
+
 namespace SushiRuntime
 {
     namespace Internal::Scheduler
@@ -77,7 +79,7 @@ namespace SushiRuntime
                          error.message);
 
             // The failure is recorded before a successor can run, so each one is skipped.
-            outcome_.record(std::move(error));
+            parts_->run.outcome.record(std::move(error));
             complete_remote(node);
         }
 
