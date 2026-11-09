@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-09 — runtime: Recorded the zones, values and counters of a runtime into the collector its context holds, the process-wide one by default (RW-128, `224b5203`).
 - 2026-11-09 — tests: Ran the in-process workers of the distributed tests on host runtimes, through host kernels (RW-129, `77ffb871`).
 - 2026-11-09 — runtime: Built each queue of a device set on its first use, so placement and scheduler construction build none (RW-131, `393aa6a9`).
 - 2026-11-07 — tests: Moved the arithmetic of the raw, range and queue test kernels into host functions with small rows; those launch kinds keep no host form (RW-126, `84484f43`).

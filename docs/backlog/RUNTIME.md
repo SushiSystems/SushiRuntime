@@ -7,7 +7,6 @@
 | RW-79 | P2 | open | Build the global handle design, phases H0 to H9 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
 | RW-93 | P2 | open | Use the non-deprecated parallel_for overload in distributed_kernels.hpp | test_distributed_kernels.cpp compiles under -Werror with SR_ENABLE_DISTRIBUTED on |  | `applications/examples/distributed_kernels.hpp` | 2026-11-06 |
 | RW-125 | P1 | open | Move every logic test that only a device or a thread could reach onto its seam as small | Every Medium_ case the 2026-11-07 audit rules LOGIC runs small on its seam, one medium case is kept per boundary |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
-| RW-128 | P2 | open | Profiling tests reach the process-wide SushiProfiler Collector | Session::start takes an injected Collector, and the 41 profiling LOGIC cases that record periods or plan zones run small on one |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 
