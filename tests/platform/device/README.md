@@ -60,8 +60,9 @@ properties a flavour names otherwise.
 
 `Medium_InMemoryQueueFactory` runs `QueueFactoryContract` on an in-memory factory of two devices.
 It is medium because `make()` returns a `sycl::queue`, which the factory builds on the CPU device;
-`sycl::queue` stays the runtime's execution currency (decision 64). `Small_InMemoryQueueFactory`
-checks the factory's record of builds and its in-order list. `Medium_SYCLQueueFactory` runs the same
+`sycl::queue` stays the runtime's execution currency (decision 64). `Medium_InMemoryQueueFactory`
+also checks the factory's record of builds, which builds queues through `make()` (decision 69);
+`Small_InMemoryQueueFactory` checks the in-order list. `Medium_SYCLQueueFactory` runs the same
 contract on the device of the program's queue, the boundary the in-memory factory stands in for.
 
 ## test_numa_route_table.cpp

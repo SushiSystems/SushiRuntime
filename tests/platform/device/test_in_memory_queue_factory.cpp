@@ -63,8 +63,11 @@ namespace TestSupport
     INSTANTIATE_TYPED_TEST_SUITE_P(Medium_InMemoryQueueFactory, QueueFactoryContract, ::InMemoryFactoryMaker, );
 } // namespace TestSupport
 
-/** @brief Tests that the factory records every build in order, with its device, flavour and context. */
-TEST(Small_InMemoryQueueFactory, RecordsEveryBuildInOrder)
+/**
+ * @brief Tests that the factory records every build in order, with its device, flavour and context.
+ * @note Medium: it builds queues through make(), which returns a sycl::queue (decision 69).
+ */
+TEST(Medium_InMemoryQueueFactory, RecordsEveryBuildInOrder)
 {
     InMemoryQueueFactory factory(2);
     const sycl::queue plain = factory.make(1, {}, nullptr);
