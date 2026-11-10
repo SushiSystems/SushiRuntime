@@ -39,6 +39,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/data/request_checks.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/allocation.hpp>
@@ -160,7 +161,7 @@ namespace SushiRuntime
         inline void require_device(const char* call, DeviceIndex device_index,
                                    std::size_t device_count)
         {
-            SR_VERIFY(device_index.value() < device_count,
+            SR_VERIFY(names_a_device(device_index.value(), device_count),
                       (std::string(call) + ": device index " +
                        std::to_string(device_index.value()) +
                        " names no device; the runtime drives " + std::to_string(device_count) +
@@ -175,7 +176,7 @@ namespace SushiRuntime
          */
         inline void require_alignment(const char* call, std::size_t alignment)
         {
-            SR_VERIFY((alignment & (alignment - 1)) == 0,
+            SR_VERIFY(is_valid_alignment(alignment),
                       (std::string(call) + ": alignment " + std::to_string(alignment) +
                        " is not a power of two; pass 0 for the device default or a power of "
                        "two in bytes.")
@@ -191,7 +192,7 @@ namespace SushiRuntime
                                               std::size_t element_size)
         {
             const std::size_t most = std::numeric_limits<std::size_t>::max() / element_size;
-            SR_VERIFY(count <= most,
+            SR_VERIFY(fits_byte_count(count, element_size),
                       (std::string(call) + ": " + std::to_string(count) + " elements of " +
                        std::to_string(element_size) + " bytes each exceed the largest byte "
                        "count; ask for at most " + std::to_string(most) + " elements.")

@@ -9,6 +9,17 @@ kernel on the device, which take the program's runtime from `TestSupport::Runtim
 an adopting `Buffer` build it over a made-up address with `tests/support/adopted_handles.hpp`
 and run small. The tests that stop the process are death tests and run medium.
 
+## test_request_checks.cpp
+
+The three predicates a buffer or State request is checked with, run small and without a stop. The
+death tests of `test_buffer.cpp` keep the wiring: that each predicate, when it fails, stops the call.
+
+| Test | What it proves |
+| --- | --- |
+| `AnAlignmentOfZeroOrAPowerOfTwoIsValid`, `AnAlignmentThatIsNotAPowerOfTwoIsInvalid` | `is_valid_alignment()` accepts 0, 1 and 64 and refuses 3 and 48. |
+| `TheLargestCountWhoseByteSizeFitsFits`, `ACountWhoseByteSizeWrapsDoesNotFit` | `fits_byte_count()` accepts the largest count of 8-byte elements and refuses one past it, the case whose size wraps to 8. |
+| `AnIndexBelowTheCountNamesADevice`, `AnIndexAtOrPastTheCountNamesNoDevice` | `names_a_device()` holds below the count and fails at it. |
+
 ## test_buffer.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
