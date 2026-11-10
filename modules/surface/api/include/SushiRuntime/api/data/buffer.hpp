@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/data/request_checks.hpp>
+#include <SushiRuntime/api/data/residency.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/allocation.hpp>
@@ -73,33 +74,6 @@ namespace SushiRuntime
         std::size_t offset = 0;  /**< First element of the range. */
         std::size_t count = 0;   /**< Number of elements in the range. */
     };
-
-    /**
-     * @brief Names where a Buffer or State keeps its memory across steps.
-     * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-     */
-    enum class Residency : std::uint8_t
-    {
-        Shared,  /**< Host-addressable USM; the default. */
-        Device,  /**< Device-resident USM; host access only via read/write_range. */
-        Host     /**< Pinned host USM; host-readable while kernels run. */
-    };
-
-    /**
-     * @brief Names a residency as its enumerator spelling, for messages.
-     * @param residency The residency to name.
-     * @return "Shared", "Device", "Host", or "unknown" for an out-of-range value.
-     */
-    inline const char* residency_name(Residency residency) noexcept
-    {
-        switch (residency)
-        {
-            case Residency::Shared: return "Shared";
-            case Residency::Device: return "Device";
-            case Residency::Host:   return "Host";
-        }
-        return "unknown";
-    }
 
     namespace Detail
     {
@@ -347,7 +321,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] bool is_host_accessible() const noexcept
             {
-                return residency_ != Residency::Device;
+                return Detail::is_host_addressable(residency_);
             }
 
             /**

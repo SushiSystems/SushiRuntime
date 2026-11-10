@@ -688,6 +688,30 @@ TEST_F(Medium_RuntimeEntry, ThePinningPolicyOfTheConfigReachesThePool)
     EXPECT_EQ(rt.advanced().worker_pool().pinning, PinPolicy::Float);
 }
 
+/** @brief Returns the layer that ran a one-kernel graph on a runtime built from a config. */
+static ExecutionLayer layer_of_a_kernel_run(const RuntimeConfig& config)
+{
+    constexpr std::size_t K_COUNT = 64;
+    const Runtime rt = Runtime::create(config).value();
+    auto buffer = rt.buffer<float>(K_COUNT).value();
+    float* target = buffer.data();
+    auto graph = rt.graph();
+    graph.add(K_COUNT, Reads{}, Writes(buffer), [target](std::size_t i) { target[i] = 1.0f; });
+    return graph.run().value().layer;
+}
+
+/** @brief Tests that force_scheduler of the config moves a run, which chains without it, onto the scheduler. */
+TEST_F(Medium_RuntimeEntry, TheForceSchedulerFlagOfTheConfigNamesTheLayerOfARun)
+{
+    RuntimeConfig unforced;
+    unforced.worker_count = 1;
+    RuntimeConfig forced = unforced;
+    forced.force_scheduler = true;
+
+    EXPECT_EQ(layer_of_a_kernel_run(unforced), ExecutionLayer::Chain);
+    EXPECT_EQ(layer_of_a_kernel_run(forced), ExecutionLayer::Scheduler);
+}
+
 /** @brief Tests that a view taken before a Runtime moves answers for the moved Runtime. */
 TEST_F(Small_RuntimeEntry, AMovedRuntimeKeepsTheContextItsViewsShare)
 {

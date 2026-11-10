@@ -45,7 +45,7 @@
 #include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/placement/placement_target_matching.hpp>
 
-#include "local_rule_device.hpp"
+#include <SushiRuntime/api/detail/local_rule_device.hpp>
 
 namespace SushiRuntime
 {
@@ -53,22 +53,6 @@ namespace SushiRuntime
     {
         /** @brief Holds the device a scope takes when no rule or no device part decides. */
         constexpr std::size_t K_DEFAULT_DEVICE = K_DEFAULT_PLACEMENT_DEVICE;
-
-        /** @brief Resolves a class and a key against a rule set and this machine. */
-        [[nodiscard]] Result<std::size_t> resolve_device(const PlacementScope& scope,
-                                                         const PlacementRules& rules,
-                                                         const NodeFacts& here)
-        {
-            const std::optional<std::size_t> position =
-                rules.resolve(scope.placement_class(), scope.placement_key(), OperationID());
-            if (!position)
-                return K_DEFAULT_DEVICE;
-            Result<std::optional<std::size_t>> device = Detail::local_device_under(
-                rules.rule(*position), *position, here, "PlacementScope::device", "the scope");
-            if (!device)
-                return make_error(std::move(device.error()));
-            return device->value_or(K_DEFAULT_DEVICE);
-        }
     } // namespace
 
     Error PlacementScope::missing_runtime(const char* call)
@@ -94,7 +78,7 @@ namespace SushiRuntime
                 const auto placement = runtime.placement();
                 if (here == nullptr || !placement->rules)
                     return;
-                Result<std::size_t> resolved = resolve_device(*this, *placement->rules, *here);
+                Result<std::size_t> resolved = Detail::resolve_scope_device(placement_class(), placement_key(), *placement->rules, *here);
                 if (!resolved)
                 {
                     refusal = std::move(resolved.error());

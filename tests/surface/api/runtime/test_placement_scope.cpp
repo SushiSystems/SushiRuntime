@@ -161,7 +161,7 @@ TEST_F(Small_RuntimePlacementScope, ANameWithoutADotIsAClass)
     EXPECT_EQ(runtime().placement_scope("physics").placement_class(), "physics"_class);
 }
 
-/** @brief Fixture of the death test of a malformed class name; the parameter is the name. */
+/** @brief Fixture of the death test of a malformed class name; the parameter is the name. The rows of names are in tests/surface/api/detail. */
 class Medium_RuntimePlacementScopeDeathTest : public TestSupport::RuntimeTest,
                                               public ::testing::WithParamInterface<const char*>
 {
@@ -174,7 +174,7 @@ TEST_P(Medium_RuntimePlacementScopeDeathTest, AMalformedNameStopsTheProcess)
 }
 
 INSTANTIATE_TEST_SUITE_P(Names, Medium_RuntimePlacementScopeDeathTest,
-                         ::testing::Values("", ".a", "a.", "a..b"));
+                         ::testing::Values(""));
 
 /** @brief Fixture of the tests of the device a scope resolves to; each runs on a host runtime with no rules in force. */
 class Small_PlacementScopeDevice : public TestSupport::HostRuntimeTest
@@ -281,21 +281,16 @@ TEST_F(Small_PlacementScopeDevice, LocalGivesDeviceZeroForAnAbsentDevice)
     EXPECT_EQ(device->value(), 0u);
 }
 
-/** @brief Tests that Fail names the rule and the device in an InvalidArgument error. */
-TEST_F(Small_PlacementScopeDevice, FailNamesTheRuleAndTheDevice)
+/** @brief Tests that Fail returns an InvalidArgument error; its text is read in tests/surface/api/detail. */
+TEST_F(Small_PlacementScopeDevice, FailRefusesAnAbsentDevice)
 {
     const std::size_t absent = absent_index(runtime());
-    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent), fail(), "pin-physics")));
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent), fail())));
 
     const Result<DeviceIndex> device = runtime().placement_scope(K_CLASS).device();
 
     ASSERT_FALSE(device);
     EXPECT_EQ(device.error().code, ErrorCode::InvalidArgument);
-    EXPECT_NE(device.error().message.find("\"pin-physics\""), std::string::npos)
-        << device.error().message;
-    EXPECT_NE(device.error().message.find("device index " + std::to_string(absent)),
-              std::string::npos)
-        << device.error().message;
 }
 
 /** @brief Tests that Wait gives device 0, since a local device never appears. */

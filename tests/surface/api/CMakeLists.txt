@@ -9,6 +9,7 @@ sushiruntime_add_module_tests(
         compile_api_log_category.cpp
         data/test_buffer.cpp
         data/test_request_checks.cpp
+        data/test_residency.cpp
         data/test_state.cpp
         detail/compile_late_controls.cpp
         detail/compile_node_description.cpp
@@ -21,6 +22,7 @@ sushiruntime_add_module_tests(
         detail/test_callable_traits.cpp
         detail/test_device_fault.cpp
         detail/test_device_pass.cpp
+        detail/test_dotted_name.cpp
         detail/test_dropped_outcome.cpp
         detail/test_emit_captured.cpp
         detail/test_emit_device_sized.cpp
@@ -36,6 +38,7 @@ sushiruntime_add_module_tests(
         detail/test_handle_access.cpp
         detail/test_late_count_resolution.cpp
         detail/test_late_window.cpp
+        detail/test_local_rule_device.cpp
         detail/test_node_stamp.cpp
         detail/test_step_run.cpp
         graph/plumbing/test_builder_surface.cpp

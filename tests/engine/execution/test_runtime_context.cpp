@@ -57,6 +57,7 @@
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/machine/device_filter.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -632,6 +633,29 @@ namespace TopologyAbstractionTests
         EXPECT_EQ(context->topology().numa_distance(0, 0), 10);
         EXPECT_EQ(context->topology().numa_distance(0, 1), 21);
         EXPECT_EQ(context->topology().numa_distance(1, 0), 21);
+    }
+
+    /**
+     * @brief Verifies that a provider which lists no device makes create() refuse with Unsupported
+     *        and a message that names every field of the filter.
+     */
+    TEST(Small_RuntimeContextTopology, AProviderListingNoDeviceIsRefusedNamingTheFilter)
+    {
+        auto provider = std::make_shared<InMemoryTopologyProvider>(
+            std::vector<HardwareNode>{}, std::vector<int>{0});
+        SushiRuntime::DeviceFilter filter;
+        filter.include_cpu = false;
+        filter.include_gpu = false;
+        filter.include_accelerator = false;
+        filter.require_fp64 = true;
+
+        const auto refused = RuntimeContext::create(filter, provider);
+
+        ASSERT_FALSE(refused.has_value());
+        EXPECT_EQ(refused.error().code, SushiRuntime::ErrorCode::Unsupported);
+        const std::string& message = refused.error().message;
+        EXPECT_NE(message.find("cpu=no, gpu=no, accelerator=no, require_fp64=yes"),
+                  std::string::npos) << message;
     }
 } // namespace TopologyAbstractionTests
 

@@ -503,6 +503,24 @@ slot's buffer as a read, which orders the resolver after the kernel that writes 
 buffer's liveness observer. It returns whether the count has a device slot, so the recorder knows
 whether the resolver's fault record must be host USM a kernel can write.
 
+## dotted_name.hpp
+
+### is_dotted_name
+
+`Detail::is_dotted_name()` is the rule `Runtime::placement_scope()` holds a class name to: it is not
+empty, does not start or end with `.` and holds no `..`. The call stops the process through `SR_VERIFY`
+when it fails; the function decides on the string and stops nothing.
+
+## local_rule_device.hpp
+
+### local_device_under and resolve_scope_device
+
+`local_device_under()` reads a rule against the machine's facts: the device the target names when the
+machine has it, none under `Local` and `Wait` when it does not (a local device never appears during a
+run), and `absent_refusal()` under `Fail`. `resolve_scope_device()` finds the rule a class and a key
+match and gives device 0 when none does or when the rule gives none. `PlacementScope::device()` and
+the rule stamp of a node call them, so a test passes a `NodeFacts` and a rule set and needs no runtime.
+
 ## device_fault.hpp
 
 ### The fault record

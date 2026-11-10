@@ -28,6 +28,9 @@ source is null or holds fewer than `count` elements; a longer source is accepted
 that stop nothing: `is_valid_alignment()`, `fits_byte_count()` and `names_a_device()`. `buffer()` and
 `state()` stop the process when one of them fails, and a small test reads them without that stop.
 
+`residency.hpp` holds `Residency` and `Detail::is_host_addressable()`, the rule `operator[]` checks: a
+Device-resident handle is not host-addressable. `operator[]` stops the process when it fails.
+
 A device index that names no device of the runtime stops the process before anything is
 allocated. The message names the calling function (`Runtime::buffer` or `Runtime::state`), the
 index, the device count, and `advanced().devices()`, which lists the devices by index.

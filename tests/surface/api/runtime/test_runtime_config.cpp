@@ -281,14 +281,11 @@ TEST_F(Medium_RequireFp64Unmet, IsRefusedWithUnsupported)
     EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
 }
 
-/** @brief Tests that a filter that admits nothing fails at construction with Unsupported and names the filter. */
+/** @brief Tests that a filter that admits nothing fails at construction with Unsupported; the text it carries is read in tests/engine/execution. */
 TEST(Medium_DeviceFilterEmpty, AnEmptyFilterFailsWithUnsupported)
 {
     const auto refused = Runtime::create(config_admitting_nothing());
 
     ASSERT_FALSE(refused.has_value()) << "a filter admitting no device class must not produce a runtime";
     EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
-    const std::string& message = refused.error().message;
-    EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;
-    EXPECT_NE(message.find("gpu=no"), std::string::npos) << message;
 }

@@ -40,6 +40,7 @@
 #include <utility>
 
 #include <SushiRuntime/api/detail/assertion_logging.hpp>
+#include <SushiRuntime/api/detail/dotted_name.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -112,14 +113,6 @@ namespace SushiRuntime
         {
             return std::string("Runtime::") + call +
                    ": a run of this runtime is in flight; wait for it to finish, then call again.";
-        }
-
-        /** @brief Returns whether a class name is non-empty and has no empty dotted segment. */
-        [[nodiscard]] bool is_dotted_name(std::string_view name) noexcept
-        {
-            if (name.empty() || name.front() == '.' || name.back() == '.')
-                return false;
-            return name.find("..") == std::string_view::npos;
         }
     } // namespace
 
@@ -235,7 +228,7 @@ namespace SushiRuntime
     PlacementScope Runtime::placement_scope(std::string_view name,
                                             std::optional<std::uint64_t> key) const
     {
-        SR_VERIFY(is_dotted_name(name),
+        SR_VERIFY(Detail::is_dotted_name(name),
                   (std::string("Runtime::placement_scope: the class name \"") +
                    std::string(name) +
                    "\" is empty, starts or ends with '.' or holds two '.' in a row; pass a "

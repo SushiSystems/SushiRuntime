@@ -213,6 +213,8 @@ skips only under WSL, which gives hwloc no PCI devices and shows itself in `WSL_
 The injectable topology abstraction, `TopologyProvider` and `NUMADistanceModel`, is tested small in
 `tests/platform/topology/test_topology_view.cpp`, and the NUMA routes in
 `tests/platform/device/test_numa_route_table.cpp`.
+`Small_RuntimeContextTopology.AProviderListingNoDeviceIsRefusedNamingTheFilter` hands `create()` a provider
+that lists no node and reads the `Unsupported` error and the filter it names, so no device is needed.
 
 `RuntimeContext::shutdown()` must stop the installed offload coordinator before the engine stops
 the worker pool, as the destructor does. A coordinator returns the nodes it still holds through the

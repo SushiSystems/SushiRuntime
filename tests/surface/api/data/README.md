@@ -20,6 +20,16 @@ death tests of `test_buffer.cpp` keep the wiring: that each predicate, when it f
 | `TheLargestCountWhoseByteSizeFitsFits`, `ACountWhoseByteSizeWrapsDoesNotFit` | `fits_byte_count()` accepts the largest count of 8-byte elements and refuses one past it, the case whose size wraps to 8. |
 | `AnIndexBelowTheCountNamesADevice`, `AnIndexAtOrPastTheCountNamesNoDevice` | `names_a_device()` holds below the count and fails at it. |
 
+## test_residency.cpp
+
+The rule `operator[]` of a Buffer and a State checks, run small and without a stop:
+`Detail::is_host_addressable()` holds for Shared and Host and fails for Device. The death test
+`IndexingADeviceResidentHandleStops` of `test_buffer.cpp` keeps the wiring: that a device-resident handle stops.
+
+| Test | What it proves |
+| --- | --- |
+| `SharedAndHostMemoryAreHostAddressable`, `DeviceMemoryIsNotHostAddressable` | The rule holds for Shared and Host and fails for Device. |
+
 ## test_buffer.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what

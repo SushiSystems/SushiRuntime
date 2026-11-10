@@ -52,19 +52,20 @@ runtime, so the fixture of the memory test clears the rules before and after it.
 | --- | --- |
 | `AScopeWithoutARuntimeGivesDeviceZero`, `AScopeWithoutARuntimeRefusesABuffer` | A scope built from a class and a key has no rules to read: `device()` gives 0 and `buffer()` returns `InvalidState`. |
 | `TheStringAndClassOverloadsGiveEqualClasses`, `BothOverloadsKeepAKeyOfZeroAndANoneKey`, `ANameWithoutADotIsAClass` | The string and the `PlacementClass` overloads build equal classes for one name and keep a key of 0 and a none key. A name with no dot is a class. |
-| `AMalformedNameStopsTheProcess` (medium) | Rows of an empty name, a name that starts or ends with `.` and a name with two `.` in a row: each stops the process. |
+| `AMalformedNameStopsTheProcess` (medium) | An empty name stops the process; `tests/surface/api/detail/test_dotted_name.cpp` reads which names are refused. |
 | `ANoRuleScopeGivesDeviceZero`, `ARuleForAnotherClassLeavesDeviceZero` | No rule, or a rule for another class, gives device 0. |
 | `ARuleWithAPresentTargetGivesDeviceZero` | Rows of a machine with no device part, an index and a kind the host runtime has: each gives device 0. |
 | `AtLeastOneByteOfMemoryGivesDeviceZero` (medium) | A rule asking for one byte of device memory gives device 0 on a real device. A host device reports no memory, so this row stays on the program's runtime. |
-| `LocalGivesDeviceZeroForAnAbsentDevice`, `FailNamesTheRuleAndTheDevice`, `WaitGivesDeviceZeroForAnAbsentDevice` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` that holds the rule's name and `device index N` under `Fail`, and device 0 under `Wait`, since a local device never appears. The `Wait` test reads no clock. |
+| `LocalGivesDeviceZeroForAnAbsentDevice`, `FailRefusesAnAbsentDevice`, `WaitGivesDeviceZeroForAnAbsentDevice` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` under `Fail`, and device 0 under `Wait`, since a local device never appears. The `Wait` test reads no clock. |
 | `AnotherMachinesNameMakesTheTargetAbsent`, `ALabelNoMachineCarriesMakesTheTargetAbsent`, `LocalFallsBackWhenTheMachineIsAnotherOne` | A machine name or label that is not this machine's makes the target absent, and `Local` falls back to device 0. How a machine part and a device part match is held by `tests/foundation/placement/test_placement_target_matching.cpp`. |
 | `ALabelTheMachineCarriesMakesTheTargetPresent` | A label the runtime's config gave makes the target present. |
 | `AScopeOpenedBeforeARefusingSetIsRefusedByIt`, `AScopeOpenedBeforeTheRulesAreClearedIsNoLongerRefused` | A scope made before `set_placement_rules()` is refused by a `Fail` set, and accepted again after `clear_placement_rules()`. |
 | `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `FailAllocatesNothing`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` and allocates nothing under `Fail`, and allocates on device 1 when a rule names it, on a host runtime of two devices. |
 
-The resolution of a rule against the machine facts is decided on values and could run small. It sits in
-`modules/surface/api/source/local_rule_device.hpp` and an anonymous function of `placement_scope.cpp`,
-neither of which a test reaches; RW-110 holds moving it.
+The resolution of a rule against the machine facts is decided on values. It sits in
+`modules/surface/api/include/SushiRuntime/api/detail/local_rule_device.hpp`, and
+`tests/surface/api/detail/test_local_rule_device.cpp` reads it over a `NodeFacts`, including the text of the
+`Fail` refusal. The tests here keep the wiring from a runtime.
 
 ## test_runtime.cpp
 
@@ -74,7 +75,8 @@ a copy constructor that returns fails the compile and not a test.
 
 | Test | What it proves |
 | --- | --- |
-| `TheWorkerCountOfTheConfigReachesThePool`, `ThePinningPolicyOfTheConfigReachesThePool` (medium) | A `RuntimeConfig` with `worker_count` 2, and one with `pinning` `Float`, give a pool with that count and that policy. The rebalancer reaches the runtime in `RebalancerIsOnWhenRequested`; `force_scheduler` has no public reader, and RW-114 holds it. |
+| `TheWorkerCountOfTheConfigReachesThePool`, `ThePinningPolicyOfTheConfigReachesThePool` (medium) | A `RuntimeConfig` with `worker_count` 2, and one with `pinning` `Float`, give a pool with that count and that policy. The rebalancer reaches the runtime in `RebalancerIsOnWhenRequested`. |
+| `TheForceSchedulerFlagOfTheConfigNamesTheLayerOfARun` (medium) | A one-kernel graph runs on `ExecutionLayer::Chain` on a runtime built with the defaults and on `ExecutionLayer::Scheduler` on one built with `force_scheduler`, read from `RunReport::layer`. |
 | `TheViewOutlivesTheRuntime` | A view taken while the `Runtime` lives answers with the same device count after the `Runtime` is destroyed. A view that held a reference would read a destroyed context, which AddressSanitizer reports. |
 | `DevicesListsOneEntryPerDevice`, `EntryNamesTheDeviceBehindItsQueue` (medium) | `devices()` holds one entry per device, and rows of entry `i` carry the name of the SYCL device behind the queue of `DeviceIndex{i}`. |
 | `ABufferLandsOnTheFirstDevice` | A buffer allocated with no `DeviceIndex` is on the first entry of `devices()`. |
@@ -171,4 +173,4 @@ thing a player on a machine with no SYCL device would see.
 | `RequireFp64AdmitsOnlyFp64Devices` | Rows of device index: every device a `require_fp64` runtime drives reports fp64 on the queue behind it. The fixture skips on a lane with no fp64 device. |
 | `StillConstructsOnAConformingLane` | A lane that has an fp64 device still builds a runtime with `require_fp64` set. The CPU lanes this suite runs on all report fp64. |
 | `IsRefusedWithUnsupported` | On a lane with no fp64 device, `Runtime::create()` returns `Unsupported` and not a driver error from inside a kernel launch. The fixture skips where a device reports fp64. |
-| `AnEmptyFilterFailsWithUnsupported` | A filter that admits nothing fails at construction with `ErrorCode::Unsupported`, and the message names the filter, so the reader can tell a machine that has nothing from a filter that excluded everything. |
+| `AnEmptyFilterFailsWithUnsupported` | A filter that admits nothing fails at construction with `ErrorCode::Unsupported` through `Runtime::create()`. The message names the filter, so the reader can tell a machine that has nothing from a filter that excluded everything; `tests/engine/execution/test_runtime_context.cpp` reads that text small. |

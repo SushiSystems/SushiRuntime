@@ -239,14 +239,36 @@ addresses through `tests/support/adopted_handles.hpp`, so no case touches a devi
 | `ABufferLivenessEndsWithIt` | A buffer's liveness observer expires when the buffer is destroyed. |
 | `AStateReadsCurrentAndWritesNext` | A state's read key is its current field and its write key its next one. |
 
+## test_dotted_name.cpp
+
+The file tests `Detail::is_dotted_name()` on values. The death test of `test_placement_scope.cpp` keeps the
+wiring: that a name it refuses stops `Runtime::placement_scope()`.
+
+| Test | What it proves |
+| --- | --- |
+| `ANameWithNonEmptySegmentsIsValid` | A plain name, a dotted name and a three-segment name pass. |
+| `AnEmptyNameIsInvalid`, `ANameThatStartsOrEndsWithADotIsInvalid`, `ANameWithTwoDotsInARowIsInvalid` | An empty name, a leading or trailing `.` and a `..` fail. |
+
+## test_local_rule_device.cpp
+
+The file tests `local_device_under()`, `absent_refusal()` and `resolve_scope_device()` over a hand-made
+`NodeFacts` and a rule set, with no runtime.
+
+| Test | What it proves |
+| --- | --- |
+| `ADevicePastTheMachineGivesNoneUnderLocalAndWait`, `ADeviceTheMachineHasIsGivenWhateverTheAbsentAction` | A device the machine lacks gives none under `Local` and `Wait`; one it has is given under every action. |
+| `ADevicePastTheMachineIsRefusedUnderFailNamingTheRuleAndTheDevice` | `Fail` returns `InvalidArgument` whose text holds the caller, the rule's name, what is placed, the device index, the machine name and its device count. |
+| `AScopeOfNoMatchingRuleResolvesToDeviceZero`, `AScopeResolvesToTheDeviceItsRuleNames`, `AScopeOfAnAbsentDeviceResolvesToDeviceZeroUnderLocalAndIsRefusedUnderFail` | `resolve_scope_device()` gives device 0 with no matching rule, the named device when present, device 0 under `Local` and the refusal under `Fail` when absent. |
+
 ## test_late_count_resolution.cpp
 
-The file tests `late_count_source()` and `read_live_count()`: the host path and its capacity bound.
+The file tests `late_count_source()` and `read_live_count()`: the host path, the slot read and the capacity bound.
 
 | Test | What it proves |
 | --- | --- |
 | `HostCountsResolveOnTheHost` | A fixed count is its own live value, and a host count calls its provider. |
 | `AHostCountAboveTheCapacityResolvesToZero` | A host count above the capacity is recorded as a fault and resolves to zero. |
+| `ADeviceSlotIsReadWhereItStands`, `ASlotWordAboveTheCapacityResolvesToZero` | `read_live_count()` reads the word of a slot and faults to zero above the capacity, over a plain word. |
 
 ## test_late_window.cpp
 
@@ -263,12 +285,16 @@ The file tests `resolve_live_range()` and `read_late_window()`: windows inside a
 ## test_node_stamp.cpp
 
 The file tests the parameter limit of a node, shown through `Graph::add`: `Small_NodeParameterLimit`
-runs one row at `NodeOptions::K_MAX_PARAMETERS` parameters and one row past it.
+runs one row at `NodeOptions::K_MAX_PARAMETERS` parameters and one row past it, and the copy of the
+parameters into a `Detail::NodeStamp`, which the stamp's constructor makes.
 
 | Row | What it proves |
 | --- | --- |
 | `AtTheLimit` | The add is accepted and the graph holds one node. |
 | `OnePastTheLimit` | The add is refused and the graph holds no node. |
+| `Small_NodeStamp.TheStampHoldsTheParametersOfTheOptionsInOrder` | The stamp holds the parameters of the options in order, their count, and 0 in the slot after the last. |
+| `Small_NodeStamp.TheStampHoldsACopyAndNotTheCallersStorage` | A source that changes after the stamp is made does not reach the stamp. |
+| `Small_NodeStamp.ParametersUpToTheLimitAllReachTheStamp` | `NodeOptions::K_MAX_PARAMETERS` parameters all reach the stamp. |
 
 The copy of the operation, the placement, the determinism and the name into a node is read from the
 plan in `graph/test_plan_view.cpp`, and the width in `graph/test_node_options.cpp`. The copy of the

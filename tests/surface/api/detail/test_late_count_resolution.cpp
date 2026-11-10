@@ -64,3 +64,31 @@ TEST(Small_LateCountResolution, AHostCountAboveTheCapacityResolvesToZero)
     EXPECT_EQ(fault[2], 11u);
     EXPECT_EQ(fault[3], 10u);
 }
+
+/** @brief Tests that a device count names its slot and reads the word written there. */
+TEST(Small_LateCountResolution, ADeviceSlotIsReadWhereItStands)
+{
+    std::uint32_t word = 700000;
+    Detail::LiveCountSource source;
+    source.slot = &word;
+    source.capacity = 1000000;
+
+    EXPECT_EQ(Detail::read_live_count(source, nullptr), 700000u);
+    word = 12;
+    EXPECT_EQ(Detail::read_live_count(source, nullptr), 12u);
+}
+
+/** @brief Tests that a slot word above the capacity is recorded as a fault and resolves to zero. */
+TEST(Small_LateCountResolution, ASlotWordAboveTheCapacityResolvesToZero)
+{
+    std::uint32_t fault[Detail::K_DEVICE_FAULT_WORDS] = {};
+    std::uint32_t word = 101;
+    Detail::LiveCountSource source;
+    source.slot = &word;
+    source.capacity = 100;
+
+    EXPECT_EQ(Detail::read_live_count(source, fault), 0u);
+    EXPECT_EQ(fault[0], Detail::K_DEVICE_FAULT_LATE_COUNT);
+    EXPECT_EQ(fault[2], 101u);
+    EXPECT_EQ(fault[3], 100u);
+}

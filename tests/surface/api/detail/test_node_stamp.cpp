@@ -37,6 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/api/detail/node_stamp.hpp>
 
 #include "support/host_runtime.hpp"
 
@@ -91,3 +92,48 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(ParameterRow{"AtTheLimit", NodeOptions::K_MAX_PARAMETERS, false, 1},
                       ParameterRow{"OnePastTheLimit", NodeOptions::K_MAX_PARAMETERS + 1, true, 0}),
     row_name);
+
+/** @brief Tests that a stamp holds the parameters of the options, in order, and how many there were. */
+TEST(Small_NodeStamp, TheStampHoldsTheParametersOfTheOptionsInOrder)
+{
+    const std::array<std::uint64_t, 3> given{7, 9, 11};
+    NodeOptions options;
+    options.parameters = span<const std::uint64_t>(given.data(), given.size());
+
+    const Detail::NodeStamp stamp(options, nullptr);
+
+    EXPECT_EQ(stamp.parameter_count, 3u);
+    EXPECT_EQ(stamp.parameters[0], 7u);
+    EXPECT_EQ(stamp.parameters[1], 9u);
+    EXPECT_EQ(stamp.parameters[2], 11u);
+    EXPECT_EQ(stamp.parameters[3], 0u);
+}
+
+/** @brief Tests that the stamp holds a copy, so a source that changes after stamping does not reach it. */
+TEST(Small_NodeStamp, TheStampHoldsACopyAndNotTheCallersStorage)
+{
+    std::array<std::uint64_t, 2> given{3, 4};
+    NodeOptions options;
+    options.parameters = span<const std::uint64_t>(given.data(), given.size());
+
+    const Detail::NodeStamp stamp(options, nullptr);
+    given = {100, 200};
+
+    EXPECT_EQ(stamp.parameters[0], 3u);
+    EXPECT_EQ(stamp.parameters[1], 4u);
+}
+
+/** @brief Tests that parameters up to the limit all reach the stamp. */
+TEST(Small_NodeStamp, ParametersUpToTheLimitAllReachTheStamp)
+{
+    std::array<std::uint64_t, NodeOptions::K_MAX_PARAMETERS> given{};
+    for (std::size_t i = 0; i < given.size(); ++i)
+        given[i] = 1000 + i;
+    NodeOptions options;
+    options.parameters = span<const std::uint64_t>(given.data(), given.size());
+
+    const Detail::NodeStamp stamp(options, nullptr);
+
+    EXPECT_EQ(stamp.parameter_count, NodeOptions::K_MAX_PARAMETERS);
+    EXPECT_EQ(stamp.parameters, given);
+}

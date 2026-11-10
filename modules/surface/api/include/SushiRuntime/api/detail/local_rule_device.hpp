@@ -23,21 +23,26 @@
 
 /**
  * @file local_rule_device.hpp
- * @brief Declares the local device a placement rule gives on this machine, after if_absent.
+ * @brief Declares the device a placement rule gives on this machine and a scope resolves to.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
 
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/placement/placement_target_matching.hpp>
 
 namespace SushiRuntime
@@ -76,6 +81,27 @@ namespace SushiRuntime
             if (device || rule.if_absent.action != AbsentAction::Fail)
                 return device;
             return make_error(absent_refusal(rule, position, here, caller, what));
+        }
+
+        /**
+         * @brief Returns the device a scope of a class and a key resolves to against a rule set.
+         * @return Device 0 when no rule matches or the matching rule gives no local device, the
+         *         rule's local device otherwise, or absent_refusal() under a Fail rule.
+         */
+        [[nodiscard]] inline Result<std::size_t>
+        resolve_scope_device(const PlacementClass& placement_class,
+                             std::optional<std::uint64_t> key, const PlacementRules& rules,
+                             const NodeFacts& here)
+        {
+            const std::optional<std::size_t> position =
+                rules.resolve(placement_class, key, OperationID());
+            if (!position)
+                return K_DEFAULT_PLACEMENT_DEVICE;
+            Result<std::optional<std::size_t>> device = local_device_under(
+                rules.rule(*position), *position, here, "PlacementScope::device", "the scope");
+            if (!device)
+                return make_error(std::move(device.error()));
+            return device->value_or(K_DEFAULT_PLACEMENT_DEVICE);
         }
     } // namespace Detail
 } // namespace SushiRuntime

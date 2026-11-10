@@ -42,7 +42,7 @@
 #include <SushiRuntime/placement/placement_target_matching.hpp>
 #include <SushiRuntime/task/node.hpp>
 
-#include "local_rule_device.hpp"
+#include <SushiRuntime/api/detail/local_rule_device.hpp>
 
 namespace SushiRuntime
 {
