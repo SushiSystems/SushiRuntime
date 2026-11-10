@@ -366,7 +366,7 @@ namespace SushiRuntime
                                     std::shared_ptr<const Clock> clock,
                                     std::shared_ptr<Internal::Topology::TopologyProvider> provider,
                                     std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
-                                    Profile::Collector& collector)
+                                    Profile::Collector& collector, DeviceKind device_kind)
         {
             SR_VERIFY(device_count > 0,
                       "RuntimeContext::create_host: pass a device count of at least 1.");
@@ -379,7 +379,7 @@ namespace SushiRuntime
             settings.force_scheduler = true;
 
             Internal::Topology::HostTopology machine =
-                Internal::Topology::make_host_topology(device_count);
+                Internal::Topology::make_host_topology(device_count, device_kind);
             if (!provider)
                 provider = std::move(machine.provider);
             if (!distance_model)

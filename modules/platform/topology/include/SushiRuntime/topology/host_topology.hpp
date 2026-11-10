@@ -36,6 +36,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 
 namespace SushiRuntime
@@ -57,7 +58,10 @@ namespace SushiRuntime
         /**
          * @brief Builds the machine a host runtime of some devices stands for; it reads no hardware.
          * @param device_count The number of host devices; at least 1.
+         * @param device_kind The kind every host device reports; a test that needs a device of
+         *                    another kind than the CPU it stands on passes it.
          */
-        [[nodiscard]] SUSHIRUNTIME_API HostTopology make_host_topology(std::size_t device_count);
+        [[nodiscard]] SUSHIRUNTIME_API HostTopology
+        make_host_topology(std::size_t device_count, DeviceKind device_kind = DeviceKind::CPU);
     } // namespace Internal::Topology
 } // namespace SushiRuntime

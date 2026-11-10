@@ -35,7 +35,9 @@ builds the machine's facts from them.
 
 `make_host_topology()` builds the machine `RuntimeContext::create_host()` stands for: an
 `InMemoryTopologyProvider` that maps every core to NUMA node 0, a `MatrixDistanceModel` of one node at
-distance 10, and the host devices, CPUs named `host device <i>`. It reads no hardware.
+distance 10, and the host devices, named `host device <i>`. They are CPUs unless the caller passes
+another `DeviceKind`, so a test can have a device that answers as a GPU without one. It reads no
+hardware.
 
 ## topology_provider.hpp
 

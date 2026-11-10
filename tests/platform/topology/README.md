@@ -42,6 +42,7 @@ Windows, Linux, or Unknown elsewhere.
 | `MapsItsCoreToNodeZeroAndHasNoHardwareNode` | The host provider maps core 0 to node 0 and enumerates no node. |
 | `HasOneNodeAtTheLocalDistance` | The host distance model holds one node at distance 10. |
 | `NamesEachDeviceForItsIndexAsACPU` | Each host device is a CPU named `host device <i>`, at its index. |
+| `GivesEachDeviceTheKindAsked` | A kind passed to `make_host_topology()` is the kind of every device. |
 
 ## test_hw_discovery.cpp
 

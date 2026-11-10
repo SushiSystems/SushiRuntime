@@ -9,7 +9,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_memory_exchange.cpp
 
-The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, the capabilities and the import through a `CapabilityCache` of its own that answers from a `ScriptedCapabilityProbe`, on the program's one runtime, because `Interop::capabilities` and the import call a device queue and have no host path. The host export runs small, on a host runtime. The suite `Medium_MemoryExchangeImport` holds the import test that keeps the wiring; it skips on a device that is not a GPU, which refuses every import before it reads the descriptor.
+The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, the capabilities and the import through a `CapabilityCache` of its own that answers from a `ScriptedCapabilityProbe`, on the program's one runtime, because `Interop::capabilities` and the import call a device queue and have no host path. The host export runs small, on a host runtime. The suite `Medium_MemoryExchangeImport` holds the import test that keeps the wiring; it runs on a host context whose device 0 reports itself a GPU (`make_host_context(..., DeviceKind::GPU)`), because a device that is not a GPU refuses every import before it reads the descriptor, so it needs no GPU and never skips.
 
 | Test | What it proves |
 | --- | --- |

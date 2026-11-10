@@ -68,3 +68,13 @@ TEST(Small_HostTopology, NamesEachDeviceForItsIndexAsACPU)
     EXPECT_EQ(topology.devices[1].kind, DeviceKind::CPU);
     EXPECT_EQ(topology.devices[1].index, 1u);
 }
+
+/** @brief Tests that a kind passed in is the kind of every host device. */
+TEST(Small_HostTopology, GivesEachDeviceTheKindAsked)
+{
+    HostTopology topology = make_host_topology(2, DeviceKind::GPU);
+
+    ASSERT_EQ(topology.devices.size(), 2u);
+    EXPECT_EQ(topology.devices[0].kind, DeviceKind::GPU);
+    EXPECT_EQ(topology.devices[1].kind, DeviceKind::GPU);
+}

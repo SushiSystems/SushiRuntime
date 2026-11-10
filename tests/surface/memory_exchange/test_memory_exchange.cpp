@@ -49,6 +49,7 @@
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/memory_exchange/scripted_capability_probe.hpp>
 
+#include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
@@ -87,17 +88,17 @@ TEST_F(Small_MemoryExchange, AHostExportGivesTheSizeAsked)
 }
 
 /**
- * @brief Runs the import tests on the program's one runtime. A device that is not a GPU refuses
- *        every import before it reads the descriptor, so a program without a GPU skips them.
+ * @brief Runs the import tests on a host context whose device 0 answers as a GPU. A device that is
+ *        not a GPU refuses every import before it reads the descriptor, so the context states the
+ *        kind and the test runs on any machine.
  */
-class Medium_MemoryExchangeImport : public Medium_MemoryExchange
+class Medium_MemoryExchangeImport : public ::testing::Test
 {
     protected:
-        /** @brief Skips the test when device 0 is not a GPU. */
-        void SetUp() override
+        /** @brief Returns the context whose device 0 is a GPU. */
+        [[nodiscard]] std::shared_ptr<Internal::Execution::RuntimeContext> gpu_context() const
         {
-            if (!shared_context()->devices().is_gpu(0))
-                GTEST_SKIP() << "device 0 is not a GPU, so it imports nothing";
+            return gpu_context_;
         }
 
         /** @brief Returns the capabilities of a GPU that imports an opaque file descriptor and nothing else. */
@@ -108,6 +109,11 @@ class Medium_MemoryExchangeImport : public Medium_MemoryExchange
             capabilities.importable_kinds.insert(ExternalHandleKind::OpaqueFd);
             return capabilities;
         }
+
+    private:
+        /** @brief A host context of one device that reports itself a GPU; made per test. */
+        std::shared_ptr<Internal::Execution::RuntimeContext> gpu_context_ =
+            TestSupport::make_host_context(nullptr, nullptr, 1, DeviceKind::GPU);
 };
 
 /** @brief Tests that device 0 reports the capabilities its probe answered. */
@@ -133,7 +139,7 @@ TEST_F(Medium_MemoryExchangeImport, AnImportWithNoKindIsRefused)
     ScriptedCapabilityProbe probe;
     probe.answer_next(fd_importer());
     CapabilityCache cache(std::ref(probe));
-    const auto context = shared_context();
+    const auto context = gpu_context();
     ExternalMemoryDescriptor descriptor;
     descriptor.allocation_bytes = 4096;
 

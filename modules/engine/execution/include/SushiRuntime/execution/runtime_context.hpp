@@ -41,6 +41,7 @@
 #include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/profile/profile.hpp>
@@ -99,19 +100,20 @@ namespace SushiRuntime
                        Profile::Collector& collector = Profile::process_collector());
 
                 /**
-                 * @brief Builds a host context, with no SYCL device, queue or offload.
+                 * @brief Builds a host context with no SYCL device or offload.
                  * @param device_count Host devices the context stands for; at least 1.
                  * @param executor,clock The executor that runs every node and the clock that times it; not null.
                  * @param provider,distance_model Topology and NUMA distances; null keeps the host's own.
-                 * @param collector Takes the context's zones, values and counters; it must outlive the context.
-                 * @see modules/engine/execution/README.md
+                 * @param collector,device_kind The collector takes the zones, values and counters, and outlives
+                 *        the context; device_kind is what every host device reports.
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
                 create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
                             std::shared_ptr<const Clock> clock,
                             std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
                             std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model = nullptr,
-                            Profile::Collector& collector = Profile::process_collector());
+                            Profile::Collector& collector = Profile::process_collector(),
+                            DeviceKind device_kind = DeviceKind::CPU);
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();

@@ -51,7 +51,7 @@ namespace SushiRuntime
             constexpr int K_LOCAL_DISTANCE = 10;
         } // namespace
 
-        HostTopology make_host_topology(std::size_t device_count)
+        HostTopology make_host_topology(std::size_t device_count, DeviceKind device_kind)
         {
             SR_VERIFY(device_count > 0, "make_host_topology: pass a device count of at least 1.");
             HostTopology topology;
@@ -64,7 +64,7 @@ namespace SushiRuntime
             {
                 topology.devices[index].index = index;
                 topology.devices[index].name = "host device " + std::to_string(index);
-                topology.devices[index].kind = DeviceKind::CPU;
+                topology.devices[index].kind = device_kind;
             }
             return topology;
         }
