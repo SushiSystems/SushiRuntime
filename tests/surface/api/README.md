@@ -130,7 +130,7 @@ flag never sees it. The chain runs it synchronously from the calling thread
 (`modules/engine/execution/source/chain_run.cpp`, `ChainRun::submit_node()`), so the counter does see
 it, and the chain can never allocate nothing per tick.
 
-The file asserts three claims about the public surface:
+The file asserts three claims about a run on the public surface:
 
 1. The value-returning `run()` costs at least one more allocation per tick than the reuse form, and
    the extra allocation is the `RunReport`. Observing it also proves that the counter reaches the
@@ -141,10 +141,18 @@ The file asserts three claims about the public surface:
 3. On the asynchronous path, `run_async()` waited into one report the caller owns is amortised the
    same way.
 
-The claim that the chain adds no more allocation per tick than bare SYCL's own submission of the
-same kernel on the same queue is not tested. Its baseline needs the in-order flavour of the device
-queue, which `advanced().queue()` does not hand out, and the event timestamps the profiled form
-reads; RW-113 holds it.
+Two more claims set the chain against bare SYCL's own submission of the same kernel, in
+`Medium_SteadyStateBaseline`. Its baseline is the public queue of `advanced().queue()`, the plain
+queue of device 0, not the in-order queue the chain submits to, so the two share the kernel and the
+device and not the flavour. The fixture skips only on AdaptiveCpp, so the claims run on Windows too:
+
+4. Bare SYCL allocates on every submission this thread makes, and the chain allocates at least as
+   much, so the counter sees the run path's own submission.
+5. The count of the chain for four times the ticks, less its count for one, does not exceed bare
+   SYCL's difference for the same two lengths.
+
+The profiled form of the baseline, which reads the event timestamps, is not tested: the timestamp
+reader is an internal function and `advanced()` hands out none.
 
 ### The counter on Windows
 
@@ -206,8 +214,10 @@ one.
 | `ASchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, for the plain run. |
 | `AProfiledSchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, with a run observer added: the event ledger of a profiled run allocates only for a new shape, never on a later run that replays it. |
 | `AnAsyncWaitIntoAReusedReportIsAmortised` | Claim 3. |
+| `BareSYCLAllocatesPerSubmissionAndTheChainNoLess` | Claim 4. |
+| `TheChainsGrowthDoesNotExceedBareSYCLs` | Claim 5. |
 
-The reuse tests skip on AdaptiveCpp, whose submission allocates a different number of times per call,
+The reuse and baseline tests skip on AdaptiveCpp, whose submission allocates a different number of times per call,
 so the counts they compare are not stable there.
 
 ## refusing_fill.hpp

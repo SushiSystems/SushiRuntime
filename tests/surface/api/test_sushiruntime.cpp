@@ -37,6 +37,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
@@ -193,6 +194,32 @@ namespace
         return g_allocation_count.load(std::memory_order_relaxed);
     }
 
+    /** @brief Returns the allocations bare SYCL makes on this thread submitting the kernel of the graphs below over @p ticks waits, after a warm-up. */
+    std::size_t allocations_for_baseline_ticks(sycl::queue& queue, float* target, std::size_t ticks)
+    {
+        const auto submit_once = [&queue, target]
+        {
+            queue.submit([target](sycl::handler& h)
+            {
+                h.parallel_for(sycl::range<1>(N), [target](sycl::id<1> idx)
+                {
+                    target[idx[0]] = static_cast<float>(idx[0]) * 0.5f;
+                });
+            });
+            queue.wait();
+        };
+        for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
+            submit_once();
+
+        g_allocation_count.store(0, std::memory_order_relaxed);
+        g_counting_this_thread = true;
+        for (std::size_t i = 0; i < ticks; ++i)
+            submit_once();
+        g_counting_this_thread = false;
+
+        return g_allocation_count.load(std::memory_order_relaxed);
+    }
+
     /** @brief Tells whether the count for four times the ticks stays below four times the count for one, so nothing scales per tick. */
     bool is_amortised(std::size_t shorter, std::size_t longer)
     {
@@ -306,6 +333,69 @@ TEST_F(Medium_SteadyStateReuse, AProfiledSchedulerForcedRunDoesNotAllocatePerTic
     EXPECT_TRUE(is_amortised(shorter, longer))
         << "a scheduler-forced profiled run's steady-state allocation scales with tick count: "
         << shorter << " over " << K_TICKS << " ticks, " << longer << " over " << (K_TICKS * 4);
+}
+
+/** @brief Fixture of the claims that set the chain against bare SYCL; they run where the counter sees only the test's own code too. */
+class Medium_SteadyStateBaseline : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Skips on a toolchain whose submission allocates a different number of times per call. */
+        void SetUp() override
+        {
+#if defined(__ADAPTIVECPP__) || defined(__HIPSYCL__)
+            GTEST_SKIP() << "AdaptiveCpp's submission allocates a different number of times per call, so "
+                            "the counts these tests compare are not stable there; see README.md.";
+#endif
+        }
+
+        /** @brief Returns the public queue of device 0, which stands for bare SYCL's own submission. */
+        sycl::queue& baseline_queue()
+        {
+            return runtime().advanced().queue(DeviceIndex{0});
+        }
+};
+
+/** @brief Tests that bare SYCL allocates on every submission of this thread and the chain allocates no less. */
+TEST_F(Medium_SteadyStateBaseline, BareSYCLAllocatesPerSubmissionAndTheChainNoLess)
+{
+    auto buf = runtime().buffer<float>(N).value();
+    TestSupport::fill_with(buf, 0.0f);
+    float* p = buf.data();
+    auto g = runtime().graph();
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.5f; });
+
+    const std::size_t baseline = allocations_for_baseline_ticks(baseline_queue(), p, K_TICKS);
+    const std::size_t chain = allocations_for_reuse_ticks(g, K_TICKS);
+
+    EXPECT_GE(baseline, K_TICKS)
+        << "bare SYCL no longer allocates per submission on this thread, so nothing "
+           "on the run path is left for the counter to see in this build";
+    EXPECT_GE(chain, baseline)
+        << "the chain submitted the same kernel from this thread and the counter "
+           "saw less than bare SYCL's own cost; it does not see the run path";
+}
+
+/** @brief Tests that the chain's per-tick allocation growth does not exceed bare SYCL's growth on the same kernel. */
+TEST_F(Medium_SteadyStateBaseline, TheChainsGrowthDoesNotExceedBareSYCLs)
+{
+    auto buf = runtime().buffer<float>(N).value();
+    TestSupport::fill_with(buf, 0.0f);
+    float* p = buf.data();
+    auto g = runtime().graph();
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.5f; });
+
+    const std::size_t chain_short = allocations_for_reuse_ticks(g, K_TICKS);
+    const std::size_t chain_long = allocations_for_reuse_ticks(g, K_TICKS * 4);
+    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue(), p, K_TICKS);
+    const std::size_t baseline_long = allocations_for_baseline_ticks(baseline_queue(), p, K_TICKS * 4);
+
+    const auto chain_growth = static_cast<std::ptrdiff_t>(chain_long) - static_cast<std::ptrdiff_t>(chain_short);
+    const auto baseline_growth =
+        static_cast<std::ptrdiff_t>(baseline_long) - static_cast<std::ptrdiff_t>(baseline_short);
+    EXPECT_LE(chain_growth, baseline_growth)
+        << "the chain's per-tick allocation growth (" << chain_short << " -> " << chain_long
+        << ") exceeds bare SYCL's growth submitting the same kernel on the same device ("
+        << baseline_short << " -> " << baseline_long << ")";
 }
 
 #endif // !defined(SR_SANITIZER_OWNS_ALLOCATOR)
