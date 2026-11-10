@@ -107,6 +107,12 @@ objects must be reclaimed. The helpers `retire_objects`, `retire_from_threads`,
 loop. Under ASan and TSan the same run surfaces races and use-after-free. The counters are
 `shared_ptr`-owned for the reason `Tracked` gives.
 
+## test_sycl_queues.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Small_SYCLQueues.NoQueuesMakeASourceOfNoDevices` | `make_sycl_queues()` over no queues gives a source that counts no device; it builds no queue. |
+
 ## test_host_usm_source.cpp and test_sycl_usm_source.cpp
 
 `USMSourceContract` (`tests/support/usm_source_contract.hpp`) runs as `Small_HostUSMSource` on

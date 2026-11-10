@@ -50,6 +50,7 @@
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/recording_usm_release_observer.hpp>
+#include <SushiRuntime/memory/sycl_queues.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
@@ -183,7 +184,8 @@ namespace
                 for (const sycl::device& device : sycl::device::get_devices())
                     queues_.emplace_back(device);
                 allocator_ = std::make_unique<USMAllocator>(
-                    SushiRuntime::Internal::Memory::make_sycl_usm_source(queues_));
+                    SushiRuntime::Internal::Memory::make_sycl_usm_source(
+                        SushiRuntime::Internal::Memory::make_sycl_queues(queues_)));
             }
 
             /** @brief Returns the first device that can allocate a kind, or nothing. */

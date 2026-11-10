@@ -29,6 +29,7 @@
  */
 
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
+#include <SushiRuntime/memory/sycl_queues.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -183,9 +184,39 @@ namespace SushiRuntime
             return queues_[device_index];
         }
 
-        std::unique_ptr<USMSource> make_sycl_usm_source(std::vector<sycl::queue> device_queues)
+        struct SYCLQueues::Impl
         {
-            return std::make_unique<SYCLUSMSource>(std::move(device_queues));
+            /** @brief The queue of each device, by index. */
+            std::vector<sycl::queue> queues;
+        };
+
+        SYCLQueues::SYCLQueues(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl))
+        {
+
+        }
+
+        SYCLQueues::SYCLQueues(SYCLQueues&&) noexcept = default;
+
+        SYCLQueues& SYCLQueues::operator=(SYCLQueues&&) noexcept = default;
+
+        SYCLQueues::~SYCLQueues() = default;
+
+        std::unique_ptr<SYCLQueues::Impl> SYCLQueues::release() noexcept
+        {
+            return std::move(impl_);
+        }
+
+        SYCLQueues make_sycl_queues(std::vector<sycl::queue> device_queues)
+        {
+            return SYCLQueues(std::make_unique<SYCLQueues::Impl>(
+                SYCLQueues::Impl{std::move(device_queues)}));
+        }
+
+        std::unique_ptr<USMSource> make_sycl_usm_source(SYCLQueues device_queues)
+        {
+            const std::unique_ptr<SYCLQueues::Impl> held = device_queues.release();
+            SR_VERIFY(held != nullptr, "make_sycl_usm_source() was given queues already released.");
+            return std::make_unique<SYCLUSMSource>(std::move(held->queues));
         }
     } // namespace Internal::Memory
 } // namespace SushiRuntime

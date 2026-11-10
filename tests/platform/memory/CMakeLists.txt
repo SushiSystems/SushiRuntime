@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         test_epoch_reclamation.cpp
         test_host_usm_source.cpp
         test_recording_usm_release_observer.cpp
+        test_sycl_queues.cpp
         test_sycl_usm_source.cpp
         test_usm_allocation_owner.cpp
         test_usm_allocator.cpp

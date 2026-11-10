@@ -54,6 +54,7 @@
 #include <SushiRuntime/device/in_memory_queue_factory.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
+#include <SushiRuntime/memory/sycl_queues.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
@@ -185,7 +186,8 @@ namespace SushiRuntime
                   topology(provider, std::move(distance_model)),
                   devices(std::move(descriptors), false, profile),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      Internal::Memory::make_sycl_usm_source(devices.plain_queues()), profile))
+                      Internal::Memory::make_sycl_usm_source(
+                          Internal::Memory::make_sycl_queues(devices.plain_queues())), profile))
             {
             }
 

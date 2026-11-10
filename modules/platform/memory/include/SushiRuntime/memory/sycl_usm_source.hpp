@@ -24,16 +24,13 @@
 /**
  * @file sycl_usm_source.hpp
  * @brief Declares make_sycl_usm_source(), which makes the USMSource of a set of SYCL device queues.
- * @author Mustafa Garip
  * @see modules/platform/memory/README.md
+ * @author Mustafa Garip
  */
 
 #pragma once
 
 #include <memory>
-#include <vector>
-
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/usm_source.hpp>
@@ -43,11 +40,37 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         /**
+         * @brief SYCL device queues held without naming a SYCL type, so this header includes no
+         *        SYCL header; make_sycl_queues() in sycl_queues.hpp makes one.
+         */
+        class SUSHIRUNTIME_API SYCLQueues
+        {
+            public:
+                /** @brief The queues; defined in the source file of the SYCL adapter. */
+                struct Impl;
+
+                /** @brief Takes the queues. */
+                explicit SYCLQueues(std::unique_ptr<Impl> impl) noexcept;
+                SYCLQueues(SYCLQueues&&) noexcept;
+                SYCLQueues& operator=(SYCLQueues&&) noexcept;
+                SYCLQueues(const SYCLQueues&) = delete;
+                SYCLQueues& operator=(const SYCLQueues&) = delete;
+                ~SYCLQueues();
+
+                /** @brief Hands the queues to the adapter; this object is empty afterwards. */
+                [[nodiscard]] std::unique_ptr<Impl> release() noexcept;
+
+            private:
+                /** @brief The queues. */
+                std::unique_ptr<Impl> impl_;
+        };
+
+        /**
          * @brief Makes a source that takes USM from the queues, one device per queue.
-         * @param device_queues A device's index is its position.
+         * @param device_queues The queues from make_sycl_queues(); a device's index is its position.
          * @see modules/platform/memory/README.md
          */
         [[nodiscard]] SUSHIRUNTIME_API std::unique_ptr<USMSource>
-        make_sycl_usm_source(std::vector<sycl::queue> device_queues);
+        make_sycl_usm_source(SYCLQueues device_queues);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

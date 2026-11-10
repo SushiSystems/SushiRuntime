@@ -34,11 +34,13 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/memory/sycl_queues.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 
 #include "support/runtime_environment.hpp"
 #include "support/usm_source_contract.hpp"
 
+using SushiRuntime::Internal::Memory::make_sycl_queues;
 using SushiRuntime::Internal::Memory::make_sycl_usm_source;
 using SushiRuntime::Internal::Memory::USMSource;
 
@@ -50,8 +52,8 @@ namespace
         /** @brief Returns a SYCL source over the program's queue. */
         static std::unique_ptr<USMSource> make()
         {
-            return make_sycl_usm_source(
-                std::vector<sycl::queue>{TestSupport::RuntimeEnvironment::queue()});
+            return make_sycl_usm_source(make_sycl_queues(
+                std::vector<sycl::queue>{TestSupport::RuntimeEnvironment::queue()}));
         }
     };
 } // namespace

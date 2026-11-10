@@ -186,9 +186,16 @@ its factory and holds it as a `USMSource`.
 The device adapter: `sycl::malloc_*` and `sycl::aligned_alloc_*` on one queue per device,
 `sycl::free` on release, `queue.memcpy()` for a copy, and `sycl::get_pointer_type` and
 `get_pointer_device` across the queues' contexts for an owner. A shared match wins at once; a device
-match waits for a later shared one. The factory takes `std::vector<sycl::queue>`, so this is the one
-header of the module that includes `<sycl/sycl.hpp>`: a function that takes a `sycl::queue` needs its
-definition, and neither DPC++ nor AdaptiveCpp offers a declaration to forward.
+match waits for a later shared one. The header includes no SYCL header: the factory takes a
+`SYCLQueues`, a move-only handle that holds the queues behind a pointer.
+
+## sycl_queues.hpp
+
+### make_sycl_queues
+
+Wraps a `std::vector<sycl::queue>` in a `SYCLQueues`, a device's index being its position. This is
+the one header of the module that includes `<sycl/sycl.hpp>`: a function that takes a `sycl::queue`
+needs its definition, and neither DPC++ nor AdaptiveCpp offers a declaration to forward.
 
 ## host_usm_source.hpp
 
@@ -207,7 +214,7 @@ it keeps the owner promise as a device does.
 
 The allocator owns one `USMSource` for its whole life and asks it for every byte; it keeps the
 records itself; `copy()` asks `owning_device()` for the device that copies and hands the bytes to
-the source. A caller with device queues passes `make_sycl_usm_source(queues)`; a `sycl::queue` is a
+the source. A caller with device queues passes `make_sycl_usm_source(make_sycl_queues(queues))`; a `sycl::queue` is a
 handle, so the copies name the same queues as the caller's, and the memory module needs no header
 of the module that builds them. A device's index is the source's, the
 number USMRegistry stores.
