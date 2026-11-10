@@ -54,7 +54,7 @@ fabric and over TCP, and that a registered task is offloaded, are held by
 
 The file runs offload end to end on a real SYCL device, with a master and its workers in one
 process. Most tests use a real `WorkerAgent` on the in-process fabric; the tests that need a worker
-to misbehave use `ScriptedWorker`. Every test skips when SYCL reports no device. The master is the
+to misbehave use `ScriptedWorker`, the in-memory worker endpoint of the `scripted_worker` module. Every test skips when SYCL reports no device. The master is the
 program's one runtime, `TestSupport::RuntimeEnvironment::runtime()`; a test attaches its cluster to
 it and detaches when the cluster handle ends. A runtime of its own is kept by each in-process
 worker, by the CPU-only master of the settings test, by the second runtime of the two attach
@@ -68,17 +68,6 @@ Float buffers hold whole numbers below 2^24, which float addition keeps exact, s
 | --- | --- |
 | `USMFloats`, `LocalWorker`, `BackgroundRun` | `USMFloats` owns one shared USM allocation and frees it. `LocalWorker` owns a worker's `Runtime` and its `WorkerAgent`. `BackgroundRun` calls `Graph::run()` on its own thread; a test waits for it at most `K_WAIT` (10 s), so a run that never returns fails that test and the suite goes on. A run that did not return is detached, not joined. |
 | `vec_add_kernel`, `add_vec_add` | The kernel takes `span<const BufferView>` and reads the element count from the output's `size_bytes`. Each registry counts its kernel's runs in an atomic the test owns, which is how a test tells a remote run from the local fallback. `add_vec_add` adds the op-tagged task with a fallback lambda that computes the same sum. |
-
-### `ScriptedWorker`
-
-A worker endpoint that implements `TransportEvents` itself. It sends `HELLO`, answers `CHALLENGE`
-with a `PROOF` under the empty secret, and answers `PING` with `PONG`, so the master counts it
-alive. It records each `TASK_DISPATCH` and wakes the test through a condition variable. What it
-does next is one of three scripts: `Accept` sends `TASK_ACCEPTED` and holds the task, `Fail` also
-sends `TASK_RESULT` with `KernelFailed`, `FallSilent` sends nothing from then on. Its transport
-does not reconnect. `report(facts)` sets the name, system, labels and devices its `HELLO` carries;
-without it the name is `scripted-worker` and the rest is empty. `send_stream` hands the master a `ScriptedFrames` source, because a frame that
-carries the last-chunk flag can only travel in a stream.
 
 | Test | What it proves |
 | --- | --- |
@@ -100,13 +89,12 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 
 ### `PolicySeesWorkerFactsAcrossReconnect`
 
-A `FactsRecordingPolicy` picks the first worker it is offered and keeps a copy of that load's
-`facts`. A `ScriptedWorker` named `rack-7-gpu` registers with the labels `zone=a` and `tier=fast`,
-one GPU and one CPU, and runs one offloaded task to its result. It leaves; the test waits for
+An `InMemoryOffloadPolicy` picks the first worker it is offered. A `ScriptedWorker` named `rack-7-gpu` registers with the labels `zone=a` and `tier=fast`,
+one GPU and one CPU, and runs one offloaded task to its result; the test reads the worker's `facts` from `ClusterStatistics::workers`. It leaves; the test waits for
 `alive_workers()` to reach 0. A second `ScriptedWorker` registers under the same name with
-`zone=b` and runs a second task. The policy must have been called twice, each time with facts
-whose name, system, labels and devices (kind, name, memory) are the ones that worker sent, the
-second with `zone=b`.
+`zone=b` and runs a second task. The policy must have been called twice, and each time the listed
+facts hold the name, system, labels and devices (kind, name, memory) that worker sent, the second
+with `zone=b`.
 
 ### Placement rules
 
@@ -122,7 +110,7 @@ then a GPU. A wait is observed through `ClusterStatistics::held_nodes`, never th
 | `Medium_DistributedPlacementTest.WaitRunsTheNodeLocallyOnceTheBoundPasses` | Under `Wait` with a 30 ms bound and no worker, the run returns no sooner than the bound, the master computed the sum, and nothing was offloaded. |
 | `Medium_DistributedPlacementTest.FailEndsTheRunNamingTheRuleAndTheTarget` | Under `Fail`, with no worker, `run()` returns `InvalidState` whose message names the rule `"pin"` and `machine "rack-7-gpu"`; the output stays unwritten and nothing is offloaded. |
 | `Medium_DistributedPlacementTest.BusyTargetRunsBothNodesOneAfterTheOther` | A worker whose `max_jobs` is 1 gets the first of two pinned nodes; the second is held, then dispatched to it once the first result frees the slot. Both outputs hold what the worker wrote and nothing was redispatched, so neither ran on the master. `ScriptedWorker::limit_jobs()` sets the limit `PROOF` reports. |
-| `Medium_DistributedPlacementTest.UnmatchedNodeIsPlacedByThePolicy` | A rule for another key leaves the node to the policy, which is called once, and the dispatch carries device 0. |
+| `Medium_DistributedPlacementTest.UnmatchedNodeIsPlacedByThePolicy` | A rule for another key leaves the node to an `InMemoryOffloadPolicy`, which is called once, and the dispatch carries device 0. |
 | `Medium_DistributedPlacementTest.Regression_ADeviceOnlyRuleTheMasterLacksOffloads` | A master built on CPU devices only, under a rule with `device_kind` GPU and no machine part, sends the node to the worker with a GPU, on its `device_index` 1. Skipped when SYCL has no CPU device. |
 | `Medium_DistributedPlacementTest.Regression_ARegionsNodeInAScopeReachesTheNamedWorker` | A task recorded in region 0 of a `DynamicGraph`, inside the scope a rule matches, reaches the worker the rule names, on device 1. |
 

@@ -417,7 +417,8 @@ are read one by one, not at one instant.
 | `held_nodes` | Nodes a placement rule holds now, waiting for their worker to come back or to free a slot |
 | `workers` | One `WorkerSnapshot` per alive worker |
 
-A `WorkerSnapshot` holds the worker's `id`, `name` and `endpoint`, its `inflight` count, the
+A `WorkerSnapshot` holds the worker's `id`, `name` and `endpoint`, the `facts` of its `HELLO`
+(name, operating system, labels and devices), its `inflight` count, the
 `rtt_micros` of its last ping, the `free_mem` of its last pong, the `queue_depth` and
 `cache_bytes` of its last heartbeat, and `ms_since_last_frame`.
 

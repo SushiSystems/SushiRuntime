@@ -64,6 +64,8 @@
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
+#include <SushiRuntime/scripted_worker/scripted_frames.hpp>
+#include <SushiRuntime/scripted_worker/scripted_worker.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
@@ -82,6 +84,7 @@
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/cluster_load/in_memory_offload_policy.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
@@ -474,438 +477,12 @@ namespace EndToEndTests
                 WorkerAgent agent_;
         };
 
-        /** @brief Returns handshake octets as the bytes a wire message carries. */
-        std::array<std::byte, Wire::K_NONCE_BYTES> to_wire(
-            const std::array<std::uint8_t, Wire::K_NONCE_BYTES>& octets)
-        {
-            std::array<std::byte, Wire::K_NONCE_BYTES> bytes{};
-            std::transform(octets.begin(), octets.end(), bytes.begin(),
-                           [](std::uint8_t octet) { return std::byte{octet}; });
-            return bytes;
-        }
-
-        /** @brief Returns the bytes of a wire nonce as handshake octets. */
-        HandshakeNonce to_nonce(const std::array<std::byte, Wire::K_NONCE_BYTES>& bytes)
-        {
-            HandshakeNonce nonce{};
-            std::transform(bytes.begin(), bytes.end(), nonce.bytes.begin(),
-                           [](std::byte value) { return static_cast<std::uint8_t>(value); });
-            return nonce;
-        }
-
         /** @brief Returns the bytes of a float vector as a chunk carries them. */
         span<const std::byte> bytes_of(const std::vector<float>& values)
         {
             return span<const std::byte>(reinterpret_cast<const std::byte*>(values.data()),
                                          values.size() * sizeof(float));
         }
-
-        /** @brief Returns the frame of one output chunk that carries a whole buffer. */
-        OutboundFrame output_chunk_frame(std::uint64_t task_id, const BufferHandle& handle,
-                                         span<const std::byte> bytes)
-        {
-            Wire::BufferChunkMessage chunk;
-            chunk.purpose = Wire::ChunkPurpose::TaskOutput;
-            chunk.task_id = task_id;
-            chunk.handle = handle;
-            chunk.data = bytes;
-
-            OutboundFrame frame;
-            frame.type = MessageType::BufferChunk;
-            frame.flags = Wire::K_FRAME_FLAG_LAST_CHUNK;
-            EXPECT_EQ(chunk.encode(frame.payload), Wire::CodecStatus::Ok);
-            return frame;
-        }
-
-        /** @brief Returns the frame of a result that reports a task as succeeded. */
-        OutboundFrame success_frame(const Wire::TaskDispatchMessage& dispatch)
-        {
-            Wire::TaskResultMessage result;
-            result.task_id = dispatch.task_id;
-            result.status = Wire::TaskResultStatus::Succeeded;
-            result.outputs = dispatch.outputs;
-
-            OutboundFrame frame;
-            frame.type = MessageType::TaskResult;
-            EXPECT_EQ(result.encode(frame.payload), Wire::CodecStatus::Ok);
-            return frame;
-        }
-
-        /**
-         * @brief Returns the frames of a whole result: one zeroed chunk per output at its
-         *        dispatched size, then success_frame().
-         */
-        std::vector<OutboundFrame> whole_result(const Wire::TaskDispatchMessage& dispatch)
-        {
-            std::vector<OutboundFrame> frames;
-            for (const BufferHandle& output : dispatch.outputs)
-            {
-                const std::vector<std::byte> zeros(static_cast<std::size_t>(output.size_bytes));
-                frames.push_back(output_chunk_frame(
-                    dispatch.task_id, output, span<const std::byte>(zeros.data(), zeros.size())));
-            }
-            frames.push_back(success_frame(dispatch));
-            return frames;
-        }
-
-        /**
-         * @brief Yields a fixed list of frames as one stream, in order.
-         */
-        class ScriptedFrames final : public FrameSource
-        {
-            public:
-                /** @brief Takes the frames the stream yields. */
-                explicit ScriptedFrames(std::vector<OutboundFrame> frames) noexcept
-                    : frames_(std::move(frames))
-                {
-
-                }
-
-                /** @brief Hands over the next frame without copying its payload. */
-                [[nodiscard]] FrameSourceStatus next(OutboundFrame& frame) noexcept override
-                {
-                    if (next_ == frames_.size())
-                        return FrameSourceStatus::Finished;
-
-                    frame.type = frames_[next_].type;
-                    frame.flags = frames_[next_].flags;
-                    frame.payload.swap(frames_[next_].payload);
-                    ++next_;
-                    return next_ == frames_.size() ? FrameSourceStatus::FinalFrame
-                                                   : FrameSourceStatus::Frame;
-                }
-
-            private:
-                /// @brief The frames, in the order they leave.
-                std::vector<OutboundFrame> frames_;
-
-                /// @brief The index of the frame the next call hands over.
-                std::size_t next_ = 0;
-        };
-
-        /** @brief Names what a scripted worker does with a dispatch. */
-        enum class DispatchAnswer : std::uint8_t
-        {
-            Accept,     /**< Confirms the dispatch and holds the task until the test answers. */
-            Fail,       /**< Confirms the dispatch, then reports that the kernel failed. */
-            FallSilent, /**< Sends nothing from the dispatch on, not even PONG. */
-        };
-
-        /**
-         * @brief Registers with a master as a worker and answers dispatches as a test scripts.
-         *
-         * It speaks the wire protocol itself, with no WorkerAgent, and runs no kernel.
-         */
-        class ScriptedWorker final : public TransportEvents
-        {
-            public:
-                /** @brief Builds a worker that claims a kernel for @p operation. */
-                ScriptedWorker(InProcessFabric& fabric, OperationID operation, DispatchAnswer answer)
-                    : transport_(InProcessTransport::make_worker(fabric, single_connection())),
-                      operation_(operation), answer_(answer)
-                {
-                    worker_nonce_.bytes.fill(0x11);
-                }
-
-                /** @brief Stops the transport, after which no event reaches this object. */
-                ~ScriptedWorker()
-                {
-                    transport_->stop();
-                }
-
-                ScriptedWorker(const ScriptedWorker&) = delete;
-                ScriptedWorker& operator=(const ScriptedWorker&) = delete;
-                ScriptedWorker(ScriptedWorker&&) = delete;
-                ScriptedWorker& operator=(ScriptedWorker&&) = delete;
-
-                /** @brief Sets the facts HELLO reports; call before start(). */
-                void report(NodeFacts facts)
-                {
-                    facts_ = std::move(facts);
-                }
-
-                /** @brief Sets the task limit PROOF reports; call before start(). */
-                void limit_jobs(std::uint32_t max_jobs) noexcept
-                {
-                    max_jobs_ = max_jobs;
-                }
-
-                /** @brief Starts the transport and returns whether it started. */
-                [[nodiscard]] bool start()
-                {
-                    return transport_->start(*this).is_ok();
-                }
-
-                /** @brief Waits until @p count dispatches arrived, or K_WAIT. */
-                [[nodiscard]] bool wait_for_dispatches(std::size_t count)
-                {
-                    std::unique_lock<std::mutex> lock(mutex_);
-                    return changed_.wait_for(lock, K_WAIT,
-                                             [&] { return dispatches_.size() >= count; });
-                }
-
-                /** @brief Returns the number of dispatches that arrived. */
-                [[nodiscard]] std::size_t dispatch_count() const
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    return dispatches_.size();
-                }
-
-                /**
-                 * @brief Returns a copy of one dispatch.
-                 * @pre @p index is below dispatch_count().
-                 */
-                [[nodiscard]] Wire::TaskDispatchMessage dispatch(std::size_t index) const
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    return dispatches_.at(index);
-                }
-
-                /** @brief Returns the number of frames the transport did not queue. */
-                [[nodiscard]] int refused_sends() const noexcept
-                {
-                    return refused_sends_.load(std::memory_order_relaxed);
-                }
-
-                /** @brief Hands the master a stream of the given frames. */
-                [[nodiscard]] SendStatus send_stream(std::vector<OutboundFrame> frames)
-                {
-                    PeerID master;
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        master = master_;
-                    }
-                    return transport_->send_stream(
-                        master, std::make_unique<ScriptedFrames>(std::move(frames)));
-                }
-
-                /** @brief Opens the handshake on a new connection. */
-                void on_peer_connected(PeerID peer, const PeerDescription& /*info*/) override
-                {
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        master_ = peer;
-                    }
-
-                    Wire::HelloMessage hello;
-                    hello.worker_nonce = to_wire(worker_nonce_.bytes);
-                    hello.build_id = "scripted";
-                    hello.node_name = facts_.name;
-                    hello.operating_system = facts_.operating_system;
-                    for (const NodeLabel& label : facts_.labels)
-                        hello.labels.push_back(Wire::HelloLabel{label.key, label.value});
-                    for (const DeviceFacts& device : facts_.devices)
-                        hello.devices.push_back(
-                            Wire::HelloDevice{device.kind, device.name, device.memory_bytes});
-                    send(peer, hello);
-                }
-
-                /** @brief Answers CHALLENGE, PING and TASK_DISPATCH until the worker falls silent. */
-                void on_frame(PeerID peer, MessageType type, std::uint8_t /*flags*/,
-                              span<const std::byte> payload) override
-                {
-                    if (is_silent())
-                        return;
-
-                    if (type == MessageType::Challenge)
-                        answer_challenge(peer, payload);
-                    else if (type == MessageType::Ping)
-                        answer_ping(peer, payload);
-                    else if (type == MessageType::TaskDispatch)
-                        take_dispatch(peer, payload);
-                }
-
-                /** @brief Ignores a loss; the transport does not reconnect. */
-                void on_peer_lost(PeerID /*peer*/, const PeerLoss& /*loss*/) override
-                {
-
-                }
-
-                /** @brief Ignores the end of connecting, which follows every loss here. */
-                void on_connect_abandoned(const std::string& /*cause*/) override
-                {
-
-                }
-
-            private:
-                /** @brief Returns options under which a lost connection is not opened again. */
-                [[nodiscard]] static InProcessWorkerOptions single_connection()
-                {
-                    InProcessWorkerOptions options;
-                    options.reconnect = false;
-                    return options;
-                }
-
-                /** @brief Returns whether a FallSilent worker has taken its dispatch. */
-                [[nodiscard]] bool is_silent() const
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    return silent_;
-                }
-
-                /** @brief Queues one control frame and counts it when the transport refuses. */
-                template <typename Message>
-                void send(PeerID peer, const Message& message)
-                {
-                    if (send_message(*transport_, peer, message) != SendStatus::Queued)
-                        refused_sends_.fetch_add(1, std::memory_order_relaxed);
-                }
-
-                /** @brief Decodes a payload, or records a test failure and returns false. */
-                template <typename Message>
-                [[nodiscard]] static bool decode(span<const std::byte> payload, Message& message)
-                {
-                    if (Message::decode(payload, message).ok())
-                        return true;
-
-                    ADD_FAILURE() << "the master sent a " << message_type_name(Message::K_TYPE)
-                                  << " frame that does not decode";
-                    return false;
-                }
-
-                /** @brief Proves the empty secret and names the operation the worker claims. */
-                void answer_challenge(PeerID peer, span<const std::byte> payload)
-                {
-                    Wire::ChallengeMessage challenge;
-                    if (!decode(payload, challenge))
-                        return;
-
-                    Wire::ProofMessage proof;
-                    proof.worker_proof = to_wire(
-                        compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(),
-                                      worker_nonce_, to_nonce(challenge.master_nonce)));
-                    proof.ops = {operation_};
-                    proof.max_jobs = max_jobs_;
-                    send(peer, proof);
-                }
-
-                /** @brief Echoes the token of a PING. */
-                void answer_ping(PeerID peer, span<const std::byte> payload)
-                {
-                    Wire::PingMessage ping;
-                    if (!decode(payload, ping))
-                        return;
-
-                    Wire::PongMessage pong;
-                    pong.token = ping.token;
-                    send(peer, pong);
-                }
-
-                /** @brief Records a dispatch, wakes the test and answers as scripted. */
-                void take_dispatch(PeerID peer, span<const std::byte> payload)
-                {
-                    Wire::TaskDispatchMessage dispatch;
-                    if (!decode(payload, dispatch))
-                        return;
-
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        silent_ = answer_ == DispatchAnswer::FallSilent;
-                        dispatches_.push_back(dispatch);
-                    }
-                    changed_.notify_all();
-
-                    if (answer_ == DispatchAnswer::FallSilent)
-                        return;
-
-                    Wire::TaskAcceptedMessage accepted;
-                    accepted.task_id = dispatch.task_id;
-                    send(peer, accepted);
-
-                    if (answer_ != DispatchAnswer::Fail)
-                        return;
-
-                    Wire::TaskResultMessage result;
-                    result.task_id = dispatch.task_id;
-                    result.status = Wire::TaskResultStatus::KernelFailed;
-                    result.outputs = dispatch.outputs;
-                    send(peer, result);
-                }
-
-                /// @brief The worker endpoint; this object is its only event receiver.
-                std::shared_ptr<InProcessTransport> transport_;
-
-                /// @brief The operation the worker says it has a kernel for.
-                OperationID operation_;
-
-                /// @brief What the worker does with a dispatch.
-                DispatchAnswer answer_;
-
-                /// @brief The nonce the worker sends in HELLO.
-                HandshakeNonce worker_nonce_{};
-
-                /// @brief The task limit PROOF reports.
-                std::uint32_t max_jobs_ = 16;
-
-                /// @brief The facts HELLO reports; HELLO's views point into them.
-                NodeFacts facts_{"scripted-worker", OperatingSystem::Unknown, {}, {}};
-
-                /// @brief Guards master_, silent_ and dispatches_.
-                mutable std::mutex mutex_;
-
-                /// @brief Wakes wait_for_dispatches() on every dispatch.
-                std::condition_variable changed_;
-
-                /// @brief The master's peer id on the open connection.
-                PeerID master_;
-
-                /// @brief Set when a FallSilent worker took its dispatch.
-                bool silent_ = false;
-
-                /// @brief The dispatches that arrived, in order.
-                std::vector<Wire::TaskDispatchMessage> dispatches_;
-
-                /// @brief Frames the transport did not queue.
-                std::atomic<int> refused_sends_{0};
-        };
-
-        /** @brief Picks the first worker offered and keeps a copy of the facts of every offer. */
-        class FactsRecordingPolicy final : public OffloadPolicy
-        {
-            public:
-                /** @brief Holds what one call was handed about the worker it picked. */
-                struct Offer
-                {
-                    int worker_id = -1;     /**< The worker's id. */
-                    bool had_facts = false; /**< Whether the load carried facts. */
-                    NodeFacts facts;        /**< A copy of those facts. */
-                };
-
-                /** @brief Copies the facts of the first worker, then picks it. */
-                std::optional<int> pick_worker(const NodeOptions& /*task*/,
-                                               span<const WorkerLoad> workers,
-                                               std::uint64_t /*est_bytes*/) override
-                {
-                    if (workers.empty())
-                        return std::nullopt;
-
-                    const WorkerLoad& first = *workers.begin();
-                    Offer offer;
-                    offer.worker_id = first.worker_id;
-                    offer.had_facts = first.facts != nullptr;
-                    if (offer.had_facts)
-                        offer.facts = *first.facts;
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        offers_.push_back(std::move(offer));
-                    }
-                    return first.worker_id;
-                }
-
-                /** @brief Returns the offers recorded so far, in call order. */
-                [[nodiscard]] std::vector<Offer> offers() const
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    return offers_;
-                }
-
-            private:
-                /// @brief Guards offers_.
-                mutable std::mutex mutex_;
-
-                /// @brief The offers, in call order.
-                std::vector<Offer> offers_;
-        };
 
         /**
          * @brief Returns whether @p transport was never started, then stops it.
@@ -1351,7 +928,7 @@ namespace EndToEndTests
         USMFloats b(queue, K_COUNT, 2.0f);
         USMFloats out(queue, K_COUNT, K_UNWRITTEN);
 
-        const auto policy = std::make_shared<FactsRecordingPolicy>();
+        const auto policy = std::make_shared<InMemoryOffloadPolicy>();
         ClusterOptions options = eager_options();
         options.policy = policy;
         InProcessFabric fabric;
@@ -1381,6 +958,26 @@ namespace EndToEndTests
             ASSERT_TRUE(run.wait()) << "execute() did not return after the result of the worker";
         };
 
+        const auto expect_listed_facts = [&](const char* zone)
+        {
+            const std::vector<WorkerSnapshot> workers = cluster.statistics().workers;
+            ASSERT_EQ(workers.size(), 1u);
+            const NodeFacts& facts = workers[0].facts;
+            EXPECT_EQ(facts.name, "rack-7-gpu");
+            EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
+            ASSERT_EQ(facts.labels.size(), 2u);
+            EXPECT_EQ(facts.labels[0].key, "zone");
+            EXPECT_EQ(facts.labels[0].value, zone);
+            EXPECT_EQ(facts.labels[1].key, "tier");
+            EXPECT_EQ(facts.labels[1].value, "fast");
+            ASSERT_EQ(facts.devices.size(), 2u);
+            EXPECT_EQ(facts.devices[0].kind, DeviceKind::GPU);
+            EXPECT_EQ(facts.devices[0].name, "Test GPU");
+            EXPECT_EQ(facts.devices[0].memory_bytes, K_GPU_MEMORY);
+            EXPECT_EQ(facts.devices[1].kind, DeviceKind::CPU);
+            EXPECT_EQ(facts.devices[1].memory_bytes, K_CPU_MEMORY);
+        };
+
         {
             ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
             worker.report(facts_with_zone("a"));
@@ -1390,6 +987,7 @@ namespace EndToEndTests
             share(cluster, b);
             share(cluster, out);
             offload_once(worker, "before_reconnect");
+            expect_listed_facts("a");
         }
         ASSERT_TRUE(eventually([&] { return cluster.alive_workers() == 0; }))
             << "the master kept the worker after it left";
@@ -1400,30 +998,10 @@ namespace EndToEndTests
             ASSERT_TRUE(worker.start());
             ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
             offload_once(worker, "after_reconnect");
+            expect_listed_facts("b");
         }
 
-        const std::vector<FactsRecordingPolicy::Offer> offers = policy->offers();
-        ASSERT_EQ(offers.size(), 2u);
-        const char* const zones[] = {"a", "b"};
-        for (std::size_t index = 0; index < offers.size(); ++index)
-        {
-            const NodeFacts& facts = offers[index].facts;
-            ASSERT_TRUE(offers[index].had_facts)
-                << "the load of offer " << index << " had no facts";
-            EXPECT_EQ(facts.name, "rack-7-gpu");
-            EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
-            ASSERT_EQ(facts.labels.size(), 2u);
-            EXPECT_EQ(facts.labels[0].key, "zone");
-            EXPECT_EQ(facts.labels[0].value, zones[index]);
-            EXPECT_EQ(facts.labels[1].key, "tier");
-            EXPECT_EQ(facts.labels[1].value, "fast");
-            ASSERT_EQ(facts.devices.size(), 2u);
-            EXPECT_EQ(facts.devices[0].kind, DeviceKind::GPU);
-            EXPECT_EQ(facts.devices[0].name, "Test GPU");
-            EXPECT_EQ(facts.devices[0].memory_bytes, K_GPU_MEMORY);
-            EXPECT_EQ(facts.devices[1].kind, DeviceKind::CPU);
-            EXPECT_EQ(facts.devices[1].memory_bytes, K_CPU_MEMORY);
-        }
+        EXPECT_EQ(policy->calls(), 2);
     }
 
     namespace
@@ -1926,7 +1504,7 @@ namespace EndToEndTests
         USMFloats b(queue, K_COUNT, 2.0f);
         USMFloats out(queue, K_COUNT, K_UNWRITTEN);
 
-        const auto policy = std::make_shared<FactsRecordingPolicy>();
+        const auto policy = std::make_shared<InMemoryOffloadPolicy>();
         ClusterOptions options = eager_options();
         options.policy = policy;
         InProcessFabric fabric;
@@ -1955,7 +1533,7 @@ namespace EndToEndTests
         EXPECT_EQ(worker.dispatch(0).device_index, 0u);
         ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
-        EXPECT_EQ(policy->offers().size(), 1u) << "the policy did not decide the node";
+        EXPECT_EQ(policy->calls(), 1) << "the policy did not decide the node";
     }
 
     /** @brief Tests that a device-only GPU rule on a CPU-only master offloads to a GPU worker. */
@@ -3538,21 +3116,6 @@ namespace TCPFaultsTests
             SharedBytes* output = nullptr; /**< Receives the masked head of the input. */
         };
 
-        /** @brief Picks the first worker offered, so every offloadable task leaves the master. */
-        class FirstWorkerPolicy final : public OffloadPolicy
-        {
-            public:
-                /** @brief Returns the first offered worker, or nothing when none was offered. */
-                std::optional<int> pick_worker(const NodeOptions& /*task*/,
-                                               span<const WorkerLoad> workers,
-                                               std::uint64_t /*est_bytes*/) override
-                {
-                    if (workers.empty())
-                        return std::nullopt;
-                    return workers.begin()->worker_id;
-                }
-        };
-
         /** @brief Counts the ERROR lines that hold a text and lets a test wait for a count. */
         class ErrorLineCounter final
         {
@@ -3726,7 +3289,7 @@ namespace TCPFaultsTests
                 void start_master(ClusterOptions options = ClusterOptions(),
                                   const TCPMasterOptions& transport = TCPMasterOptions())
                 {
-                    options.policy = std::make_shared<FirstWorkerPolicy>();
+                    options.policy = std::make_shared<InMemoryOffloadPolicy>();
                     master_transport_ = TCPTransport::make_master(transport);
                     cluster_.emplace(
                         Cluster::attach(*master_runtime_, master_transport_, std::move(options)).value());

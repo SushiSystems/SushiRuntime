@@ -31,6 +31,9 @@ copies it. The facts belong to the worker's name, not to its `worker_id`: a work
 under the same name gets a new `worker_id` and its newest facts. `machine` is a dependency of
 this module for that type.
 
+`WorkerSnapshot::facts` holds a copy of the same `NodeFacts`, so `ClusterStatistics::workers` shows
+the facts a policy was offered, and the newest ones after a worker reconnects.
+
 `LeastLoadedOffloadPolicy` is the default. It returns nothing, which runs the task locally, when
 the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the constructor is
 given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.

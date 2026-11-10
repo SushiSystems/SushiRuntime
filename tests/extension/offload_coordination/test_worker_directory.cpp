@@ -988,6 +988,28 @@ namespace WorkerDirectoryTests
         EXPECT_EQ(workers[0].ms_since_last_frame, 600u);
     }
 
+    TEST_F(Small_WorkerDirectory, SnapshotCarriesTheFactsOfTheWorkersHello)
+    {
+        ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+
+        std::vector<WorkerSnapshot> workers;
+        directory_.snapshot(at(milliseconds(1)), workers);
+
+        ASSERT_EQ(workers.size(), 1u);
+        const NodeFacts& facts = workers[0].facts;
+        EXPECT_EQ(facts.name, "gpu-box");
+        EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
+        ASSERT_EQ(facts.labels.size(), 1u);
+        EXPECT_EQ(facts.labels[0].key, "zone");
+        EXPECT_EQ(facts.labels[0].value, "a");
+        ASSERT_EQ(facts.devices.size(), 1u);
+        EXPECT_EQ(facts.devices[0].kind, DeviceKind::GPU);
+        EXPECT_EQ(facts.devices[0].name, "Test GPU");
+        EXPECT_EQ(facts.devices[0].memory_bytes, 4096u);
+    }
+
     TEST_F(Small_WorkerDirectory, TargetNamingTheMachineLabelAndDeviceOfAProvenHelloPicksItsWorker)
     {
         ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);

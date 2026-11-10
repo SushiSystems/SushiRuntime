@@ -450,6 +450,8 @@ namespace SushiRuntime
                 worker.id = value;
                 worker.name = session.name;
                 worker.endpoint = session.endpoint;
+                if (session.facts != nullptr)
+                    worker.facts = *session.facts;
                 worker.inflight = session.inflight;
                 worker.rtt_micros = session.rtt_micros;
                 worker.free_mem = session.free_mem;

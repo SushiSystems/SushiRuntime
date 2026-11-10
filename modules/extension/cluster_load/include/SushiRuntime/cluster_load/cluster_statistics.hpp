@@ -35,6 +35,8 @@
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/machine/node_facts.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed
@@ -47,6 +49,7 @@ namespace SushiRuntime
             std::uint32_t id = 0;                  /**< The id WELCOME gave the worker. */
             std::string name;                      /**< The name the worker sent in HELLO. */
             std::string endpoint;                  /**< The worker's numeric `address:port`. */
+            NodeFacts facts;                       /**< What its HELLO sent: name, system, labels, devices. */
             std::uint32_t inflight = 0;            /**< Tasks dispatched to it and not settled. */
             std::uint32_t rtt_micros = 0;          /**< Microseconds its last PING took. */
             std::uint64_t free_mem = 0;            /**< Free device memory from its last PONG. */
