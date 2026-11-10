@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-10 — tests: Ran the `Fatal` delivery and record stamp tests of the logger small on SushiLog's manual executor and clock, and pinned SushiLog v0.4.1 (RW-117, `f1f74903`).
 - 2026-11-10 — observability: Made a device keep the tightest of four submit windows as its clock pairing, so a cold first submit no longer sets the bound (RW-134, `22893cad`).
 - 2026-11-10 — usm: Made `make_sycl_usm_source()` take the `SYCLQueues` of `make_sycl_queues()` (`e85e683f`).
 - 2026-11-10 — api: Added `Result::stored_error_text()` (RW-118, `ae7ab591`).
