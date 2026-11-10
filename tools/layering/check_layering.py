@@ -51,22 +51,6 @@ K_PLAIN_ADD_LIBRARY = re.compile(r"(?<![\w])add_library\s*\(\s*[\w${}]+(?![^)]*\
                                  re.IGNORECASE)
 
 
-def parse_tier_list_text(text: str, name: str) -> list[str]:
-    """Returns the items of one set(<name> ...) list in the text of a CMake tier file, in file order.
-
-    Raises ValueError when the text holds no such list.
-    """
-    match = re.search(rf"\bset\s*\(\s*{re.escape(name)}\s([^)]*)\)", K_CMAKE_COMMENT.sub("", text))
-    if match is None:
-        raise ValueError(f"the tier table has no set({name} ...) list")
-    return match.group(1).split()
-
-
-def parse_tier_list(path: Path, name: str) -> list[str]:
-    """Returns the items of one set(<name> ...) list in a CMake tier file read from disk."""
-    return parse_tier_list_text(path.read_text(encoding="utf-8"), name)
-
-
 @dataclass(frozen=True, slots=True)
 class Layout:
     """Holds a repository's declared tiers, its domains, its build declaration names and its settings file.

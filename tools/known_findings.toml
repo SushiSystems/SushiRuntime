@@ -1,0 +1,36 @@
+
+
+[[finding]]
+checker = "testing/check_test_odr.py"
+rule = "rule_suite_fixture_mix"
+path = "tests/engine/region_boundary/test_boundary_access.cpp"
+count = 4
+backlog = "RW-136"
+
+[[finding]]
+checker = "testing/check_test_odr.py"
+rule = "rule_unsafe_name"
+path = "tests/extension/transport/test_endpoint.cpp"
+count = 17
+backlog = "RW-136"
+
+[[finding]]
+checker = "testing/check_test_odr.py"
+rule = "rule_unsafe_name"
+path = "tests/extension/transport/test_message_type.cpp"
+count = 1
+backlog = "RW-136"
+
+[[finding]]
+checker = "testing/check_test_odr.py"
+rule = "rule_suite_fixture_mix"
+path = "tests/foundation/core/test_determinism.cpp"
+count = 3
+backlog = "RW-136"
+
+[[finding]]
+checker = "testing/check_test_odr.py"
+rule = "rule_unsafe_name"
+path = "tests/platform/numa_lookup/test_numa_lookup.cpp"
+count = 1
+backlog = "RW-136"

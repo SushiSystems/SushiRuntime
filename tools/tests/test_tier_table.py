@@ -14,12 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layering.check_layering import (  # noqa: E402
     K_CHECKER,
-    parse_tier_list,
-    parse_tier_list_text,
     rule_declared_dependencies,
     rule_public_headers,
     rule_same_tier_includes,
 )
+from layering.tier_table import parse_tier_list, parse_tier_list_text  # noqa: E402
 from settings import K_TIER_ORDER  # noqa: E402
 
 K_TEST_SIZE = "small"
