@@ -179,7 +179,7 @@ namespace
         auto step = pipeline.graph().run_async().value();
         // The step's device work finishes inside this period; the caller waits only after the next mark.
         spin_until([&step]() { return step.ready(); });
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         EXPECT_TRUE(step.wait().has_value());
     }
 

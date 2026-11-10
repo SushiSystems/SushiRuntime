@@ -30,10 +30,12 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -362,6 +364,31 @@ namespace SessionTests
             SushiRuntime::Graph graph_;                              /**< The recorded nodes. */
     };
 
+    /**
+     * @brief The gap a mark keeps from the runs on either side of it.
+     *
+     * A device span is placed on the steady clock to within its pairing's uncertainty, up to about a millisecond
+     * on the debug build, and the period that takes it is the one holding its start. A mark closer to a run than
+     * that can take the run's last span into the next period or its first into the one before.
+     */
+    constexpr std::chrono::microseconds K_MARK_CLEARANCE{3000};
+
+    /** @brief Spins for @p duration; a sleep is as coarse as the system's timer, which is longer than the gap asked for. */
+    inline void spin_for(std::chrono::microseconds duration)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + duration;
+        while (std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    }
+
+    /** @brief Marks @p timeline with K_MARK_CLEARANCE of spinning before the mark and after it. */
+    inline void mark_clear_of_runs(SushiProfiler::PeriodTimeline& timeline)
+    {
+        spin_for(K_MARK_CLEARANCE);
+        timeline.mark();
+        spin_for(K_MARK_CLEARANCE);
+    }
+
     /** @brief Returns the configuration of a session of @p warmup warm-up and @p active active periods of "run.step". */
     inline SushiProfiler::ProfilerConfig session_config(std::uint32_t warmup, std::uint32_t active)
     {
@@ -399,10 +426,10 @@ namespace SessionTests
         SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
         for (std::uint32_t period = 0; period < warmup + active; ++period)
         {
-            timeline.mark();
+            mark_clear_of_runs(timeline);
             run_period(period, timeline);
         }
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         return std::move(start.session->stop().record);
     }
 

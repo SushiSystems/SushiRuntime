@@ -20,7 +20,7 @@ and a number of active periods of the timeline `run.step`, marks the timeline on
 returns the record; `record_periods_without_source()` does the same with no source, so no observer is added to the runtime.
 
 A session test marks periods around blocking runs, so every span of a run is queued before the period closes and the consumer's
-`linger_ms` of 0 loses nothing. The one test that waits for the consumer thread is
+`linger_ms` of 0 loses nothing. `mark_clear_of_runs()` keeps `K_MARK_CLEARANCE` (3 ms, spun: a 3 ms sleep made `Large_RuntimeSessionOnAGpu` fail its pairing bound in three runs of three) between a mark and the runs on each side: a device span is placed on the steady clock only to within its pairing's uncertainty, up to about a millisecond on the debug build, and a mark closer to a run than that moved the run's last span into the next period. The one test that waits for the consumer thread is
 `AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops`, which holds a step's work for 2.5 s, past the 2 s maximum delay the source asks the consumer to keep a period open.
 
 `ObservedPipeline` is the same three-node graph in the namespace `ObserverTests`, for the tests that add observers and read observations

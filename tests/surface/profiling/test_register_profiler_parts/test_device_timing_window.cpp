@@ -68,7 +68,7 @@ namespace
             return;
         for (int extra = 0; extra < extra_periods; ++extra)
         {
-            timeline.mark();
+            mark_clear_of_runs(timeline);
             EXPECT_TRUE(pipeline.graph().run().has_value());
         }
     }
@@ -91,15 +91,15 @@ namespace
         EXPECT_TRUE(start.ok()) << start.error;
         SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
 
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         EXPECT_TRUE(start.session->pause());
         EXPECT_TRUE(pipeline.graph().run().has_value());
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         EXPECT_TRUE(start.session->resume());
         EXPECT_TRUE(pipeline.graph().run().has_value());
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         EXPECT_TRUE(pipeline.graph().run().has_value());
-        timeline.mark();
+        mark_clear_of_runs(timeline);
         return std::move(start.session->stop().record);
     }
 } // namespace
