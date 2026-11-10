@@ -57,8 +57,8 @@ the host, and a kernel recorded in one of them stops the build on the assertion 
 ## Sizes
 
 A test's size is its CTest label, taken from the prefix of its GoogleTest suite name, never from
-a folder. Every `sr_<module>_tests` program and `sr_api_allocation_tests` registers the three
-prefixes; `cmake/SushiRuntimeTests.cmake` sets the label and the time limit. A suite with no
+a folder. Every `sr_<tier>_tests` program and `sr_api_allocation_tests` registers the three
+prefixes; `cmake/SushiRuntimeTests.cmake` sets the label and the time limit per case. A suite with no
 size prefix would register no test, so `cmake/CheckTestSizes.cmake` fails the build of its
 program.
 
@@ -70,7 +70,31 @@ program.
 
 An intermittent test is quarantined by naming it in `SR_QUARANTINED_TESTS` in
 `cmake/SushiRuntimeTests.cmake`, with an entry in `docs/backlog/README.md`. It keeps its
-size and gains the label `quarantined`.
+size and gains the label `quarantined`, and it runs in a test of its own, apart from the shards.
+
+### Shards
+
+A case run in a process of its own pays the process and runtime start-up, which is most of a
+small case. `cmake/SushiRuntimeTests.cmake` registers the cases in shards instead: per module of a
+tier program (per program for `sr_api_allocation_tests` and the examples) and per size, N CTest
+tests named `<program>.<module>.<size>_shard_<i>of<N>`, each running the program with a
+`--gtest_filter` over the module's suites, `GTEST_TOTAL_SHARDS=N` and `GTEST_SHARD_INDEX=i`.
+GoogleTest splits the filtered cases between the shards, so every case runs in exactly one, and a
+shard carries the size label and the module label, so `sr test --module` still selects it. N is the
+case count of the size divided by the cases one shard holds, rounded up: `SR_SHARD_CASES_SMALL`
+(300), `_MEDIUM` (25) and `_LARGE` (1). The count comes from the `TEST`, `TEST_F`, `TEST_P`,
+`TYPED_TEST` and `TYPED_TEST_P` declarations and the typed instantiations in the module's sources,
+so a parametrised suite counts once and N is a floor. A shard's timeout is the size's time limit
+times the cases it holds.
+
+The filter also selects the instantiated names, `<prefix>/<suite>.<case>/<index>` and
+`<prefix>/<suite>/<index>.<case>`. A suite name is declared once per program, and a parametrised
+case name has no `-`: GoogleTest aborts on both.
+
+Each shard writes its cases to `test_results/gtest/<shard>.xml` in the build tree.
+`tools/testing/test_budget.py --cases <folder>` reads those files, so the per-case limits apply to
+a case in a shard. `GTEST_SHUFFLE` and `GTEST_RANDOM_SEED` of the calling environment reach every
+shard.
 
 `sr test --label <label>` runs one label; `sr test` with no label runs the three sizes. Every run
 but `--label quarantined` leaves the quarantined tests out. They run in the nightly workflow,

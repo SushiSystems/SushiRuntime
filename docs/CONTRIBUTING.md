@@ -47,7 +47,7 @@ sr build --distributed    # also compile the distributed module
 sr test                           # small, medium and large
 sr test --label small             # one size; tests/README.md gives the sizes
 sr test --module scheduler        # the tests of one module
-sr test --filter 'Steal.*'        # ctest -R over test names
+sr test --filter 'sr_engine_tests.scheduler'  # ctest -R over the shard names
 sr bench                          # the benchmark programs
 ```
 

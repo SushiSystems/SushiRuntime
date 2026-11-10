@@ -3,7 +3,7 @@
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under the Apache License 2.0. See LICENSE.
 
-cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
+cmake_minimum_required(VERSION 3.20)
 
 # The tree mirrors modules/: the tests of a module sit in tests/<tier>/<module>/, whose
 # CMakeLists.txt builds the object library sr_<module>_test_objects, linked into

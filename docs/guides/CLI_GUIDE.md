@@ -170,7 +170,7 @@ fails there. It is slower than the sized tests because it configures and compile
 CMake project.
 
 ```bash
-sr test --filter 'Steal.*'                       # only tests whose name matches the regex
+sr test --filter 'sr_engine_tests.scheduler'     # only tests whose shard name matches the regex
 sr test --type release                           # run the Release tree instead of the Debug one
 sr test --asan                                   # run the build/asan-release tree (--type asan)
 sr test --distributed                            # run against a build made with --distributed
@@ -179,7 +179,7 @@ sr test --repeat 50                              # re-run each test up to 50 tim
 sr test --jobs 3                                 # run at most 3 tests at once
 ```
 
-`--filter` (`-f`) is a `ctest -R` regex matched against `Suite.Case` names. `--repeat` (`-r`)
+`--filter` (`-f`) is a `ctest -R` regex matched against the shard names `<program>.<module>.<size>_shard_<i>of<N>`; `tests/README.md` describes the shards. `--repeat` (`-r`)
 uses CTest's `--repeat until-fail`. `--jobs` (`-j`) is passed to ctest as `--parallel`; left out,
 ctest decides and `CTEST_PARALLEL_LEVEL` holds.
 

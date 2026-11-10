@@ -167,7 +167,7 @@ def build(
     epilog="sr test  # Every size, without the quarantined tests\n"
            "sr test --label small\n"
            "sr test --module scheduler  # The tests of one module\n"
-           "sr test --filter 'Suite.Case'  # ctest -R regex\n"
+           "sr test --filter 'sr_engine_tests.scheduler'  # ctest -R over shard names\n"
            "sr test --repeat 5  # Hunt a flaky test",
 )
 def test(
