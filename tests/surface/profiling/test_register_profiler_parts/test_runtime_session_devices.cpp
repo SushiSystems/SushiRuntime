@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -96,10 +97,30 @@ namespace
         return tracks;
     }
 
-    /** @brief Expects the longest span of @p period to carry a pairing uncertainty and, outside warm-up, to outlast it. */
-    void expect_the_uncertainty_below_the_longest_span(const PeriodRecord& period)
+    /**
+     * @brief Describes the bounds of @p period, each of its spans and the spans the record lost.
+     *
+     * Printed when a period holds fewer spans than the run made, so a failure shows which span left, how
+     * far outside the period it started and what pairing uncertainty it carried.
+     */
+    std::string describe_period(const RunRecord& record, const PeriodRecord& period)
     {
-        SCOPED_TRACE(period.index);
+        std::ostringstream text;
+        text << "period " << period.index << " [" << period.begin_ns << ", " << period.end_ns << ") ns, warmup "
+             << period.warmup << ", record dropped " << record.drops.spans_dropped << " spans";
+        for (std::size_t row = 0; row < period.spans.size(); ++row)
+        {
+            const SushiProfiler::Span span = period.spans.span(row);
+            text << "\n  span " << row << " track " << record.tracks.at(span.track) << " start " << span.start_ns
+                 << " end " << span.end_ns << " uncertainty " << span.uncertainty_ns;
+        }
+        return text.str();
+    }
+
+    /** @brief Expects the longest span of @p period to carry a pairing uncertainty and, outside warm-up, to outlast it. */
+    void expect_the_uncertainty_below_the_longest_span(const RunRecord& record, const PeriodRecord& period)
+    {
+        SCOPED_TRACE(describe_period(record, period));
         ASSERT_EQ(period.spans.size(), 3u);
         const LongestSpan longest = longest_span_of(period);
         EXPECT_GT(longest.uncertainty_ns, 0u) << "a device span carries the uncertainty of its pairing";
@@ -145,9 +166,9 @@ TEST_F(Large_RuntimeSessionOnAGpu, SpansOnTheGpuHaveAPairingUncertaintyBelowThei
                                             });
 
     ASSERT_EQ(record.periods.size(), 3u);
-    expect_the_uncertainty_below_the_longest_span(record.periods[0]);
-    expect_the_uncertainty_below_the_longest_span(record.periods[1]);
-    expect_the_uncertainty_below_the_longest_span(record.periods[2]);
+    expect_the_uncertainty_below_the_longest_span(record, record.periods[0]);
+    expect_the_uncertainty_below_the_longest_span(record, record.periods[1]);
+    expect_the_uncertainty_below_the_longest_span(record, record.periods[2]);
     EXPECT_FALSE(record.periods.back().warmup) << "the active periods are the ones compared";
 }
 
