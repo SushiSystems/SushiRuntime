@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — 28 of 31 jobs done, 2 failed (M5, V1: records left undone or deferred, listed under Not done as written), R4 (the build) todo and waits on the orchestrator; see Resume
+**Status:** Open — 29 of 31 jobs done and the build and test run pass (80 of 80 shards, 2026-11-10); M5 and V1 wait on a SushiLog clock and executor (RW-117)
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -39,7 +39,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | done |
 | R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | done |
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | done |
-| R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo |
+| R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | done |
 | R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | done |
 | R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | done |
 

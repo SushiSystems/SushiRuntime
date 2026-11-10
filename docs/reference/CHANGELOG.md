@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 2026-11-10 — observability: Made a device keep the tightest of four submit windows as its clock pairing, so a cold first submit no longer sets the bound (RW-134, `22893cad`).
+- 2026-11-10 — usm: Made `make_sycl_usm_source()` take the `SYCLQueues` of `make_sycl_queues()` (`e85e683f`).
+- 2026-11-10 — api: Added `Result::stored_error_text()` (RW-118, `ae7ab591`).
+- 2026-11-10 — cluster: Added `WorkerSnapshot::facts` (`b4bc030b`).
+- 2026-11-10 — execution: Gave `make_host_topology()` and `RuntimeContext::create_host()` a device kind, CPU by default (RW-90, `33424917`).
 - 2026-11-10 — cli: Required sushicore 0.12.2, which narrows a sharded test run by `--filter` and reruns a failed shard's cases.
 - 2026-11-10 — tests: Registered the cases of each test program as CTest shards per size and module, and selected the instantiated suites (`SushiRuntimeTests.cmake`, RW-133).
 - 2026-11-09 — tests: Replaced the done-when of RW-125 by the rule of decision 74, every host-reachable case small and every device-bound case medium, and closed it (RW-125, `f53935cd`).

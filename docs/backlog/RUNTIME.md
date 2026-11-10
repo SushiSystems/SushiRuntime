@@ -5,7 +5,6 @@
 | ID | Pri | State | Title | Done when | Blocked by | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | RW-79 | P2 | open | Build the global handle design, phases H0 to H9 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
-| RW-93 | P2 | open | Use the non-deprecated parallel_for overload in distributed_kernels.hpp | test_distributed_kernels.cpp compiles under -Werror with SR_ENABLE_DISTRIBUTED on |  | `applications/examples/distributed_kernels.hpp` | 2026-11-06 |
 
 ## Known issues
 
