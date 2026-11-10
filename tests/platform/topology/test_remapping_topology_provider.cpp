@@ -81,8 +81,11 @@ TEST_P(Small_RemappingTopologyProvider, SplitsDevicesAcrossFakeNodes)
     auto inner = std::make_shared<InMemoryTopologyProvider>(devices_on_node_zero(row.devices));
     RemappingTopologyProvider remapper(inner, row.fake_nodes);
 
+    const Result<std::vector<HardwareNode>> enumerated = remapper.enumerate();
+    ASSERT_TRUE(enumerated);
+
     std::vector<int> assigned;
-    for (const HardwareNode& node : remapper.enumerate().value())
+    for (const HardwareNode& node : enumerated.value())
         assigned.push_back(node.numa_node_id);
 
     EXPECT_EQ(assigned, row.expected);
