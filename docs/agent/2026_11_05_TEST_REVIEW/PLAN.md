@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — 23 of 31 jobs done, 7 failed (M1, M4, M5, M7, M12, V1, R1: records left undone or deferred, listed under Not done as written), R4 (the build) todo and waits on the orchestrator; see Resume
+**Status:** Open — 27 of 31 jobs done, 3 failed (M5, M7, V1: records left undone or deferred, listed under Not done as written), R4 (the build) todo and waits on the orchestrator; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -18,10 +18,10 @@ writes each add. Nothing in a module job changes production code except a seam a
 | T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | done |
 | T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | done |
 | T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | done |
-| M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | failed |
+| M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | done |
 | M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M3 | the tests of `engine` (52 files): 106 rewrite, 17 resize, 25 split, 7 merge, 21 delete | T1, T2, T3, T4, T5, T6, T7 | done |
-| M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
+| M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
 | M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
@@ -29,14 +29,14 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | done |
 | M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done |
-| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
+| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | S1 | The clock, the executor, the host USM source and host device set, the host runtime and the threadless transport (decision 33) | M1 to M14 | done |
 | S2 | Host forms for NdRange, raw command group, queue body, device-sized and late-count launches (decision 34) | S1 | done |
 | V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | failed |
 | V2 | One `sr build --distributed`, `sr test -l small` and `sr test -l medium --distributed`, fixed until green | V1 | done |
-| R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | failed |
+| R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | done |
 | R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | done |
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | done |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo |
@@ -64,24 +64,14 @@ and adapters; their plans wait on T1 and T2.
 A job is `failed` while a record of its module, or a ruling it names, is not applied in the tree. Each item below gives the record, the
 `REPORT.md` decision that covers it and the backlog entry that holds it. "(owner)" marks a shape the owner reserves.
 
-- **M1.** `TheKernelAddsTwoVectors` of `test_distributed_kernels.cpp`: the split is applied, but the test builds only when
-  `distributed_kernels.hpp` uses the non-deprecated `parallel_for` overload. REPORT decision: none. Backlog: RW-93.
-- **M4.** Records of `test_distributed.cpp` (`PolicySeesWorkerFactsAcrossReconnect`, `UnmatchedNodeIsPlacedByThePolicy`): the rewrite reads the facts
-  through `ClusterStatistics::workers`, but both tests still install the `FactsRecordingPolicy` spy (lines 1354 and 1929). Decisions 21 and 22
-  delete the hand-made stand-ins, and `ScriptedWorker` (line 599) and `FirstWorkerPolicy` (line 3542) remain. REPORT decision: none, the dispatch note
-  says only that the in-memory policy records no facts. Backlog: none.
-- **M5.** The `Result` stored-error death tests stay `Medium_ResultDeathTest` (`test_result.cpp`). REPORT decision: none. Backlog: RW-118 (owner).
-  The `Fatal` delivery test of `test_logger.cpp` stays `Medium_`. REPORT decision: 77. Backlog: RW-117 (owner).
-- **M7.** The records left medium for want of a seam or dropped as internal-only: the data and detail seams (RW-108), the `NodeStamp` parameter copy
-  (RW-109), the placement, pool, error-text, empty-check and slot seams (RW-110), the chain-versus-bare-SYCL allocation claims of `test_sushiruntime.cpp`
-  (RW-113), and `force_scheduler` with the `advanced()` context link (RW-114). REPORT decision: none, decision 14 sends such a record to a backlog
-  entry. Backlog: RW-108, RW-109, RW-110, RW-113, RW-114 (all owner).
-- **M12.** `Medium_MemoryExchangeImport` still skips with `GTEST_SKIP` when device 0 is not a GPU (`test_memory_exchange.cpp` line 100). REPORT decision: 10
-  names RW-89 only. Backlog: RW-90.
-- **V1.** The `Fatal` delivery case of the medium audit is a LOGIC case that stays medium until SushiLog takes a clock and an executor. REPORT decision: 77,
-  which defers it. Backlog: RW-117 (owner).
-- **R1.** Decision 37 asks that `usm_allocator.hpp` and `sycl_usm_source.hpp` include no SYCL header; `sycl_usm_source.hpp` line 36 still includes
-  `<sycl/sycl.hpp>`. REPORT decision: 37, which states the clause is not met. Backlog: none (owner).
+- **M5.** The `Fatal` delivery test of `test_logger.cpp` stays `Medium_`: it needs SushiLog to take a clock and an executor, and SushiLog is another
+  repository. REPORT decisions: 77, 84. Backlog: RW-117 (owner). The `Result` death tests are applied (decision 83).
+- **M7.** Applied in part (decision 85): RW-108's three predicates and RW-110's pool cases. Left: the residency check and the `LateCount` slot read (RW-108),
+  the error-text, placement-class, local-device, empty-check and device-list seams (RW-110), the `NodeStamp` parameter copy (RW-109), the chain-versus-bare-SYCL
+  allocation claims of `test_sushiruntime.cpp` (RW-113), and `force_scheduler` with the `advanced()` context link (RW-114). Each needs a decision on a public name over
+  source-private code, or has no public path. REPORT decision: 85. Backlog: RW-108, RW-109, RW-110, RW-113, RW-114 (all owner).
+- **V1.** The `Fatal` delivery case of the medium audit is a LOGIC case that stays medium until SushiLog takes a clock and an executor. REPORT decisions: 77, 84.
+  Backlog: RW-117 (owner).
 - **R4.** Not started in this plan. The build, `sr test -l small` and `sr test -l medium` with per-module counts are the orchestrator's.
 
 Backlog entries RW-83, RW-84, RW-85 and RW-86 are still open, but the tree holds their fixes (T5): the two no-line log tests assert the sink saw a line
