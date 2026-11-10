@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — 27 of 31 jobs done, 3 failed (M5, M7, V1: records left undone or deferred, listed under Not done as written), R4 (the build) todo and waits on the orchestrator; see Resume
+**Status:** Open — 28 of 31 jobs done, 2 failed (M5, V1: records left undone or deferred, listed under Not done as written), R4 (the build) todo and waits on the orchestrator; see Resume
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -24,7 +24,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
 | M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | done |
-| M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
+| M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | done |
 | M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
@@ -66,10 +66,6 @@ A job is `failed` while a record of its module, or a ruling it names, is not app
 
 - **M5.** The `Fatal` delivery test of `test_logger.cpp` stays `Medium_`: it needs SushiLog to take a clock and an executor, and SushiLog is another
   repository. REPORT decisions: 77, 84. Backlog: RW-117 (owner). The `Result` death tests are applied (decision 83).
-- **M7.** Applied in part (decision 85): RW-108's three predicates and RW-110's pool cases. Left: the residency check and the `LateCount` slot read (RW-108),
-  the error-text, placement-class, local-device, empty-check and device-list seams (RW-110), the `NodeStamp` parameter copy (RW-109), the chain-versus-bare-SYCL
-  allocation claims of `test_sushiruntime.cpp` (RW-113), and `force_scheduler` with the `advanced()` context link (RW-114). Each needs a decision on a public name over
-  source-private code, or has no public path. REPORT decision: 85. Backlog: RW-108, RW-109, RW-110, RW-113, RW-114 (all owner).
 - **V1.** The `Fatal` delivery case of the medium audit is a LOGIC case that stays medium until SushiLog takes a clock and an executor. REPORT decisions: 77, 84.
   Backlog: RW-117 (owner).
 - **R4.** Not started in this plan. The build, `sr test -l small` and `sr test -l medium` with per-module counts are the orchestrator's.
