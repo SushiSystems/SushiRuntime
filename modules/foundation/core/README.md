@@ -262,7 +262,8 @@ rvalue, so `auto plan = graph.compile().value();` moves the plan out. Calling an
 wrong side is a rule the caller broke, so it stops the process through `SR_VERIFY`. For a value
 accessor on an `Error` the handler prints the stored message, so a program that calls `value()`
 without a check stops with the reason on standard error. For another error type the handler prints
-"the Result holds an error".
+"the Result holds an error". `stored_error_text()` returns that line without
+stopping: the stored message, the fixed line, or an empty text when a value is held.
 
 ## span.hpp
 

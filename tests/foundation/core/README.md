@@ -106,8 +106,10 @@ starts threads and is `Medium_`.
 
 The file covers the accessors of `Result`: `value()` and `operator*` on a const, a non-const and
 an expiring `Result`, `operator->` on a const and a non-const one, and `error()` on both. It covers
-`Result<void>` too. An accessor used on the wrong side stops the process, so those cases are death
-tests in the suite `Medium_ResultDeathTest`, which GoogleTest runs before the other suites.
+`Result<void>` too. The text an accessor stops the process with is `stored_error_text()`, read in
+`Small_Result` without a stop. An accessor used on the wrong side stops the process; that stop is a
+process death, so those cases are death tests in the suite `Medium_ResultDeathTest`, medium by
+nature because each starts a child process, which GoogleTest runs before the other suites.
 
 ### `K_ERROR_OF_VALUE`, `K_VALUE_OF_ERROR`, `lost_device`
 
@@ -137,10 +139,11 @@ through the non-const form is read back through the const one.
 Each of the six value accessors on a `Result` that holds `lost_device()` stops the process, and
 the line the handler writes holds "lost the device".
 
-### `EveryValueAccessorOnAnErrorOfAnotherTypeStops`
+### `TheStopTextOf...`
 
-For a `Result` whose error type is `int`, the same six accessors stop the process with the text
-of `K_VALUE_OF_ERROR`.
+`stored_error_text()` is the line the handler writes. For an `Error` it is the stored message; for
+another error type, a `Result<void, int>` included, it is the fixed line of `K_VALUE_OF_ERROR`; for a
+value or a void success it is empty. Six small tests state the rows.
 
 ### `ErrorOnAValueStops`
 
@@ -153,8 +156,8 @@ A default-constructed `Result<void>` is a success, and `value()` returns. One bu
 
 ### `VoidValueOnAnErrorStopsWithTheStoredMessage`, `VoidErrorOnSuccessStops`
 
-`value()` on a failed `Result<void>` stops the process with the stored message, or with
-`K_VALUE_OF_ERROR` when the error type is `int`. `error()` on a success stops the process.
+`value()` on a failed `Result<void>` stops the process with the stored message. `error()` on a
+success stops the process.
 
 ## test_span.cpp
 

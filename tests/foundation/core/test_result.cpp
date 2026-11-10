@@ -104,6 +104,49 @@ namespace
         EXPECT_EQ(result_view.error().message, "rewritten");
     }
 
+    TEST(Small_Result, TheStopTextOfAnErrorIsItsStoredMessage)
+    {
+        const Result<int> failed(make_error(lost_device()));
+
+        EXPECT_STREQ(failed.stored_error_text(), "lost the device");
+    }
+
+    TEST(Small_Result, TheStopTextOfAnErrorOfAnotherTypeIsAFixedLine)
+    {
+        const Result<int, int> failed(make_error(7));
+
+        EXPECT_STREQ(failed.stored_error_text(), K_VALUE_OF_ERROR);
+    }
+
+    TEST(Small_Result, TheStopTextOfAValueIsEmpty)
+    {
+        const Result<int> number(5);
+
+        EXPECT_STREQ(number.stored_error_text(), "");
+    }
+
+    TEST(Small_Result, TheStopTextOfAFailedVoidResultIsItsStoredMessage)
+    {
+        const Result<void> failed(make_error(lost_device()));
+
+        EXPECT_STREQ(failed.stored_error_text(), "lost the device");
+    }
+
+    TEST(Small_Result, TheStopTextOfAFailedVoidResultOfAnotherTypeIsAFixedLine)
+    {
+        const Result<void, int> failed(make_error(7));
+
+        EXPECT_STREQ(failed.stored_error_text(), K_VALUE_OF_ERROR);
+    }
+
+    TEST(Small_Result, TheStopTextOfAVoidSuccessIsEmpty)
+    {
+        const Result<void> done;
+
+        EXPECT_STREQ(done.stored_error_text(), "");
+    }
+
+    /** @brief Tests that each value accessor on an error stops the process with the stored message; a death test. */
     TEST(Medium_ResultDeathTest, EveryValueAccessorOnAnErrorStopsWithTheStoredMessage)
     {
         Result<int> number(make_error(lost_device()));
@@ -117,21 +160,6 @@ namespace
         EXPECT_DEATH(static_cast<void>(*number_view), "lost the device");
         EXPECT_DEATH(static_cast<void>(text->size()), "lost the device");
         EXPECT_DEATH(static_cast<void>(text_view->size()), "lost the device");
-    }
-
-    TEST(Medium_ResultDeathTest, EveryValueAccessorOnAnErrorOfAnotherTypeStops)
-    {
-        Result<int, int> number(make_error(7));
-        const Result<int, int>& number_view = number;
-        Result<std::string, int> text(make_error(7));
-        const Result<std::string, int>& text_view = text;
-
-        EXPECT_DEATH(static_cast<void>(number.value()), K_VALUE_OF_ERROR);
-        EXPECT_DEATH(static_cast<void>(number_view.value()), K_VALUE_OF_ERROR);
-        EXPECT_DEATH(static_cast<void>(*number), K_VALUE_OF_ERROR);
-        EXPECT_DEATH(static_cast<void>(*number_view), K_VALUE_OF_ERROR);
-        EXPECT_DEATH(static_cast<void>(text->size()), K_VALUE_OF_ERROR);
-        EXPECT_DEATH(static_cast<void>(text_view->size()), K_VALUE_OF_ERROR);
     }
 
     TEST(Medium_ResultDeathTest, AValueAccessorOnAnExpiringErrorStops)
@@ -181,10 +209,8 @@ namespace
     TEST(Medium_ResultDeathTest, VoidValueOnAnErrorStopsWithTheStoredMessage)
     {
         const Result<void> failed(make_error(lost_device()));
-        const Result<void, int> numbered(make_error(7));
 
         EXPECT_DEATH(failed.value(), "lost the device");
-        EXPECT_DEATH(numbered.value(), K_VALUE_OF_ERROR);
     }
 
     TEST(Medium_ResultDeathTest, VoidErrorOnSuccessStops)

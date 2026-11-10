@@ -213,13 +213,25 @@ namespace SushiRuntime
                 return *std::get_if<1>(&data_);
             }
 
+            /**
+             * @brief Returns the text value() stops the process with when an error is stored.
+             * @return The stored message of an Error, a fixed line for any other error type, and
+             *         an empty text when a value is stored.
+             */
+            [[nodiscard]] const char* stored_error_text() const noexcept
+            {
+                if (has_value())
+                    return "";
+                return Detail::describe_stored_error(*std::get_if<1>(&data_));
+            }
+
         private:
             /**
              * @brief Stops the process with the stored error's text when no value is stored.
              */
             void verify_value() const noexcept
             {
-                SR_VERIFY(has_value(), Detail::describe_stored_error(*std::get_if<1>(&data_)));
+                SR_VERIFY(has_value(), stored_error_text());
             }
 
             /// @brief The value at index 0, the error at index 1.
@@ -263,7 +275,7 @@ namespace SushiRuntime
              */
             void value() const noexcept
             {
-                SR_VERIFY(has_value(), Detail::describe_stored_error(*error_));
+                SR_VERIFY(has_value(), stored_error_text());
             }
 
             /**
@@ -284,6 +296,18 @@ namespace SushiRuntime
             {
                 SR_VERIFY(!has_value(), "Result::error() needs a Result that holds an error");
                 return *error_;
+            }
+
+            /**
+             * @brief Returns the text value() stops the process with when an error is stored.
+             * @return The stored message of an Error, a fixed line for any other error type, and
+             *         an empty text when a value is stored.
+             */
+            [[nodiscard]] const char* stored_error_text() const noexcept
+            {
+                if (has_value())
+                    return "";
+                return Detail::describe_stored_error(*error_);
             }
 
         private:
