@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -38,7 +37,10 @@
 
 #include <SushiLog/log/log_calls.hpp>
 #include <SushiLog/log/log_category.hpp>
+#include <SushiLog/log/log_clock.hpp>
+#include <SushiLog/log/log_executor.hpp>
 #include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_manual.hpp>
 #include <SushiLog/log/log_project.hpp>
 #include <SushiLog/log/log_record.hpp>
 #include <SushiLog/log/log_sink.hpp>
@@ -121,16 +123,10 @@ namespace
             SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
     };
 
-    /** @brief The logger tests that touch no thread and read no clock of their own. */
+    /** @brief The logger tests: no thread of the logger's own runs, and the clock and the executor are the test's. */
     class Small_LoggerTest : public LoggerTest
     {
     };
-
-    /** @brief The logger tests that read the clock or hand a record to another thread. */
-    class Medium_LoggerTest : public LoggerTest
-    {
-    };
-
 }
 
 /** @brief Tests that a call below its category's level leaves its arguments unevaluated. */
@@ -199,30 +195,33 @@ TEST_F(Small_LoggerTest, SinkReceivesEveryFieldAndTheLine)
     EXPECT_EQ(record.thread, std::this_thread::get_id());
 }
 
-/** @brief Tests that the record is stamped with a time not earlier than the call that made it. */
-TEST_F(Medium_LoggerTest, RecordIsStampedNotBeforeTheCall)
+/** @brief Tests that the record is stamped with the time the logger's clock reads. */
+TEST_F(Small_LoggerTest, RecordIsStampedWithTheClockTime)
 {
     SeenRecords records;
     SushiLog::set_log_sink(collect_into(&records));
-    const std::int64_t before = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                    std::chrono::system_clock::now().time_since_epoch())
-                                    .count();
+    SushiLog::ManualLogClock clock(1'000);
+    const SushiLog::ScopedLogClock scoped_clock(clock.as_log_clock());
+    clock.advance(234);
 
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "stamped");
 
     ASSERT_EQ(records.size(), 1u);
-    EXPECT_GE(records[0].time_ns, before);
+    EXPECT_EQ(records[0].time_ns, 1'234);
 }
 
 /** @brief Tests that a FATAL record reaches the sink after every queued one, on the caller. */
-TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
+TEST_F(Small_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
 {
     SeenRecords records;
     SushiLog::set_log_sink(collect_into(&records));
-
+    SushiLog::ManualLogExecutor executor;
+    const SushiLog::ScopedLogExecutor scoped_executor(executor.as_log_executor());
     SushiLog::set_log_synchronous(false);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "queued {}", 0);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "queued {}", 1);
+    EXPECT_TRUE(records.empty());
+
     SR_LOG_FATAL(K_ALPHA_LOG_CATEGORY, "cannot continue");
 
     ASSERT_EQ(records.size(), 3u);
@@ -232,4 +231,3 @@ TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
     EXPECT_NE(records[2].line.find("[FATAL]"), std::string::npos) << records[2].line;
     EXPECT_EQ(records[2].thread, std::this_thread::get_id());
 }
-

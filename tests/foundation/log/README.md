@@ -13,10 +13,11 @@ The file covers the `SR_LOG_*` macros over SushiLog: their gates, the record the
 tested there. Its state lives in the SushiLog library, so every test changes state that the next
 test would inherit.
 
-### `LoggerTest`, `Small_LoggerTest`, `Medium_LoggerTest`
+### `LoggerTest`, `Small_LoggerTest`
 
-`LoggerTest` is the fixture base. `Small_LoggerTest` holds the tests that touch no thread and no clock, and
-`Medium_LoggerTest` the ones that read the clock or queue a record. The fixture puts the logger in synchronous mode and sets the test project to `Warn` before each
+`LoggerTest` is the fixture base. `Small_LoggerTest` holds every test of the file: none starts a thread of the
+logger's own, and the ones that need a clock or an executor install SushiLog's `ManualLogClock` and
+`ManualLogExecutor`. The fixture puts the logger in synchronous mode and sets the test project to `Warn` before each
 test, and afterwards restores the default sink and the level the project had. A test sink captures a pointer
 to a local vector, so the default sink has to be back before that vector dies.
 
@@ -41,16 +42,16 @@ Each field must arrive apart: the level, `logger_test` and `alpha`, the file wit
 line, a thread number and the message alone. The line must join
 them as `[WARN] [logger_test.alpha] [tN] [test_logger.cpp:L] message`.
 
-### `RecordIsStampedNotBeforeTheCall`
+### `RecordIsStampedWithTheClockTime`
 
-Medium, since the logger stamps the record from the system clock. The record's time is no earlier than a
-reading taken just before the call.
+A `ManualLogClock` starts at 1000 ns and advances by 234 ns before the call. The record's time is 1234.
 
 ### `FatalIsDeliveredAfterTheQueueOnTheCallingThread`
 
-Two `WARN` records are queued in asynchronous mode, then a `FATAL` one is logged. When the `FATAL`
+A `ManualLogExecutor` holds the delivery, so the sink sees nothing of the two `WARN` records queued in
+asynchronous mode. Then a `FATAL` one is logged. When the `FATAL`
 call returns the sink must have the three, in order, with the `FATAL` one delivered on the test's
-own thread. The test does not end the process; a caller of `SR_LOG_FATAL` does.
+own thread, with no thread of the logger's own involved. The test does not end the process; a caller of `SR_LOG_FATAL` does.
 
 ## test_log_gate.cpp
 

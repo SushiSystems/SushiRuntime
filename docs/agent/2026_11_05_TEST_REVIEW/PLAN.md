@@ -1,6 +1,6 @@
 # Test review: plan
 
-**Status:** Open — 29 of 31 jobs done and the build and test run pass (80 of 80 shards, 2026-11-10); M5 and V1 wait on a SushiLog clock and executor (RW-117)
+**Status:** Open — 31 of 31 jobs done; the build and test run of 2026-11-10 (80 of 80 shards) predates the M5 and V1 change, so R4 reruns it
 
 Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
 rewrites need come first, then the defects the review found, then each module's tests. A module job
@@ -22,7 +22,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M3 | the tests of `engine` (52 files): 106 rewrite, 17 resize, 25 split, 7 merge, 21 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done |
-| M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | failed |
+| M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
@@ -34,7 +34,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done |
 | S1 | The clock, the executor, the host USM source and host device set, the host runtime and the threadless transport (decision 33) | M1 to M14 | done |
 | S2 | Host forms for NdRange, raw command group, queue body, device-sized and late-count launches (decision 34) | S1 | done |
-| V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | failed |
+| V1 | Every LOGIC case of the medium audit moved onto its seam as `Small_`, one `Medium_` per boundary, folder by folder | S1 | done |
 | V2 | One `sr build --distributed`, `sr test -l small` and `sr test -l medium --distributed`, fixed until green | V1 | done |
 | R1 | The ten SOLID breaches of the review of 23bf5b2f..25c16ecc, as written (decision 37) | V2 | done |
 | R2 | RW-127, RW-129, RW-126, the platform ports (queue factory, device enumerator, hwloc NUMA reader, USMShared source) and the audit's LOGIC cases moved onto them | R1 | done |
@@ -64,10 +64,6 @@ and adapters; their plans wait on T1 and T2.
 A job is `failed` while a record of its module, or a ruling it names, is not applied in the tree. Each item below gives the record, the
 `REPORT.md` decision that covers it and the backlog entry that holds it. "(owner)" marks a shape the owner reserves.
 
-- **M5.** The `Fatal` delivery test of `test_logger.cpp` stays `Medium_`: it needs SushiLog to take a clock and an executor, and SushiLog is another
-  repository. REPORT decisions: 77, 84. Backlog: RW-117 (owner). The `Result` death tests are applied (decision 83).
-- **V1.** The `Fatal` delivery case of the medium audit is a LOGIC case that stays medium until SushiLog takes a clock and an executor. REPORT decisions: 77, 84.
-  Backlog: RW-117 (owner).
 - **R4.** Not started in this plan. The build, `sr test -l small` and `sr test -l medium` with per-module counts are the orchestrator's.
 
 Backlog entries RW-83, RW-84, RW-85 and RW-86 are still open, but the tree holds their fixes (T5): the two no-line log tests assert the sink saw a line
@@ -77,13 +73,13 @@ first, the core-count and device-count tests are small, `test_before_step_hooks.
 ## Resume
 
 Worker 12, 2026-11-09, after decision 74; statuses audited against the tree on 2026-11-10. Closed in the plan: S2, R5, R2, R3 (the rows were stale; RW-126, RW-128,
-RW-129 and RW-131 are closed and decisions 42, 47, 64, 66 and 74 settle what stays medium) and R6. V1 stays failed on the `Fatal` delivery case. Nothing built or run; the new and changed test files pass
+RW-129 and RW-131 are closed and decisions 42, 47, 64, 66 and 74 settle what stays medium) and R6. Nothing built or run; the new and changed test files pass
 `clang -fsyntax-only`. Not done:
 
 1. R4: the build, `sr test -l small` and `sr test -l medium`, per-module counts. The orchestrator runs them.
 2. RW-111 is ruled (decision 75): `run_for` reads the runtime context's clock, and a test advances a `ManualClock` to end a budget. Its
    new case is unverified until the build.
-3. RW-117 stays open (decision 77): SushiLog takes no clock, so the entry belongs to SushiLog and is not this plan's to close.
+3. RW-117 is closed (decision 87): SushiLog v0.4.1 gave the logger an executor and a clock, and the `Fatal` delivery test runs small.
    RW-125 is ruled (decision 76): its done-when is decision 74's rule, and it is closed.
 4. Unverified until the build: the six new `Small_DescriptorRefusal` and `Small_DeviceRefusal` rows, and the reduced
    `Medium_InteropImport` suite, which now holds one region row in place of the parameterised refusals.
