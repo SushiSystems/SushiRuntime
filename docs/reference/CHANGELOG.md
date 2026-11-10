@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-10 — cli: Required sushicore 0.12.2, which narrows a sharded test run by `--filter` and reruns a failed shard's cases.
 - 2026-11-10 — tests: Registered the cases of each test program as CTest shards per size and module, and selected the instantiated suites (`SushiRuntimeTests.cmake`, RW-133).
 - 2026-11-09 — tests: Replaced the done-when of RW-125 by the rule of decision 74, every host-reachable case small and every device-bound case medium, and closed it (RW-125, `f53935cd`).
 - 2026-11-09 — api: Timed `run_for` on the clock the runtime context holds, so a host runtime on a `ManualClock` ends a budgeted run when a step body advances it (RW-111, `aa51520e`).
