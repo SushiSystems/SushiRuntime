@@ -57,7 +57,6 @@
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/probe_tasks/order_recorder.hpp>
-#include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
@@ -916,7 +915,6 @@ namespace SchedulerStressTests
     using namespace SushiRuntime::Internal::Scheduler;
     using SushiRuntime::Test::make_scheduler;
     using SushiRuntime::Test::AtomicCounterTask;
-    using SushiRuntime::Test::PriorityTrackingTask;
 
     namespace
     {
@@ -1016,36 +1014,5 @@ namespace SchedulerStressTests
         std::generate(executed.begin(), executed.end(), [&ctx] { return executed_in_one_cycle(ctx); });
 
         EXPECT_EQ(executed, std::vector<std::size_t>(K_CYCLES, K_TASKS_PER_CYCLE));
-    }
-
-    /**
-     * @brief Tests high-priority task bypassing.
-     *
-     * A high-priority task must bypass the queue even behind many low-priority ones.
-     */
-    TEST(Large_TaskSchedulerStress, PriorityBypassUnderLoad)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::vector<int> execution_order;
-        std::mutex order_mutex;
-
-        scheduler.start();
-        // Do NOT arm yet, so tasks stay in the injector.
-        for (int i = 0; i < 50; ++i)
-            scheduler.submit(new PriorityTrackingTask(0, execution_order, order_mutex));
-        scheduler.submit(new PriorityTrackingTask(100, execution_order, order_mutex));
-        scheduler.arm_for_execution();
-
-        scheduler.wait_quiescent();
-        scheduler.stop();
-
-        ASSERT_EQ(execution_order.size(), 51u);
-        const std::size_t window = std::min<std::size_t>(scheduler.worker_count() * 2, execution_order.size());
-        const auto first_batch_end = execution_order.begin() + static_cast<std::ptrdiff_t>(window);
-        EXPECT_NE(std::find(execution_order.begin(), first_batch_end, 100), first_batch_end)
-            << "High priority task was not executed in the first batch!";
     }
 } // namespace SchedulerStressTests

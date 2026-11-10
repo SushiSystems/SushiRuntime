@@ -824,3 +824,30 @@ TEST(Small_TaskScheduler, ALateHighPriorityNodeRunsFirstOnOneWorker)
     EXPECT_EQ(order.front(), 100);
 }
 
+/**
+ * @brief Tests that a priority node submitted last runs first on a pool of four workers.
+ *
+ * The nodes are queued before the pool starts, and the rounds run on the test's thread. The first
+ * round to run reads the priority queue before its own deque or any steal, whichever worker it is.
+ */
+TEST(Small_TaskScheduler, ALateHighPriorityNodeRunsFirstOnFourWorkers)
+{
+    SteppedScheduler stepped;
+    const auto scheduler = stepped.make(4);
+    std::vector<int> order;
+    std::vector<sushi_ptr<Node>> nodes;
+    for (int index = 0; index < 50; ++index)
+        nodes.push_back(make_ordered_node(0, order));
+    nodes.push_back(make_ordered_node(100, order));
+    scheduler->arm_for_execution();
+    submit_all(*scheduler, nodes);
+
+    scheduler->start();
+    stepped.settle();
+    scheduler->wait_quiescent();
+    scheduler->stop();
+
+    ASSERT_EQ(order.size(), 51u);
+    EXPECT_EQ(order.front(), 100);
+}
+

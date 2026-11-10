@@ -221,6 +221,7 @@ worker threads: it checks the thread shell around the same rounds. Heavy load is
 | --- | --- |
 | `Medium_SchedulerIntegration.ExecutesExactlySubmitted` | The scheduler runs exactly the 2000 tasks submitted; the test waits on `wait_quiescent()`. |
 | `Small_TaskScheduler.ALateHighPriorityNodeRunsFirstOnOneWorker` | A priority node submitted after fifty others runs first. The pool has one worker and the nodes are queued before `start()`, so the order is the scheduler's alone. |
+| `Small_TaskScheduler.ALateHighPriorityNodeRunsFirstOnFourWorkers` | The same with four workers: the first round to run takes the priority node before its own deque or a steal, so it runs first whichever worker that is. Submitting before `arm_for_execution()` on a started pool promises no order, because the workers drain at once, so no test does it. |
 | `Small_TaskScheduler.AbruptStopDrains` | `stop()` right after `submit`, before any round ran, drains every one of the 1000 submitted nodes. |
 | `Medium_TaskScheduler.AWorkerCountOfZeroAsksForOneWorkerPerLogicalCore` | A worker count of 0 gives the platform's `hardware_concurrency` count, up to the pool maximum. |
 
