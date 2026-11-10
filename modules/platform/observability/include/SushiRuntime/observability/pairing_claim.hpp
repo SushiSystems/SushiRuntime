@@ -51,25 +51,24 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Holds one dispatch's claim on its device's clock pairing across its submit call.
+         * @brief Holds one dispatch's claim on a pairing candidate of its device across its submit call.
          *
          * The steady window spans the whole submit call: a kernel's single submit, or a task body
-         * with every submission it makes. The pairing's uncertainty is that call's length.
+         * with every submission it makes. The candidate's uncertainty is that call's length.
          * @see modules/platform/observability/README.md
          */
         class PairingClaim
         {
         public:
             /**
-             * @brief Claims @p device's pairing for @p task when @p ledger is set and no task holds it.
+             * @brief Claims a candidate for @p key when @p ledger is set and the device has one free.
              * @param ledger The run's ledger, or null when the dispatch must not claim.
-             * @param device The device the dispatch submits to.
-             * @param task Identity of the dispatch.
+             * @param key The device, task and step of the dispatch.
              */
-            PairingClaim(ProfilingLedger* ledger, std::uint32_t device, const void* task) noexcept
-                : device_(device), task_(task)
+            PairingClaim(ProfilingLedger* ledger, const PairingKey& key) noexcept
+                : key_(key)
             {
-                if (ledger != nullptr && ledger->claim_pairing_owner(device, task))
+                if (ledger != nullptr && ledger->claim_pairing_owner(key))
                 {
                     ledger_ = ledger;
                     t0_ = std::chrono::steady_clock::now();
@@ -90,18 +89,17 @@ namespace SushiRuntime
                     return false;
                 if (!submitted)
                 {
-                    ledger_->release_pairing_owner(device_, task_);
+                    ledger_->release_pairing_owner(key_);
                     return true;
                 }
                 const auto t1 = std::chrono::steady_clock::now();
-                ledger_->set_pairing_submit_window(device_, steady_ns(t0_), steady_ns(t1) - steady_ns(t0_));
+                ledger_->set_pairing_submit_window(key_, steady_ns(t0_), steady_ns(t1) - steady_ns(t0_));
                 return false;
             }
 
         private:
             ProfilingLedger* ledger_ = nullptr;          /**< Set only when the claim won. */
-            std::uint32_t device_;                       /**< The claimed device. */
-            const void* task_;                           /**< The claiming dispatch. */
+            PairingKey key_;                             /**< The claiming dispatch. */
             std::chrono::steady_clock::time_point t0_{}; /**< Steady reading before the submit. */
         };
     } // namespace Observability

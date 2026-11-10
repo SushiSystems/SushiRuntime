@@ -42,9 +42,9 @@ namespace SushiRuntime
      */
     struct ClockPairing
     {
-        std::uint64_t event_ns       = 0; /**< Event-clock reading of the device's first submission in the run. */
+        std::uint64_t event_ns       = 0; /**< Event-clock reading of the submission that produced the pairing. */
         std::uint64_t steady_ns      = 0; /**< Steady-clock reading taken beside event_ns. */
-        std::uint64_t uncertainty_ns = 0; /**< Steady-clock spread across the submit call that produced the pairing. */
+        std::uint64_t uncertainty_ns = 0; /**< Length of the submit window steady_ns starts; event_ns lies inside it. */
     };
 
     /** @brief Holds the pairing of one device's event clock for one run. */

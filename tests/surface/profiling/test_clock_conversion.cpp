@@ -105,3 +105,27 @@ TEST(Small_ClockConversion, SaturatesTheUncertaintyAt32Bits)
     EXPECT_EQ(saturate_uncertainty(std::uint64_t{K_LARGEST} + 1), K_LARGEST);
     EXPECT_EQ(saturate_uncertainty(std::numeric_limits<std::uint64_t>::max()), K_LARGEST);
 }
+
+/**
+ * @brief Tests that the stated uncertainty bounds the error of a converted time.
+ *
+ * The pairing's steady reading starts the window of its submit call, so the true steady instant of
+ * its event reading is anywhere from the reading to the reading plus the uncertainty. Whichever
+ * instant it is, a converted event time is off its true steady time by at most the uncertainty.
+ */
+TEST(Small_ClockConversion, TheStatedUncertaintyBoundsTheErrorOfAConvertedTime)
+{
+    const std::vector<std::uint64_t> events{4000, 5000, 5001, 5300, 9000};
+
+    for (std::uint64_t offset = 0; offset <= K_PAIRING.uncertainty_ns; ++offset)
+    {
+        const std::uint64_t true_instant = K_PAIRING.steady_ns + offset;
+        for (const std::uint64_t event : events)
+        {
+            const std::uint64_t truth = true_instant + event - K_PAIRING.event_ns;
+            const std::uint64_t converted = to_steady_ns(K_PAIRING, event);
+            const std::uint64_t error = converted > truth ? converted - truth : truth - converted;
+            EXPECT_LE(error, K_PAIRING.uncertainty_ns) << "event " << event << " offset " << offset;
+        }
+    }
+}

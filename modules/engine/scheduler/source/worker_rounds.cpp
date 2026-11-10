@@ -477,10 +477,12 @@ namespace SushiRuntime
                     if (auto* ledger = run_.ledger.load(std::memory_order_acquire))
                         ledger->note_drop(DropCause::NoQueue, DropCounts::K_NO_NODE);
 
+                // One read of the step names the candidate and the event, so the reap finds its claim.
+                const std::uint32_t dispatch_step = run_.current_step.load(std::memory_order_acquire);
                 Internal::Observability::PairingClaim claim(
                     claims_pairing(profiling, host, node) ? run_.ledger.load(std::memory_order_acquire)
                                                            : nullptr,
-                    dispatch_device, task);
+                    Internal::Observability::PairingKey{dispatch_device, task, dispatch_step});
 
                 // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
                 sycl::event e;
@@ -495,7 +497,7 @@ namespace SushiRuntime
 
                 // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).
                 events.push(dispatched_event(e, submitted, task, node, profiling,
-                                             run_.current_step.load(std::memory_order_acquire),
+                                             dispatch_step,
                                              dispatch_device, std::move(handed_over)));
             });
             if (!ran)

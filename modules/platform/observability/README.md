@@ -11,6 +11,7 @@ It depends on the C++ standard library, the SYCL headers and `report`.
 | Header | Holds |
 | --- | --- |
 | `profiling_ledger.hpp` | `ProfilingLedger`, the per-plan store of node event records, `DispatchFacts` and `DispatchTimes` |
+| `tighter_pairing.hpp` | `tighter_pairing()`, the choice of the shorter window between two pairings of one device |
 | `event_timestamps.hpp` | `EventTimestamps`, the function that reads them from a SYCL event, and the ones that merge the events of one dispatch |
 | `transfer_counters.hpp` | `TransferCounters`, the byte counters of explicit host and device transfers |
 
@@ -53,15 +54,24 @@ index and event-clock times.
 
 ### Clock pairings
 
-The first device submission to reach a device in a run, a kernel or a task body, claims that
-device's pairing with a compare-exchange. release_pairing_owner() gives a claim back when the
-submission turned out to submit nothing. `PairingClaim` (`pairing_claim.hpp`) is the one way a
-dispatch claims: it claims, times the submit call with `steady_ns()`, and on `settle()` records that
-window or gives the claim back. The scheduler and the chain run both use it.
-The claim is per device, since two devices may not share an event clock. collect_pairings() appends a
-`DeviceClock` for each device whose owner's event timestamps were read; a device that ran no device submission,
-or whose owner's event could not be read, has none, and its spans cannot be placed on the steady
-clock.
+The first `K_PAIRING_CANDIDATES` device submissions to reach a device in a run, kernels or task bodies,
+each claim one pairing candidate with a compare-exchange, keyed by device, task and step.
+release_pairing_owner() gives a candidate back when the submission turned out to submit nothing.
+`PairingClaim` (`pairing_claim.hpp`) is the one way a dispatch claims: it claims, times the submit call
+with `steady_ns()`, and on `settle()` records that window or gives the candidate back. The scheduler and
+the chain run both use it.
+
+A candidate pairs the event reading of its submission, read at reap, with the steady clock at the start of
+its submit call, and its uncertainty is that call's length: the event reading was stamped inside the call,
+so its true steady instant lies in `[steady_ns, steady_ns + uncertainty_ns]` and a converted time is off by
+at most the uncertainty. Every candidate is a true bound on its own, so the device's pairing is the one with
+the shortest window (`tighter_pairing()`, `tighter_pairing.hpp`). A first submit right after the device
+idled is long, since it carries a cold driver and queue, and a later submit of the same run replaces it.
+
+The candidates are per device, since two devices may not share an event clock. collect_pairings() appends a
+`DeviceClock` for each device with a candidate whose event timestamps were read; a device that ran no device
+submission, or whose candidates' events could not be read, has none, and its spans cannot be placed on the
+steady clock.
 
 ### Dropped dispatches
 

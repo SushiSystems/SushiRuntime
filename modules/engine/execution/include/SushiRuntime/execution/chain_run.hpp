@@ -145,7 +145,6 @@ namespace SushiRuntime
                 Profile::Collector& collector_; /**< The context's collector this run's zones record into. */
                 sycl::queue& queue_;            /**< In-order queue on the plan's device. */
                 bool profiling_;                /**< Whether the plan requested profiling. */
-                bool pairing_claimed_ = false;  /**< Whether this run already tried the clock pairing. */
                 bool finished_ = false;         /**< Whether finish() drained the queue. */
                 RunMark run_mark_;              /**< The run's mark; last, so it outlasts the drain. */
         };

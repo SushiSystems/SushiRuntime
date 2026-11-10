@@ -201,16 +201,14 @@ namespace SushiRuntime
             Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             const Internal::Scheduler::Task* task = &node;
             const std::uint32_t device = static_cast<std::uint32_t>(graph_.chain.queue_index);
-            // A task body submits device work as a kernel node does, so the first node of either kind claims.
-            Internal::Observability::PairingClaim claim(pairing_claimed_ ? nullptr : &ledger, device, task);
-            pairing_claimed_ = true;
+            // A task body submits device work as a kernel node does, so the first nodes of either kind claim.
+            Internal::Observability::PairingClaim claim(&ledger, Internal::Observability::PairingKey{device, task, step});
 
             std::vector<sycl::event> handed_over;
             sycl::event event = submit_node(node, handed_over);
-            // A body that submitted nothing has no event to pair, so the next node claims instead.
+            // A body that submitted nothing has no event to pair, so it gives its candidate back.
             const bool host = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host;
-            if (claim.settle(Internal::Scheduler::submitted_device_work(host, true, event, handed_over)))
-                pairing_claimed_ = false;
+            claim.settle(Internal::Scheduler::submitted_device_work(host, true, event, handed_over));
 
             graph_.chain.pending_events.push_back(
                 Internal::Graph::PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node),
@@ -237,8 +235,9 @@ namespace SushiRuntime
                 }
 
                 const Internal::Scheduler::Task* task = pe.node;
-                if (times.has_submit && ledger.is_pairing_owner(device, task))
-                    ledger.set_pairing_event_ns(device, times.submit_ns);
+                if (times.has_submit)
+                    ledger.set_pairing_event_ns(Internal::Observability::PairingKey{device, task, pe.step},
+                                                times.submit_ns);
 
                 Internal::Observability::DispatchFacts facts;
                 facts.node_index = index;

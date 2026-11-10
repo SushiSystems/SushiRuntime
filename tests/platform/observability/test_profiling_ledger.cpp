@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -41,6 +42,7 @@
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Observability::DispatchFacts;
 using SushiRuntime::Internal::Observability::DispatchTimes;
+using SushiRuntime::Internal::Observability::PairingKey;
 using SushiRuntime::Internal::Observability::ProfilingLedger;
 
 namespace
@@ -125,9 +127,10 @@ namespace
     void pair_device_zero(ProfilingLedger& ledger)
     {
         const int owner = 0;
-        EXPECT_TRUE(ledger.claim_pairing_owner(0, &owner));
-        ledger.set_pairing_submit_window(0, K_STEADY_NS, 7);
-        ledger.set_pairing_event_ns(0, K_EVENT_NS);
+        const PairingKey key{0, &owner, 0};
+        EXPECT_TRUE(ledger.claim_pairing_owner(key));
+        ledger.set_pairing_submit_window(key, K_STEADY_NS, 7);
+        ledger.set_pairing_event_ns(key, K_EVENT_NS);
     }
 
     /** @brief Returns the pairings the ledger collects. */
@@ -225,7 +228,7 @@ TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerClaimsNothingBeforeReserve)
     const ProfilingLedger target = move_out_of(source, GetParam());
 
     EXPECT_EQ(source.claim_slot(0), ProfilingLedger::npos);
-    EXPECT_FALSE(source.claim_pairing_owner(0, &owner));
+    EXPECT_FALSE(source.claim_pairing_owner(PairingKey{0, &owner, 0}));
 }
 
 TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerReservesLikeAFreshOne)
@@ -292,19 +295,20 @@ TEST(Small_ProfilingLedger, ARecordOnTheHostDeviceKeepsTheHostIndexAndUnknownWid
     EXPECT_EQ(records[0].live_width, K_WIDTH_UNKNOWN);
 }
 
-/** @brief Tests that a device has one pairing owner per run. */
-TEST(Small_ProfilingLedger, ADeviceHasOnePairingOwnerPerRun)
+/** @brief Tests that a device keeps K_PAIRING_CANDIDATES candidates per run and refuses the next claim. */
+TEST(Small_ProfilingLedger, ADeviceKeepsAFewPairingCandidatesPerRun)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 3);
-    int first_owner = 0;
-    int second_owner = 0;
+    std::array<int, ProfilingLedger::K_PAIRING_CANDIDATES + 1> tasks{};
 
-    EXPECT_TRUE(ledger.claim_pairing_owner(0, &first_owner));
+    for (std::size_t i = 0; i < ProfilingLedger::K_PAIRING_CANDIDATES; ++i)
+        EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &tasks[i], 0})) << "candidate " << i;
 
-    EXPECT_FALSE(ledger.claim_pairing_owner(0, &second_owner));
-    EXPECT_TRUE(ledger.is_pairing_owner(0, &first_owner));
-    EXPECT_FALSE(ledger.is_pairing_owner(0, &second_owner));
+    const PairingKey refused{0, &tasks[ProfilingLedger::K_PAIRING_CANDIDATES], 0};
+    EXPECT_FALSE(ledger.claim_pairing_owner(refused));
+    EXPECT_TRUE(ledger.is_pairing_owner(PairingKey{0, &tasks[0], 0}));
+    EXPECT_FALSE(ledger.is_pairing_owner(refused));
 }
 
 /** @brief Tests that each device claims its own pairing independently. */
@@ -314,9 +318,9 @@ TEST(Small_ProfilingLedger, EachDeviceClaimsItsOwnPairing)
     ledger.reserve({1}, 1, 3);
     int owner = 0;
 
-    EXPECT_TRUE(ledger.claim_pairing_owner(0, &owner));
-    EXPECT_TRUE(ledger.claim_pairing_owner(1, &owner));
-    EXPECT_TRUE(ledger.claim_pairing_owner(2, &owner));
+    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &owner, 0}));
+    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{1, &owner, 0}));
+    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{2, &owner, 0}));
 }
 
 /** @brief Tests that a device past the ledger claims nothing and owns nothing. */
@@ -326,8 +330,66 @@ TEST(Small_ProfilingLedger, ADevicePastTheLedgerClaimsNothing)
     ledger.reserve({1}, 1, 3);
     int owner = 0;
 
-    EXPECT_FALSE(ledger.claim_pairing_owner(3, &owner));
-    EXPECT_FALSE(ledger.is_pairing_owner(3, &owner));
+    EXPECT_FALSE(ledger.claim_pairing_owner(PairingKey{3, &owner, 0}));
+    EXPECT_FALSE(ledger.is_pairing_owner(PairingKey{3, &owner, 0}));
+}
+
+/** @brief Tests that a released candidate is free again, so a full device claims once one is given back. */
+TEST(Small_ProfilingLedger, AReleasedCandidateIsClaimedAgain)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    std::array<int, ProfilingLedger::K_PAIRING_CANDIDATES + 1> tasks{};
+    for (std::size_t i = 0; i < ProfilingLedger::K_PAIRING_CANDIDATES; ++i)
+        ASSERT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &tasks[i], 0}));
+    const PairingKey late{0, &tasks[ProfilingLedger::K_PAIRING_CANDIDATES], 0};
+    ASSERT_FALSE(ledger.claim_pairing_owner(late));
+
+    ledger.release_pairing_owner(PairingKey{0, &tasks[1], 0});
+
+    EXPECT_FALSE(ledger.is_pairing_owner(PairingKey{0, &tasks[1], 0}));
+    EXPECT_TRUE(ledger.claim_pairing_owner(late));
+}
+
+/** @brief Tests that one task claiming in two steps holds two candidates, and each step's event reaches its own. */
+TEST(Small_ProfilingLedger, TheSameTaskInTwoStepsHoldsTwoCandidates)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    int task = 0;
+    const PairingKey first{0, &task, 1};
+    const PairingKey second{0, &task, 2};
+    ASSERT_TRUE(ledger.claim_pairing_owner(first));
+    ASSERT_TRUE(ledger.claim_pairing_owner(second));
+    ledger.set_pairing_submit_window(first, 1000, 90);
+    ledger.set_pairing_submit_window(second, 2000, 10);
+
+    ledger.set_pairing_event_ns(second, 7000);
+    ledger.set_pairing_event_ns(first, 6000);
+
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_EQ(clocks[0].pairing.event_ns, 7000u) << "the event of step 2 is paired with the window of step 2";
+    EXPECT_EQ(clocks[0].pairing.steady_ns, 2000u);
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 10u);
+}
+
+/** @brief Tests that the first event reading of a candidate stays when a second dispatch of its key is reaped. */
+TEST(Small_ProfilingLedger, TheFirstEventReadingOfACandidateStays)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    int task = 0;
+    const PairingKey key{0, &task, 0};
+    ASSERT_TRUE(ledger.claim_pairing_owner(key));
+    ledger.set_pairing_submit_window(key, 1000, 20);
+
+    ledger.set_pairing_event_ns(key, 500);
+    ledger.set_pairing_event_ns(key, 9999);
+
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_EQ(clocks[0].pairing.event_ns, 500u);
 }
 
 /** @brief Tests that a device whose owner never read its event has no pairing to report. */
@@ -336,9 +398,10 @@ TEST(Small_ProfilingLedger, ADeviceThatNeverReadItsEventHasNoPairing)
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 3);
     int owner = 0;
-    ASSERT_TRUE(ledger.claim_pairing_owner(2, &owner));
+    const PairingKey key{2, &owner, 0};
+    ASSERT_TRUE(ledger.claim_pairing_owner(key));
 
-    ledger.set_pairing_submit_window(2, 3000, 40);
+    ledger.set_pairing_submit_window(key, 3000, 40);
 
     EXPECT_TRUE(pairings_of(ledger).empty());
 }
@@ -350,12 +413,14 @@ TEST(Small_ProfilingLedger, TheStoredPairingsAreReportedPerDevice)
     ledger.reserve({1}, 1, 3);
     int first_owner = 0;
     int second_owner = 0;
-    ASSERT_TRUE(ledger.claim_pairing_owner(0, &first_owner));
-    ASSERT_TRUE(ledger.claim_pairing_owner(1, &second_owner));
-    ledger.set_pairing_submit_window(0, 1000, 20);
-    ledger.set_pairing_event_ns(0, 500);
-    ledger.set_pairing_submit_window(1, 2000, 30);
-    ledger.set_pairing_event_ns(1, 9000);
+    const PairingKey first{0, &first_owner, 0};
+    const PairingKey second{1, &second_owner, 0};
+    ASSERT_TRUE(ledger.claim_pairing_owner(first));
+    ASSERT_TRUE(ledger.claim_pairing_owner(second));
+    ledger.set_pairing_submit_window(first, 1000, 20);
+    ledger.set_pairing_event_ns(first, 500);
+    ledger.set_pairing_submit_window(second, 2000, 30);
+    ledger.set_pairing_event_ns(second, 9000);
 
     const std::vector<DeviceClock> clocks = pairings_of(ledger);
 
@@ -369,21 +434,70 @@ TEST(Small_ProfilingLedger, TheStoredPairingsAreReportedPerDevice)
     EXPECT_EQ(clocks[1].pairing.steady_ns, 2000u);
 }
 
+/** @brief Tests that a cold first submit with a long window loses to a later, shorter one. */
+TEST(Small_ProfilingLedger, TheTightestWindowIsTheDevicesPairing)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    int cold = 0;
+    int warm = 0;
+    int warmer = 0;
+    const PairingKey keys[] = {{0, &cold, 0}, {0, &warm, 0}, {0, &warmer, 0}};
+    constexpr std::uint64_t K_STEADY[] = {1000, 2000, 3000};
+    constexpr std::uint64_t K_WINDOW[] = {192200, 35, 20};
+    constexpr std::uint64_t K_EVENT[] = {100, 1100, 2100};
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        ASSERT_TRUE(ledger.claim_pairing_owner(keys[i]));
+        ledger.set_pairing_submit_window(keys[i], K_STEADY[i], K_WINDOW[i]);
+        ledger.set_pairing_event_ns(keys[i], K_EVENT[i]);
+    }
+
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 20u);
+    EXPECT_EQ(clocks[0].pairing.steady_ns, 3000u);
+    EXPECT_EQ(clocks[0].pairing.event_ns, 2100u);
+}
+
+/** @brief Tests that a candidate with no event reading never wins, however short its window. */
+TEST(Small_ProfilingLedger, ACandidateWithNoEventIsNotChosen)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    int read = 0;
+    int unread = 0;
+    const PairingKey with_event{0, &read, 0};
+    const PairingKey without_event{0, &unread, 0};
+    ASSERT_TRUE(ledger.claim_pairing_owner(with_event));
+    ASSERT_TRUE(ledger.claim_pairing_owner(without_event));
+    ledger.set_pairing_submit_window(with_event, 1000, 500);
+    ledger.set_pairing_event_ns(with_event, 10);
+    ledger.set_pairing_submit_window(without_event, 2000, 1);
+
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 500u);
+}
+
 /** @brief Tests that the next reserve() clears the claims, so a run starts with no pairing. */
 TEST(Small_ProfilingLedger, AReserveClearsThePairings)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 1);
     int owner = 0;
-    ASSERT_TRUE(ledger.claim_pairing_owner(0, &owner));
-    ledger.set_pairing_event_ns(0, 1);
+    const PairingKey key{0, &owner, 0};
+    ASSERT_TRUE(ledger.claim_pairing_owner(key));
+    ledger.set_pairing_event_ns(key, 1);
 
     ledger.reserve({1}, 1, 1);
 
     std::vector<DeviceClock> clocks;
     ledger.collect_pairings(clocks);
     EXPECT_TRUE(clocks.empty());
-    EXPECT_TRUE(ledger.claim_pairing_owner(0, &owner)) << "the claim is free again";
+    EXPECT_TRUE(ledger.claim_pairing_owner(key)) << "the claim is free again";
 }
 
 class Small_ProfilingLedgerOverflow : public ::testing::TestWithParam<OverflowRow>

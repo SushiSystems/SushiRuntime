@@ -35,9 +35,23 @@ How one dispatch claims its device's clock pairing, keeps it or gives it back.
 | --- | --- |
 | `Small_PairingClaim.ASubmittedClaimKeepsThePairing` | A claim that submitted keeps the device's pairing, and collect returns the event reading stored. |
 | `Small_PairingClaim.TheWindowOfAClaimStartsAtASteadyReading` | The pairing of a claim carries a steady reading above zero. |
-| `Small_PairingClaim.AClaimThatSubmittedNothingIsGivenUp` | A claim that submitted nothing is given up, so the next dispatch claims the device. |
-| `Small_PairingClaim.ALosingClaimChangesNothing` | A claim with no ledger or on a held device leaves the ledger as it was. |
+| `Small_PairingClaim.AClaimThatSubmittedNothingIsGivenUp` | A claim that submitted nothing is given up, so the next dispatch can claim its candidate. |
+| `Small_PairingClaim.ALosingClaimChangesNothing` | A claim with no ledger, or on a device whose candidates are all held, leaves the ledger as it was. |
+| `Small_PairingClaim.TheFirstDispatchesOfADeviceEachKeepACandidate` | The first dispatches of a device each keep a candidate, so a cold first submit is not the only one. |
 | `Small_PairingClaim.SteadyNsCountsNanosecondsSinceTheEpoch` | steady_ns() counts the nanoseconds of a time point since the steady clock's epoch. |
+
+## test_tighter_pairing.cpp
+
+`tighter_pairing()`, the pure choice between two pairings of one device: the shorter window wins, the kept one on a tie.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_TighterPairing.AShorterWindowReplacesALongerOne` | A warm pairing replaces a cold one with a longer window. |
+| `Small_TighterPairing.ALongerWindowKeepsTheKeptPairing` | A cold candidate arriving after a warm one does not replace it. |
+| `Small_TighterPairing.EqualWindowsKeepTheKeptPairing` | Two equal windows keep the pairing already kept. |
+| `Small_TighterPairing.APairingIsChosenWholeNotFieldByField` | A window of zero beats every other, and the pairing travels whole. |
+| `Small_TighterPairing.TheTightestOfSeveralIsChosenInAnyOrder` | The tightest of a run's candidates is chosen whatever order they come in. |
+| `Small_TighterPairing.TheChosenWindowIsNoLongerThanAnyCandidates` | The chosen window is never longer than any candidate's, so a cold first submit does not inflate it. |
 
 ## test_profiling_ledger.cpp
 
@@ -74,11 +88,16 @@ counted as `FullRow` and not stored, the first drop names its node, and nothing 
 | --- | --- |
 | `RecordFillsEveryField` | record() fills every field of the record it stores. |
 | `ARecordOnTheHostDeviceKeepsTheHostIndexAndUnknownWidths` | A record made on the host device with unknown widths keeps them. |
-| `ADeviceHasOnePairingOwnerPerRun` | A second claim on a device that has an owner fails. |
+| `ADeviceKeepsAFewPairingCandidatesPerRun` | A device keeps K_PAIRING_CANDIDATES candidates per run and refuses the next claim. |
 | `EachDeviceClaimsItsOwnPairing` | Three devices are claimed one after another. |
 | `ADevicePastTheLedgerClaimsNothing` | A device past the ledger claims nothing and owns nothing. |
+| `AReleasedCandidateIsClaimedAgain` | A released candidate is free again, so a full device claims once one is given back. |
+| `TheSameTaskInTwoStepsHoldsTwoCandidates` | One task claiming in two steps holds two candidates, and each step's event reaches its own. |
+| `TheFirstEventReadingOfACandidateStays` | The first event reading of a candidate stays when a second dispatch of its key is reaped. |
 | `ADeviceThatNeverReadItsEventHasNoPairing` | A device whose owner never read its event reports no pairing. |
 | `TheStoredPairingsAreReportedPerDevice` | The pairings of the devices that read their events are reported with their values. |
+| `TheTightestWindowIsTheDevicesPairing` | A cold first submit with a long window loses to a later, shorter one. |
+| `ACandidateWithNoEventIsNotChosen` | A candidate with no event reading never wins, however short its window. |
 | `AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
 | `TheNextReserveSizesARowToTheDemand` | The run after an overflow sizes the row to the demand and loses nothing. |
 | `CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |

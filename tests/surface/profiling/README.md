@@ -75,6 +75,7 @@ The conversion of a device's event clock to the steady clock through its pairing
 | `Small_ClockConversion.ATimeBeforeTheOriginReadsZero` | A time before the steady clock's origin reads 0 and does not wrap. |
 | `Small_ClockConversion.AnEventClockFarAheadOfTheSteadyClockConverts` | The pairing's event clock may be far larger than the steady one, as a GPU counter is. |
 | `Small_ClockConversion.SaturatesTheUncertaintyAt32Bits` | An uncertainty that fits 32 bits is kept and one that does not saturates. |
+| `Small_ClockConversion.TheStatedUncertaintyBoundsTheErrorOfAConvertedTime` | A converted time is off its true steady time by at most the stated uncertainty, whichever instant of the window the pairing's event reading took. |
 
 
 ## test_device_track_name.cpp

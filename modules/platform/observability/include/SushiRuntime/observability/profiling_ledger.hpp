@@ -41,6 +41,7 @@
 #include <SushiRuntime/report/clock_pairing.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/report/drop_counts.hpp>
+#include <SushiRuntime/observability/tighter_pairing.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
 
 namespace SushiRuntime
@@ -66,6 +67,14 @@ namespace SushiRuntime
             std::uint64_t end_ns = 0;    /**< When it ended. */
         };
 
+        /** @brief Names one dispatch's claim on its device's clock pairing. */
+        struct PairingKey
+        {
+            std::uint32_t device = 0;     /**< The device the dispatch submits to. */
+            const void* task = nullptr;   /**< Identity of the dispatch's task. */
+            std::uint32_t step = 0;       /**< Step of the run the dispatch belongs to. */
+        };
+
         /**
          * @brief Stores one run's node event records per plan, at a high-water-mark size.
          * @see modules/platform/observability/README.md
@@ -75,6 +84,9 @@ namespace SushiRuntime
         public:
             /** @brief Sentinel returned by claim_slot() when a node's row is full. */
             static constexpr std::uint32_t npos = static_cast<std::uint32_t>(-1);
+
+            /** @brief Pairing candidates a device keeps per run; the tightest one is the pairing. */
+            static constexpr std::size_t K_PAIRING_CANDIDATES = 4;
 
             ProfilingLedger() = default;
 
@@ -99,7 +111,7 @@ namespace SushiRuntime
              * @brief Grows the ledger for a new run and resets its per-run state.
              * @param multiplicities Internal nodes per registration index; its size is the row count.
              * @param expected_invocations Dispatches per internal node the run is expected to make.
-             * @param device_count Devices whose clock pairings the run may claim.
+             * @param device_count Devices whose clock pairings the run may claim, K_PAIRING_CANDIDATES each.
              * @throws std::bad_alloc When growing the rows or their storage fails.
              */
             void reserve(const std::vector<std::uint32_t>& multiplicities,
@@ -144,7 +156,7 @@ namespace SushiRuntime
                 if (device_count != device_count_)
                 {
                     device_count_ = device_count;
-                    pairings_ = std::make_unique<PairingSlot[]>(device_count_ ? device_count_ : 1);
+                    pairings_ = std::make_unique<PairingSlot[]>((device_count_ ? device_count_ : 1) * K_PAIRING_CANDIDATES);
                 }
 
                 reset_cursors();
@@ -244,105 +256,148 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Claims @p device's clock pairing for this run; true for the winner.
+             * @brief Claims a pairing candidate for the dispatch @p key names; true for the winner.
              *
-             * The owner is the synchronizing atomic: a winning compare_exchange publishes task
-             * with release, and is_pairing_owner() reads it with acquire, so a reaping worker on
-             * another thread never observes a half-written owner.
-             * @return False when another task holds the claim or @p device is out of range.
+             * A device keeps up to K_PAIRING_CANDIDATES candidates per run, one per dispatch. A
+             * reaping worker finds a claim only once ready is set, so it never sees a half-written one.
+             * @return False when every candidate of the device is held or @p key.device is out of range.
              */
-            bool claim_pairing_owner(std::uint32_t device, const void* task) noexcept
+            bool claim_pairing_owner(const PairingKey& key) noexcept
             {
-                if (device >= device_count_)
+                if (key.device >= device_count_)
                     return false;
-                const void* expected = nullptr;
-                return pairings_[device].owner.compare_exchange_strong(
-                    expected, task, std::memory_order_acq_rel, std::memory_order_relaxed);
+                for (std::size_t i = 0; i < K_PAIRING_CANDIDATES; ++i)
+                {
+                    PairingSlot& slot = slot_at(key.device, i);
+                    const void* expected = nullptr;
+                    if (!slot.owner.compare_exchange_strong(expected, key.task, std::memory_order_acq_rel,
+                                                            std::memory_order_relaxed))
+                        continue;
+                    slot.step.store(key.step, std::memory_order_relaxed);
+                    slot.ready.store(true, std::memory_order_release);
+                    return true;
+                }
+                return false;
             }
 
             /**
-             * @brief Gives up @p device's claim when @p task holds it, so a later submission can claim it.
+             * @brief Gives up the candidate @p key holds, so a later submission can claim it.
              *
-             * A task body that submitted nothing has no event to pair; keeping its claim would leave
-             * the device with no pairing for the run.
+             * A task body that submitted nothing has no event to pair; keeping its claim would use
+             * a candidate that can never hold a pairing.
              */
-            void release_pairing_owner(std::uint32_t device, const void* task) noexcept
+            void release_pairing_owner(const PairingKey& key) noexcept
             {
-                if (device >= device_count_)
+                PairingSlot* slot = find_slot(key);
+                if (slot == nullptr)
                     return;
-                const void* expected = task;
-                pairings_[device].owner.compare_exchange_strong(
-                    expected, nullptr, std::memory_order_acq_rel, std::memory_order_relaxed);
+                slot->ready.store(false, std::memory_order_release);
+                slot->owner.store(nullptr, std::memory_order_release);
             }
 
-            /** @brief Whether task is the pairing-owning submission of @p device. */
-            bool is_pairing_owner(std::uint32_t device, const void* task) const noexcept
+            /** @brief Whether @p key holds a pairing candidate. */
+            bool is_pairing_owner(const PairingKey& key) const noexcept
             {
-                return device < device_count_ &&
-                       pairings_[device].owner.load(std::memory_order_acquire) == task;
+                return find_slot(key) != nullptr;
             }
 
-            /** @brief Records the steady-clock window the pairing owner's submit call spanned. */
-            void set_pairing_submit_window(std::uint32_t device, std::uint64_t steady_ns,
+            /** @brief Records the steady-clock window the candidate's submit call spanned. */
+            void set_pairing_submit_window(const PairingKey& key, std::uint64_t steady_ns,
                                            std::uint64_t uncertainty_ns) noexcept
             {
-                if (device >= device_count_)
+                PairingSlot* slot = find_slot(key);
+                if (slot == nullptr)
                     return;
-                pairings_[device].steady_ns.store(steady_ns, std::memory_order_release);
-                pairings_[device].uncertainty_ns.store(uncertainty_ns, std::memory_order_release);
+                slot->steady_ns.store(steady_ns, std::memory_order_release);
+                slot->uncertainty_ns.store(uncertainty_ns, std::memory_order_release);
             }
 
-            /** @brief Records the pairing owner's event-clock submit reading, read at reap. */
-            void set_pairing_event_ns(std::uint32_t device, std::uint64_t event_ns) noexcept
+            /** @brief Records the candidate's event-clock submit reading, read at reap; the first reading stays. */
+            void set_pairing_event_ns(const PairingKey& key, std::uint64_t event_ns) noexcept
             {
-                if (device >= device_count_)
+                PairingSlot* slot = find_slot(key);
+                if (slot == nullptr || slot->has_event.load(std::memory_order_acquire))
                     return;
-                pairings_[device].event_ns.store(event_ns, std::memory_order_release);
-                pairings_[device].has_event.store(true, std::memory_order_release);
+                slot->event_ns.store(event_ns, std::memory_order_release);
+                slot->has_event.store(true, std::memory_order_release);
             }
 
             /**
-             * @brief Appends one DeviceClock for every device whose pairing owner read its event.
+             * @brief Appends one DeviceClock for every device with a candidate whose event was read.
              *
-             * A device that ran no kernel, or whose owner's event could not be read, has no entry.
+             * The pairing of a device is the candidate with the shortest window (tighter_pairing()).
+             * A device that ran no kernel, or whose candidates' events could not be read, has no entry.
              */
             void collect_pairings(std::vector<DeviceClock>& out) const
             {
                 for (std::size_t device = 0; device < device_count_; ++device)
                 {
-                    const PairingSlot& slot = pairings_[device];
-                    if (!slot.has_event.load(std::memory_order_acquire))
-                        continue;
                     DeviceClock clock;
                     clock.device_index = static_cast<std::uint32_t>(device);
-                    clock.pairing = ClockPairing{slot.event_ns.load(std::memory_order_acquire),
-                                                 slot.steady_ns.load(std::memory_order_acquire),
-                                                 slot.uncertainty_ns.load(std::memory_order_acquire)};
-                    out.push_back(clock);
+                    bool found = false;
+                    for (std::size_t i = 0; i < K_PAIRING_CANDIDATES; ++i)
+                    {
+                        const PairingSlot& slot = slot_at(device, i);
+                        if (!slot.has_event.load(std::memory_order_acquire))
+                            continue;
+                        const ClockPairing candidate{slot.event_ns.load(std::memory_order_acquire),
+                                                     slot.steady_ns.load(std::memory_order_acquire),
+                                                     slot.uncertainty_ns.load(std::memory_order_acquire)};
+                        clock.pairing = found ? tighter_pairing(clock.pairing, candidate) : candidate;
+                        found = true;
+                    }
+                    if (found)
+                        out.push_back(clock);
                 }
             }
 
         private:
-            /** @brief One device's claim on the run's clock pairing. */
+            /** @brief One candidate of a device's clock pairing for the run. */
             struct PairingSlot
             {
-                std::atomic<const void*> owner{nullptr};  /**< Task identity that claimed the pairing. */
+                std::atomic<const void*> owner{nullptr};  /**< Task identity that claimed the candidate. */
+                std::atomic<std::uint32_t> step{0};           /**< Step of the claiming dispatch. */
+                std::atomic<bool> ready{false};               /**< Whether owner and step are both written. */
                 std::atomic<std::uint64_t> steady_ns{0};      /**< Steady reading beside the pairing submission. */
                 std::atomic<std::uint64_t> uncertainty_ns{0}; /**< Steady spread across the pairing submit call. */
                 std::atomic<std::uint64_t> event_ns{0};       /**< Pairing submission's command_submit, at reap. */
                 std::atomic<bool> has_event{false};           /**< Whether event_ns was read. */
             };
 
-            /** @brief Clears every device's pairing claim. */
+            /** @brief Returns candidate @p index of @p device. */
+            PairingSlot& slot_at(std::size_t device, std::size_t index) const noexcept
+            {
+                return pairings_[device * K_PAIRING_CANDIDATES + index];
+            }
+
+            /** @brief Returns the ready candidate @p key claimed, or null when it holds none. */
+            PairingSlot* find_slot(const PairingKey& key) const noexcept
+            {
+                if (key.device >= device_count_)
+                    return nullptr;
+                for (std::size_t i = 0; i < K_PAIRING_CANDIDATES; ++i)
+                {
+                    PairingSlot& slot = slot_at(key.device, i);
+                    if (slot.ready.load(std::memory_order_acquire) &&
+                        slot.owner.load(std::memory_order_acquire) == key.task &&
+                        slot.step.load(std::memory_order_relaxed) == key.step)
+                        return &slot;
+                }
+                return nullptr;
+            }
+
+            /** @brief Clears every candidate of every device. */
             void reset_pairings() noexcept
             {
-                for (std::size_t device = 0; device < device_count_; ++device)
+                for (std::size_t i = 0; i < device_count_ * K_PAIRING_CANDIDATES; ++i)
                 {
-                    pairings_[device].owner.store(nullptr, std::memory_order_relaxed);
-                    pairings_[device].steady_ns.store(0, std::memory_order_relaxed);
-                    pairings_[device].uncertainty_ns.store(0, std::memory_order_relaxed);
-                    pairings_[device].event_ns.store(0, std::memory_order_relaxed);
-                    pairings_[device].has_event.store(false, std::memory_order_relaxed);
+                    pairings_[i].ready.store(false, std::memory_order_relaxed);
+                    pairings_[i].owner.store(nullptr, std::memory_order_relaxed);
+                    pairings_[i].step.store(0, std::memory_order_relaxed);
+                    pairings_[i].steady_ns.store(0, std::memory_order_relaxed);
+                    pairings_[i].uncertainty_ns.store(0, std::memory_order_relaxed);
+                    pairings_[i].event_ns.store(0, std::memory_order_relaxed);
+                    pairings_[i].has_event.store(false, std::memory_order_relaxed);
                 }
             }
 
@@ -380,7 +435,7 @@ namespace SushiRuntime
             std::vector<std::uint32_t> row_high_water_;     /**< True demand (uncapped) seen per row at the last collect(). */
             std::vector<NodeEventRecord> records_;          /**< Flat, ragged node rows back to back. */
             std::unique_ptr<std::atomic<std::uint32_t>[]> cursors_; /**< Per-node next-slot cursor. */
-            std::unique_ptr<PairingSlot[]> pairings_;       /**< One pairing claim per device. */
+            std::unique_ptr<PairingSlot[]> pairings_;       /**< K_PAIRING_CANDIDATES pairing candidates per device, device-major. */
             std::array<std::atomic<std::uint32_t>, DropCounts::K_CAUSES> drop_counts_{}; /**< Dispatches lost per DropCause. */
             std::atomic<std::uint32_t> first_drop_node_{DropCounts::K_NO_NODE}; /**< Node of the first dispatch lost. */
         };

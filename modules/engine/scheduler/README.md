@@ -694,21 +694,21 @@ of the dispatch is the node's cached queue index, or the one the scan found; wit
 device found for the queue, the dispatch takes the unprofiled queue and the ledger counts a dropped
 dispatch for the cause "no queue".
 
-The first device submission to reach a device in a run claims that device's clock pairing and times
-its own submit call with the steady clock, so the pairing's uncertainty is the length of that call.
+The first few device submissions to reach a device in a run each claim a pairing candidate and time their own submit
+call with the steady clock; a candidate's uncertainty is that call's length, and the ledger keeps the shortest.
 A device submission is a KERNEL node's `submit` or a HOST node's `execute_host()`, the task body that
 submits its own work; a plan built only of task bodies would otherwise leave its device with no
 pairing, and a profiler drops every record of that device. For a task body the timed call is the
 whole body, so the uncertainty covers any host work the body does around its submissions. A body
-that returns an empty event and hands none over submitted nothing, so `PairingClaim` gives its claim
-back and a later submission claims instead (`observability/profiling_ledger.hpp`). The sentinel never claims.
+that returns an empty event and hands none over submitted nothing, so `PairingClaim` gives its candidate
+back and a later submission claims it instead (`observability/profiling_ledger.hpp`). The sentinel never claims.
 
 `execute_host()` takes a vector of dependencies, so the rarer path of a HOST node that
 submits its own device work still allocates one. The kernel path calls `depends_on()` per
 event over the node's inline storage, which avoids the heap vector
 `SmallEventVector::to_vector()` built there before.
 
-The first device submission to reach either path claims the run's clock pairing.
+The first few device submissions to reach either path claim the run's clock pairing candidates.
 
 ##### The event pushed to the poller
 

@@ -159,8 +159,9 @@ namespace SushiRuntime
                 return;
             }
 
-            if (times.has_submit && ledger->is_pairing_owner(pe.device_index, pe.task))
-                ledger->set_pairing_event_ns(pe.device_index, times.submit_ns);
+            if (times.has_submit)
+                ledger->set_pairing_event_ns(Internal::Observability::PairingKey{pe.device_index, pe.task, pe.step},
+                                             times.submit_ns);
 
             if (node == nullptr)
                 return;
