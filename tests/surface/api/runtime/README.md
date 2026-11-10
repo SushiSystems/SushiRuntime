@@ -151,11 +151,11 @@ that a narrower pool still executes correctly.
 | `DefaultsToOneWorkerPerCoreFromCoreZero` | The default is the sole-tenant behaviour: one worker per logical core, starting at core 0. A silent change to the default would move the performance profile of every existing consumer. |
 | `ReservesTheCoresTheHostAskedFor` | A host that wants cores 0 to `reserved - 1` for its own threads asks for a pool that starts past them. Both the count and the placement must be exactly what the host requested. The test skips below four cores. |
 | `ASingleWorkerStillExecutesTheWholeGraph` | A pool much smaller than the machine still runs everything correctly. |
-| `FloatPolicyRunsUnpinned` | The `Float` policy leaves placement to the operating system: the pool is the requested size and no worker is bound. That is the right choice inside a container whose CPU allowance is enforced by quota and not by affinity. |
-| `AnOutOfRangeCoreRangeIsClampedNotIgnored` | A core range that runs off the end of the machine is clamped. The operating system's affinity calls accept an out-of-range mask and then do not bind, so without the clamp the runtime would report a reservation it never made. |
 
-The pool shape is decided on the core count and the config. It sits in `RuntimeContext` and the
-worker pool, which no test calls with a count of its own; RW-110 holds a seam for it.
+The pool shape is decided on the core count and the config by `size_worker_pool()`, whose rows run
+small in `tests/engine/scheduler/test_worker_pool_sizing.cpp`: the Float pool is not clamped and a
+core range past the last core starts at 0. The tests here keep the wiring: the default config and a
+reserved range reach the pool the runtime reports.
 
 ### The device filter
 

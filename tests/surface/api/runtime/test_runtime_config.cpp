@@ -167,36 +167,6 @@ TEST_F(Medium_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
     expect_runs_correctly(rt);
 }
 
-/** @brief Tests that the Float policy keeps the requested pool size and binds no worker. */
-TEST_F(Medium_CoTenancy, FloatPolicyRunsUnpinned)
-{
-    RuntimeConfig config;
-    config.worker_count = 2;
-    config.pinning      = PinPolicy::Float;
-
-    auto rt = Runtime::create(config).value();
-    const auto pool = rt.advanced().worker_pool();
-
-    EXPECT_EQ(pool.count, 2u);
-    EXPECT_EQ(pool.pinning, PinPolicy::Float);
-}
-
-/** @brief Tests that a core range past the end of the machine is clamped inside the machine. */
-TEST_F(Medium_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
-{
-    const std::size_t cores = machine_cores();
-    RuntimeConfig config;
-    config.worker_count = 4;
-    config.first_core   = cores + 8;   // entirely past the last core
-
-    auto rt = Runtime::create(config).value();
-    const auto pool = rt.advanced().worker_pool();
-
-    EXPECT_LE(pool.first_core + pool.count, cores)
-        << "the worker core range must fit inside the machine";
-    EXPECT_GE(pool.count, 1u) << "clamping must not leave an empty pool";
-}
-
 /** @brief Fixture of the default filter test; the parameter is the device class, and a row the machine has no device of skips. */
 class Medium_DefaultDeviceFilter : public TestSupport::RuntimeTest,
                                    public ::testing::WithParamInterface<DeviceKind>
