@@ -689,7 +689,7 @@ TEST(Small_NumaStealTest, FlatTopologyKeepsAllVictims)
 }
 
 /** @brief Tests that a request past the largest pool is cut to it. */
-TEST(Small_TaskScheduler, ARequestPastTheLargestPoolIsCutToIt)
+TEST(Medium_TaskScheduler, ARequestPastTheLargestPoolIsCutToIt)
 {
     const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
 
@@ -699,7 +699,7 @@ TEST(Small_TaskScheduler, ARequestPastTheLargestPoolIsCutToIt)
 }
 
 /** @brief Tests that a cut request is logged at Warn, naming the requested count and the maximum. */
-TEST(Small_TaskScheduler, ACutRequestIsLoggedAtWarnNamingBothCounts)
+TEST(Medium_TaskScheduler, ACutRequestIsLoggedAtWarnNamingBothCounts)
 {
     TestRunner::LogCapture capture;
     const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);

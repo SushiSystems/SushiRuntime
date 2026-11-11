@@ -24,8 +24,11 @@ from sushicore.build_tree import K_DEFAULT_BUILD_TYPE, refuse_another_build_type
 from sushicore.errors import SushiCoreError
 from sushicore.proc import CommandRunner
 from sushicore.provision.sushi_packages import PackageError, configure_arguments
+from sushicore.testing import ModuleTests, TestLabel, run_tests, select_labels
+from sushicore.testing.labels import K_EVERY_SIZE
+from sushicore.testing.program_runner import ProgramRunner
 
-from ..config import Config
+from ..config import PROFILE, Config
 from ..env import load_build_env
 from . import discovery, library_packages
 from .install_hint import toolchain_install_command
@@ -96,10 +99,6 @@ class Label(str, enum.Enum):
     package = "package"         # installs, then builds and runs a consumer
 
 
-# With no label, `sr test` runs every size and leaves out the package.
-_DEFAULT_LABEL_REGEX = "^(small|medium|large)$"
-# A quarantined test keeps its size label, so every run but the quarantined one excludes it.
-_QUARANTINED_LABEL_REGEX = "^quarantined$"
 
 
 _CMAKE_BUILD_TYPE = {
@@ -620,17 +619,30 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
     env = _run_environment(cfg, build_dir)
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
-    # A module's tests carry its folder name as a label, whatever their size.
+    # A module's tests carry its folder name as a label, whatever their size; the package check is its own label.
     if module is not None:
-        label_regex = f"^{re.escape(module)}$"
-    elif label is not None:
-        label_regex = f"^{label.value}$"
+        named = f"^{re.escape(module)}$"
+    elif label is Label.package:
+        named = "^package$"
     else:
-        label_regex = _DEFAULT_LABEL_REGEX
-    exclude = None if label is Label.quarantined else _QUARANTINED_LABEL_REGEX
-    return ws.driver.ctest_run(
-        cfg, build_dir, env, label_regex=label_regex, exclude_label_regex=exclude,
-        filter=filter, repeat=repeat, jobs=jobs)
+        named = None
+    sizes = (TestLabel(label.value),) if label is not None and named is None else ()
+    every_size = named is not None or label is None
+    selection = select_labels(sizes or (K_EVERY_SIZE if every_size else ()))
+
+    def run_ctest(directory: Path, **options) -> int:
+        if named is not None:
+            options["label_regex"] = named
+        return ws.driver.ctest_run(cfg, directory, env, **options)
+
+    # A named label is applied only by the CTest call, so a filtered shard run must not bypass it.
+    tests = ModuleTests(
+        profile=PROFILE, project_root=lambda: root, console=lambda: console,
+        build_tree=lambda: build_dir, run=ws.runner.run, run_ctest=run_ctest,
+        run_program=ProgramRunner(build_dir, ws.runner.run, env) if named is None else None,
+        rebuilt=lambda directory: ws.driver.tree_is_current(cfg, directory, env))
+    return run_tests(tests, selection, name_filter=filter, repeat=repeat, jobs=jobs,
+                     every_size=every_size or label is Label.large)
 
 
 def bench(distributed: bool = False, filter: str | None = None,
