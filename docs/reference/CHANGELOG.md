@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-12 — design: Replaced the equal-share goal of the global handle partitioner with the shortest step held against a floor, and added phase H10 (`docs/design/GLOBAL_HANDLE/PARTITIONING.md`, RW-79).
 - 2026-11-11 — tests: Moved to medium the two `TaskScheduler` cases that start the largest worker pool, which the time gate found over the small limit.
 - 2026-11-11 — cli: Ran `sr test` through the shared sushicore 0.13 test command, which shuffles, reruns a failure alone and gates on time limits; `--jobs` left out fits the cores and free memory.
 - 2026-11-10 — tests: Ran the `Fatal` delivery and record stamp tests of the logger small on SushiLog's manual executor and clock, and pinned SushiLog v0.4.1 (RW-117, `f1f74903`).

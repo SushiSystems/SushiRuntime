@@ -88,9 +88,17 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | --- | --- | --- | --- | --- |
 | T23 | inline | `foundation/core` `node_cost.hpp`: read bytes, written bytes, operation kind; the split declaration on `NodeOptions` | T06 | The runtime suite is green and the profiling records carry the new fields |
 | T24 | `sonnet` `medium` | `engine/coherence`: `DeviceProfile` measurement, the profile file keyed by `DeviceKey`, `CostModel` | T04, T23 | A profile written once and read back gives the same `CostModel` times, and a changed file changes them |
-| T25 | inline | `engine/coherence`: `Partitioner`: cuts, splits, assignment, refusal with the shortfall per space | T14, T24 | A job that does not fit is refused before loading with the shortfall per space, and assignments hash equal across runs |
-| T26 | `sonnet` `medium` | the exhaustive-search test for small graphs | T25 | The partitioner's step time is within 10% of the best the search finds |
-| T27 | inline | rebalancing at horizons and the placement journal | T22, T25 | After one device is throttled its slices move within two horizons, and a journal replay gives the same placement and bytes |
+| T25 | inline | `engine/coherence`: `Partitioner`: rank, earliest-finish placement of whole nodes, cut refinement, capacity per pool, the fill plans over device subsets and the floor check, refusal with the shortfall per pool; starts after the owner rules on the open question of the design | T14, T24 | A job that does not fit is refused before loading with the shortfall per pool, assignments hash equal across runs with one profile file, and the fill plan of a chain larger than the fastest pool crosses each device boundary once |
+| T26 | `sonnet` `medium` | the exhaustive-search test for small graphs and the floor property test over seeded graphs and profiles | T25 | The partitioner's step time is within 10% of the best the search finds, no chosen plan is modelled slower than its floor plan, and a device a thousand times slower gets no node |
+| T34 | `sonnet` `medium` | `surface/api`: `Runtime::partition_report()`; the profile entries folded from the profiling ledger at a horizon | T25 | The report's rows match the plan on the software devices, and a second run reads the throughput the first one measured |
+| T35 | inline | a hardware test on the first machine: the three graphs of the H9 acceptance, two against the 3080 Ti alone and the chain against its forced cuts | T19, T34 | Each comparison of the H9 acceptance holds, and the numbers are in `REPORT.md` |
+
+### H10: splitting and rebalancing
+
+| Task | Runs on | Files | Waits on | Done when |
+| --- | --- | --- | --- | --- |
+| T36 | inline | `engine/coherence`: splitting a declared-splittable node into parts sized by device speed, at most one per device | T25, T30 | A split product's measured step on the first machine is shorter than with splitting turned off, and a node that fits no pool whole runs split |
+| T27 | inline | rebalancing at horizons, the measured floor check and the placement journal | T22, T34 | After one device is throttled its nodes move within two horizons; with a doctored profile the partitioner returns to the floor plan within two horizons; a journal replay gives the same placement and bytes |
 
 ### H6: distributed
 
@@ -106,7 +114,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T30 | `sonnet` `medium` | SushiBLAS: tensors report their handle, matrix products declare `NodeCost` and a row or column split | T23, T25 | The SushiBLAS suite is green against the runtime branch |
 | T31 | `haiku` `high` | SushiEngine `modules/foundation/execution/include/SushiEngine/execution/backend/runtime_backend.hpp`: the `ResourceID` to `GlobalHandle` table; then SushiAI's build, unchanged | T06 | The SushiEngine suite is green, and SushiAI's build result is in `REPORT.md` with each break named |
 | T32 | `sonnet` `medium` | SushiBLAS tests: the conformance kernel set (sum, dot, gemm, softmax, layer norm) on every device | T30 | Each operation gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each difference and why |
-| T33 | inline | SushiBLAS large test: a file-backed product graph larger than any one device's memory | T19, T27, T30 | On the first machine it runs across every device with no file reads after loading, equal bytes over ten runs, and per-device step times within 10% |
+| T33 | inline | SushiBLAS large test: a file-backed product graph larger than any one device's memory | T19, T27, T30 | On the first machine it runs across every device the plan gives a node, with no file reads after loading, equal bytes over ten runs, and a step time at most 1.05 times that of the floor plan's devices alone |
 
 ## Closing
 

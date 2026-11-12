@@ -1,7 +1,7 @@
 # Global handle: specification
 
 **Status:** Open — planned in `PLAN.md`; no task started
-**Implements:** GLOBAL_HANDLE#H0, GLOBAL_HANDLE#H1, GLOBAL_HANDLE#H2, GLOBAL_HANDLE#H3, GLOBAL_HANDLE#H4, GLOBAL_HANDLE#H5, GLOBAL_HANDLE#H6, GLOBAL_HANDLE#H7, GLOBAL_HANDLE#H8, GLOBAL_HANDLE#H9
+**Implements:** GLOBAL_HANDLE#H0, GLOBAL_HANDLE#H1, GLOBAL_HANDLE#H2, GLOBAL_HANDLE#H3, GLOBAL_HANDLE#H4, GLOBAL_HANDLE#H5, GLOBAL_HANDLE#H6, GLOBAL_HANDLE#H7, GLOBAL_HANDLE#H8, GLOBAL_HANDLE#H9, GLOBAL_HANDLE#H10
 **Designs:** LAYERED_EXECUTION, GRAPH_REPLAY
 
 ## Goal
@@ -16,8 +16,11 @@ declared node costs, splittable nodes and the partitioner. It builds no inferenc
 and SushiEngine are consumers at the same level, and both adopt the handle in later work.
 
 The first machine is a Ryzen 7600X with its integrated GPU, an RTX 3080 Ti and the CPU. The runtime
-slices a recorded graph on the host, sizes each device's share by its measured speed and capacity,
-and the output bytes are equal in every run.
+places a recorded graph on the host so that a step takes the least time within each device's
+measured capacity, a device that would slow the step receives no work, and the output bytes are
+equal in every run. The first job it must carry is a chain of nodes whose buffers hold 16 GB, which
+the 12 GB card cannot hold alone. The slow device of every acceptance is the CPU; the integrated
+GPU, and later a Radeon RX Vega 64, enter through a device profile once a route reaches them.
 
 The shape, the reasons and the public API changes are in
 [the design](../../design/GLOBAL_HANDLE/README.md). This file states what each phase must prove.
@@ -46,7 +49,8 @@ The shape, the reasons and the public API changes are in
 | H6 | `TASK_DISPATCH` at wire version 5 carries `GlobalHandle` with golden bytes; a worker killed mid-run is recovered by re-running the producer and the run's output bytes equal an undisturbed run. |
 | H7 | SushiBLAS builds against the handle and declares splits on its matrix products, and SushiEngine's runtime adapter converts through the handle, with both suites green; SushiAI's build is run unchanged and the report names each break; a file-backed graph of SushiBLAS products, larger than any one device's memory, runs across the 3080 Ti, the integrated GPU and the CPU with no part read from the file after loading, and gives equal output bytes over ten runs. |
 | H8 | A conformance kernel set (sum, dot, gemm, softmax, layer norm) gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each operation that differs and why. |
-| H9 | The runtime slices any recorded graph from declared node costs and a measured device profile, splitting a declared-splittable matrix product across devices when the cost model says it shortens the step: on the H7 machine the per-device step times differ by at most 10%, the assignment hashes equal across runs, a job that does not fit is refused before loading with the shortfall per space, and after one device is throttled the journal shows its slices moved within two horizons, with a replay of the journal giving the same placement and output bytes. |
+| H9 | The runtime places the whole nodes of any recorded graph from declared node costs and a measured device profile. Over the seeded graph set no chosen plan has a modelled step time above its floor's, and with one pinned profile file the assignment hashes equal across runs. A job that does not fit is refused before loading with the shortfall per pool. On the first machine, with the 3080 Ti and the CPU, three graphs are measured. A set of independent equal nodes and a graph that fits on the 3080 Ti are each run with every device and with the device filter set to the 3080 Ti alone: the step with every device is at most 1.05 times the filtered one, and at most the filtered one when the CPU holds a node. A chain whose buffers exceed the 3080 Ti's capacity is run as planned and with its cut forced by placement scopes one, two and four nodes to either side: the planned step is at most 1.05 times the best of them. `Runtime::partition_report()` gives each device's nodes, bytes, modelled and measured step time, and the floor's modelled time and devices. |
+| H10 | A declared-splittable matrix product is split across devices when the cost model says the step is shorter, and its measured step is shorter than with splitting turned off. On software devices whose `QueueFactory` delays one device's completions, the journal shows that device's nodes moved within two horizons. With a profile file doctored to overstate the slow device by ten times, the partitioner returns to the floor within two horizons, the journal holds the switch, and the same pair is not tried again. A replay of each journal gives the same placement and output bytes. |
 
 ## Tests
 
@@ -57,6 +61,9 @@ The shape, the reasons and the public API changes are in
   the same bytes on the planner as on the reference.
 - The partitioner is tested against an exhaustive search on small graphs: its assignment is within
   10% of the best step time the search finds.
+- The floor is a property test: for every seeded graph and every seeded profile, the chosen plan's
+  modelled step time is at most the floor plan's, and a profile in which one device is a thousand
+  times slower than the others gives that device no node.
 - Transfer paths run on a software device in CI and on the devices of the first machine.
 
 ## Out of scope
@@ -65,6 +72,10 @@ The shape, the reasons and the public API changes are in
 - SushiEngine's own `ResourceID` and `hazard_core`; only its runtime adapter changes.
 - A kernel that dereferences remote memory.
 - Splitting a node that declares no split; the runtime never guesses how a kernel divides.
+- The speed of a consumer's kernels on any device. The partitioner plans from what it measures;
+  a faster CPU kernel in SushiBLAS changes the profile and, through it, the plan.
+- A route to the Radeon RX Vega 64. The design admits it through a profile; reaching it is a probe
+  of its own when a machine holds one.
 
 ## Risks
 

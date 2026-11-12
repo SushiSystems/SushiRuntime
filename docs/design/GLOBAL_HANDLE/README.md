@@ -1,6 +1,6 @@
 # Global handle
 
-**Status:** Open — H0 to H9 planned; the specification is in `docs/agent/2026_11_02_GLOBAL_HANDLE/`
+**Status:** Open — H0 to H10 planned; the specification is in `docs/agent/2026_11_02_GLOBAL_HANDLE/`
 **About:** One identity for every buffer on every device and machine, resolved by the runtime, with the copies between devices planned as graph nodes.
 **Modules:** `modules/platform/memory`, `modules/foundation/region`, `modules/extension/buffer_exchange`
 
@@ -52,6 +52,12 @@ reliability and maintainability ruling over cost.
 6. **The runtime owns placement.** A consumer declares costs and, for a node it can split, how to
    split it. The runtime chooses where every slice runs. A placement scope stays as an override the
    consumer may state, and the partitioner treats it as fixed.
+7. **The shortest step, and never a slower one.** The partitioner minimises the time of one step
+   within the measured capacity of every space. It discards a plan that is slower than the floor,
+   the best plan that fills devices in order of speed over any subset of the machine's devices,
+   so a device added to a machine never slows a job and may receive no work. Reason: the owner's measure of success is the fast card's speed with
+   whatever a slower device can add on top. Equal shares are a result for independent work, never
+   the goal.
 
 ## Design
 
@@ -63,7 +69,8 @@ deterministic copy plans. The design takes its parts from these:
 | Source | Taken |
 | --- | --- |
 | Legion, SC12; Dynamic Tracing, SC18 | Logical buffer apart from physical instances; record the analysis once and replay it |
-| StarPU, CCPE 2011 | Declared access modes as the only source of dependences and transfers |
+| StarPU, CCPE 2011 | Declared access modes as the only source of dependences and transfers; a cost model per task kind with transfer time, as its `dmda` policy keeps |
+| HEFT; XKaapi, Lima et al. | List scheduling by earliest finish time over devices of unequal speed |
 | Celerity IDAG, arXiv 2503.10516; Horizons | Allocation, copy and free as explicit graph nodes; horizons bound tracking state |
 | IRIS, HPEC 2021 | One memory object tracked across CUDA, HIP and OpenCL in one process |
 | HPX AGAS | Stable id with a mutable location; a do-not-cache flag bit |
@@ -181,38 +188,32 @@ through the staging ring into its target space; the whole file is never read int
 
 ### Cost-based partitioning
 
-`Partitioner`, on the host, slices a recorded graph and shares its parts across every device, the
-CPU included, so that each device's share takes the same time. It knows no math: each node declares
-its cost as numbers, and the runtime reads only those.
+`Partitioner`, on the host, shares a recorded graph across every device, the CPU included, so that
+one step takes the least time within the measured capacity of every space. It knows no math and no
+model: each node declares its cost as numbers, and the runtime reads only those.
+[The partitioning page](PARTITIONING.md) holds the objective, the floor, the algorithm and the
+device profile.
 
 - **Declared cost.** A node states the bytes it reads, the bytes it writes, the operations it
   performs and the operation kind, through `NodeCost`. The consumer derives these from its own
   shapes; SushiBLAS derives them from tensor shapes.
+- **Device profile.** `DeviceProfile` holds each device's measured capacity, bandwidth and
+  throughput per operation kind, stored per `DeviceKey` in a profile file. `CostModel` turns a
+  declared cost and a profile into a time. A device of any age or speed enters through its
+  profile, and a device with none receives no work until it is measured.
+- **Assignment.** Nodes are placed by earliest finish time, and a cut between devices is charged
+  for the bytes that cross it over its transfer path. Independent nodes spread in proportion to
+  device speed; a chain gives the fastest device as much as shortens the step.
+  The capacity of a job is the sum of every pool less its measured reserve; an integrated GPU
+  that carves its memory from RAM adds a device, not capacity. A job that does not fit is refused
+  before loading, with the shortfall per pool.
+- **The floor.** A plan slower than the floor is discarded, so a device may receive no node.
 - **Splittable nodes.** A node may also declare a split: an axis, the slice kernel each part runs,
   and the combine node that joins the parts in slice order. The runtime decides how many parts and
   where each runs; the consumer still owns every kernel, so the runtime stays free of math.
-- **Device profile.** `DeviceProfile` holds each device's measured bandwidth and throughput per
-  operation kind, stored per `DeviceKey` in a profile file. `CostModel` turns a declared cost and a
-  profile into a time.
-- **Slicing.** The partitioner cuts between nodes where little data crosses, and splits a node
-  when its declared split makes the step shorter. A cut or a split is charged for the bytes that
-  cross it over its transfer path, and for the synchronisation the path needs. Between a CUDA card
-  and an AMD integrated GPU that charge is a host round trip of tens of microseconds per crossing,
-  so the cost model splits a
-  large matrix product across cards and keeps a small one whole. The measurement decides; no rule
-  forbids either.
-- **Assignment.** Slices go to devices so that every device's time per step is equal, within each
-  device's measured capacity. The capacity of a job is the sum of every space less its measured
-  reserve; an integrated GPU that carves its memory from RAM adds a device, not capacity. A job that
-  does not fit is refused before loading, with the shortfall per space.
 - **Rebalancing.** At each horizon the partitioner reads a smoothed step time per device and moves
-  slices when the saving exceeds the copy cost by a margin. Each move is written to the placement
+  nodes when the saving exceeds the copy cost by a margin. Each move is written to the placement
   journal, and a replay of the journal gives the same placement.
-
-A step finishes when its slowest device does, so equal shares make every device finish together.
-In a chain where each node waits on the one before it, as one request's tokens do, the chain's time
-is the sum of its links; splitting nodes across devices is what shortens each link, and many
-requests in flight are what keep every device busy between links.
 
 ### Replay and horizons
 
@@ -253,6 +254,7 @@ deterministic.
 | The splittable-node declaration on `NodeOptions` | added |
 | A buffer created from a file range | added |
 | Placement rules may name a `DeviceKey` | added |
+| `Runtime::partition_report()`: each device's share, its modelled and measured step time, and the floor plan's time | added |
 | `BufferRegion::base` is a `GlobalHandle` | breaking |
 | A node over buffers on several devices runs, with planned copies | behaviour |
 | `Distributed::GlobalBufferID` folds into `GlobalHandle`; wire version 5 | breaking |
@@ -288,11 +290,22 @@ deterministic.
 | H6 | The distributed wire carries GlobalHandle; owner per handle; recovery by re-running the producer | planned |
 | H7 | SushiBLAS moves to the handle and SushiEngine's runtime adapter follows it; a file-backed graph larger than any one device's memory runs across every device of the machine, the CPU included | planned |
 | H8 | Cross-vendor numeric reproducibility: the same kernel gives the same bytes on every device | planned |
-| H9 | The runtime partitions any graph by declared node costs and measured device profiles so every device finishes its share together | planned |
+| H9 | The runtime places the whole nodes of any graph by declared node costs and measured device profiles so a step takes the least time within capacity, never above the floor plan's modelled time, and reports each device's share | planned |
+| H10 | The partitioner splits declared-splittable nodes, rebalances at horizons through the placement journal, and returns to the floor plan when a measured step is slower than it | planned |
 
 ## Open questions
 
+- Where a buffer lives before a plan exists. Today `Runtime::buffer()` allocates on a stated
+  device, device 0 unless told otherwise, and a buffer a caller placed is fixed for the
+  partitioner. A buffer the partitioner may place needs a size without a home; a buffer created
+  from a file range has one, and a plain buffer does not. The owner rules on the interface before
+  the partitioner's task starts.
+
 - Whether the Ryzen 7600X's integrated GPU (gfx1036) is reachable from SYCL on Windows. The route
   is AMD's HIP SDK 6.x with a Unified Runtime HIP adapter built against it, as the CUDA adapter is;
-  gfx1036 is not on AMD's Windows support list. H0 probes it, with AdaptiveCpp as the second route.
+  gfx1036 is not on AMD's Windows support list, and the DPC++ guide states that HIP on Windows is
+  not supported. H0 probes it, with AdaptiveCpp as the second route. The partitioner does not wait
+  on the answer: its acceptance runs on the RTX 3080 Ti and the CPU.
+- Which route reaches a Radeon RX Vega 64 (gfx900). It is absent from AMD's Windows support list
+  and no machine of the project holds one; when one does, the H0 probe steps are run for it.
 - Whether CORE-MATH compiles as device code under SYCL. H8 is research until it does.
