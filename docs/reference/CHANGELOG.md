@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-12 — design: Ruled that the global handle partitioner places only buffers created with `Residency::Planned`, and closed the open question on a buffer's home (`docs/design/GLOBAL_HANDLE/README.md`, RW-79).
 - 2026-11-12 — design: Replaced the equal-share goal of the global handle partitioner with the shortest step held against a floor, and added phase H10 (`docs/design/GLOBAL_HANDLE/PARTITIONING.md`, RW-79).
 - 2026-11-11 — tests: Moved to medium the two `TaskScheduler` cases that start the largest worker pool, which the time gate found over the small limit.
 - 2026-11-11 — cli: Ran `sr test` through the shared sushicore 0.13 test command, which shuffles, reruns a failure alone and gates on time limits; `--jobs` left out fits the cores and free memory.

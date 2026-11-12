@@ -58,6 +58,15 @@ reliability and maintainability ruling over cost.
    so a device added to a machine never slows a job and may receive no work. Reason: the owner's measure of success is the fast card's speed with
    whatever a slower device can add on top. Equal shares are a result for independent work, never
    the goal.
+8. **A buffer the runtime places is asked for by name.** `Residency::Planned` creates a buffer
+   with a size and no home. The partitioner gives it one and may move it; the host reaches it
+   through `read_range()` and `write_range()`, as it reaches a `Residency::Device` buffer. Every
+   other residency keeps its stated device, its address and its behaviour, and is fixed for the
+   partitioner. Reason: the owner delegated this ruling. Making the runtime's placement the
+   default would change, without a compile error, where every existing buffer lives and whether
+   its address stays the same, in three consumers at once. Asked for by name, the address that
+   may move is one the host cannot hold, and the default can still be changed later by a ruling
+   of its own.
 
 ## Design
 
@@ -253,6 +262,7 @@ deterministic.
 | `NodeCost` splits its bytes into read and written and gains an operation kind | breaking |
 | The splittable-node declaration on `NodeOptions` | added |
 | A buffer created from a file range | added |
+| `Residency::Planned`: a buffer or state the partitioner places and may move | added |
 | Placement rules may name a `DeviceKey` | added |
 | `Runtime::partition_report()`: each device's share, its modelled and measured step time, and the floor plan's time | added |
 | `BufferRegion::base` is a `GlobalHandle` | breaking |
@@ -294,12 +304,6 @@ deterministic.
 | H10 | The partitioner splits declared-splittable nodes, rebalances at horizons through the placement journal, and returns to the floor plan when a measured step is slower than it | planned |
 
 ## Open questions
-
-- Where a buffer lives before a plan exists. Today `Runtime::buffer()` allocates on a stated
-  device, device 0 unless told otherwise, and a buffer a caller placed is fixed for the
-  partitioner. A buffer the partitioner may place needs a size without a home; a buffer created
-  from a file range has one, and a plain buffer does not. The owner rules on the interface before
-  the partitioner's task starts.
 
 - Whether the Ryzen 7600X's integrated GPU (gfx1036) is reachable from SYCL on Windows. The route
   is AMD's HIP SDK 6.x with a Unified Runtime HIP adapter built against it, as the CUDA adapter is;

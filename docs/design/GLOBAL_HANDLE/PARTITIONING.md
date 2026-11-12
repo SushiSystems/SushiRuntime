@@ -21,6 +21,24 @@ buffers, and the partitioner treats that graph as it treats any other.
 An operation kind is a value built from a name, as an `OperationID` is. The consumer names its
 kinds; the runtime holds no list of them.
 
+## What the partitioner may place
+
+A buffer or a state created with `Residency::Planned` has a size and no home. It allocates nothing
+when it is created. Its first instance is allocated where the plan puts it; a `write_range()`
+before any plan gives it an instance in host memory, which the plan then treats as its one valid
+copy. A buffer created from a file range is planned in the same way, with the file range as its
+first instance. Creating a planned buffer with a stated device is refused with
+`ErrorCode::InvalidArgument`.
+
+The host cannot index a planned buffer: `is_host_accessible()` is false, and `read_range()` and
+`write_range()` reach a valid instance through the directory. A kernel reaches it through the
+pointer resolved at its dispatch.
+
+A buffer of any other residency stays on the device it was given. A node that writes one is fixed
+to that device, as a node the consumer placed is, and the planner copies such a buffer only to
+serve a reader elsewhere. A graph with no planned buffer and no file-backed one therefore runs
+where it runs today.
+
 ## The objective
 
 The partitioner minimises the modelled time of one step, with every instance inside the measured
