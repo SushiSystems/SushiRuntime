@@ -124,7 +124,8 @@ jobs:
   linux-adaptivecpp:
     name: Linux adaptivecpp (small, medium)
     timeout-minutes: 45
-    runs-on: ubuntu-latest
+    # apt.llvm.org publishes no LLVM 17 for the release ubuntu-latest moved to.
+    runs-on: ubuntu-24.04
     env:
       SR_SYCL_TOOLCHAIN: adaptivecpp
     steps:
