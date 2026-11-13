@@ -30,12 +30,22 @@
 
 #include <SushiRuntime/profiling/run_queue.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace SushiRuntime
 {
     namespace Internal::Profiling
     {
+        namespace
+        {
+            /** @brief Returns the share of the bound @p observation takes: its events, and at least one. */
+            std::size_t weight_of(const RunObservation& observation) noexcept
+            {
+                return std::max<std::size_t>(observation.events.size(), 1U);
+            }
+        } // namespace
+
         RunQueue::RunQueue(std::size_t max_events) noexcept : max_events_(max_events == 0 ? 1 : max_events)
         {
         }
@@ -46,14 +56,13 @@ namespace SushiRuntime
             run.runtime = runtime;
             run.observation = observation;
 
-            const std::size_t incoming = run.observation.events.size();
+            const std::size_t incoming = weight_of(run.observation);
 
             const std::lock_guard<std::mutex> lock(mutex_);
             while (!runs_.empty() && events_ + incoming > max_events_)
             {
-                const std::size_t dropped = runs_.front().observation.events.size();
-                overflow_ += dropped;
-                events_ -= dropped;
+                overflow_ += runs_.front().observation.events.size();
+                events_ -= weight_of(runs_.front().observation);
                 runs_.pop_front();
             }
             events_ += incoming;

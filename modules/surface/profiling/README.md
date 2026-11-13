@@ -108,7 +108,7 @@ The record's dropped spans cover the spans the source drops as late, the dispatc
 reports as lost (`RunObservation::drops`), the records of observations the queue dropped when it was
 full, and the device records with no pairing. The queue holds at most 87 381 events, 4 MiB of 48-byte
 records, whatever the number of runs they come from; a push drops the oldest runs until the new run fits,
-and a run larger than the bound is kept alone, so memory stays bounded when no session collects. Observations and spans still waiting when
+a run with no events counts as one, and a run larger than the bound is kept alone, so memory stays bounded when no session collects. Observations and spans still waiting when
 the session ends are discarded, and a `DEBUG` line gives the counts.
 
 The record keeps one total, so the source also counts each loss by cause in a `SpanLossTally`

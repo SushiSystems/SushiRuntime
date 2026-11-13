@@ -169,6 +169,20 @@ TEST(Small_RunQueue, ABoundOfZeroHoldsOneEvent)
     EXPECT_EQ(runs[0].runtime, 1u);
 }
 
+/** @brief Tests that a run with no events still takes one place, so empty runs stay bounded. */
+TEST(Small_RunQueue, ARunWithNoEventsStillTakesOnePlace)
+{
+    RunQueue queue(3);
+    for (std::uint32_t runtime = 0; runtime < 10; ++runtime)
+        queue.push(runtime, observation_of(0));
+
+    const std::vector<QueuedRun> runs = queue.take();
+
+    ASSERT_EQ(runs.size(), 3u);
+    EXPECT_EQ(runs[0].runtime, 7u);
+    EXPECT_EQ(queue.take_overflow(), 0u);
+}
+
 /** @brief Tests that discard() drops what was never taken and says how many that was. */
 TEST(Small_RunQueue, DiscardDropsWhatWasNeverCollected)
 {

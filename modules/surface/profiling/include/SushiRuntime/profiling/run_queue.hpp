@@ -55,7 +55,7 @@ namespace SushiRuntime
          *
          * Any number of threads push and one takes. The bound counts events, which are the memory:
          * a push drops the oldest observations until the new one fits and counts the events they
-         * held. An observation larger than the bound is kept alone.
+         * held. An observation with no events counts as one, and one larger than the bound is kept alone.
          * @see modules/surface/profiling/README.md
          */
         class SUSHIRUNTIME_API RunQueue final
