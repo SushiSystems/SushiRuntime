@@ -46,9 +46,11 @@ RunQueue, the bounded hand-over of observations from the runs' threads to the co
 | Test | What it proves |
 | --- | --- |
 | `Small_RunQueue.TakesEveryObservationOldestFirst` | A queue that holds some observations hands them over oldest first. |
-| `Small_RunQueue.DropsTheOldestWhenFull` | A full queue drops the oldest observations and keeps the newest. |
-| `Small_RunQueue.CountsTheRecordsOfTheObservationsItDropped` | The overflow count is the records of the dropped observations, and taking it starts it again. |
-| `Small_RunQueue.ACapacityOfZeroHoldsOne` | A queue of capacity zero still holds one observation. |
+| `Small_RunQueue.DropsTheOldestRunsFirst` | A queue over its event bound drops the oldest runs and keeps the newest. |
+| `Small_RunQueue.CountsTheEventsOfTheRunsItDropped` | The overflow count is the events of the dropped runs, and taking it starts it again. |
+| `Small_RunQueue.AManySmallRunsBurstIsKept` | Many small runs within the event bound are all kept, with no overflow. |
+| `Small_RunQueue.AnOversizedRunIsKeptAlone` | A run larger than the bound is kept alone, after the runs before it are dropped. |
+| `Small_RunQueue.ABoundOfZeroHoldsOneEvent` | A bound of zero holds one event. |
 | `Small_RunQueue.DiscardDropsWhatWasNeverCollected` | Discard() drops what was never taken and says how many that was. |
 | `Small_RunQueue.ADiscardIsNotAnOverflow` | A discard at the end of a session is not an overflow. |
 | `Medium_RunQueue.SeveralThreadsMayPushWhileOneTakes` | Several threads may push while one takes, with nothing lost within the capacity. |

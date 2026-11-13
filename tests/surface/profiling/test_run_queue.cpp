@@ -44,7 +44,7 @@ using SushiRuntime::Internal::Profiling::RunQueue;
 
 namespace
 {
-    /** @brief Builds an observation of @p records records. */
+    /** @brief Builds an observation of @p records events. */
     RunObservation observation_of(std::size_t records)
     {
         RunObservation observation;
@@ -52,11 +52,11 @@ namespace
         return observation;
     }
 
-    /** @brief Pushes the observations of runtimes 0 to @p count - 1, runtime r holding r + 1 records. */
-    void push_runtimes(RunQueue& queue, std::uint32_t count)
+    /** @brief Pushes one run for each of runtimes 0 to @p count - 1, each holding @p events events. */
+    void push_runs(RunQueue& queue, std::uint32_t count, std::size_t events)
     {
         for (std::uint32_t runtime = 0; runtime < count; ++runtime)
-            queue.push(runtime, observation_of(runtime + 1));
+            queue.push(runtime, observation_of(events));
     }
 
     /** @brief Pushes @p per_thread observations from each of @p threads threads and joins them. */
@@ -101,11 +101,11 @@ TEST(Small_RunQueue, TakesEveryObservationOldestFirst)
     EXPECT_TRUE(queue.take().empty());
 }
 
-/** @brief Tests that a full queue drops the oldest observations and keeps the newest. */
-TEST(Small_RunQueue, DropsTheOldestWhenFull)
+/** @brief Tests that a queue over its event bound drops the oldest runs and keeps the newest. */
+TEST(Small_RunQueue, DropsTheOldestRunsFirst)
 {
     RunQueue queue(3);
-    push_runtimes(queue, 5);
+    push_runs(queue, 5, 1);
 
     EXPECT_EQ(queue.size(), 3u);
     const std::vector<QueuedRun> runs = queue.take();
@@ -114,18 +114,50 @@ TEST(Small_RunQueue, DropsTheOldestWhenFull)
     EXPECT_EQ(runs[2].runtime, 4u);
 }
 
-/** @brief Tests that the overflow count is the records of the dropped observations, and taking it starts it again. */
-TEST(Small_RunQueue, CountsTheRecordsOfTheObservationsItDropped)
+/** @brief Tests that the overflow count is the events of the dropped runs, and taking it starts it again. */
+TEST(Small_RunQueue, CountsTheEventsOfTheRunsItDropped)
 {
-    RunQueue queue(3);
-    push_runtimes(queue, 5);
+    RunQueue queue(5);
+    queue.push(0, observation_of(2));
+    queue.push(1, observation_of(3));
+    queue.push(2, observation_of(4));
 
-    EXPECT_EQ(queue.take_overflow(), 1u + 2u) << "the records of the observations of runtimes 0 and 1";
+    EXPECT_EQ(queue.take_overflow(), 2u + 3u) << "the events of runs 0 and 1";
     EXPECT_EQ(queue.take_overflow(), 0u) << "taking the count starts it again";
 }
 
-/** @brief Tests that a queue of capacity zero still holds one observation. */
-TEST(Small_RunQueue, ACapacityOfZeroHoldsOne)
+/** @brief Tests that many small runs within the event bound are all kept, with no overflow. */
+TEST(Small_RunQueue, AManySmallRunsBurstIsKept)
+{
+    constexpr std::uint32_t K_RUNS = 500;
+    RunQueue queue(K_RUNS * 4);
+    push_runs(queue, K_RUNS, 4);
+
+    const std::vector<QueuedRun> runs = queue.take();
+
+    ASSERT_EQ(runs.size(), K_RUNS);
+    EXPECT_EQ(runs.front().runtime, 0u);
+    EXPECT_EQ(runs.back().runtime, K_RUNS - 1);
+    EXPECT_EQ(queue.take_overflow(), 0u);
+}
+
+/** @brief Tests that a run larger than the bound is kept alone, after the runs before it are dropped. */
+TEST(Small_RunQueue, AnOversizedRunIsKeptAlone)
+{
+    RunQueue queue(4);
+    push_runs(queue, 2, 2);
+    queue.push(7, observation_of(10));
+
+    const std::vector<QueuedRun> runs = queue.take();
+
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].runtime, 7u);
+    EXPECT_EQ(runs[0].observation.events.size(), 10u);
+    EXPECT_EQ(queue.take_overflow(), 4u) << "the events of the two runs before it";
+}
+
+/** @brief Tests that a bound of zero holds one event. */
+TEST(Small_RunQueue, ABoundOfZeroHoldsOneEvent)
 {
     RunQueue queue(0);
     queue.push(0, observation_of(1));

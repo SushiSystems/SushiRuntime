@@ -53,15 +53,16 @@ namespace SushiRuntime
         /**
          * @brief Holds the observations the runs made until the consumer thread takes them.
          *
-         * Any number of threads push and one takes. A full queue drops its oldest observation and
-         * counts the records it held, so memory stays bounded when no session collects.
+         * Any number of threads push and one takes. The bound counts events, which are the memory:
+         * a push drops the oldest observations until the new one fits and counts the events they
+         * held. An observation larger than the bound is kept alone.
          * @see modules/surface/profiling/README.md
          */
         class SUSHIRUNTIME_API RunQueue final
         {
             public:
-                /** @brief Builds a queue that holds at most @p capacity observations; 0 holds one. */
-                explicit RunQueue(std::size_t capacity) noexcept;
+                /** @brief Builds a queue that holds at most @p max_events events across its observations; 0 holds one. */
+                explicit RunQueue(std::size_t max_events) noexcept;
 
                 RunQueue(const RunQueue&) = delete;
                 RunQueue& operator=(const RunQueue&) = delete;
@@ -69,7 +70,7 @@ namespace SushiRuntime
                 RunQueue& operator=(RunQueue&&) = delete;
                 ~RunQueue() = default;
 
-                /** @brief Copies @p observation in, dropping the oldest one when the queue is full. */
+                /** @brief Copies @p observation in, dropping the oldest observations until its events fit. */
                 void push(std::uint32_t runtime, const RunObservation& observation);
 
                 /** @brief Takes every observation, oldest first. */
@@ -78,15 +79,15 @@ namespace SushiRuntime
                 /** @brief Drops what was never taken; returns how many observations that was. */
                 std::size_t discard() noexcept;
 
-                /** @brief Returns how many records full-queue drops took since the last call, and starts again. */
+                /** @brief Returns how many events full-queue drops took since the last call, and starts again. */
                 [[nodiscard]] std::uint64_t take_overflow() noexcept;
 
                 /** @brief Returns how many observations are held. */
                 [[nodiscard]] std::size_t size() const;
 
             private:
-                /** @brief The most observations held. */
-                std::size_t capacity_;
+                /** @brief The most events the held observations hold together. */
+                std::size_t max_events_;
 
                 /** @brief Guards the members below. */
                 mutable std::mutex mutex_;
@@ -94,7 +95,10 @@ namespace SushiRuntime
                 /** @brief The held observations, oldest first. */
                 std::deque<QueuedRun> runs_;
 
-                /** @brief Records of the observations a full queue dropped, since the last take_overflow(). */
+                /** @brief The events the held observations hold together. */
+                std::size_t events_ = 0;
+
+                /** @brief Events of the observations a full queue dropped, since the last take_overflow(). */
                 std::uint64_t overflow_ = 0;
         };
     } // namespace Profiling

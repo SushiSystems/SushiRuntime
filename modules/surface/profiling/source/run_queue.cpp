@@ -36,7 +36,7 @@ namespace SushiRuntime
 {
     namespace Internal::Profiling
     {
-        RunQueue::RunQueue(std::size_t capacity) noexcept : capacity_(capacity == 0 ? 1 : capacity)
+        RunQueue::RunQueue(std::size_t max_events) noexcept : max_events_(max_events == 0 ? 1 : max_events)
         {
         }
 
@@ -46,12 +46,17 @@ namespace SushiRuntime
             run.runtime = runtime;
             run.observation = observation;
 
+            const std::size_t incoming = run.observation.events.size();
+
             const std::lock_guard<std::mutex> lock(mutex_);
-            while (runs_.size() >= capacity_)
+            while (!runs_.empty() && events_ + incoming > max_events_)
             {
-                overflow_ += runs_.front().observation.events.size();
+                const std::size_t dropped = runs_.front().observation.events.size();
+                overflow_ += dropped;
+                events_ -= dropped;
                 runs_.pop_front();
             }
+            events_ += incoming;
             runs_.push_back(std::move(run));
         }
 
@@ -61,6 +66,7 @@ namespace SushiRuntime
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 taken.swap(runs_);
+                events_ = 0;
             }
             std::vector<QueuedRun> runs;
             runs.reserve(taken.size());
@@ -74,6 +80,7 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex_);
             const std::size_t dropped = runs_.size();
             runs_.clear();
+            events_ = 0;
             return dropped;
         }
 

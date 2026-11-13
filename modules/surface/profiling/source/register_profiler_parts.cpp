@@ -45,6 +45,7 @@
 #include <SushiRuntime/profiling/run_queue.hpp>
 #include <SushiRuntime/profiling/source_names.hpp>
 #include <SushiRuntime/profiling/runtime_environment.hpp>
+#include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 
 namespace SushiRuntime
@@ -57,8 +58,17 @@ namespace SushiRuntime
             return SushiProfiler::Collector::sources_wanted();
         }
 
-        /** @brief The observations the source holds before the oldest is dropped. */
-        constexpr std::size_t K_RUN_QUEUE_CAPACITY = 64;
+        /** @brief The memory the source queue may hold, in bytes: 4 MiB. */
+        constexpr std::size_t K_RUN_QUEUE_BUDGET_BYTES = std::size_t{4} * 1024 * 1024;
+
+        /**
+         * @brief The events the source queue holds before the oldest runs are dropped.
+         *
+         * An event is the memory of a queued run, so the bound counts events: the budget of
+         * K_RUN_QUEUE_BUDGET_BYTES divided by sizeof(NodeEventRecord). A record is 48 bytes, so
+         * 4 194 304 / 48 = 87 381 events.
+         */
+        constexpr std::size_t K_RUN_QUEUE_MAX_EVENTS = K_RUN_QUEUE_BUDGET_BYTES / sizeof(NodeEventRecord);
     } // namespace
 
     /**
@@ -123,7 +133,7 @@ namespace SushiRuntime
 
         /** @brief Holds the observations of every runtime until the source collects them. */
         std::shared_ptr<Internal::Profiling::RunQueue> queue =
-            std::make_shared<Internal::Profiling::RunQueue>(K_RUN_QUEUE_CAPACITY);
+            std::make_shared<Internal::Profiling::RunQueue>(K_RUN_QUEUE_MAX_EVENTS);
 
         /** @brief The runtimes, in the order they were added; their feeds are tagged with the position. */
         std::vector<Attached> runtimes;
