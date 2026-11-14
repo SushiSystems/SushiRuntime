@@ -47,6 +47,7 @@
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -77,6 +78,7 @@ namespace SushiRuntime
                  * @brief Rebuilds the changed regions, re-wires them and renumbers every node.
                  * @param recorder_of Called as recorder_of(key); null when the region is gone.
                  * @param runtime     Read once at the start for its placement record and facts.
+                 * @param classify    Whether the composed plan is classified for the in-order chain.
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -84,7 +86,7 @@ namespace SushiRuntime
                 commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                        const std::function<const Recorder*(RegionKey)>& recorder_of,
                        const std::string& label, std::uint64_t graph_id,
-                       Internal::Execution::RuntimeContext& runtime)
+                       Internal::Execution::RuntimeContext& runtime, bool classify)
                 {
                     label_ = label;
                     graph_id_ = graph_id;
@@ -132,7 +134,7 @@ namespace SushiRuntime
                         install_region(kv.first, std::move(kv.second), dirty_bases);
                     for (Base b : dirty_bases)
                         rewire_base(b);
-                    publish_plan();
+                    publish_plan(runtime, classify);
 
                     guard.dismiss();
                     recompose_everything_ = false;
@@ -163,6 +165,9 @@ namespace SushiRuntime
 
                 /** @brief Returns how many times the plan has been composed. */
                 [[nodiscard]] std::size_t compose_count() const noexcept { return compiles_; }
+
+                /** @brief Returns whether the last commit classified the plan for the in-order chain. */
+                [[nodiscard]] bool chain_classified() const noexcept { return chain_classified_; }
 
                 /**
                  * @brief Returns whether a composed plan stands.
@@ -279,8 +284,9 @@ namespace SushiRuntime
                 {
                     recompose_everything_ = true;
                     committed_once_ = false;
-                    // A root may name a node a half-done commit freed.
+                    // A root, or a node of the chain's order, may name a node a half-done commit freed.
                     plan_.roots.clear();
+                    release_chain();
                 }
 
                 /** @brief Returns the allocations the built regions among keys touch. */
@@ -376,9 +382,10 @@ namespace SushiRuntime
                  * @brief Writes the roots, the sentinel and the registration indices into the plan.
                  *
                  * A plan that requests profiling also lists every node for the profiler.
+                 * @param classify Whether the plan is classified for the in-order chain.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
-                void publish_plan()
+                void publish_plan(Internal::Execution::RuntimeContext& runtime, bool classify)
                 {
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
@@ -391,7 +398,41 @@ namespace SushiRuntime
 
                     // Every plan carries its node table, so a run that is timed needs no rebuild.
                     renumber_registration_indices();
+                    if (classify)
+                    {
+                        classify_plan(runtime);
+                        return;
+                    }
                     plan_.capture_profiling_state();
+                    release_chain();
+                }
+
+                /**
+                 * @brief Gives the plan the baseline classify_chain() reads, then classifies it.
+                 *
+                 * capture_base_state() stamps each node's position and reads its live in-degree,
+                 * which rearm() first sets to the composed count; it also builds the node table.
+                 * @pre No step of the plan is in flight.
+                 * @see docs/design/GRAPH_REPLAY/README.md
+                 */
+                void classify_plan(Internal::Execution::RuntimeContext& runtime)
+                {
+                    SR_ZONE_FINE(runtime.profile_collector(), "region.classify");
+                    rearm();
+                    plan_.capture_base_state();
+                    plan_.chain = Internal::Execution::classify_chain(plan_, runtime);
+                    chain_classified_ = true;
+                }
+
+                /** @brief Leaves the plan off the chain when the last commit had classified it. */
+                void release_chain() noexcept
+                {
+                    if (!chain_classified_)
+                        return;
+                    plan_.chain.chainable = false;
+                    plan_.chain.not_chainable = nullptr;
+                    plan_.chain.order.clear();
+                    chain_classified_ = false;
                 }
 
                 /**
@@ -657,6 +698,9 @@ namespace SushiRuntime
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;
 
+                /** @brief Set by a commit that classified the plan for the in-order chain. */
+                bool chain_classified_ = false;
+
                 /** @brief Set by a commit that threw after it changed a region. */
                 bool recompose_everything_ = false;
 
@@ -678,7 +722,7 @@ namespace SushiRuntime
 
         RegionComposer::RegionComposer(RegionComposer&& other) noexcept
             : state_(std::move(other.state_)), label_(std::move(other.label_)),
-              id_(std::move(other.id_))
+              id_(std::move(other.id_)), chain_allowed_(other.chain_allowed_)
         {
         }
 
@@ -689,6 +733,7 @@ namespace SushiRuntime
                 state_ = std::move(other.state_);
                 label_ = std::move(other.label_);
                 id_ = std::move(other.id_);
+                chain_allowed_ = other.chain_allowed_;
             }
             return *this;
         }
@@ -706,7 +751,13 @@ namespace SushiRuntime
             // A composer that never composed, or was moved from, holds no state yet.
             if (state_ == nullptr)
                 state_ = std::make_unique<Detail::RegionComposerState>();
-            return state_->commit(dirty, dropped, recorder_of, label_, id_.value(), runtime);
+            return state_->commit(dirty, dropped, recorder_of, label_, id_.value(), runtime,
+                                  chain_allowed_);
+        }
+
+        bool RegionComposer::chain_unclassified() const noexcept
+        {
+            return chain_allowed_ && (state_ == nullptr || !state_->chain_classified());
         }
 
         bool RegionComposer::placement_changed(const ContextHandle& context) const noexcept

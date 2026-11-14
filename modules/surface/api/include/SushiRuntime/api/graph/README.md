@@ -443,7 +443,8 @@ a region boundary, where two regions share a buffer, live in a separate layer on
 own nodes are rebuilt and only the boundary edges of the allocations it shares are derived again.
 The second term covers the whole graph: every commit renumbers the registration index of every node
 of every live region, O(total nodes) with one map allocated per region, and copies the root list,
-O(roots). Every composed plan also lists every node again and carries the node table.
+O(roots). Every composed plan also lists every node again and carries the node table, and a graph
+that allows the chain classifies it, O(nodes + edges).
 
 Cross-region ordering follows ascending region key: for an allocation two regions share, the
 lower-keyed region is the producer. Read/read sharing stays parallel (no edge between two regions
@@ -506,6 +507,22 @@ run_async() on the owning graph is pending.
 A composed plan carries its node table whether or not the runtime has an observer, and each run decides
 whether it is timed. Adding or removing an observer marks no region dirty and composes nothing, so
 `compose_count()` is unchanged.
+
+### allow_chain
+
+`allow_chain(bool)` lets a composed plan run on the in-order chain, as a static graph's plan does, and
+returns the graph. It is off by default, and while it is off every run goes to the scheduler and a commit
+does no work for the chain. While it is on, every composition classifies the plan with the static graph's
+rules (`modules/engine/execution/README.md`), so a run of a chainable plan is submitted from the calling
+thread in one topological order of the whole composed DAG, edges across regions included, and
+`RunReport::layer` names `ExecutionLayer::Chain`. A composition that adds or drops a region classifies
+the plan again. A plan that does not classify, such as one holding native host work, runs on the
+scheduler, and so does every run of a runtime built with `RuntimeConfig::force_scheduler`. A run that
+records device timing keeps one event per node on the chain, as a static graph's does. A step started
+with `run_async()` runs on the scheduler either way.
+
+Turning it on over a plan composed while it was off composes the plan again at the next run, which
+`compose_count()` counts; turning it off composes nothing. A move carries the setting to the target.
 
 ### refresh_updaters
 

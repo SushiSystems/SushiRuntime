@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-14 — api: Added `DynamicGraph::allow_chain(bool)`, off by default; while on, every composition classifies the composed plan, so a chainable one runs on the in-order chain (GRAPH_REPLAY P4).
 - 2026-11-14 — profiling: Paired device clocks from span start and end against host submit and reap, with a drift allowance; `command_submit`, which drifts 33.5 ppm, is no longer read (RW-134, `86a6638d`).
 - 2026-11-13 — profiling: Bounded the source queue by events, 87 381 (4 MiB), in place of 64 runs, so the many runs of a load keep their device spans; a run larger than the bound is kept alone (RW-137).
 - 2026-11-12 — design: Ruled that the global handle partitioner places only buffers created with `Residency::Planned`, and closed the open question on a buffer's home (`docs/design/GLOBAL_HANDLE/README.md`, RW-79).

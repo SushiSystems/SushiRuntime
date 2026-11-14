@@ -225,8 +225,9 @@ namespace SushiRuntime
             /**
              * @brief Returns how many times the plan has been composed.
              *
-             * It rises by one at a run that follows a recording, a clear() or a drop(), and
-             * holds across runs that only read the regions.
+             * It rises by one at a run that follows a recording, a clear(), a drop() or an
+             * allow_chain(true) over a plan composed without it, and holds across runs that
+             * only read the regions.
              */
             using RegionComposer::compose_count;
             using RegionComposer::id;
@@ -238,6 +239,20 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             void set_label(std::string label) { RegionComposer::set_label(std::move(label)); }
+
+            /**
+             * @brief Lets a chainable composed plan run as an in-order chain, or keeps every run
+             *        on the scheduler; off by default.
+             *
+             * While on, every composition classifies the plan, and turning it on over a composed
+             * plan composes it again at the next run. A move carries the setting.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            DynamicGraph& allow_chain(bool allowed) noexcept
+            {
+                RegionComposer::allow_chain(allowed);
+                return *this;
+            }
 
         private:
             friend class Runtime;
@@ -364,14 +379,17 @@ namespace SushiRuntime
             /** @brief Re-arms every node's live in-degree before a step. */
             void rearm_plan() noexcept { rearm(); }
 
-            /** @brief Returns false: a composed plan always runs on the scheduler. */
-            [[nodiscard]] bool may_chain() const noexcept { return false; }
+            /** @brief Returns whether allow_chain() lets the composed plan run as a chain. */
+            [[nodiscard]] bool may_chain() const noexcept { return chain_allowed(); }
 
-            /** @brief Returns whether a structural change or a new recording requires a recompose. */
+            /**
+             * @brief Returns whether a structural change, a new recording or a chain not yet
+             *        classified requires a recompose.
+             */
             [[nodiscard]] bool needs_commit() const
             {
                 return !composed() || rebuild_every_region_ || !dirty_regions_.empty() ||
-                       !dropped_.empty();
+                       !dropped_.empty() || (chain_allowed() && chain_unclassified());
             }
 
             /** @brief Marks dirty each region written to whose recording really changed. */

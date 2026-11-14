@@ -36,6 +36,7 @@
 
 #include "run_recorder.hpp"
 #include "support/host_runtime.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -142,5 +143,29 @@ namespace DynamicGraphNodeEventsTests
         EXPECT_EQ(rows[0].index, 0u);
         EXPECT_EQ(rows[1].name, "dropped_v2");
         EXPECT_EQ(rows[1].index, 1u) << "re-adding region 1 must not resume from a stale counter";
+    }
+
+    /** @brief Fixture of the node-event tests of a chained run, which need the program's device runtime. */
+    class Medium_DynamicGraphNodeEvents : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Tests that an observed run of a DynamicGraph on the chain keeps one record per node. */
+    TEST_F(Medium_DynamicGraphNodeEvents, AnObservedChainedRunKeepsOneRecordPerNode)
+    {
+        Testing::RunRecorder observed(runtime());
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+
+        auto world = runtime().dynamic_graph();
+        world.allow_chain(true);
+        add_labelled_fill(world, 0, a, 1, "A");
+        add_labelled_fill(world, 1, b, 1, "B");
+
+        world.run().value();
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        EXPECT_EQ(observation.layer, ExecutionLayer::Chain);
+        EXPECT_EQ(observation.events.size(), 2u);
     }
 } // namespace DynamicGraphNodeEventsTests

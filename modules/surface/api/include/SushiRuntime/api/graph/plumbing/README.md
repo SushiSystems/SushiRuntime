@@ -718,7 +718,24 @@ Building costs O(nodes of the dirty regions), and wiring costs O(boundary pins o
 those regions and the dropped ones touch). Two steps cover the whole graph at every commit:
 renumber_registration_indices() walks every node of every live region and allocates one map per
 region, and publish_plan() copies the root list, O(roots). publish_plan() also lists every node again in `plan_.all_nodes` and builds the node table. commit() is the
-stage zone `region.commit`.
+stage zone `region.commit`. A commit of a composer whose chain is allowed also classifies the plan,
+O(nodes + edges), in the fine zone `region.classify`; a commit with the chain off adds nothing.
+
+### commit: the chain
+
+allow_chain() sets whether a commit classifies the composed plan for the in-order chain; it is off until
+called. publish_plan() then calls classify_plan(), which re-arms every node from the two-layer
+baseline and calls `CompiledGraph::capture_base_state()`. That gives the plan what
+`Internal::Execution::classify_chain()` reads, as a static graph's build does: each node's plan index
+is its position in `plan_.all_nodes`, and the in-degree baseline counts its intra-region and
+cross-region predecessors. The topological order classify_chain() builds over that baseline follows
+every edge, inside a region and across regions, and leaves the sentinel out. capture_base_state()
+also builds the node table, so the plan keeps it whichever way it is published.
+
+A commit with the chain off leaves the plan unclassified and empties a chain an earlier commit
+classified, and invalidate_plan() does the same, so the chain's order never names a freed node.
+chain_unclassified() is true while the chain is allowed and no commit since has classified the
+plan; DynamicGraph composes again at its next run when it is.
 
 ### commit: undo before free
 
@@ -736,12 +753,14 @@ in st.nodes.
 build_region() stores the recorder generation it built from, which is_current() compares, and the
 last node of each rule, from which registration_of() reads the index that the latest commit wrote.
 It also gives each node a plan index from a counter that only rises, so the indices of a composed
-plan have gaps; nothing in the composed plan indexes a table by them.
+plan have gaps; nothing in the composed plan indexes a table by them. A commit that classifies the
+plan for the chain stamps every node's position over that index ("commit: the chain").
 
 ### RegionComposer: moves
 
 The source of a move holds no state: no region, no plan and no sentinel. commit() creates the
-state, with its sentinel, when it finds none, so the source composes again.
+state, with its sentinel, when it finds none, so the source composes again. The target takes the
+source's chain setting, and the source keeps its own.
 
 ### rearm
 

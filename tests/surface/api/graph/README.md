@@ -190,6 +190,12 @@ call of region 2 once the order follows the key.
 Dropping a region and adding it again must not leave a gap in the index space. The next recompose
 renumbers every live region densely from zero.
 
+### `AnObservedChainedRunKeepsOneRecordPerNode`
+
+`Medium_DynamicGraphNodeEvents`, on the program's device runtime: a `DynamicGraph` allowed to chain,
+of two one-node regions, run once while observed, is observed on `ExecutionLayer::Chain` with one
+record per node, two.
+
 ## test_dynamic_graph/test_dynamic_graph_placement.cpp
 
 The file covers the placement rules as they reach the regions of a `DynamicGraph`. One task is recorded once in region 0, inside the scope a rule matches. The fixture clears the rules after each test.
@@ -217,8 +223,18 @@ across a change of internals. All data is `std::uint32_t`.
 Every comparison is against a host model of the work, computed in the same order the kernels are
 recorded. The tests of `Small_LayerEquivalence` and `Small_LayerEquivalencePasses` run on a host runtime;
 the rows of `Medium_LayerEquivalence` run it on the in-order chain and on a runtime forced onto the
-scheduler. The layer a run took is not asserted: it is an inside detail, and the
-bytes must be right on both.
+scheduler. For a static graph the layer a run took is not asserted: it is an inside detail, and the
+bytes must be right on both. For a `DynamicGraph` the layer is what `allow_chain()` promises, so the
+tests of it assert `RunReport::layer`.
+
+| Test | What it proves |
+| --- | --- |
+| `ChainedDynamicRegionsMatchTheHostModel` | A `DynamicGraph` allowed to chain, its scale, mix and fold regions ordered across regions and its mix region dropped and recorded again, leaves the bytes of the host model on both rows. |
+| `ChainedDynamicRegionsRunOnTheLayerOfTheRow` | Each of the three compositions of that script runs on `ExecutionLayer::Chain` on the default runtime and on `ExecutionLayer::Scheduler` on the forced one. |
+| `AGraphNotAllowedToChainRunsOnTheScheduler` | `Medium_DynamicGraphChain`: a chainable composed plan of a graph that never called `allow_chain()` runs on the scheduler. |
+| `AllowingTheChainOverAComposedPlanChainsTheNextRun` | `allow_chain(true)` after a run composed without it puts the next run on the chain. |
+| `AChainedGraphWithAHostNodeRunsOnTheScheduler` | A graph allowed to chain whose fold region is native host work runs on the scheduler. |
+| `AMovedGraphKeepsItsChainSetting` | The target of a move from a graph allowed to chain runs its regions on the chain. |
 
 Four shapes are covered: the same work as regions of a `DynamicGraph` and as one static `Graph`,
 with a region dropped and recorded again; host tasks among kernels in one dependency chain, with the two whole-buffer passes on the host and on

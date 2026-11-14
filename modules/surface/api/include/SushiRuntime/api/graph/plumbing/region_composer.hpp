@@ -124,6 +124,24 @@ namespace SushiRuntime
                 void set_label(std::string label) { label_ = std::move(label); }
 
                 /**
+                 * @brief Makes every later commit classify the plan for the in-order chain, or
+                 *        stops it; off until called.
+                 *
+                 * Changing it forces no commit; chain_unclassified() tells the owner one is due.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                void allow_chain(bool allowed) noexcept { chain_allowed_ = allowed; }
+
+                /** @brief Returns whether a commit classifies the plan for the in-order chain. */
+                [[nodiscard]] bool chain_allowed() const noexcept { return chain_allowed_; }
+
+                /**
+                 * @brief Returns whether the chain is allowed and no commit since has classified
+                 *        the plan.
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API bool chain_unclassified() const noexcept;
+
+                /**
                  * @brief Returns the process-wide id of this graph, never 0 for a graph in use.
                  * @return 0 after a move from this composer.
                  */
@@ -174,6 +192,9 @@ namespace SushiRuntime
 
                 /** @brief The identity of this graph; a commit copies it into the plan. */
                 Detail::GraphId id_;
+
+                /** @brief Whether a commit classifies the plan for the in-order chain; a move copies it. */
+                bool chain_allowed_ = false;
         };
     } // namespace Detail
 } // namespace SushiRuntime

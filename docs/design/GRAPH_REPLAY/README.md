@@ -1,6 +1,6 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
-**Status:** Open — P0, P1 and P3 are built and not measured; P2 is not started
+**Status:** Open — P0, P1, P3 and P4 are built; P0, P1 and P3 are not measured; P2 and P5 are not started
 **About:** SushiEngine's matter device solver is launch-bound on the device.
 **Modules:** modules/engine/execution
 
@@ -97,6 +97,20 @@ no event, so the queue tracks none for the nodes in flight; the queue's order ca
 dependency a returned event would, and the run's single wait closes it. A run that records device timing, which is a run while the runtime has an observer, keeps its
 per-node events, because the ledger reads their timestamps.
 
+### Layer 1 for a composed plan
+
+A `DynamicGraph` takes layer 1 only when the caller opts in with `allow_chain(true)`; off, its plan
+is never classified and runs on the scheduler as before. While on, every composition classifies the
+composed plan with the same `classify_chain()` a static plan uses. The composer keeps each node's
+in-degree in two parts, intra-region and cross-region, and numbers its nodes from a counter that only
+rises, so before classifying it re-arms every node from those two parts and captures the plan's base
+state: each node's position becomes its plan index and the baseline counts every predecessor. The
+chain's order is then one topological order of the whole composed DAG, edges across regions
+included and the completion sentinel left out; `classify_chain()` itself does not change. A
+composition that adds or drops a region classifies again, a chain an earlier composition classified
+is emptied when the switch is off or a commit fails midway, and the profiling rule above holds
+unchanged.
+
 ### Layer 2: record and replay
 
 A chainable plan whose late-bound values all live in memory is recorded once into a
@@ -148,6 +162,8 @@ valid order of the same DAG, and every primitive's result is already defined to 
 | P1 | Layer 1: plan classification, the in-order chain, back-to-back steps. Test: a chainable and a non-chainable plan give bit-identical outputs, and `RunReport` names the layer | built |
 | P2 | Layer 2 for plans without device-sized nodes: record, finalize, replay, fallback on failure. Test: replay equals layer 1 bit for bit over many steps with per-step values changing, and a forced record failure falls back and logs once | planned |
 | P3 | Device-side sizing in scan, sort and reduce, so the matter solver's substep becomes replayable. The primitives' existing bit-equality tests hold on every layer | built |
+| P4 | Layer 1 for DynamicGraph as an opt-in: allow_chain(true) makes each composition classify its plan, so a chainable composed plan runs as a chain; off by default, so today's scheduler path is unchanged. Test: a composed plan gives bit-identical outputs on the chain and on the scheduler, and RunReport names the layer | built |
+| P5 | Layer 2 for a graph that opts in, Graph or DynamicGraph: a chainable plan with no device-sized node and no timed run is recorded once per composition and replayed with one submission per step; any record failure falls back to layer 1 and logs once. Test: replay equals layer 1 bit for bit over many steps | planned |
 
 Each phase ends with the spike's table re-measured through `Graph::run` on every device the
 machine has, so the gain is shown, not assumed. P0, P1 and P3 have not had that measurement.

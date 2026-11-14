@@ -93,9 +93,9 @@ scheduler-internal fields.
 ### capture_profiling_state
 
 capture_profiling_state() is shared by capture_base_state() (the static Graph) and DynamicGraph's
-commit(). commit() has no compiled in-degree baseline of its own to capture but needs this sizing,
-and the plan's node table, whenever it populates or repopulates all_nodes. It is safe to call only once all_nodes carries its
-final registration indices for this compose.
+commit(), which needs this sizing and the node table whenever it fills all_nodes, once all_nodes
+carries its final registration indices. A commit that allows the chain re-arms every node and calls
+capture_base_state() instead, so classify_chain() reads the composed baseline (api plumbing README).
 
 ### ExecutionEngine::prepare
 

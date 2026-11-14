@@ -135,9 +135,9 @@ layers, and `RunReport::layer` names the one that ran.
 
 The engine classifies each plan. It refuses the chain for a plan that holds native host work, a
 node the offload coordinator acts on, a device value read at dispatch, a node with no USM
-region, a region the runtime did not allocate, or regions of two devices. `run_async()` and a
-`DynamicGraph` use the scheduler, and so does every graph of a runtime created with
-`RuntimeConfig::force_scheduler`.
+region, a region the runtime did not allocate, or regions of two devices. `run_async()` uses the
+scheduler. A `DynamicGraph` does too, unless `allow_chain(true)` lets each composition classify its
+plan. Every graph of a runtime created with `RuntimeConfig::force_scheduler` uses the scheduler.
 [The execution README](../../modules/engine/execution/README.md) has the classification and the
 order of a run; [the scheduler README](../../modules/engine/scheduler/README.md) has the pool.
 

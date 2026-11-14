@@ -278,6 +278,25 @@ namespace LayerEquivalenceTests
             return shot;
         }
 
+        /** @brief Records the regions of a script that every segment keeps, one region per kernel. */
+        void record_kept_regions(DynamicGraph& world, Tiles& tiles, const Script& script)
+        {
+            // Region keys ascend in the order the static graph adds the same kernels.
+            record_scale(world.region(K_KEY_SCALE), tiles);
+            record_fold(world.region(K_KEY_FOLD), tiles);
+            if (script.evolve_field)
+                record_field(world.region(K_KEY_FIELD), tiles);
+        }
+
+        /** @brief Records the mix region again or drops it, as a segment says. */
+        void shape_mix_region(DynamicGraph& world, Tiles& tiles, const Segment& segment)
+        {
+            if (segment.mix_live && !world.has_region(K_KEY_MIX))
+                record_mix(world.region(K_KEY_MIX), tiles);
+            if (!segment.mix_live)
+                world.drop(K_KEY_MIX);
+        }
+
         /**
          * @brief Runs a script on one DynamicGraph, one region per kernel, and copies the results out.
          *
@@ -288,26 +307,56 @@ namespace LayerEquivalenceTests
             Tiles tiles(rt);
             Snapshot shot;
 
-            // Region keys ascend in the order the static graph adds the same kernels.
             auto world = rt.dynamic_graph();
-            record_scale(world.region(K_KEY_SCALE), tiles);
-            record_fold(world.region(K_KEY_FOLD), tiles);
-            if (script.evolve_field)
-                record_field(world.region(K_KEY_FIELD), tiles);
+            record_kept_regions(world, tiles, script);
 
             for (const Segment& segment : script.segments)
             {
-                if (segment.mix_live && !world.has_region(K_KEY_MIX))
-                    record_mix(world.region(K_KEY_MIX), tiles);
-                if (!segment.mix_live)
-                    world.drop(K_KEY_MIX);
-
+                shape_mix_region(world, tiles, segment);
                 for (std::size_t r = 0; r < segment.runs; ++r)
                     drive(world, how, K_STEPS);
             }
 
             take_tiles(shot, tiles);
             return shot;
+        }
+
+        /** @brief Holds what a DynamicGraph leaves after a script: its outputs and the layer of every run. */
+        struct LayeredSnapshot
+        {
+            Snapshot shot;                      /**< The outputs, copied out after the last run. */
+            std::vector<ExecutionLayer> layers; /**< The layer each run() call's RunReport names, in order. */
+        };
+
+        /**
+         * @brief Runs a script on a DynamicGraph that allows the chain, one run(K_STEPS) per run of a segment.
+         *
+         * Every segment composes the plan again, so each run reads the layer of a fresh classification.
+         */
+        LayeredSnapshot run_chained_dynamic_tiles(const Runtime& rt, const Script& script)
+        {
+            Tiles tiles(rt);
+            LayeredSnapshot result;
+
+            auto world = rt.dynamic_graph();
+            world.allow_chain(true);
+            record_kept_regions(world, tiles, script);
+
+            for (const Segment& segment : script.segments)
+            {
+                shape_mix_region(world, tiles, segment);
+                for (std::size_t r = 0; r < segment.runs; ++r)
+                    result.layers.push_back(world.run(K_STEPS).value().layer);
+            }
+
+            take_tiles(result.shot, tiles);
+            return result;
+        }
+
+        /** @brief Returns the layer of a run on the runtime of a row: the scheduler when forced, the chain otherwise. */
+        ExecutionLayer layer_of_row(bool force_scheduler) noexcept
+        {
+            return force_scheduler ? ExecutionLayer::Scheduler : ExecutionLayer::Chain;
         }
 
         /** @brief Folds one buffer into another, element by element. */
@@ -732,6 +781,11 @@ class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected
         void SetUp() override { use_layer(GetParam()); }
 };
 
+/** @brief Fixture of the tests of DynamicGraph::allow_chain() on the runtime that is not forced onto the scheduler. */
+class Medium_DynamicGraphChain : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Fixture of the rows of the pass chain: where its two whole-buffer passes run, on a host runtime. */
 class Small_LayerEquivalencePasses : public TestSupport::HostRuntimeTest,
                                      public ::testing::WithParamInterface<LayerEquivalenceTests::PassSite>
@@ -805,6 +859,73 @@ namespace LayerEquivalenceTests
     {
         expect_identical(untracked_launch_reference(), run_placed_untracked_launches(runtime()),
                          "host reference vs placed untracked launches");
+    }
+
+    /** @brief Tests that a DynamicGraph allowed to chain, whose mix region is dropped and recorded again, leaves the bytes of the host model. */
+    TEST_P(Medium_LayerEquivalence, ChainedDynamicRegionsMatchTheHostModel)
+    {
+        const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
+
+        expect_identical(tile_reference(script), run_chained_dynamic_tiles(runtime(), script).shot,
+                         "host model vs dynamic graph allowed to chain");
+    }
+
+    /** @brief Tests that every composition of a DynamicGraph allowed to chain runs on the layer of the row's runtime. */
+    TEST_P(Medium_LayerEquivalence, ChainedDynamicRegionsRunOnTheLayerOfTheRow)
+    {
+        const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
+        const std::vector<ExecutionLayer> expected(3, layer_of_row(GetParam()));
+
+        EXPECT_EQ(run_chained_dynamic_tiles(runtime(), script).layers, expected);
+    }
+
+    /** @brief Tests that a DynamicGraph never allowed to chain runs on the scheduler. */
+    TEST_F(Medium_DynamicGraphChain, AGraphNotAllowedToChainRunsOnTheScheduler)
+    {
+        Tiles tiles(runtime());
+        auto world = runtime().dynamic_graph();
+        record_kept_regions(world, tiles, Script{{}, false});
+
+        EXPECT_EQ(world.run(K_STEPS).value().layer, ExecutionLayer::Scheduler);
+    }
+
+    /** @brief Tests that allowing the chain over a plan composed without it chains the next run. */
+    TEST_F(Medium_DynamicGraphChain, AllowingTheChainOverAComposedPlanChainsTheNextRun)
+    {
+        Tiles tiles(runtime());
+        auto world = runtime().dynamic_graph();
+        record_kept_regions(world, tiles, Script{{}, false});
+        world.run(K_STEPS).value();
+
+        world.allow_chain(true);
+
+        EXPECT_EQ(world.run(K_STEPS).value().layer, ExecutionLayer::Chain);
+    }
+
+    /** @brief Tests that a DynamicGraph allowed to chain whose regions hold native host work runs on the scheduler. */
+    TEST_F(Medium_DynamicGraphChain, AChainedGraphWithAHostNodeRunsOnTheScheduler)
+    {
+        Tiles tiles(runtime());
+        Word* fold = tiles.fold.data();
+        auto world = runtime().dynamic_graph();
+        world.allow_chain(true);
+        record_scale(world.region(K_KEY_SCALE), tiles);
+        world.region(K_KEY_FOLD).add_host(Reads(tiles.scale), Writes(tiles.fold),
+                                          [fold] { fold[0] += 1u; });
+
+        EXPECT_EQ(world.run(K_STEPS).value().layer, ExecutionLayer::Scheduler);
+    }
+
+    /** @brief Tests that a DynamicGraph moved from one allowed to chain keeps the setting. */
+    TEST_F(Medium_DynamicGraphChain, AMovedGraphKeepsItsChainSetting)
+    {
+        Tiles tiles(runtime());
+        auto world = runtime().dynamic_graph();
+        world.allow_chain(true);
+        DynamicGraph moved(std::move(world));
+        record_kept_regions(moved, tiles, Script{{}, false});
+
+        EXPECT_EQ(moved.run(K_STEPS).value().layer, ExecutionLayer::Chain);
     }
 } // namespace LayerEquivalenceTests
 
