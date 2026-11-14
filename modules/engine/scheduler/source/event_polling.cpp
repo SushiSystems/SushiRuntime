@@ -33,6 +33,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
+#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
@@ -159,9 +160,10 @@ namespace SushiRuntime
                 return;
             }
 
-            if (times.has_submit)
-                ledger->set_pairing_event_ns(Internal::Observability::PairingKey{pe.device_index, pe.task, pe.step},
-                                             times.submit_ns);
+            // The poller saw the dispatch complete, so it ended before this reading.
+            const std::uint64_t reap_steady_ns = Internal::Observability::steady_now_ns();
+            ledger->narrow_pairing(pe.device_index, Internal::Observability::DispatchWindow{
+                pe.submit_steady_ns, times.start_ns, times.end_ns, reap_steady_ns});
 
             if (node == nullptr)
                 return;
@@ -173,7 +175,7 @@ namespace SushiRuntime
             facts.live_width = pe.widths.live;
             facts.device_index = pe.device_index;
             facts.submit_thread = pe.submit_thread;
-            ledger->record(facts, Internal::Observability::DispatchTimes{times.submit_ns, times.start_ns, times.end_ns});
+            ledger->record(facts, Internal::Observability::DispatchTimes{pe.submit_steady_ns, times.start_ns, times.end_ns});
         }
 
     } // namespace Internal::Scheduler

@@ -37,16 +37,6 @@ namespace SushiRuntime
 {
     namespace Internal::Scheduler
     {
-        /**
-         * @brief Tells whether a dispatch may claim its device's clock pairing.
-         */
-        bool claims_pairing(bool profiling, bool host, const Internal::Graph::Node* node)
-        {
-            if (!profiling)
-                return false;
-            return !host || (node && !node->is_sentinel);
-        }
-
         namespace
         {
             /**
@@ -69,7 +59,7 @@ namespace SushiRuntime
         } // namespace
 
         /**
-         * @brief Tells whether a submission reached a device, which keeps a pairing claim.
+         * @brief Tells whether a submission reached a device, so its event is polled.
          */
         bool submitted_device_work(bool host, bool profiling, const sycl::event& event,
                                    const std::vector<sycl::event>& handed_over)
@@ -101,7 +91,8 @@ namespace SushiRuntime
         EventPolling::PolledEvent dispatched_event(const sycl::event& event, bool submitted, Task* task,
                                                    const Internal::Graph::Node* node, bool profiling,
                                                    std::uint32_t step, std::uint32_t device_index,
-                                                   std::vector<sycl::event> handed_over)
+                                                   std::vector<sycl::event> handed_over,
+                                                   std::uint64_t submit_steady_ns)
         {
             const bool ready = !submitted;
             EventPolling::PolledEvent dispatched;
@@ -115,7 +106,10 @@ namespace SushiRuntime
             dispatched.handed_over = std::move(handed_over);
             dispatched.device_index = device_index;
             if (profiling)
+            {
                 dispatched.submit_thread = Internal::Profile::current_thread_index();
+                dispatched.submit_steady_ns = submit_steady_ns;
+            }
             return dispatched;
         }
 

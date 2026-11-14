@@ -28,6 +28,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -45,49 +46,6 @@ using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {
-    /** @brief The node a dispatch names, if any. */
-    enum class NodeKind
-    {
-        /** @brief No node: a null pointer. */
-        None,
-        /** @brief A node of the graph. */
-        Real,
-        /** @brief The sentinel node that stands for no work. */
-        Sentinel
-    };
-
-    /** @brief One call of claims_pairing and the answer it must give. */
-    struct ClaimRow
-    {
-        /** @brief Whether profiling is on. */
-        bool profiling;
-        /** @brief Whether the body is a host body. */
-        bool host;
-        /** @brief The node the dispatch names. */
-        NodeKind node;
-        /** @brief Whether the dispatch claims its pairing. */
-        bool claims;
-    };
-
-    /** @brief Checks that claims_pairing answers every row. */
-    void expect_claims(const std::vector<ClaimRow>& rows)
-    {
-        Internal::Graph::Node real;
-        Internal::Graph::Node sentinel;
-        sentinel.is_sentinel = true;
-        for (const ClaimRow& row : rows)
-        {
-            const Internal::Graph::Node* node = nullptr;
-            if (row.node == NodeKind::Real)
-                node = &real;
-            if (row.node == NodeKind::Sentinel)
-                node = &sentinel;
-            SCOPED_TRACE(::testing::Message() << "profiling " << row.profiling << ", host " << row.host
-                                              << ", node " << static_cast<int>(row.node));
-            EXPECT_EQ(claims_pairing(row.profiling, row.host, node), row.claims);
-        }
-    }
-
     /** @brief One call of submitted_device_work with a default event and the answer it must give. */
     struct SubmissionRow
     {
@@ -114,10 +72,13 @@ namespace
         }
     }
 
+    /** @brief The steady reading a test hands dispatched_event() as the start of the submit call. */
+    constexpr std::uint64_t K_SUBMIT_STEADY_NS = 7000;
+
     /** @brief Builds the event of a submission that reached no device, with profiling off. */
     EventPolling::PolledEvent unprofiled_submission(Internal::Graph::Node& node)
     {
-        return dispatched_event(sycl::event{}, false, &node, &node, false, 3, 1, {sycl::event{}});
+        return dispatched_event(sycl::event{}, false, &node, &node, false, 3, 1, {sycl::event{}}, K_SUBMIT_STEADY_NS);
     }
 } // namespace
 
@@ -133,26 +94,6 @@ class Medium_DispatchRecord : public TestSupport::RuntimeTest
             return profiled;
         }
 };
-
-/** @brief Tests that nothing claims a pairing with profiling off. */
-TEST(Small_DispatchRecord, NothingClaimsWithoutProfiling)
-{
-    expect_claims({{false, false, NodeKind::Real, false},
-                   {false, false, NodeKind::None, false},
-                   {false, true, NodeKind::Real, false},
-                   {false, true, NodeKind::None, false},
-                   {false, true, NodeKind::Sentinel, false}});
-}
-
-/** @brief Tests that, under profiling, a kernel claims and a host body claims only for a node that is real. */
-TEST(Small_DispatchRecord, AHostBodyClaimsOnlyForARealNode)
-{
-    expect_claims({{true, false, NodeKind::Real, true},
-                   {true, false, NodeKind::None, true},
-                   {true, true, NodeKind::Real, true},
-                   {true, true, NodeKind::None, false},
-                   {true, true, NodeKind::Sentinel, false}});
-}
 
 /** @brief Tests that a submission counts as device work when it is a kernel or hands an event over.
  *
@@ -202,11 +143,27 @@ TEST(Small_DispatchRecord, AnUnprofiledSubmissionRecordsNoSubmittingThread)
     EXPECT_EQ(unprofiled_submission(node).submit_thread, 0u);
 }
 
+/** @brief Tests that an unprofiled submission keeps no submit reading, since no record is written of it. */
+TEST(Small_DispatchRecord, AnUnprofiledSubmissionKeepsNoSubmitReading)
+{
+    Internal::Graph::Node node;
+    EXPECT_EQ(unprofiled_submission(node).submit_steady_ns, 0u);
+}
+
+/** @brief Tests that a profiled submission carries the steady reading its submit call began at. */
+TEST(Small_DispatchRecord, AProfiledSubmissionCarriesItsSubmitReading)
+{
+    Internal::Graph::Node node;
+    const EventPolling::PolledEvent pe =
+        dispatched_event(sycl::event{}, true, &node, &node, true, 0, 0, {}, K_SUBMIT_STEADY_NS);
+    EXPECT_EQ(pe.submit_steady_ns, K_SUBMIT_STEADY_NS);
+}
+
 /** @brief Tests that a submission that reached a device is pushed waiting on its event. */
 TEST(Small_DispatchRecord, ASubmissionThatReachedADeviceWaitsOnItsEvent)
 {
     Internal::Graph::Node node;
-    const EventPolling::PolledEvent pe = dispatched_event(sycl::event{}, true, &node, &node, false, 0, 0, {});
+    const EventPolling::PolledEvent pe = dispatched_event(sycl::event{}, true, &node, &node, false, 0, 0, {}, K_SUBMIT_STEADY_NS);
     EXPECT_FALSE(pe.ready);
     EXPECT_TRUE(pe.has_event);
 }
@@ -214,7 +171,7 @@ TEST(Small_DispatchRecord, ASubmissionThatReachedADeviceWaitsOnItsEvent)
 /** @brief Tests that a real event already complete still counts as submitted under profiling.
  *
  * Work this short can finish before the status is read; without its timestamps the run would lose
- * its pairing claim and its device span.
+ * its device span and the bounds it places on the device's clock pairing.
  */
 TEST_F(Medium_DispatchRecord, ACompleteProfiledEventStillCountsAsSubmitted)
 {

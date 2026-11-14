@@ -172,9 +172,10 @@ namespace SushiRuntime
                 for (const NodeEventRecord& record : observation.events)
                 {
                     PendingSpan span;
+                    // A record's submit is a steady reading whatever its device.
+                    span.queued_steady_ns = record.submit_ns;
                     if (record.device_index == K_HOST_DEVICE_INDEX)
                     {
-                        span.queued_steady_ns = record.submit_ns;
                         span.start_steady_ns = record.start_ns;
                         span.end_steady_ns = record.end_ns;
                     }
@@ -188,7 +189,6 @@ namespace SushiRuntime
                             losses_.add(SpanLoss::NoPairing, 1U);
                             continue;
                         }
-                        span.queued_steady_ns = to_steady_ns(*pairing, record.submit_ns);
                         span.start_steady_ns = to_steady_ns(*pairing, record.start_ns);
                         span.end_steady_ns = to_steady_ns(*pairing, record.end_ns);
                         span.uncertainty_ns = saturate_uncertainty(pairing->uncertainty_ns);

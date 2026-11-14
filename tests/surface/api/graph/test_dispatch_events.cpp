@@ -72,12 +72,6 @@ namespace
         return event.get_profiling_info<sycl::info::event_profiling::command_end>();
     }
 
-    /** @brief The command_submit of @p event. */
-    std::uint64_t submit_of(const sycl::event& event)
-    {
-        return event.get_profiling_info<sycl::info::event_profiling::command_submit>();
-    }
-
     /** @brief Records a graph of one task that submits two dependent kernels and runs it once. */
     struct TwoKernelRun
     {
@@ -147,10 +141,8 @@ namespace
         const NodeEventRecord& record = run.records[0];
         const std::uint64_t earliest_start = std::min(start_of(run.events[0]), start_of(run.events[1]));
         const std::uint64_t latest_end = std::max(end_of(run.events[0]), end_of(run.events[1]));
-        const std::uint64_t earliest_submit = std::min(submit_of(run.events[0]), submit_of(run.events[1]));
         EXPECT_EQ(record.start_ns, earliest_start);
         EXPECT_EQ(record.end_ns, latest_end);
-        EXPECT_EQ(record.submit_ns, earliest_submit);
         EXPECT_NE(record.start_ns, start_of(run.events[1]))
             << "the span starts with the first kernel, which the returned event alone would miss";
     }

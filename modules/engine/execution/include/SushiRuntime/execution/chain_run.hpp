@@ -138,8 +138,11 @@ namespace SushiRuntime
                  */
                 void submit_profiled(Internal::Graph::Node& node, std::uint32_t step);
 
-                /** @brief Writes every kept event's timestamps into the plan's ledger. */
-                void record_events();
+                /**
+                 * @brief Writes every kept event's timestamps into the plan's ledger.
+                 * @param reap_steady_ns Steady reading taken after the run's wait returned.
+                 */
+                void record_events(std::uint64_t reap_steady_ns);
 
                 Internal::Graph::CompiledGraph& graph_;          /**< The plan this run submits. */
                 Profile::Collector& collector_; /**< The context's collector this run's zones record into. */

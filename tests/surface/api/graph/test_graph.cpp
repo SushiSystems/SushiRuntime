@@ -193,10 +193,7 @@ namespace NodeEventRecordsTests
         EXPECT_EQ(recorder.count(), 0u);
     }
 
-    /**
-     * @brief Tests that three kernel nodes over run(5) give fifteen records with submit <= start <=
-     *        end.
-     */
+    /** @brief Tests that three kernel nodes over run(5) give fifteen records with start <= end. */
     TEST_F(Small_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     {
         constexpr std::size_t N = 64;
@@ -222,7 +219,6 @@ namespace NodeEventRecordsTests
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> invocations_by_node;
         for (const auto& rec : observation.events)
         {
-            EXPECT_LE(rec.submit_ns, rec.start_ns);
             EXPECT_LE(rec.start_ns, rec.end_ns);
             invocations_by_node[rec.node_index].push_back(rec.invocation);
         }
@@ -333,6 +329,74 @@ namespace NodeEventRecordsTests
             << "the host record must not land before the kernel it depends on completed";
         EXPECT_LE(host_record->start_ns, host_record->end_ns);
     }
+
+    /** @brief Fixture of the rows that run on the worker pool (true) and on the in-order chain (false). */
+    class Medium_NodeEventRecordsLayers : public TestSupport::LayerRuntimeTest
+    {
+    };
+
+    /** @brief Returns the steady clock's reading now, in nanoseconds since its epoch. */
+    std::uint64_t steady_now_ns()
+    {
+        return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    /**
+     * @brief Expects every record of @p observation, on the steady clock, inside the host's window of the run.
+     *
+     * A record's submit lies in [@p run_begin_ns, its converted start], and its converted end no later than
+     * @p run_end_ns, each give or take its device's pairing uncertainty.
+     */
+    void expect_records_inside_the_run(const RunObservation& observation, std::uint64_t run_begin_ns,
+                                       std::uint64_t run_end_ns)
+    {
+        for (const NodeEventRecord& record : observation.events)
+        {
+            const ClockPairing* pairing = Testing::RunRecorder::pairing_of(observation, record.device_index);
+            ASSERT_TRUE(record.device_index == K_HOST_DEVICE_INDEX || pairing != nullptr)
+                << "device " << record.device_index << " has no pairing";
+            const std::uint64_t uncertainty = pairing != nullptr ? pairing->uncertainty_ns : 0;
+            const std::uint64_t start = Testing::RunRecorder::steady_ns(observation, record, record.start_ns);
+            const std::uint64_t end = Testing::RunRecorder::steady_ns(observation, record, record.end_ns);
+            SCOPED_TRACE(::testing::Message() << "node " << record.node_index << ", invocation " << record.invocation
+                                              << ", uncertainty " << uncertainty);
+            EXPECT_LE(run_begin_ns, record.submit_ns);
+            EXPECT_LE(record.submit_ns, start + uncertainty);
+            EXPECT_LE(end, run_end_ns + uncertainty);
+        }
+    }
+
+    /**
+     * @brief Tests that every span of a run, its cold first dispatch included, lies inside the host's
+     *        submit-to-reap window once converted, within its device's stated pairing uncertainty.
+     */
+    TEST_P(Medium_NodeEventRecordsLayers, EveryConvertedSpanLiesInsideTheHostsSubmitToReapWindow)
+    {
+        constexpr std::size_t N = 64;
+
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+        int* pa = a.data();
+        int* pb = b.data();
+
+        // A new graph, so its first dispatch is a cold submit.
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
+        g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
+        g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
+
+        const std::uint64_t run_begin_ns = steady_now_ns();
+        g.run(std::size_t{3}).value();
+        const std::uint64_t run_end_ns = steady_now_ns();
+
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
+        ASSERT_EQ(observation.events.size(), 6u);
+        expect_records_inside_the_run(observation, run_begin_ns, run_end_ns);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_NodeEventRecordsLayers, ::testing::Values(true, false));
 } // namespace NodeEventRecordsTests
 
 /** @brief Tests the caller-owned RunReport overloads of run(), run() and RunHandle::wait(). */

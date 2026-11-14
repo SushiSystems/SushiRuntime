@@ -42,9 +42,9 @@ namespace SushiRuntime
         /**
          * @brief Returns @p event_ns, a reading of the device's event clock, on the steady clock.
          *
-         * The pairing holds one reading of each clock taken beside each other, so the distance
-         * from event_ns to the event reading is the distance from the result to the steady one.
-         * A time before the steady clock's origin is 0.
+         * The pairing places one event reading on the steady clock, so the distance from it to
+         * @p event_ns is the distance from its steady reading to the result. The result is off by
+         * at most the pairing's uncertainty. A time before the steady clock's origin is 0.
          */
         [[nodiscard]] constexpr std::uint64_t to_steady_ns(const ClockPairing& pairing,
                                                            std::uint64_t event_ns) noexcept

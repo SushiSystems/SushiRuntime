@@ -74,7 +74,7 @@ The source is `sushiruntime.device`. For each dispatch of a run it writes one sp
 
 | Span field | From |
 | --- | --- |
-| `queued_ns`, `start_ns`, `end_ns` | The record's submit, start and end, converted to the steady clock through the pairing of the record's device, then to the record's clock |
+| `queued_ns`, `start_ns`, `end_ns` | The record's submit, a steady reading already, and its start and end, converted to the steady clock through the pairing of the record's device; then each to the record's clock. A queued time after the converted start is held at the start |
 | `uncertainty_ns` | The pairing's uncertainty, saturated to 32 bits; 0 for a host span |
 | track | `device_track_name()` of the record's device, or `host_track_name()` for a host record |
 | name | The node's name in the plan's node table, or `node <index>` when the table has no row |
@@ -141,7 +141,8 @@ the build facts are the library's own and not the host's. It reads each runtime 
 ## Clock conversion
 
 `to_steady_ns(pairing, event_ns)` moves a reading of a device's event clock onto the steady clock by
-the pairing's two readings taken beside each other; a time before the steady clock's origin is 0.
+its distance from the pairing's event reading; a time before the steady clock's origin is 0. The
+result is off its true steady time by at most the pairing's uncertainty.
 `saturate_uncertainty()` clamps the pairing's 64-bit uncertainty to the 32 bits a span carries.
 
 ## profiled_runtime.hpp

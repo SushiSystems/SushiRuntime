@@ -39,7 +39,7 @@ namespace SushiRuntime
     inline constexpr std::uint32_t K_HOST_DEVICE_INDEX = 0xFFFFFFFFu;
 
     /**
-     * @brief Times one dispatch of one node, in nanoseconds on the backend's event clock.
+     * @brief Times one dispatch of one node: its submit on the steady clock, its run on its device's clock.
      * @see modules/foundation/report/README.md
      */
     struct NodeEventRecord
@@ -48,7 +48,7 @@ namespace SushiRuntime
         std::uint32_t invocation     = 0;                   /**< Zero-based dispatch count of the node within the run. */
         std::uint32_t launched_width = K_WIDTH_UNKNOWN;     /**< Elements the dispatch launched over. */
         std::uint32_t live_width     = K_WIDTH_UNKNOWN;     /**< Elements that did work, when known. */
-        std::uint64_t submit_ns      = 0;                   /**< SYCL command_submit, or the steady clock for a host node. */
+        std::uint64_t submit_ns      = 0;                   /**< Steady reading taken before the host began to submit the dispatch. */
         std::uint64_t start_ns       = 0;                   /**< SYCL command_start, or the steady clock for a host node. */
         std::uint64_t end_ns         = 0;                   /**< SYCL command_end, or the steady clock for a host node. */
         std::uint32_t device_index   = K_HOST_DEVICE_INDEX; /**< Device whose queue ran it, or K_HOST_DEVICE_INDEX. */

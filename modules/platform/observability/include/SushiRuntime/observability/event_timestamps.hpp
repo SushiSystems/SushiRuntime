@@ -39,17 +39,18 @@ namespace SushiRuntime
 {
     namespace Internal::Observability
     {
-        /** @brief Holds one event's profiling timestamps on the backend's event clock. */
+        /**
+         * @brief Holds one event's start and end timestamps on the backend's event clock.
+         * @see modules/platform/observability/README.md
+         */
         struct EventTimestamps
         {
-            std::uint64_t submit_ns = 0;   /**< command_submit, or start_ns when the backend lacks it. */
-            std::uint64_t start_ns  = 0;   /**< command_start. */
-            std::uint64_t end_ns    = 0;   /**< command_end. */
-            bool has_submit = false;       /**< Whether submit_ns is the backend's own reading. */
+            std::uint64_t start_ns = 0; /**< command_start. */
+            std::uint64_t end_ns   = 0; /**< command_end. */
         };
 
         /**
-         * @brief Reads an event's start, end and submit timestamps without throwing.
+         * @brief Reads an event's start and end timestamps without throwing.
          * @param event A completed event from a queue built with enable_profiling.
          * @param out Filled only when the function returns true.
          * @return True when start and end were read.
@@ -70,31 +71,14 @@ namespace SushiRuntime
             }
             out.start_ns = start_ns;
             out.end_ns   = end_ns;
-
-            try
-            {
-                out.submit_ns  = event.get_profiling_info<sycl::info::event_profiling::command_submit>();
-                out.has_submit = true;
-            }
-            catch (...)
-            {
-                out.submit_ns  = start_ns;
-                out.has_submit = false;
-            }
             return true;
         }
 
-        /**
-         * @brief Folds @p next into @p into: the earliest submit and start, the latest end.
-         *
-         * The submit reading is the backend's own only when both are.
-         */
+        /** @brief Folds @p next into @p into: the earliest start, the latest end. */
         inline void merge_timestamps(EventTimestamps& into, const EventTimestamps& next) noexcept
         {
-            into.submit_ns  = std::min(into.submit_ns, next.submit_ns);
-            into.start_ns   = std::min(into.start_ns, next.start_ns);
-            into.end_ns     = std::max(into.end_ns, next.end_ns);
-            into.has_submit = into.has_submit && next.has_submit;
+            into.start_ns = std::min(into.start_ns, next.start_ns);
+            into.end_ns   = std::max(into.end_ns, next.end_ns);
         }
 
         /**

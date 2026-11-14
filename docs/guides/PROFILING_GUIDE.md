@@ -54,10 +54,13 @@ A `RunObservation` holds:
 - `device_clocks`: one `ClockPairing` per device that ran a kernel of the run.
 - `drops`: how many dispatches the run lost, by cause.
 
-A device record is on its device's event clock. Its `ClockPairing` places it on the steady clock: the
+A record's submit time is a steady reading, taken before the host began to submit it. The start and end of a
+device record are on its device's event clock. Its `ClockPairing` places them on the steady clock: the
 distance from the record's time to the pairing's event reading is the distance from the result to its steady
 reading. A host-node record is already on the steady clock, with the device index `K_HOST_DEVICE_INDEX`. The
-pairing's `uncertainty_ns` is the length of the submit call that produced it, which bounds the error of the
+runtime bounds each device's clock offset by every dispatch of the run: a kernel starts after its submit began
+and ends before the host saw it complete. The pairing sits at the middle of the run's tightest bounds, and its
+`uncertainty_ns`, half their width plus the drift the clocks can make over the run, bounds the error of the
 conversion.
 
 `on_run()` runs on the thread that learned the run finished, must not throw, must not start a run and must not

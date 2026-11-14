@@ -44,17 +44,7 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Tells whether a dispatch may claim its device's clock pairing.
-         * @param profiling The run's profiling flag, read once for the dispatch.
-         * @param host Whether the dispatched task runs as a host body.
-         * @param node The task as a graph node, or nullptr when it is not one.
-         * @return True with profiling on, for a kernel or for a host body of a node that is not the sentinel.
-         */
-        [[nodiscard]] SUSHIRUNTIME_API bool claims_pairing(bool profiling, bool host,
-                                                           const Internal::Graph::Node* node);
-
-        /**
-         * @brief Tells whether a submission reached a device, which keeps a pairing claim.
+         * @brief Tells whether a submission reached a device, so its event is polled.
          * @param host Whether the submitted task runs as a host body.
          * @param profiling The run's profiling flag.
          * @param event The event the submission returned.
@@ -76,13 +66,13 @@ namespace SushiRuntime
          * @param event The submission's event.
          * @param submitted What submitted_device_work() said of the submission; false pushes it as ready.
          * @param node The task as a graph node, or nullptr; its widths are snapshotted under profiling.
-         * @param handed_over The events the task body handed over, moved into the result.
-         * @return The polled event; under profiling it carries the widths and the submitting thread.
+         * @param submit_steady_ns Steady reading taken before the submit call began.
+         * @return The polled event, holding the handed-over events; under profiling also the widths, thread and submit.
          */
         [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent
         dispatched_event(const sycl::event& event, bool submitted, Task* task, const Internal::Graph::Node* node,
                          bool profiling, std::uint32_t step, std::uint32_t device_index,
-                         std::vector<sycl::event> handed_over);
+                         std::vector<sycl::event> handed_over, std::uint64_t submit_steady_ns);
 
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

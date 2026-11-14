@@ -47,7 +47,6 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/observability/pairing_claim.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>

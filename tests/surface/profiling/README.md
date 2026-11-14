@@ -77,7 +77,7 @@ The conversion of a device's event clock to the steady clock through its pairing
 | `Small_ClockConversion.ATimeBeforeTheOriginReadsZero` | A time before the steady clock's origin reads 0 and does not wrap. |
 | `Small_ClockConversion.AnEventClockFarAheadOfTheSteadyClockConverts` | The pairing's event clock may be far larger than the steady one, as a GPU counter is. |
 | `Small_ClockConversion.SaturatesTheUncertaintyAt32Bits` | An uncertainty that fits 32 bits is kept and one that does not saturates. |
-| `Small_ClockConversion.TheStatedUncertaintyBoundsTheErrorOfAConvertedTime` | A converted time is off its true steady time by at most the stated uncertainty, whichever instant of the window the pairing's event reading took. |
+| `Small_ClockConversion.TheStatedUncertaintyBoundsTheErrorOfAConvertedTime` | A converted time is off its true steady time by at most the stated uncertainty, wherever within it on either side the pairing's event reading truly lies. |
 
 
 ## test_device_track_name.cpp
@@ -103,7 +103,8 @@ DeviceSource over SushiProfiler's own SourceContext, SpanSink and SpanTable, wit
 
 | Test | What it proves |
 | --- | --- |
-| `Small_DeviceSource.ConvertsEventTimesThroughThePairing` | Event times go through the device's pairing onto the record's clock. |
+| `Small_DeviceSource.ConvertsEventTimesThroughThePairing` | Event times go through the device's pairing onto the record's clock, and the steady submit goes there as it is. |
+| `Small_DeviceSource.AQueuedTimeAfterTheConvertedStartIsHeldAtTheStart` | A submit read after the converted start is placed at the start, so a span is never queued after it began. |
 | `Small_DeviceSource.SetsNodeInvocationAndOperationAttributes` | The integer attributes every span carries: node, invocation and operation. |
 | `Small_DeviceSource.ASpanNamesTheLayerThatRanIt` | A span names the layer that ran it: the scheduler by default, the chain when the run took it. |
 | `Small_DeviceSource.OmitsAWidthThatIsUnknown` | A launch width and a live width that are unknown are left out, and a known one is written. |

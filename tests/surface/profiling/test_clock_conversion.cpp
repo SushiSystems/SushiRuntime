@@ -109,17 +109,17 @@ TEST(Small_ClockConversion, SaturatesTheUncertaintyAt32Bits)
 /**
  * @brief Tests that the stated uncertainty bounds the error of a converted time.
  *
- * The pairing's steady reading starts the window of its submit call, so the true steady instant of
- * its event reading is anywhere from the reading to the reading plus the uncertainty. Whichever
- * instant it is, a converted event time is off its true steady time by at most the uncertainty.
+ * The pairing's steady reading is the midpoint of its bounds, so the true steady instant of its event
+ * reading is anywhere within the uncertainty of it, on either side. Whichever instant it is, a
+ * converted event time is off its true steady time by at most the uncertainty.
  */
 TEST(Small_ClockConversion, TheStatedUncertaintyBoundsTheErrorOfAConvertedTime)
 {
     const std::vector<std::uint64_t> events{4000, 5000, 5001, 5300, 9000};
 
-    for (std::uint64_t offset = 0; offset <= K_PAIRING.uncertainty_ns; ++offset)
+    for (std::uint64_t offset = 0; offset <= 2 * K_PAIRING.uncertainty_ns; ++offset)
     {
-        const std::uint64_t true_instant = K_PAIRING.steady_ns + offset;
+        const std::uint64_t true_instant = K_PAIRING.steady_ns - K_PAIRING.uncertainty_ns + offset;
         for (const std::uint64_t event : events)
         {
             const std::uint64_t truth = true_instant + event - K_PAIRING.event_ns;

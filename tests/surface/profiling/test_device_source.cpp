@@ -70,7 +70,7 @@ namespace
     /** @brief The longest delay the profiler accepts of a source: 60 000 ms, as SushiProfiler's Source documents it. */
     constexpr std::uint64_t K_PROFILER_MAX_DELAY_NS = 60'000ULL * 1'000'000ULL;
 
-    /** @brief Builds a device record for node @p node on device 0, at event times 5010, 5020, 5120. */
+    /** @brief Builds a device record for node @p node on device 0: submitted at steady 2010, run at event times 5020 to 5120. */
     NodeEventRecord device_record(std::uint32_t node = 0, std::uint32_t device = 0)
     {
         NodeEventRecord record;
@@ -78,7 +78,7 @@ namespace
         record.invocation = 2;
         record.device_index = device;
         record.submit_thread = 3;
-        record.submit_ns = 5010;
+        record.submit_ns = 2010;
         record.start_ns = 5020;
         record.end_ns = 5120;
         return record;
@@ -173,7 +173,7 @@ TEST_F(Small_DeviceSource, ConvertsEventTimesThroughThePairing)
 
     ASSERT_EQ(table_.size(), 1u);
     const SushiProfiler::Span span = table_.span(0);
-    // event 5010 is steady 2010 and record 1010; the origin is 1000.
+    // The submit is steady 2010 already and record 1010, since the origin is 1000; event 5020 is steady 2020.
     EXPECT_EQ(span.queued_ns, 1010u);
     EXPECT_EQ(span.start_ns, 1020u);
     EXPECT_EQ(span.end_ns, 1120u);
@@ -183,6 +183,21 @@ TEST_F(Small_DeviceSource, ConvertsEventTimesThroughThePairing)
     ASSERT_LT(span.track, tracks_.size());
     EXPECT_EQ(tracks_[span.track], "node/0/gpu0");
     EXPECT_EQ(sink_.refused(), 0u);
+}
+
+/** @brief Tests that a submit read after the converted start is placed at the start, so a span is never queued after it began. */
+TEST_F(Small_DeviceSource, AQueuedTimeAfterTheConvertedStartIsHeldAtTheStart)
+{
+    NodeEventRecord record = device_record();
+    record.submit_ns = 2030;
+    push(observation_of({record}, {row_of(0, "conv")}));
+
+    collect(2000, 3000);
+
+    // The midpoint pairing puts event 5020 at steady 2020, 10 ns before the submit; the uncertainty of 40 covers it.
+    ASSERT_EQ(table_.size(), 1u);
+    EXPECT_EQ(table_.span(0).queued_ns, 1020u);
+    EXPECT_EQ(table_.span(0).start_ns, 1020u);
 }
 
 /** @brief Tests the integer attributes every span carries: node, invocation and operation. */
@@ -312,7 +327,8 @@ TEST_F(Small_DeviceSource, PutsAHostNodeOnTheHostTrack)
 TEST_F(Small_DeviceSource, ASpanOfALaterPeriodWaitsForIt)
 {
     NodeEventRecord later = device_record();
-    later.submit_ns = later.start_ns = 6500;
+    later.submit_ns = 3490;
+    later.start_ns = 6500;
     later.end_ns = 6600;
     push(observation_of({later}, {row_of(0, "conv")}));
 
@@ -331,7 +347,8 @@ TEST_F(Small_DeviceSource, ASpanOfALaterPeriodWaitsForIt)
 TEST_F(Small_DeviceSource, ASpanOfAClosedPeriodIsDroppedLate)
 {
     NodeEventRecord early = device_record();
-    early.submit_ns = early.start_ns = 4500;
+    early.submit_ns = 1490;
+    early.start_ns = 4500;
     early.end_ns = 4600;
     push(observation_of({early}, {row_of(0, "conv")}));
 

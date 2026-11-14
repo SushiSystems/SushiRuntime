@@ -16,18 +16,18 @@ interfaces, the system heartbeat clock (a sleep), a constant and a plain struct,
 
 ## test_dispatch_record.cpp
 
-The file tests the pairing-claim policy and the polled events of a dispatch. The claim and the
-submission rules run as rows over their inputs; only the two tests that read a real event need a queue.
+The file tests the submission rule and the polled events of a dispatch. The submission rule runs as
+rows over its inputs; only the two tests that read a real event need a queue.
 
 | Test | What it proves |
 | --- | --- |
-| `NothingClaimsWithoutProfiling` | No input claims a pairing with profiling off. |
-| `AHostBodyClaimsOnlyForARealNode` | Under profiling a kernel claims, and a host body claims only for a node that is not the sentinel. |
 | `AnEmptyHostBodySubmittedNothing` | A submission counts as device work when it is a kernel or hands an event over, and not when a host body returns a default event and hands none over. |
 | `AnInlineHostNodeIsReady` | A host node that ran inline is pushed ready and holds no event. |
 | `ASubmissionThatReachedNoDeviceIsReady` | A submission that reached no device is pushed ready and holds no event. |
 | `ASubmissionThatReachedNoDeviceCarriesItsStepAndDevice` | The same submission still carries its task, step, device index and handed-over events. |
 | `AnUnprofiledSubmissionRecordsNoSubmittingThread` | With profiling off no submitting thread is recorded. |
+| `AnUnprofiledSubmissionKeepsNoSubmitReading` | With profiling off the polled event keeps no submit reading, since no record is written of it. |
+| `AProfiledSubmissionCarriesItsSubmitReading` | Under profiling the polled event carries the steady reading its submit call began at. |
 | `ASubmissionThatReachedADeviceWaitsOnItsEvent` | A submission that reached a device is pushed with its event, not ready. |
 | `Medium_DispatchRecord.ACompleteProfiledEventStillCountsAsSubmitted` | A host-task event from a profiling queue that completed before the read still counts as submitted. |
 | `Small_DispatchRecord.ACompleteEventIsNoWorkWithProfilingOff` | With profiling off a complete event is no device work. |

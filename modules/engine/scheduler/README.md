@@ -188,13 +188,12 @@ tasks go where any worker can take them.
 
 execute_task() reads the profiling flag and the task's execution mode once per dispatch and passes
 them to the functions of this header. completed_host_event() builds the ready event of a host node
-that ran inline. For a submitted task it calls three more. claims_pairing()
-decides whether the dispatch may claim its device's clock pairing: with profiling on, a kernel
-always may and a host body only for a node that is not the sentinel. submitted_device_work() tells
-the `PairingClaim` whether to keep the claim: a host body that hands none over and returns a complete
-event (not `== sycl::event{}`, never true in DPC++) gives it back; under profiling a complete event
-whose timestamps read is still work, so a fast kernel keeps its claim and span. dispatched_event()
-takes that answer, builds the polled event and under profiling snapshots widths and thread.
+that ran inline. For a submitted task it calls two more. submitted_device_work() tells whether the
+submission reached a device: a host body that hands none over and returns a complete event (not
+`== sycl::event{}`, never true in DPC++) did not; under profiling a complete event whose timestamps
+read is still work, so a fast kernel keeps its span. dispatched_event() takes that answer, builds the
+polled event and under profiling snapshots widths and thread and keeps the steady reading taken before
+the submit call.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
 work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device.
@@ -694,14 +693,14 @@ of the dispatch is the node's cached queue index, or the one the scan found; wit
 device found for the queue, the dispatch takes the unprofiled queue and the ledger counts a dropped
 dispatch for the cause "no queue".
 
-The first few device submissions to reach a device in a run each claim a pairing candidate and time their own submit
-call with the steady clock; a candidate's uncertainty is that call's length, and the ledger keeps the shortest.
-A device submission is a KERNEL node's `submit` or a HOST node's `execute_host()`, the task body that
-submits its own work; a plan built only of task bodies would otherwise leave its device with no
-pairing, and a profiler drops every record of that device. For a task body the timed call is the
-whole body, so the uncertainty covers any host work the body does around its submissions. A body
-that returns an empty event and hands none over submitted nothing, so `PairingClaim` gives its candidate
-back and a later submission claims it instead (`observability/profiling_ledger.hpp`). The sentinel never claims.
+Under profiling every device submission reads the steady clock before its submit call, and the
+poller reads it again when it sees the dispatch complete. accumulate_profiling() hands both, with the
+dispatch's start and end, to the ledger's narrow_pairing(), which keeps the tightest bounds of the
+device's clock offset across the run (`observability/offset_bounds.hpp`). A device submission is a
+KERNEL node's `submit` or a HOST node's `execute_host()`, the task body that submits its own work; a
+plan built only of task bodies would otherwise leave its device with no pairing, and a profiler drops
+every record of that device. A body that returns an empty event and hands none over submitted nothing
+and leaves no bounds.
 
 `execute_host()` takes a vector of dependencies, so the rarer path of a HOST node that
 submits its own device work still allocates one. The kernel path calls `depends_on()` per

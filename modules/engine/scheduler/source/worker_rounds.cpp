@@ -37,7 +37,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/observability/pairing_claim.hpp>
+#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
@@ -477,12 +477,10 @@ namespace SushiRuntime
                     if (auto* ledger = run_.ledger.load(std::memory_order_acquire))
                         ledger->note_drop(DropCause::NoQueue, DropCounts::K_NO_NODE);
 
-                // One read of the step names the candidate and the event, so the reap finds its claim.
+                // The step is read once, so the record names the step the dispatch was submitted in.
                 const std::uint32_t dispatch_step = run_.current_step.load(std::memory_order_acquire);
-                Internal::Observability::PairingClaim claim(
-                    claims_pairing(profiling, host, node) ? run_.ledger.load(std::memory_order_acquire)
-                                                           : nullptr,
-                    Internal::Observability::PairingKey{dispatch_device, task, dispatch_step});
+                // The kernel cannot start before this reading, which bounds the device's clock pairing.
+                const std::uint64_t submit_steady_ns = profiling ? Internal::Observability::steady_now_ns() : 0;
 
                 // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
                 sycl::event e;
@@ -493,12 +491,11 @@ namespace SushiRuntime
                                                      (profiling && host) ? &handed_over : nullptr);
                 }
                 const bool submitted = submitted_device_work(host, profiling, e, handed_over);
-                claim.settle(submitted);
 
                 // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).
                 events.push(dispatched_event(e, submitted, task, node, profiling,
                                              dispatch_step,
-                                             dispatch_device, std::move(handed_over)));
+                                             dispatch_device, std::move(handed_over), submit_steady_ns));
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));

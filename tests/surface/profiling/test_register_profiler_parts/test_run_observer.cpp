@@ -64,10 +64,7 @@ namespace
         EXPECT_EQ(observation.events.size(), 3u) << "one record per node dispatch";
         EXPECT_FALSE(observation.drops.any());
         for (const NodeEventRecord& record : observation.events)
-        {
-            EXPECT_LE(record.submit_ns, record.start_ns);
             EXPECT_LE(record.start_ns, record.end_ns);
-        }
     }
 
     /** @brief Returns the highest invocation any record of @p observation carries. */

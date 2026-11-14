@@ -175,7 +175,7 @@ clock. The zone is a level 2 zone, so the case skips when the build compiles few
 The rest of the file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
 the g1 node event records design spec in the version history, built as task 3 of
 the g1 node event records plan spec in the version history. A profiled node needs the
-SYCL `command_submit`, `command_start` and `command_end` times, which only a queue built with
+SYCL `command_start` and `command_end` times, which only a queue built with
 `enable_profiling` exposes. The plain queue that `devices().queue(index)` returns must stay
 unchanged for every existing consumer. The medium cases run on the program's one device context,
 `TestSupport::ContextEnvironment`; no body builds a context of its own. That a profiling queue is

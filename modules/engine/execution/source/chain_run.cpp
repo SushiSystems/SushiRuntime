@@ -33,14 +33,13 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
-#include <SushiRuntime/observability/pairing_claim.hpp>
+#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
-#include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
@@ -168,8 +167,9 @@ namespace SushiRuntime
             if (!waited)
                 return waited;
             finished_ = true;
+            // Every kept event completed before the reading handed to record_events().
             if (profiling_)
-                record_events();
+                record_events(Internal::Observability::steady_now_ns());
             return {};
         }
 
@@ -198,27 +198,21 @@ namespace SushiRuntime
          */
         void ChainRun::submit_profiled(Internal::Graph::Node& node, std::uint32_t step)
         {
-            Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
-            const Internal::Scheduler::Task* task = &node;
-            const std::uint32_t device = static_cast<std::uint32_t>(graph_.chain.queue_index);
-            // A task body submits device work as a kernel node does, so the first nodes of either kind claim.
-            Internal::Observability::PairingClaim claim(&ledger, Internal::Observability::PairingKey{device, task, step});
-
+            // The node's work cannot start before this reading.
+            const std::uint64_t submit_steady_ns = Internal::Observability::steady_now_ns();
             std::vector<sycl::event> handed_over;
             sycl::event event = submit_node(node, handed_over);
-            // A body that submitted nothing has no event to pair, so it gives its candidate back.
-            const bool host = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host;
-            claim.settle(Internal::Scheduler::submitted_device_work(host, true, event, handed_over));
 
             graph_.chain.pending_events.push_back(
                 Internal::Graph::PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node),
-                                              Internal::Profile::current_thread_index(), std::move(handed_over)});
+                                              Internal::Profile::current_thread_index(), std::move(handed_over),
+                                              submit_steady_ns});
         }
 
         /**
          * @brief Writes every kept event's timestamps into the plan's ledger.
          */
-        void ChainRun::record_events()
+        void ChainRun::record_events(std::uint64_t reap_steady_ns)
         {
             SR_ZONE_FINE(collector_, "chain.record_events");
 
@@ -234,10 +228,8 @@ namespace SushiRuntime
                     continue;
                 }
 
-                const Internal::Scheduler::Task* task = pe.node;
-                if (times.has_submit)
-                    ledger.set_pairing_event_ns(Internal::Observability::PairingKey{device, task, pe.step},
-                                                times.submit_ns);
+                ledger.narrow_pairing(device, Internal::Observability::DispatchWindow{
+                    pe.submit_steady_ns, times.start_ns, times.end_ns, reap_steady_ns});
 
                 Internal::Observability::DispatchFacts facts;
                 facts.node_index = index;
@@ -246,7 +238,7 @@ namespace SushiRuntime
                 facts.live_width = pe.widths.live;
                 facts.device_index = device;
                 facts.submit_thread = pe.submit_thread;
-                ledger.record(facts, Internal::Observability::DispatchTimes{times.submit_ns, times.start_ns, times.end_ns});
+                ledger.record(facts, Internal::Observability::DispatchTimes{pe.submit_steady_ns, times.start_ns, times.end_ns});
             }
             graph_.chain.pending_events.clear();
         }

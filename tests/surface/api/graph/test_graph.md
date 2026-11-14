@@ -28,7 +28,7 @@ which wraps the `RecordingObserver` adapter of the report module.
 | Test | What it proves |
 | --- | --- |
 | `ARunWithNoObserverRecordsNothing` | Item 1: a run of a runtime whose observer was removed succeeds and hands out no observation. This one test holds the promise for `Graph` and for `DynamicGraph`. |
-| `RequestedGraphRecordsOnePerDispatch` | Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per node, and `submit <= start <= end` for every record. |
+| `RequestedGraphRecordsOnePerDispatch` | Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per node, and `start <= end` for every record. |
 
 ### Steady-state capture
 
@@ -61,6 +61,15 @@ index, which `NodeEventRecord` carries as its field.
 The chain guarantees that the host node is dispatched no earlier than the kernel's completion. The
 tolerance covers only the measurement uncertainty of the pairing, not scheduling jitter between
 unrelated roots.
+
+### `EveryConvertedSpanLiesInsideTheHostsSubmitToReapWindow`
+
+`Medium_NodeEventRecordsLayers` runs a new graph of two dependent kernel nodes over `run(3)`, once on the
+worker pool and once on the in-order chain, between two steady readings the test takes. The graph is new,
+so its first dispatch is a cold submit. `expect_records_inside_the_run` expects every record's submit at
+or after the first reading and no later than its converted start, and its converted end no later than the
+second reading, each give or take its device's pairing uncertainty. A pairing taken from `command_submit`
+would place every span about 20 ms late (KI-31), and the end check fails by that much.
 
 The file covers the overloads that take a caller-owned `RunReport`: `run(RunReport&)`,
 `run(RunReport&)` and `RunHandle::wait(RunReport&)`.

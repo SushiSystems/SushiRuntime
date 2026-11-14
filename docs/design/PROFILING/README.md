@@ -32,7 +32,7 @@ the outside through a `RunObserver` and through the profiler's zones, values and
 - One foundation module, `profile`, is the only code below the surface tier that includes SushiProfiler. A surface module, `profiling`, holds the device source, the environment contributor and the registration function.
 - SushiProfiler is linked as its shared library by the runtime and by every host, so a process has one collector.
 - A runtime fans a run out to any number of observers. Device timing is chosen per run: a run is timed while at least one observer is added, and no plan is rebuilt when one is added or removed.
-- An observer receives a `RunObservation`: the layer, the shared node table, the records, one pairing per device and the drop counts. A device record stays on its device's event clock and a host record on the steady clock.
+- An observer receives a `RunObservation`: the layer, the shared node table, the records, one pairing per device and the drop counts. A record's submit is on the steady clock; a device record's start and end stay on its device's event clock and a host record's on the steady clock.
 - No period is read in the runtime. The source places each span by its converted start against the period the session hands it, which makes the per-device pairing load-bearing.
 - A run hands its observation over when its device work completes, so a caller that waits late loses nothing.
 - The profiler parts add their observers behind the profiler's gate, so a session that is paused or not open costs no device timing; an observer added through `Runtime::add_run_observer()` always wants timing.
@@ -51,9 +51,15 @@ thread. One ledger function fills the whole record; the poller, the in-order cha
 A body that submits several kernels hands each event over with `note_dispatch_event()`, and the record then
 runs from the earliest start to the latest end.
 
-The first kernel to reach a device in a run claims that device's pairing and times its own `submit` call, so the
-pairing's uncertainty is the length of that call. A dispatch that leaves no record is counted under one of five
-causes and logged once per run.
+A record's submit time is the steady reading the host took before its submit call; `command_submit` is never
+read, since DPC++ estimates it on the host from a device-host base it never refreshes (KI-31). Every dispatch
+bounds its device's clock offset: its kernel cannot start before the submit began and ended before the reaper
+saw it complete, so the offset lies in `[submit - start, reap - end]`. The device keeps the tightest bounds of
+the run, and only of the run: its event clock drifts against the steady clock (33.5 ppm measured on an RTX 3080
+Ti), so bounds from minutes before do not hold the offset of now. Its pairing converts with their midpoint and
+states half their width, plus 100 ppm of the run's span for the drift, as its uncertainty, so every converted
+span lies within the stated uncertainty, a cold first submit included. A dispatch that leaves no
+record is counted under one of five causes and logged once per run.
 
 ### Observation
 

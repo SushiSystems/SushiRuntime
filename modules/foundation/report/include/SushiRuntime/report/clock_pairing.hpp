@@ -35,16 +35,17 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Pairs one event clock reading with one steady clock reading taken beside it.
+     * @brief Pairs one event clock reading with its best estimate on the steady clock.
      *
-     * Places the records of one device on the steady clock. A run with no device submission
-     * carries the identity pairing: `event_ns == steady_ns` and `uncertainty_ns == 0`.
+     * A reading t converts to `steady_ns + (t - event_ns)`, within `uncertainty_ns` of its true
+     * steady time. A run with no device submission carries `event_ns == steady_ns`, no uncertainty.
+     * @see modules/foundation/report/README.md
      */
     struct ClockPairing
     {
-        std::uint64_t event_ns       = 0; /**< Event-clock reading of the submission that produced the pairing. */
-        std::uint64_t steady_ns      = 0; /**< Steady-clock reading taken beside event_ns. */
-        std::uint64_t uncertainty_ns = 0; /**< Length of the submit window steady_ns starts; event_ns lies inside it. */
+        std::uint64_t event_ns       = 0; /**< An event-clock reading of one of the run's dispatches on the device. */
+        std::uint64_t steady_ns      = 0; /**< event_ns on the steady clock, at the midpoint of the bounds the run's dispatches allow. */
+        std::uint64_t uncertainty_ns = 0; /**< Half the bounds' width plus the clocks' drift over the run; a converted reading is off by at most this. */
     };
 
     /** @brief Holds the pairing of one device's event clock for one run. */

@@ -55,6 +55,7 @@ namespace SushiRuntime
             Internal::Graph::NodeWidths widths{}; /**< Node's widths, snapshotted at submit. */
             std::uint32_t submit_thread = 0;      /**< Profiler thread index of the submitting thread; 0 when unknown. */
             std::vector<sycl::event> handed_over{}; /**< The events the node's body handed over, when it handed over any. */
+            std::uint64_t submit_steady_ns = 0;     /**< Steady reading taken before the node's submit call began. */
         };
 
         /**

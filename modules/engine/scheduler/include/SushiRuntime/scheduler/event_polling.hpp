@@ -101,6 +101,9 @@ namespace SushiRuntime
 
                     /** @brief Profiler thread index of the thread that submitted the dispatch; 0 when unknown. */
                     std::uint32_t submit_thread = 0;
+
+                    /** @brief Steady reading taken before the dispatch's submit call began; 0 without profiling. */
+                    std::uint64_t submit_steady_ns = 0;
                 };
 
                 /**

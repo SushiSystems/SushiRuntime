@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* tighter_pairing.hpp                                                    */
+/* test_steady_time.cpp                                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,31 +22,24 @@
 /**************************************************************************/
 
 /**
- * @file tighter_pairing.hpp
- * @brief Declares tighter_pairing(), which picks the better of two clock pairings of one device.
+ * @file test_steady_time.cpp
+ * @brief Tests steady_ns(), the steady reading a dispatch record and a clock pairing are made of.
+ * @see tests/platform/observability/README.md
  * @author Mustafa Garip
- * @see modules/platform/observability/README.md
  */
 
-#pragma once
+#include <chrono>
 
-#include <SushiRuntime/report/clock_pairing.hpp>
+#include <gtest/gtest.h>
 
-namespace SushiRuntime
+#include <SushiRuntime/observability/steady_time.hpp>
+
+using SushiRuntime::Internal::Observability::steady_ns;
+
+/** @brief Tests that steady_ns() counts the nanoseconds of a time point since the steady clock's epoch. */
+TEST(Small_SteadyTime, SteadyNsCountsNanosecondsSinceTheEpoch)
 {
-    namespace Internal::Observability
-    {
-        /**
-         * @brief Returns the pairing with the smaller uncertainty, @p kept when the two are equal.
-         *
-         * A pairing's steady reading starts its submit window and its uncertainty is the window's
-         * length, so the steady instant of its event reading lies within it. Every candidate is a
-         * true bound on its own, so the shortest window is the tightest one.
-         */
-        [[nodiscard]] constexpr ClockPairing tighter_pairing(const ClockPairing& kept,
-                                                             const ClockPairing& candidate) noexcept
-        {
-            return candidate.uncertainty_ns < kept.uncertainty_ns ? candidate : kept;
-        }
-    } // namespace Observability
-} // namespace SushiRuntime
+    const std::chrono::steady_clock::time_point point{std::chrono::microseconds(3)};
+
+    EXPECT_EQ(steady_ns(point), 3000u);
+}

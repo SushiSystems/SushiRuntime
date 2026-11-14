@@ -29,9 +29,10 @@
 
 #include "host_node_run.hpp"
 
-#include <chrono>
+#include <cstdint>
 
 #include <SushiRuntime/observability/profiling_ledger.hpp>
+#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -39,16 +40,6 @@ namespace SushiRuntime
 {
     namespace Internal::Scheduler
     {
-        namespace
-        {
-            /** @brief Returns a steady-clock time point as nanoseconds since its epoch. */
-            std::uint64_t steady_ns(std::chrono::steady_clock::time_point t)
-            {
-                return static_cast<std::uint64_t>(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count());
-            }
-        }
-
         /**
          * @brief Runs a host node on the calling thread and, under profiling, records its span.
          */
@@ -62,12 +53,12 @@ namespace SushiRuntime
                 return;
             }
 
-            const auto h0 = std::chrono::steady_clock::now();
+            const std::uint64_t h0 = Internal::Observability::steady_now_ns();
             {
                 SR_ZONE_FINE(collector, "dispatch.host");
                 node.execute_native();
             }
-            const auto h1 = std::chrono::steady_clock::now();
+            const std::uint64_t h1 = Internal::Observability::steady_now_ns();
 
             // Raw steady times, on the host device; the observation carries them as they are.
             if (auto* active = ledger.load(std::memory_order_acquire))
@@ -77,8 +68,7 @@ namespace SushiRuntime
                 facts.node_index = node.registration_index;
                 facts.invocation = step;
                 facts.submit_thread = Internal::Profile::current_thread_index();
-                active->record(facts,
-                               Internal::Observability::DispatchTimes{steady_ns(h0), steady_ns(h0), steady_ns(h1)});
+                active->record(facts, Internal::Observability::DispatchTimes{h0, h0, h1});
             }
         }
 

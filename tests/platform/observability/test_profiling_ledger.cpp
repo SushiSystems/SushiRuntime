@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -42,7 +41,7 @@
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Observability::DispatchFacts;
 using SushiRuntime::Internal::Observability::DispatchTimes;
-using SushiRuntime::Internal::Observability::PairingKey;
+using SushiRuntime::Internal::Observability::DispatchWindow;
 using SushiRuntime::Internal::Observability::ProfilingLedger;
 
 namespace
@@ -53,11 +52,11 @@ namespace
     /** @brief Devices a reserve() call prepares pairings for. */
     constexpr std::size_t K_DEVICE_COUNT = 2;
 
-    /** @brief Event-clock reading the source ledger's pairing carries before it is moved. */
+    /** @brief Event-clock reading the source ledger's pairing carries before it is moved: its dispatch's start. */
     constexpr std::uint64_t K_EVENT_NS = 900;
 
-    /** @brief Steady-clock reading taken beside K_EVENT_NS. */
-    constexpr std::uint64_t K_STEADY_NS = 5000;
+    /** @brief K_EVENT_NS on the steady clock: the midpoint of [5000 - 900, 5100 - 950] is 4125, and 900 + 4125. */
+    constexpr std::uint64_t K_STEADY_NS = 5025;
 
     /** @brief Multiplicities of the first run, before the move. */
     const std::vector<std::uint32_t> K_FIRST_MULTIPLICITIES{2, 1};
@@ -126,11 +125,89 @@ namespace
      */
     void pair_device_zero(ProfilingLedger& ledger)
     {
-        const int owner = 0;
-        const PairingKey key{0, &owner, 0};
-        EXPECT_TRUE(ledger.claim_pairing_owner(key));
-        ledger.set_pairing_submit_window(key, K_STEADY_NS, 7);
-        ledger.set_pairing_event_ns(key, K_EVENT_NS);
+        ledger.narrow_pairing(0, DispatchWindow{5000, K_EVENT_NS, 950, 5100});
+    }
+
+    /** @brief A fake device's event clock: ahead of the steady clock by a fixed amount, and drifting at a fixed rate. */
+    struct FakeEventClock
+    {
+        std::uint64_t ahead_ns;           /**< How far it runs ahead of the steady clock at steady 0. */
+        std::uint64_t drift_numerator;    /**< It gains drift_numerator ns ... */
+        std::uint64_t drift_denominator;  /**< ... every drift_denominator steady ns. */
+
+        /** @brief Returns this clock's reading at the steady instant @p steady_ns. */
+        [[nodiscard]] std::uint64_t read(std::uint64_t steady_ns) const
+        {
+            return steady_ns + ahead_ns + steady_ns * drift_numerator / drift_denominator;
+        }
+    };
+
+    /** @brief An event clock 5 ms ahead of the steady clock that keeps its pace. */
+    constexpr FakeEventClock K_STEADY_DEVICE{5'000'000, 0, 1};
+
+    /** @brief An event clock 5 ms ahead that gains 33.5 ppm, the drift an RTX 3080 Ti's CUDA events showed. */
+    constexpr FakeEventClock K_DRIFTING_DEVICE{5'000'000, 67, 2'000'000};
+
+    /** @brief One dispatch of the fake device on the steady clock: the truth the ledger never sees whole. */
+    struct TrueDispatch
+    {
+        std::uint64_t submit_steady_ns; /**< When the host began to submit it. */
+        std::uint64_t start_steady_ns;  /**< When it truly started. */
+        std::uint64_t end_steady_ns;    /**< When it truly ended. */
+        std::uint64_t reap_steady_ns;   /**< When the host saw it complete. */
+    };
+
+    /** @brief A cold first dispatch: its kernel starts 200 us after the submit began, and is reaped 40 us after its end. */
+    constexpr TrueDispatch K_COLD{10'000, 210'000, 260'000, 300'000};
+
+    /** @brief A warm dispatch whose start follows its submit by 30 ns. */
+    constexpr TrueDispatch K_WARM{400'000, 400'030, 400'500, 400'520};
+
+    /** @brief A warm dispatch reaped 50 ns after its end. */
+    constexpr TrueDispatch K_REAPED_QUICKLY{500'000, 500'010, 501'000, 501'050};
+
+    /** @brief Returns @p truth moved @p later_ns later on the steady clock. */
+    TrueDispatch moved(const TrueDispatch& truth, std::uint64_t later_ns)
+    {
+        return TrueDispatch{truth.submit_steady_ns + later_ns, truth.start_steady_ns + later_ns,
+                            truth.end_steady_ns + later_ns, truth.reap_steady_ns + later_ns};
+    }
+
+    /** @brief Returns what the host sees of @p truth: its start and end read on @p clock. */
+    DispatchWindow seen_on_device(const TrueDispatch& truth, const FakeEventClock& clock = K_STEADY_DEVICE)
+    {
+        return DispatchWindow{truth.submit_steady_ns, clock.read(truth.start_steady_ns), clock.read(truth.end_steady_ns),
+                              truth.reap_steady_ns};
+    }
+
+    /** @brief Returns @p event_ns on the steady clock through @p pairing, as ClockPairing documents it. */
+    std::uint64_t converted(const ClockPairing& pairing, std::uint64_t event_ns)
+    {
+        return pairing.steady_ns + (event_ns - pairing.event_ns);
+    }
+
+    /** @brief Returns how far @p actual lies from @p expected, in either direction. */
+    std::uint64_t distance(std::uint64_t actual, std::uint64_t expected)
+    {
+        return actual > expected ? actual - expected : expected - actual;
+    }
+
+    /**
+     * @brief Expects the span of @p truth, read on @p clock and converted through @p pairing, inside its uncertainty.
+     *
+     * Each end lies within the uncertainty of its true steady time, and the span lies inside the host's
+     * submit-to-reap window give or take the uncertainty.
+     */
+    void expect_converted_within_uncertainty(const ClockPairing& pairing, const TrueDispatch& truth,
+                                             const FakeEventClock& clock = K_STEADY_DEVICE)
+    {
+        const DispatchWindow seen = seen_on_device(truth, clock);
+        const std::uint64_t start = converted(pairing, seen.start_ns);
+        const std::uint64_t end = converted(pairing, seen.end_ns);
+        EXPECT_LE(distance(start, truth.start_steady_ns), pairing.uncertainty_ns);
+        EXPECT_LE(distance(end, truth.end_steady_ns), pairing.uncertainty_ns);
+        EXPECT_LE(truth.submit_steady_ns, start + pairing.uncertainty_ns);
+        EXPECT_LE(end, truth.reap_steady_ns + pairing.uncertainty_ns);
     }
 
     /** @brief Returns the pairings the ledger collects. */
@@ -219,16 +296,16 @@ TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerHoldsNoPairing)
     EXPECT_TRUE(pairings_of(source).empty());
 }
 
-TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerClaimsNothingBeforeReserve)
+TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerTakesNothingBeforeReserve)
 {
     ProfilingLedger source;
     source.reserve(K_FIRST_MULTIPLICITIES, K_EXPECTED_INVOCATIONS, K_DEVICE_COUNT);
-    int owner = 0;
 
     const ProfilingLedger target = move_out_of(source, GetParam());
+    pair_device_zero(source);
 
     EXPECT_EQ(source.claim_slot(0), ProfilingLedger::npos);
-    EXPECT_FALSE(source.claim_pairing_owner(PairingKey{0, &owner, 0}));
+    EXPECT_TRUE(pairings_of(source).empty());
 }
 
 TEST_P(Small_ProfilingLedgerMove, TheMovedFromLedgerReservesLikeAFreshOne)
@@ -295,210 +372,190 @@ TEST(Small_ProfilingLedger, ARecordOnTheHostDeviceKeepsTheHostIndexAndUnknownWid
     EXPECT_EQ(records[0].live_width, K_WIDTH_UNKNOWN);
 }
 
-/** @brief Tests that a device keeps K_PAIRING_CANDIDATES candidates per run and refuses the next claim. */
-TEST(Small_ProfilingLedger, ADeviceKeepsAFewPairingCandidatesPerRun)
+/** @brief Tests that a device no dispatch narrowed has no pairing, and one that was narrowed has its own. */
+TEST(Small_ProfilingLedger, OnlyANarrowedDeviceHasAPairing)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 3);
-    std::array<int, ProfilingLedger::K_PAIRING_CANDIDATES + 1> tasks{};
 
-    for (std::size_t i = 0; i < ProfilingLedger::K_PAIRING_CANDIDATES; ++i)
-        EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &tasks[i], 0})) << "candidate " << i;
-
-    const PairingKey refused{0, &tasks[ProfilingLedger::K_PAIRING_CANDIDATES], 0};
-    EXPECT_FALSE(ledger.claim_pairing_owner(refused));
-    EXPECT_TRUE(ledger.is_pairing_owner(PairingKey{0, &tasks[0], 0}));
-    EXPECT_FALSE(ledger.is_pairing_owner(refused));
-}
-
-/** @brief Tests that each device claims its own pairing independently. */
-TEST(Small_ProfilingLedger, EachDeviceClaimsItsOwnPairing)
-{
-    ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 3);
-    int owner = 0;
-
-    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &owner, 0}));
-    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{1, &owner, 0}));
-    EXPECT_TRUE(ledger.claim_pairing_owner(PairingKey{2, &owner, 0}));
-}
-
-/** @brief Tests that a device past the ledger claims nothing and owns nothing. */
-TEST(Small_ProfilingLedger, ADevicePastTheLedgerClaimsNothing)
-{
-    ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 3);
-    int owner = 0;
-
-    EXPECT_FALSE(ledger.claim_pairing_owner(PairingKey{3, &owner, 0}));
-    EXPECT_FALSE(ledger.is_pairing_owner(PairingKey{3, &owner, 0}));
-}
-
-/** @brief Tests that a released candidate is free again, so a full device claims once one is given back. */
-TEST(Small_ProfilingLedger, AReleasedCandidateIsClaimedAgain)
-{
-    ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 1);
-    std::array<int, ProfilingLedger::K_PAIRING_CANDIDATES + 1> tasks{};
-    for (std::size_t i = 0; i < ProfilingLedger::K_PAIRING_CANDIDATES; ++i)
-        ASSERT_TRUE(ledger.claim_pairing_owner(PairingKey{0, &tasks[i], 0}));
-    const PairingKey late{0, &tasks[ProfilingLedger::K_PAIRING_CANDIDATES], 0};
-    ASSERT_FALSE(ledger.claim_pairing_owner(late));
-
-    ledger.release_pairing_owner(PairingKey{0, &tasks[1], 0});
-
-    EXPECT_FALSE(ledger.is_pairing_owner(PairingKey{0, &tasks[1], 0}));
-    EXPECT_TRUE(ledger.claim_pairing_owner(late));
-}
-
-/** @brief Tests that one task claiming in two steps holds two candidates, and each step's event reaches its own. */
-TEST(Small_ProfilingLedger, TheSameTaskInTwoStepsHoldsTwoCandidates)
-{
-    ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 1);
-    int task = 0;
-    const PairingKey first{0, &task, 1};
-    const PairingKey second{0, &task, 2};
-    ASSERT_TRUE(ledger.claim_pairing_owner(first));
-    ASSERT_TRUE(ledger.claim_pairing_owner(second));
-    ledger.set_pairing_submit_window(first, 1000, 90);
-    ledger.set_pairing_submit_window(second, 2000, 10);
-
-    ledger.set_pairing_event_ns(second, 7000);
-    ledger.set_pairing_event_ns(first, 6000);
+    ledger.narrow_pairing(1, seen_on_device(K_WARM));
 
     const std::vector<DeviceClock> clocks = pairings_of(ledger);
     ASSERT_EQ(clocks.size(), 1u);
-    EXPECT_EQ(clocks[0].pairing.event_ns, 7000u) << "the event of step 2 is paired with the window of step 2";
-    EXPECT_EQ(clocks[0].pairing.steady_ns, 2000u);
-    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 10u);
+    EXPECT_EQ(clocks[0].device_index, 1u);
 }
 
-/** @brief Tests that the first event reading of a candidate stays when a second dispatch of its key is reaped. */
-TEST(Small_ProfilingLedger, TheFirstEventReadingOfACandidateStays)
-{
-    ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 1);
-    int task = 0;
-    const PairingKey key{0, &task, 0};
-    ASSERT_TRUE(ledger.claim_pairing_owner(key));
-    ledger.set_pairing_submit_window(key, 1000, 20);
-
-    ledger.set_pairing_event_ns(key, 500);
-    ledger.set_pairing_event_ns(key, 9999);
-
-    const std::vector<DeviceClock> clocks = pairings_of(ledger);
-    ASSERT_EQ(clocks.size(), 1u);
-    EXPECT_EQ(clocks[0].pairing.event_ns, 500u);
-}
-
-/** @brief Tests that a device whose owner never read its event has no pairing to report. */
-TEST(Small_ProfilingLedger, ADeviceThatNeverReadItsEventHasNoPairing)
+/** @brief Tests that a device past the ledger is ignored. */
+TEST(Small_ProfilingLedger, ADevicePastTheLedgerIsIgnored)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 3);
-    int owner = 0;
-    const PairingKey key{2, &owner, 0};
-    ASSERT_TRUE(ledger.claim_pairing_owner(key));
 
-    ledger.set_pairing_submit_window(key, 3000, 40);
+    ledger.narrow_pairing(3, seen_on_device(K_WARM));
 
     EXPECT_TRUE(pairings_of(ledger).empty());
 }
 
-/** @brief Tests that the pairings of the devices that read their events are reported with their values. */
-TEST(Small_ProfilingLedger, TheStoredPairingsAreReportedPerDevice)
+/** @brief Tests that each device keeps the bounds of its own dispatches. */
+TEST(Small_ProfilingLedger, EachDeviceKeepsItsOwnBounds)
 {
     ProfilingLedger ledger;
-    ledger.reserve({1}, 1, 3);
-    int first_owner = 0;
-    int second_owner = 0;
-    const PairingKey first{0, &first_owner, 0};
-    const PairingKey second{1, &second_owner, 0};
-    ASSERT_TRUE(ledger.claim_pairing_owner(first));
-    ASSERT_TRUE(ledger.claim_pairing_owner(second));
-    ledger.set_pairing_submit_window(first, 1000, 20);
-    ledger.set_pairing_event_ns(first, 500);
-    ledger.set_pairing_submit_window(second, 2000, 30);
-    ledger.set_pairing_event_ns(second, 9000);
+    ledger.reserve({1}, 1, 2);
 
+    ledger.narrow_pairing(0, DispatchWindow{1000, 400, 700, 1500});
+    ledger.narrow_pairing(1, DispatchWindow{1000, 9400, 9700, 1500});
+
+    // Device 0 is bounded by [600, 800] and device 1 by [-8400, -8200]; each midpoint places its start at 1100.
     const std::vector<DeviceClock> clocks = pairings_of(ledger);
-
     ASSERT_EQ(clocks.size(), 2u);
     EXPECT_EQ(clocks[0].device_index, 0u);
-    EXPECT_EQ(clocks[0].pairing.event_ns, 500u);
-    EXPECT_EQ(clocks[0].pairing.steady_ns, 1000u);
-    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 20u);
+    EXPECT_EQ(clocks[0].pairing.event_ns, 400u);
+    EXPECT_EQ(clocks[0].pairing.steady_ns, 1100u);
+    // Half the width is 100, and 500 ns of span at 100 ppm adds 1 ns of drift, rounded up.
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 101u);
     EXPECT_EQ(clocks[1].device_index, 1u);
-    EXPECT_EQ(clocks[1].pairing.event_ns, 9000u);
-    EXPECT_EQ(clocks[1].pairing.steady_ns, 2000u);
+    EXPECT_EQ(clocks[1].pairing.event_ns, 9400u);
+    EXPECT_EQ(clocks[1].pairing.steady_ns, 1100u);
 }
 
-/** @brief Tests that a cold first submit with a long window loses to a later, shorter one. */
-TEST(Small_ProfilingLedger, TheTightestWindowIsTheDevicesPairing)
+/** @brief Tests that the bounds of several dispatches give the tightest pairing, and it holds the true offset. */
+TEST(Small_ProfilingLedger, SeveralDispatchesGiveTheTightestPairingAroundTheTrueOffset)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 1);
-    int cold = 0;
-    int warm = 0;
-    int warmer = 0;
-    const PairingKey keys[] = {{0, &cold, 0}, {0, &warm, 0}, {0, &warmer, 0}};
-    constexpr std::uint64_t K_STEADY[] = {1000, 2000, 3000};
-    constexpr std::uint64_t K_WINDOW[] = {192200, 35, 20};
-    constexpr std::uint64_t K_EVENT[] = {100, 1100, 2100};
-    for (std::size_t i = 0; i < 3; ++i)
-    {
-        ASSERT_TRUE(ledger.claim_pairing_owner(keys[i]));
-        ledger.set_pairing_submit_window(keys[i], K_STEADY[i], K_WINDOW[i]);
-        ledger.set_pairing_event_ns(keys[i], K_EVENT[i]);
-    }
+
+    ledger.narrow_pairing(0, seen_on_device(K_COLD));
+    ledger.narrow_pairing(0, seen_on_device(K_WARM));
+    ledger.narrow_pairing(0, seen_on_device(K_REAPED_QUICKLY));
 
     const std::vector<DeviceClock> clocks = pairings_of(ledger);
-
     ASSERT_EQ(clocks.size(), 1u);
-    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 20u);
-    EXPECT_EQ(clocks[0].pairing.steady_ns, 3000u);
-    EXPECT_EQ(clocks[0].pairing.event_ns, 2100u);
+    // The reference is the earliest start, K_COLD's.
+    EXPECT_EQ(clocks[0].pairing.event_ns, 5'210'000u);
+    // Low is K_REAPED_QUICKLY's -5'000'010 and high K_WARM's -4'999'980, so the midpoint is -4'999'995.
+    EXPECT_EQ(clocks[0].pairing.steady_ns, 210'005u);
+    // Half the width is 15; the span from 10'000 to 501'050 at 100 ppm adds 49.105 ns, rounded up to 50.
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 65u);
+    expect_converted_within_uncertainty(clocks[0].pairing, K_COLD);
+    expect_converted_within_uncertainty(clocks[0].pairing, K_WARM);
+    expect_converted_within_uncertainty(clocks[0].pairing, K_REAPED_QUICKLY);
 }
 
-/** @brief Tests that a candidate with no event reading never wins, however short its window. */
-TEST(Small_ProfilingLedger, ACandidateWithNoEventIsNotChosen)
+/** @brief Tests that a cold first dispatch alone gives a wide pairing, and its span still lies inside it. */
+TEST(Small_ProfilingLedger, AColdFirstDispatchAloneStaysInsideItsStatedUncertainty)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 1);
-    int read = 0;
-    int unread = 0;
-    const PairingKey with_event{0, &read, 0};
-    const PairingKey without_event{0, &unread, 0};
-    ASSERT_TRUE(ledger.claim_pairing_owner(with_event));
-    ASSERT_TRUE(ledger.claim_pairing_owner(without_event));
-    ledger.set_pairing_submit_window(with_event, 1000, 500);
-    ledger.set_pairing_event_ns(with_event, 10);
-    ledger.set_pairing_submit_window(without_event, 2000, 1);
+
+    ledger.narrow_pairing(0, seen_on_device(K_COLD));
 
     const std::vector<DeviceClock> clocks = pairings_of(ledger);
-
     ASSERT_EQ(clocks.size(), 1u);
-    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 500u);
+    // [-5'200'000, -4'960'000] is 240'000 wide, and 290'000 ns of span at 100 ppm adds 29.
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 120'029u);
+    expect_converted_within_uncertainty(clocks[0].pairing, K_COLD);
 }
 
-/** @brief Tests that the next reserve() clears the claims, so a run starts with no pairing. */
+/** @brief Tests that the pairing does not depend on the order the dispatches are reaped in. */
+TEST(Small_ProfilingLedger, ThePairingDoesNotDependOnTheReapOrder)
+{
+    ProfilingLedger forward;
+    forward.reserve({1}, 1, 1);
+    ProfilingLedger backward;
+    backward.reserve({1}, 1, 1);
+
+    forward.narrow_pairing(0, seen_on_device(K_COLD));
+    forward.narrow_pairing(0, seen_on_device(K_WARM));
+    forward.narrow_pairing(0, seen_on_device(K_REAPED_QUICKLY));
+    backward.narrow_pairing(0, seen_on_device(K_REAPED_QUICKLY));
+    backward.narrow_pairing(0, seen_on_device(K_WARM));
+    backward.narrow_pairing(0, seen_on_device(K_COLD));
+
+    const std::vector<DeviceClock> first = pairings_of(forward);
+    const std::vector<DeviceClock> second = pairings_of(backward);
+    ASSERT_EQ(first.size(), 1u);
+    ASSERT_EQ(second.size(), 1u);
+    EXPECT_EQ(first[0].pairing.event_ns, second[0].pairing.event_ns);
+    EXPECT_EQ(first[0].pairing.steady_ns, second[0].pairing.steady_ns);
+    EXPECT_EQ(first[0].pairing.uncertainty_ns, second[0].pairing.uncertainty_ns);
+}
+
+/** @brief Tests that the next reserve() widens the bounds again, so a run keeps none of the last run's. */
 TEST(Small_ProfilingLedger, AReserveClearsThePairings)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, 1);
-    int owner = 0;
-    const PairingKey key{0, &owner, 0};
-    ASSERT_TRUE(ledger.claim_pairing_owner(key));
-    ledger.set_pairing_event_ns(key, 1);
+    ledger.narrow_pairing(0, seen_on_device(K_COLD));
 
     ledger.reserve({1}, 1, 1);
+    ledger.narrow_pairing(0, seen_on_device(K_WARM));
 
-    std::vector<DeviceClock> clocks;
-    ledger.collect_pairings(clocks);
-    EXPECT_TRUE(clocks.empty());
-    EXPECT_TRUE(ledger.claim_pairing_owner(key)) << "the claim is free again";
+    // Only K_WARM's own bounds are left: [-5'000'030, -4'999'980], half width 25, and 1 ns of drift over its 520 ns.
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_EQ(clocks[0].pairing.event_ns, 5'400'030u);
+    EXPECT_EQ(clocks[0].pairing.uncertainty_ns, 26u);
 }
+
+/** @brief Tests that a clock drifting 33.5 ppm across a run of one minute keeps every span inside the stated uncertainty. */
+TEST(Small_ProfilingLedger, AClockDriftingAcrossALongRunStaysInsideTheStatedUncertainty)
+{
+    constexpr std::uint64_t K_HALF_MINUTE_NS = 30'000'000'000ULL;
+    // The run starts a minute after the steady origin, so no converted time falls before it.
+    const TrueDispatch first = moved(K_WARM, 2 * K_HALF_MINUTE_NS);
+    const TrueDispatch middle = moved(K_WARM, 3 * K_HALF_MINUTE_NS);
+    const TrueDispatch last = moved(K_REAPED_QUICKLY, 4 * K_HALF_MINUTE_NS);
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+
+    ledger.narrow_pairing(0, seen_on_device(first, K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(middle, K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(last, K_DRIFTING_DEVICE));
+
+    // The offset moves 2 ms over the minute, so the dispatches' own bounds cross; the drift allowance covers it.
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+    ASSERT_EQ(clocks.size(), 1u);
+    expect_converted_within_uncertainty(clocks[0].pairing, first, K_DRIFTING_DEVICE);
+    expect_converted_within_uncertainty(clocks[0].pairing, middle, K_DRIFTING_DEVICE);
+    expect_converted_within_uncertainty(clocks[0].pairing, last, K_DRIFTING_DEVICE);
+}
+
+/** @brief Runs a drifting device made a number of minutes after its first run. */
+class Small_ProfilingLedgerDrift : public ::testing::TestWithParam<std::uint64_t>
+{
+};
+
+/**
+ * @brief Tests that a run made minutes after another on a clock drifting 33.5 ppm stays inside its own window.
+ *
+ * The first run leaves bounds that the offset has drifted out of by the second; the reserve between them drops them.
+ */
+TEST_P(Small_ProfilingLedgerDrift, ALaterRunOfADriftingClockStaysInsideItsWindow)
+{
+    constexpr std::uint64_t K_MINUTE_NS = 60'000'000'000ULL;
+    const std::uint64_t later_ns = GetParam() * K_MINUTE_NS;
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, 1);
+    ledger.narrow_pairing(0, seen_on_device(K_COLD, K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(K_WARM, K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(K_REAPED_QUICKLY, K_DRIFTING_DEVICE));
+    static_cast<void>(pairings_of(ledger));
+
+    ledger.reserve({1}, 1, 1);
+    ledger.narrow_pairing(0, seen_on_device(moved(K_COLD, later_ns), K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(moved(K_WARM, later_ns), K_DRIFTING_DEVICE));
+    ledger.narrow_pairing(0, seen_on_device(moved(K_REAPED_QUICKLY, later_ns), K_DRIFTING_DEVICE));
+
+    const std::vector<DeviceClock> clocks = pairings_of(ledger);
+    ASSERT_EQ(clocks.size(), 1u);
+    expect_converted_within_uncertainty(clocks[0].pairing, moved(K_COLD, later_ns), K_DRIFTING_DEVICE);
+    expect_converted_within_uncertainty(clocks[0].pairing, moved(K_WARM, later_ns), K_DRIFTING_DEVICE);
+    expect_converted_within_uncertainty(clocks[0].pairing, moved(K_REAPED_QUICKLY, later_ns), K_DRIFTING_DEVICE);
+}
+
+INSTANTIATE_TEST_SUITE_P(Minutes, Small_ProfilingLedgerDrift, ::testing::Values(1u, 5u, 10u),
+                         [](const ::testing::TestParamInfo<std::uint64_t>& info)
+                         { return "After" + std::to_string(info.param) + "Minutes"; });
 
 class Small_ProfilingLedgerOverflow : public ::testing::TestWithParam<OverflowRow>
 {

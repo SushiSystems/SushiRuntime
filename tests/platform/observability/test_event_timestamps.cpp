@@ -39,7 +39,7 @@
 
 using namespace SushiRuntime::Internal::Observability;
 
-/** @brief Tests that a profiled event reads start before end, and submit no later than start. */
+/** @brief Tests that a profiled event reads a start no later than its end. */
 TEST(Medium_EventTimestamps, AProfiledEventReadsOrderedTimes)
 {
     if (sycl::device::get_devices().empty())
@@ -55,65 +55,49 @@ TEST(Medium_EventTimestamps, AProfiledEventReadsOrderedTimes)
     EventTimestamps times;
     ASSERT_TRUE(read_event_timestamps(event, times));
     EXPECT_LE(times.start_ns, times.end_ns);
-    EXPECT_LE(times.submit_ns, times.start_ns);
     sycl::free(value, queue);
 }
 
 namespace
 {
-    /** @brief Builds timestamps with a backend submit reading. */
-    EventTimestamps stamps(std::uint64_t submit, std::uint64_t start, std::uint64_t end, bool has_submit = true)
+    /** @brief Builds the timestamps of one event. */
+    EventTimestamps stamps(std::uint64_t start, std::uint64_t end)
     {
         EventTimestamps value;
-        value.submit_ns = submit;
         value.start_ns = start;
         value.end_ns = end;
-        value.has_submit = has_submit;
         return value;
     }
 } // namespace
 
-/** @brief Tests that two events fold into the earliest submit and start and the latest end. */
+/** @brief Tests that two events fold into the earliest start and the latest end. */
 TEST(Small_EventTimestamps, MergesEventsIntoOneSpan)
 {
-    EventTimestamps total = stamps(100, 110, 150);
-    merge_timestamps(total, stamps(90, 130, 200));
+    EventTimestamps total = stamps(110, 150);
+    merge_timestamps(total, stamps(130, 200));
 
-    EXPECT_EQ(total.submit_ns, 90u);
     EXPECT_EQ(total.start_ns, 110u);
     EXPECT_EQ(total.end_ns, 200u);
-    EXPECT_TRUE(total.has_submit);
 }
 
 /** @brief Tests that the merge covers both events whichever one is merged into the other. */
 TEST(Small_EventTimestamps, TheMergeDoesNotDependOnTheOrder)
 {
-    EventTimestamps forward = stamps(100, 110, 150);
-    merge_timestamps(forward, stamps(90, 130, 200));
-    EventTimestamps backward = stamps(90, 130, 200);
-    merge_timestamps(backward, stamps(100, 110, 150));
+    EventTimestamps forward = stamps(110, 150);
+    merge_timestamps(forward, stamps(130, 200));
+    EventTimestamps backward = stamps(130, 200);
+    merge_timestamps(backward, stamps(110, 150));
 
-    EXPECT_EQ(forward.submit_ns, backward.submit_ns);
     EXPECT_EQ(forward.start_ns, backward.start_ns);
     EXPECT_EQ(forward.end_ns, backward.end_ns);
-}
-
-/** @brief Tests that the submit reading counts as the backend's own only when every event had one. */
-TEST(Small_EventTimestamps, TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne)
-{
-    EventTimestamps total = stamps(100, 110, 150, true);
-    merge_timestamps(total, stamps(120, 120, 160, false));
-
-    EXPECT_FALSE(total.has_submit);
 }
 
 /** @brief Tests that merging one event into itself changes nothing. */
 TEST(Small_EventTimestamps, MergingAnEventIntoItselfChangesNothing)
 {
-    EventTimestamps total = stamps(10, 20, 30);
-    merge_timestamps(total, stamps(10, 20, 30));
+    EventTimestamps total = stamps(20, 30);
+    merge_timestamps(total, stamps(20, 30));
 
-    EXPECT_EQ(total.submit_ns, 10u);
     EXPECT_EQ(total.start_ns, 20u);
     EXPECT_EQ(total.end_ns, 30u);
 }
@@ -134,11 +118,10 @@ class Small_EventTimestampsUnreadable : public ::testing::TestWithParam<Unreadab
 /** @brief Tests that an event that cannot be read fails the read, whether returned or handed over, and leaves the output alone. */
 TEST_P(Small_EventTimestampsUnreadable, FailsTheReadAndLeavesTheOutputAlone)
 {
-    EventTimestamps out = stamps(1, 2, 3);
+    EventTimestamps out = stamps(2, 3);
 
     // A default event comes from no queue built with profiling, so reading its times throws and is reported.
     EXPECT_FALSE(GetParam().read(out));
-    EXPECT_EQ(out.submit_ns, 1u);
     EXPECT_EQ(out.start_ns, 2u);
     EXPECT_EQ(out.end_ns, 3u);
 }

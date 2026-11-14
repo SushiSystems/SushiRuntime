@@ -65,10 +65,11 @@ all. `invocation` is the step index within `run(steps)`, zero for a single run.
 `node_index` is the node's public registration index, so several internal nodes one `add()` call
 created share it and the pair may repeat within a run. `device_index` names the device whose queue
 ran the dispatch, or `K_HOST_DEVICE_INDEX` for a node that ran on a worker thread with no queue.
-`submit_thread` is the profiler's index of the submitting thread, 0 when unknown. A record of a
-device is on that device's event clock, which its `DeviceClock` pairs with the steady clock; a host
-record is on the steady clock. The record is 48 bytes and its first seven fields keep their order, since
-SushiEngine mirrors the layout.
+`submit_thread` is the profiler's index of the submitting thread, 0 when unknown. `submit_ns` is a
+steady reading on every record, taken before the host began to submit the dispatch. The `start_ns`
+and `end_ns` of a device record are on that device's event clock, which its `DeviceClock` pairs with
+the steady clock; a host record's are on the steady clock. The record is 48 bytes and its first seven fields keep their order,
+since SushiEngine mirrors the layout.
 
 ### NodeTable
 
@@ -83,6 +84,16 @@ builds the table once and every observation of its runs shares it.
 A dispatch that leaves no record is counted under one cause: an unreadable event, a full ledger row, a node
 past the table, a kernel with no event, or no device queue. `first_node` is the registration index of the first
 one lost. A run that lost none has all counts zero.
+
+## clock_pairing.hpp
+
+### ClockPairing
+
+A `ClockPairing` places one event reading of a device, `event_ns`, at `steady_ns` on the steady clock,
+and a reading t converts to `steady_ns + (t - event_ns)`. The true steady time of any converted reading
+lies within `uncertainty_ns` of it. The runtime fills it from the start and end of the run's
+dispatches against the host's submit and reap readings, as
+[the observability README](../../platform/observability/README.md#clock-pairings) says.
 
 ## Tests
 

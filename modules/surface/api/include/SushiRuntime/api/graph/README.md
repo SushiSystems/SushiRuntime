@@ -419,8 +419,8 @@ error; a caller that states a later field alone assigns it to a default-construc
 A host-work body may submit several kernels and return one event, the one its successors wait on. The
 dispatch record is by default timed by the returned event, which covers only the last kernel. A body
 that wants the whole dispatch timed calls `note_dispatch_event(event)` once for every event it
-submitted; the record then starts at the earliest `command_submit` of them and runs from the earliest
-`command_start` to the latest `command_end`. The returned event must complete after every handed-over
+submitted; the record then runs from the earliest `command_start` of them to the latest
+`command_end`, and its submit time is the steady reading taken before the body ran. The returned event must complete after every handed-over
 event. The function does nothing outside a body and while the runtime records no device timing, so a
 body may call it unconditionally. The returned event stays the one the scheduler polls for
 completion; a body that hands over nothing is timed by it, as a body with one kernel is. The collector is
