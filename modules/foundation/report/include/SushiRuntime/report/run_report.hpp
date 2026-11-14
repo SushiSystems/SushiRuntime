@@ -92,6 +92,7 @@ namespace SushiRuntime
         bool cancelled = false;                     /**< Whether the run stopped early on a cancellation request. */
         std::size_t total_tasks_executed = 0;       /**< Local (all NUMA) + remote tasks. */
         ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that submitted this run's device work. */
+        bool funnelled = false;                     /**< Whether a submit funnel submitted any of this run's kernel nodes. */
 
         // B. Waiting
         double network_latency_wait_ms = 0.0;       /**< Idle time awaiting remote results. Reserved: always 0 in v1. */
@@ -115,6 +116,7 @@ namespace SushiRuntime
             cancelled = false;
             total_tasks_executed = 0;
             layer = ExecutionLayer::Scheduler;
+            funnelled = false;
 
             network_latency_wait_ms = 0.0;
 

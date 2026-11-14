@@ -23,7 +23,8 @@ so the module sits in the foundation tier, below both.
 ## run_report.hpp
 
 `RunReport` holds the outcome of a run: success, cancellation, the task count, the execution layer,
-the NUMA and distributed counts. It holds no timing. A run's timing leaves the runtime through a
+whether a submit funnel submitted any of its kernel nodes (`funnelled`), the NUMA and distributed
+counts. It holds no timing. A run's timing leaves the runtime through a
 `RunObserver`, and the profiler's zones, values and counters carry the rest.
 
 ### reset

@@ -72,6 +72,7 @@ namespace SushiRuntime
             settings.pinning = config.pinning;
             settings.rebalancer = config.rebalancer;
             settings.force_scheduler = config.force_scheduler;
+            settings.submit_funnel = config.submit_funnel;
             return settings;
         }
 

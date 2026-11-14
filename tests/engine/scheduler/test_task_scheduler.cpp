@@ -824,6 +824,185 @@ TEST(Small_TaskScheduler, ALateHighPriorityNodeRunsFirstOnOneWorker)
     EXPECT_EQ(order.front(), 100);
 }
 
+namespace
+{
+    /** @brief The kernel nodes the stop-right-after-submit row submits at once. */
+    constexpr int K_FUNNEL_BURST = 200;
+
+    /** @brief Builds a kernel node whose command group is a host task that adds one to @p runs.
+     *  @param runs Must outlive the node. */
+    sushi_ptr<Node> make_counting_kernel_node(std::atomic<int>& runs)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->work = [&runs](sycl::handler& handler)
+        {
+            handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+        };
+        return node;
+    }
+
+    /** @brief Builds a kernel node named @p name whose command group throws, which fails the submission. */
+    sushi_ptr<Node> make_throwing_kernel_node(const char* name)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->metadata.name = name;
+        node->work = [](sycl::handler&) { throw std::runtime_error("funnel test failure"); };
+        return node;
+    }
+
+    /** @brief Builds @p count counting kernel nodes that add to @p runs. */
+    std::vector<sushi_ptr<Node>> counting_kernel_nodes(std::atomic<int>& runs, int count)
+    {
+        std::vector<sushi_ptr<Node>> nodes;
+        for (int index = 0; index < count; ++index)
+            nodes.push_back(make_counting_kernel_node(runs));
+        return nodes;
+    }
+} // namespace
+
+/**
+ * @brief Runs a two-worker scheduler on threads over one in-memory entry, without (false) and with (true) the
+ *        submit funnel; see README.md.
+ */
+class Medium_TaskSchedulerFunnel : public ::testing::TestWithParam<bool>
+{
+    protected:
+        Medium_TaskSchedulerFunnel() : hardware_(host_entries(1), {}, 1)
+        {
+        }
+
+        /** @brief Builds, starts and arms the scheduler of the row. */
+        void SetUp() override
+        {
+            WorkerPoolSettings settings{2, 0, PinPolicy::Float};
+            settings.submit_funnel = GetParam();
+            scheduler_ = hardware_.make(settings);
+            scheduler_->start();
+            scheduler_->arm_for_execution();
+        }
+
+        /** @brief Stops the scheduler; a test that stopped it already stops it again harmlessly. */
+        void TearDown() override
+        {
+            scheduler_->stop();
+        }
+
+        /** @brief Submits @p node and returns once the pool has reaped it. */
+        void run(Node& node)
+        {
+            scheduler_->submit(&node);
+            scheduler_->wait_quiescent();
+        }
+
+        /** @brief Returns the funnelled count a row expects after @p nodes kernel nodes reached a queue. */
+        std::uint64_t funnelled_of_row(std::uint64_t nodes) const
+        {
+            return GetParam() ? nodes : 0u;
+        }
+
+        /// @brief One in-memory entry on NUMA node 0.
+        Hardware hardware_;
+        /// @brief The scheduler under test, started and armed by SetUp().
+        std::unique_ptr<TaskScheduler> scheduler_;
+};
+
+/** @brief Tests that a kernel node runs once, and is counted as funnelled only when the funnel is on. */
+TEST_P(Medium_TaskSchedulerFunnel, AKernelNodeRunsOnceAndIsCountedOnlyWhenFunnelled)
+{
+    std::atomic<int> runs{0};
+    const sushi_ptr<Node> node = make_counting_kernel_node(runs);
+
+    run(*node);
+
+    EXPECT_EQ(runs.load(), 1);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(1));
+}
+
+/** @brief Tests that a cancelled run submits no kernel node, with or without the funnel. */
+TEST_P(Medium_TaskSchedulerFunnel, ACancelledRunSubmitsNoKernelNode)
+{
+    std::atomic<int> runs{0};
+    const sushi_ptr<Node> node = make_counting_kernel_node(runs);
+    scheduler_->request_cancellation();
+
+    run(*node);
+    scheduler_->reset_cancellation();
+
+    EXPECT_EQ(runs.load(), 0);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), 0u);
+}
+
+/** @brief Tests that a kernel node disabled for the step is submitted nowhere, with or without the funnel. */
+TEST_P(Medium_TaskSchedulerFunnel, ADisabledKernelNodeIsSubmittedNowhere)
+{
+    std::atomic<int> runs{0};
+    const sushi_ptr<Node> node = make_counting_kernel_node(runs);
+    node->bindings_ = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
+    node->bindings_->enabled.store(false, std::memory_order_relaxed);
+
+    run(*node);
+
+    EXPECT_EQ(runs.load(), 0);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), 0u);
+}
+
+/** @brief Tests that a submission that throws fails the run with the node's name, wherever it was submitted. */
+TEST_P(Medium_TaskSchedulerFunnel, AThrowingSubmissionFailsTheRunNamingTheNode)
+{
+    const sushi_ptr<Node> node = make_throwing_kernel_node("refused");
+
+    run(*node);
+
+    ASSERT_TRUE(scheduler_->run_failed());
+    const std::optional<SushiRuntime::Error> error = scheduler_->run_error();
+    ASSERT_TRUE(error.has_value());
+    EXPECT_NE(error->message.find("node 'refused'"), std::string::npos) << error->message;
+}
+
+/** @brief Tests that a kernel node submitted after a failed submission of the same run is skipped. */
+TEST_P(Medium_TaskSchedulerFunnel, AKernelNodeAfterAFailedSubmissionIsSkipped)
+{
+    std::atomic<int> runs{0};
+    const sushi_ptr<Node> thrower = make_throwing_kernel_node("refused");
+    run(*thrower);
+    ASSERT_TRUE(scheduler_->run_failed());
+    const sushi_ptr<Node> after_failure = make_counting_kernel_node(runs);
+
+    run(*after_failure);
+
+    EXPECT_EQ(runs.load(), 0);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(1));
+}
+
+/** @brief Tests that stop() ends a pool whose funnel has gone idle after its run was disarmed. */
+TEST_P(Medium_TaskSchedulerFunnel, StopEndsAPoolWhoseFunnelIsIdle)
+{
+    std::atomic<int> runs{0};
+    const sushi_ptr<Node> node = make_counting_kernel_node(runs);
+    run(*node);
+    scheduler_->disarm();
+
+    scheduler_->stop();
+
+    EXPECT_EQ(runs.load(), 1);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(1));
+}
+
+/** @brief Tests that stop() right after a burst of submissions runs every kernel node, through the funnel when on. */
+TEST_P(Medium_TaskSchedulerFunnel, StopRightAfterSubmitRunsEveryKernelNode)
+{
+    std::atomic<int> runs{0};
+    const std::vector<sushi_ptr<Node>> nodes = counting_kernel_nodes(runs, K_FUNNEL_BURST);
+    submit_all(*scheduler_, nodes);
+
+    scheduler_->stop();
+
+    EXPECT_EQ(runs.load(), K_FUNNEL_BURST);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(K_FUNNEL_BURST));
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_TaskSchedulerFunnel, ::testing::Values(false, true));
+
 /**
  * @brief Tests that a priority node submitted last runs first on a pool of four workers.
  *

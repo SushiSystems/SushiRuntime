@@ -235,6 +235,9 @@ tests of it assert `RunReport::layer`.
 | `AllowingTheChainOverAComposedPlanChainsTheNextRun` | `allow_chain(true)` after a run composed without it puts the next run on the chain. |
 | `AChainedGraphWithAHostNodeRunsOnTheScheduler` | A graph allowed to chain whose fold region is native host work runs on the scheduler. |
 | `AMovedGraphKeepsItsChainSetting` | The target of a move from a graph allowed to chain runs its regions on the chain. |
+| `AFunnelledRunLeavesTheBytesOfTheRunWithoutIt` | `Medium_SubmitFunnelOutputs`, untimed and timed rows: the lane workload, four lanes of twelve nodes whose every fourth level also reads the next lane, leaves the bytes of its host model on the runtime forced onto the scheduler, and the same bytes on that runtime with `RuntimeConfig::submit_funnel`. |
+| `ATimedRunKeepsOneRecordPerNode` | `Medium_SubmitFunnel`, rows without and with the funnel: a timed run of the lane workload leaves one `NodeEventRecord` per node and step. |
+| `TheReportSaysWhetherTheRunWasFunnelled` | `Medium_SubmitFunnelReport`: `RunReport::funnelled` is true for a scheduler run on a runtime with the funnel, and false without it or when the run takes the chain. |
 
 Four shapes are covered: the same work as regions of a `DynamicGraph` and as one static `Graph`,
 with a region dropped and recorded again; host tasks among kernels in one dependency chain, with the two whole-buffer passes on the host and on

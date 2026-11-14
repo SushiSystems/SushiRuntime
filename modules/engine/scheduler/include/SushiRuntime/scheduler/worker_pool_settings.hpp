@@ -47,6 +47,7 @@ namespace SushiRuntime
             std::size_t worker_count = 0;  /**< Worker threads; 0 means one per logical core. */
             std::size_t first_core   = 0;  /**< First pinned core; ignored when floating. */
             PinPolicy   pinning      = PinPolicy::Pin;  /**< Whether workers are bound at all. */
+            bool        submit_funnel = false;          /**< Adds one submitting thread per device, on top of worker_count. */
         };
 
     } // namespace Scheduler

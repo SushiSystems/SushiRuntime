@@ -76,6 +76,12 @@ namespace SushiRuntime
              * path a run took either way.
              */
             bool force_scheduler = false;
+
+            /**
+             * @brief Submits the scheduler's kernel nodes from one thread per device; off by default.
+             * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
+             */
+            bool submit_funnel = false;
         };
 
         /** @brief Returns the worker pool a RuntimeSettings asks the scheduler for. */
@@ -86,6 +92,7 @@ namespace SushiRuntime
             pool.worker_count = settings.worker_count;
             pool.first_core = settings.first_core;
             pool.pinning = settings.pinning;
+            pool.submit_funnel = settings.submit_funnel;
             return pool;
         }
 

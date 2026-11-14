@@ -46,6 +46,7 @@
 
 #include "pending_work.hpp"
 #include "run_state.hpp"
+#include "submit_funnels.hpp"
 
 namespace SushiRuntime
 {
@@ -87,11 +88,11 @@ namespace SushiRuntime
                  * @param size The worker count and first pinned core.
                  * @param pinning Whether workers are bound to cores; the steal order follows it.
                  * @param topology Read during construction only.
-                 * @param devices,memory,pending,run Must outlive the rounds.
+                 * @param devices,memory,pending,run,funnels Must outlive the rounds.
                  */
                 WorkerRounds(const PoolSize& size, PinPolicy pinning, const Internal::Topology::TopologyView& topology,
                              Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                             PendingWork& pending, RunState& run);
+                             PendingWork& pending, RunState& run, SubmitFunnels& funnels);
 
                 WorkerRounds(const WorkerRounds&) = delete;
                 WorkerRounds& operator=(const WorkerRounds&) = delete;
@@ -108,7 +109,7 @@ namespace SushiRuntime
                 /** @brief Returns whether worker @p thread_id has events in flight, a queued task or pending work to take. */
                 bool has_work(int thread_id) const;
 
-                /** @brief Returns whether worker @p thread_id has no event in flight. */
+                /** @brief Returns whether worker @p thread_id has no event in flight and no node in a submit funnel. */
                 bool events_empty(int thread_id) const;
 
                 /** @brief Adds @p nanoseconds to the idle bucket of worker @p thread_id. */
@@ -157,8 +158,26 @@ namespace SushiRuntime
                     std::atomic<std::uint64_t> idle_ns{0};
                 };
 
+                /** @brief Holds how many of one worker's nodes wait in a submit funnel; written by that worker alone. */
+                struct alignas(K_CACHE_LINE_SIZE) FunnelledCounter
+                {
+                    std::atomic<std::size_t> value{0};
+                };
+
                 /** @brief Executes a single task and tracks its events; @p worker_id is the scheduler's worker id. */
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
+
+                /**
+                 * @brief Pushes @p record into the funnel of its device, when the device has one.
+                 * @return False when the device has no funnel or its ring is full; the caller then submits.
+                 */
+                bool hand_to_funnel(FunnelRecord& record);
+
+                /** @brief Moves the events landed for worker @p thread_id into @p events. */
+                void land_funnelled(int thread_id, EventPolling::ActiveEventList& events);
+
+                /** @brief Returns whether worker @p thread_id has no event in flight and no node in a submit funnel. */
+                bool in_flight_empty(int thread_id) const;
 
                 /** @brief Moves pending submissions into the deque of worker @p thread_id. */
                 void drain_pending_submissions(int thread_id);
@@ -171,6 +190,7 @@ namespace SushiRuntime
                 const Internal::Memory::USMAllocator& memory_;
                 PendingWork& pending_;
                 RunState& run_;
+                SubmitFunnels& funnels_;
                 std::array<sushi_ptr<Deque>, K_MAX_WORKER_THREADS> queues_;
                 std::array<std::vector<Task*>, K_MAX_WORKER_THREADS> drain_scratch_;
                 std::vector<std::unique_ptr<EventPolling::ActiveEventList>> events_;
@@ -180,6 +200,7 @@ namespace SushiRuntime
                 std::atomic<std::size_t> local_steals_{0};
                 std::atomic<std::size_t> remote_steals_{0};
                 CompletedCounter completed_[K_MAX_WORKER_THREADS];
+                FunnelledCounter funnelled_[K_MAX_WORKER_THREADS];
                 TimeBuckets worker_time_[K_MAX_WORKER_THREADS];
         };
     } // namespace Internal::Scheduler

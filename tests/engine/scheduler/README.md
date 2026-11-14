@@ -23,6 +23,7 @@ rows over its inputs; only the two tests that read a real event need a queue.
 | --- | --- |
 | `AnEmptyHostBodySubmittedNothing` | A submission counts as device work when it is a kernel or hands an event over, and not when a host body returns a default event and hands none over. |
 | `AnInlineHostNodeIsReady` | A host node that ran inline is pushed ready and holds no event. |
+| `ASkippedTaskIsReadyAndNotExecuted` | A skipped or failed task is pushed ready, holds no event and is marked as not executed. |
 | `ASubmissionThatReachedNoDeviceIsReady` | A submission that reached no device is pushed ready and holds no event. |
 | `ASubmissionThatReachedNoDeviceCarriesItsStepAndDevice` | The same submission still carries its task, step, device index and handed-over events. |
 | `AnUnprofiledSubmissionRecordsNoSubmittingThread` | With profiling off no submitting thread is recorded. |
@@ -224,6 +225,25 @@ worker threads: it checks the thread shell around the same rounds. Heavy load is
 | `Small_TaskScheduler.ALateHighPriorityNodeRunsFirstOnFourWorkers` | The same with four workers: the first round to run takes the priority node before its own deque or a steal, so it runs first whichever worker that is. Submitting before `arm_for_execution()` on a started pool promises no order, because the workers drain at once, so no test does it. |
 | `Small_TaskScheduler.AbruptStopDrains` | `stop()` right after `submit`, before any round ran, drains every one of the 1000 submitted nodes. |
 | `Medium_TaskScheduler.AWorkerCountOfZeroAsksForOneWorkerPerLogicalCore` | A worker count of 0 gives the platform's `hardware_concurrency` count, up to the pool maximum. |
+
+### Medium_TaskSchedulerFunnel
+
+Each row builds a pool of two floating workers on threads over one `Hardware` entry, without
+(`false`) and with (`true`) `WorkerPoolSettings::submit_funnel`, and starts and arms it. The funnel
+is a thread of its own whichever shell runs the rounds, so the rows are medium. The nodes are
+kernel nodes whose command group is a host task on the entry's host queue, so a node reaches a
+queue and counts its run without device code. Each row expects the same runs; only the funnelled
+count follows the row.
+
+| Test | What it proves |
+| --- | --- |
+| `AKernelNodeRunsOnceAndIsCountedOnlyWhenFunnelled` | A kernel node runs once, and `funnelled_task_count()` is 1 with the funnel and 0 without. |
+| `ACancelledRunSubmitsNoKernelNode` | After `request_cancellation()` the node does not run and nothing is funnelled. |
+| `ADisabledKernelNodeIsSubmittedNowhere` | A late-bound node disabled for the step does not run and nothing is funnelled. |
+| `AThrowingSubmissionFailsTheRunNamingTheNode` | A command group that throws fails the run with an error naming the node, on the worker or on the funnel thread. |
+| `AKernelNodeAfterAFailedSubmissionIsSkipped` | After that failure, a later kernel node of the run does not run and is not funnelled. |
+| `StopEndsAPoolWhoseFunnelIsIdle` | `stop()` after `disarm()` ends the pool with its funnel idle, and the run and the count stand. |
+| `StopRightAfterSubmitRunsEveryKernelNode` | `stop()` right after 200 submissions runs every node, all through the funnel when it is on. |
 
 ### Steal order
 

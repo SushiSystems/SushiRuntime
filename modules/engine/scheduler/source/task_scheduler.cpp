@@ -102,6 +102,10 @@ namespace SushiRuntime
                 SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "Task scheduler initialized with {} unpinned workers.",
                             parts_->rounds.worker_count());
             }
+
+            if (parts_->funnels.is_enabled())
+                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "Submit funnel on: one submitting thread per device, for {} "
+                            "device(s), on top of the workers.", devices.count());
         }
 
         /**
@@ -136,7 +140,10 @@ namespace SushiRuntime
                 SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "TaskScheduler::start() called more than once; ignoring.");
                 return;
             }
-            // With an executor, no thread starts: the rounds are jobs.
+            // The funnels start first, so a worker's first push finds its thread running.
+            parts_->funnels.start();
+
+            // With an executor, no worker thread starts: the rounds are jobs.
             if (parts_->executor_rounds.attached())
             {
                 parts_->post_rounds();
@@ -154,6 +161,9 @@ namespace SushiRuntime
             if (parts_->executor_rounds.attached() && parts_->started.load(std::memory_order_acquire))
                 parts_->executor_rounds.drain();
 
+            // The funnels stop after the rounds end, since a round leaves only once its funnelled nodes landed.
+            parts_->funnels.stop();
+
             parts_->rounds.release_queues();
             parts_->pending.release_all();
         }
@@ -169,6 +179,7 @@ namespace SushiRuntime
             parts_->run.outcome.clear_failure();
             parts_->run.poller.set_profiling(profiling);
             parts_->run.profiling.store(profiling, std::memory_order_release);
+            parts_->funnels.arm();
             parts_->pending.arm();
             parts_->post_rounds();
         }
@@ -178,6 +189,7 @@ namespace SushiRuntime
             set_profiling_ledger(nullptr);
             parts_->run.log_run_tail();
             parts_->pending.disarm();
+            parts_->funnels.disarm();
         }
 
         void TaskScheduler::reset_dispatch_step() noexcept
@@ -307,6 +319,11 @@ namespace SushiRuntime
         std::uint64_t TaskScheduler::offloaded_task_count() const noexcept
         {
             return parts_->run.offload_gate.accepted_count();
+        }
+
+        std::uint64_t TaskScheduler::funnelled_task_count() const noexcept
+        {
+            return parts_->funnels.funnelled_count();
         }
 
         void TaskScheduler::prepare_offload(span<const sushi_ptr<Internal::Graph::Node>> nodes,

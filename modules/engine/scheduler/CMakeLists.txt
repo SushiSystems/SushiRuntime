@@ -18,6 +18,8 @@ sushiruntime_add_module(
         pending_work.cpp
         run_state.cpp
         steal_order.cpp
+        submit_funnel.cpp
+        submit_funnels.cpp
         task_scheduler.cpp
         worker_pool_sizing.cpp
         worker_rounds.cpp

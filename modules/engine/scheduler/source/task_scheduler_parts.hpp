@@ -32,12 +32,14 @@
 #include <atomic>
 #include <thread>
 
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/worker_pool_sizing.hpp>
 
 #include "executor_rounds.hpp"
 #include "pending_work.hpp"
 #include "run_state.hpp"
+#include "submit_funnels.hpp"
 #include "worker_rounds.hpp"
 #include "worker_threads.hpp"
 
@@ -46,10 +48,10 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Composes the pool: the pending work, the run state, the rounds and the two shells that drive them.
+         * @brief Composes the pool: the pending work, the run state, the funnels, the rounds and their two shells.
          *
          * The members are declared in the order they are built and destroyed in reverse: the shells go first,
-         * then the rounds they run over, then the state the rounds read.
+         * then the rounds they run over, then the funnels and the state the rounds read.
          * @see modules/engine/scheduler/README.md
          */
         struct TaskScheduler::Parts
@@ -62,7 +64,8 @@ namespace SushiRuntime
                   pinning(pool.pinning),
                   pending(collector),
                   run(collector),
-                  rounds(size, pinning, topology, devices, memory, pending, run),
+                  funnels(pool.submit_funnel, devices.count(), size.workers, run.outcome, collector),
+                  rounds(size, pinning, topology, devices, memory, pending, run, funnels),
                   threads(rounds, pending, run, pinning, size.first_core),
                   executor_rounds(rounds)
             {
@@ -79,7 +82,8 @@ namespace SushiRuntime
             const PinPolicy pinning;          /**< Whether workers are bound to cores. */
             PendingWork pending;              /**< The injector queues and the run flags. */
             RunState run;                     /**< The state of the active run. */
-            WorkerRounds rounds;              /**< The worker deques and their rounds. */
+            SubmitFunnels funnels;            /**< The submit funnel of each device; none when the setting is off. */
+            WorkerRounds rounds;             /**< The worker deques and their rounds. */
             WorkerThreads threads;            /**< Runs the rounds on OS threads. */
             ExecutorRounds executor_rounds;   /**< Runs the rounds as jobs of an executor. */
             std::atomic<bool> started{false}; /**< Set when start() ran; a later start() returns at once. */

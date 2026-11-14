@@ -54,6 +54,8 @@
 #include <SushiRuntime/scheduler/dispatch_placement.hpp>
 #include "dispatch_queue_selection.hpp"
 #include "host_node_run.hpp"
+#include "submit_funnel.hpp"
+#include "submit_funnels.hpp"
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/work_stealing/work_stealing_deque.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -72,26 +74,14 @@ namespace SushiRuntime
         {
             /** @brief NUMA node whose devices serve a task that is not a graph node. */
             constexpr int K_TASK_NUMA_NODE = 0;
-
-            /**
-             * @brief Builds the ready event of a task whose work did not run to its end.
-             * @return An event the poller reaps at once and reports to no offload coordinator.
-             */
-            EventPolling::PolledEvent skipped_event(Task* task)
-            {
-                EventPolling::PolledEvent skipped;
-                skipped.task = task;
-                skipped.ready = true;
-                skipped.executed = false;
-                return skipped;
-            }
         } // namespace
 
         WorkerRounds::WorkerRounds(const PoolSize& size, PinPolicy pinning,
                                    const Internal::Topology::TopologyView& topology,
                                    Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                                   PendingWork& pending, RunState& run)
-            : num_workers_(size.workers), devices_(devices), memory_(memory), pending_(pending), run_(run)
+                                   PendingWork& pending, RunState& run, SubmitFunnels& funnels)
+            : num_workers_(size.workers), devices_(devices), memory_(memory), pending_(pending), run_(run),
+              funnels_(funnels)
         {
             for (std::size_t i = 0; i < num_workers_; ++i)
             {
@@ -108,12 +98,17 @@ namespace SushiRuntime
 
         bool WorkerRounds::has_work(int thread_id) const
         {
-            return !events_[thread_id]->is_empty() || pending_.has_any() || queues_[thread_id]->size() != 0;
+            return !in_flight_empty(thread_id) || pending_.has_any() || queues_[thread_id]->size() != 0;
         }
 
         bool WorkerRounds::events_empty(int thread_id) const
         {
-            return events_[thread_id]->is_empty();
+            return in_flight_empty(thread_id);
+        }
+
+        bool WorkerRounds::in_flight_empty(int thread_id) const
+        {
+            return events_[thread_id]->is_empty() && funnelled_[thread_id].value.load(std::memory_order_relaxed) == 0;
         }
 
         void WorkerRounds::add_idle_ns(int thread_id, std::uint64_t nanoseconds) noexcept
@@ -284,7 +279,7 @@ namespace SushiRuntime
             const bool prof = run_.profiling.load(std::memory_order_acquire);
 
             // A worker parks only with an empty deque of its own (modules/engine/scheduler/README.md).
-            if (!is_running && !is_shutdown && active_events.is_empty()
+            if (!is_running && !is_shutdown && in_flight_empty(thread_id)
                 && my_queue->size() == 0 && my_queue->overflow_size() == 0
                 && !pending_.has_any())
                 return Round::Park;
@@ -301,6 +296,7 @@ namespace SushiRuntime
             };
 
             drain_pending_submissions(thread_id);
+            land_funnelled(thread_id, active_events);
             Task* task = nullptr;
 
             // A failed poll fails the run, not the thread (scheduler/README.md).
@@ -350,7 +346,7 @@ namespace SushiRuntime
 
             if (!task)
             {
-                if (is_shutdown && active_events.is_empty() && !pending_.has_any())
+                if (is_shutdown && in_flight_empty(thread_id) && !pending_.has_any())
                     return Round::Exit;
                 return Round::Idle;
             }
@@ -396,7 +392,7 @@ namespace SushiRuntime
                 if (!is_sentinel)
                 {
                     run_.skipped_aborted.fetch_add(1, std::memory_order_relaxed);
-                    events.push(skipped_event(task));
+                    events.push(skipped_dispatch_event(task));
                     return;
                 }
             }
@@ -409,7 +405,7 @@ namespace SushiRuntime
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
                     run_.skipped_disabled.fetch_add(1, std::memory_order_relaxed);
-                    events.push(skipped_event(task));
+                    events.push(skipped_dispatch_event(task));
                     return;
                 }
             }
@@ -427,7 +423,7 @@ namespace SushiRuntime
                 run_.outcome.record(std::move(failure));
 
                 // The failed task is pushed as ready so successors fire (modules/engine/scheduler/README.md).
-                events.push(skipped_event(task));
+                events.push(skipped_dispatch_event(task));
             };
 
             Result<void> ran = SYCL::translate_exceptions([&]()
@@ -479,6 +475,21 @@ namespace SushiRuntime
 
                 // The step is read once, so the record names the step the dispatch was submitted in.
                 const std::uint32_t dispatch_step = run_.current_step.load(std::memory_order_acquire);
+
+                // A kernel node goes to its device's submit funnel when it has one (docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md).
+                if (node && !host && funnels_.is_enabled())
+                {
+                    FunnelRecord record;
+                    record.node = node;
+                    record.queue = &queue;
+                    record.profiling = profiling;
+                    record.step = dispatch_step;
+                    record.device_index = dispatch_device;
+                    record.worker = static_cast<std::size_t>(worker_id);
+                    if (hand_to_funnel(record))
+                        return;
+                }
+
                 // The kernel cannot start before this reading, which bounds the device's clock pairing.
                 const std::uint64_t submit_steady_ns = profiling ? Internal::Observability::steady_now_ns() : 0;
 
@@ -499,6 +510,36 @@ namespace SushiRuntime
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));
+        }
+
+        bool WorkerRounds::hand_to_funnel(FunnelRecord& record)
+        {
+            if (record.worker >= num_workers_)
+                return false;
+            SubmitFunnel* funnel = funnels_.of(record.device_index);
+            if (funnel == nullptr)
+                return false;
+
+            // Counted before the push, so the landing drain of this worker never sees the count below its events.
+            std::atomic<std::size_t>& waiting = funnelled_[record.worker].value;
+            waiting.fetch_add(1, std::memory_order_relaxed);
+            bool pushed = false;
+            {
+                SR_ZONE_FINE(run_.collector, "dispatch.funnel_push");
+                pushed = funnel->try_push(record);
+            }
+            if (!pushed)
+                waiting.fetch_sub(1, std::memory_order_relaxed);
+            return pushed;
+        }
+
+        void WorkerRounds::land_funnelled(int thread_id, EventPolling::ActiveEventList& events)
+        {
+            std::atomic<std::size_t>& waiting = funnelled_[thread_id].value;
+            if (waiting.load(std::memory_order_relaxed) == 0)
+                return;
+            const std::size_t landed = funnels_.land(static_cast<std::size_t>(thread_id), events);
+            waiting.fetch_sub(landed, std::memory_order_relaxed);
         }
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

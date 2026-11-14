@@ -31,6 +31,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <ostream>
 #include <utility>
 #include <vector>
 
@@ -39,6 +41,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "run_recorder.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
@@ -765,6 +768,182 @@ namespace LayerEquivalenceTests
             take(shot, "untracked NdRange", grid);
             return shot;
         }
+
+        constexpr std::size_t K_LANES      = 4;  /**< Lanes of the lane workload, one buffer each. */
+        constexpr std::size_t K_LEVELS     = 12; /**< Nodes per lane. */
+        constexpr std::size_t K_LANE_N     = 64; /**< Elements per lane buffer. */
+        constexpr std::size_t K_CROSS_EVERY = 4; /**< Every fourth level also reads the next lane. */
+        constexpr std::size_t K_LANE_NODES = K_LANES * K_LEVELS; /**< Nodes of the lane workload. */
+
+        /** @brief Returns whether the node at @p level reads the next lane as well as its own. */
+        constexpr bool crosses(std::size_t level) noexcept
+        {
+            return level != 0 && level % K_CROSS_EVERY == 0;
+        }
+
+        /** @brief Returns the next value of an element from its value, the next lane's value and the node. */
+        constexpr Word lane_mix(Word own, Word next, std::size_t node) noexcept
+        {
+            return own * 1664525u + (next ^ static_cast<Word>(node)) + 1013904223u;
+        }
+
+        /** @brief Returns the starting word of element @p i of lane @p lane. */
+        constexpr Word lane_seed(std::size_t lane, std::size_t i) noexcept
+        {
+            return static_cast<Word>(lane * K_LANE_N + i) * 2654435761u + 3u;
+        }
+
+        /**
+         * @brief Records the node at @p level of @p lane: it rewrites its lane and, on a crossing level, reads the next.
+         *
+         * Lane l of level d is node d * K_LANES + l, recorded in that order, so the next lane is read as the
+         * nodes recorded before this one left it.
+         */
+        void record_lane_node(Graph& g, std::vector<Buffer<Word>>& lanes, std::size_t level, std::size_t lane)
+        {
+            const std::size_t node = level * K_LANES + lane;
+            Buffer<Word>& own = lanes[lane];
+            Buffer<Word>& next = lanes[(lane + 1) % K_LANES];
+            Word* own_data = own.data();
+            const Word* next_data = next.data();
+            if (!crosses(level))
+            {
+                g.add(K_LANE_N, Reads(own), Writes(own),
+                      [own_data, node](std::size_t i) { own_data[i] = lane_mix(own_data[i], 0u, node); });
+                return;
+            }
+            g.add(K_LANE_N, Reads(own, next), Writes(own),
+                  [own_data, next_data, node](std::size_t i)
+                  {
+                      own_data[i] = lane_mix(own_data[i], next_data[i], node);
+                  });
+        }
+
+        /** @brief Allocates the lane buffers on @p rt, each holding its starting words. */
+        std::vector<Buffer<Word>> seeded_lanes(const Runtime& rt)
+        {
+            std::vector<Buffer<Word>> lanes;
+            lanes.reserve(K_LANES);
+            for (std::size_t lane = 0; lane < K_LANES; ++lane)
+            {
+                lanes.push_back(rt.buffer<Word>(K_LANE_N).value());
+                for (std::size_t i = 0; i < K_LANE_N; ++i)
+                    lanes.back()[i] = lane_seed(lane, i);
+            }
+            return lanes;
+        }
+
+        /** @brief Records the whole lane workload, level by level and lane by lane. */
+        void record_lanes(Graph& g, std::vector<Buffer<Word>>& lanes)
+        {
+            for (std::size_t level = 0; level < K_LEVELS; ++level)
+                for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                    record_lane_node(g, lanes, level, lane);
+        }
+
+        /** @brief Copies every lane into a snapshot. */
+        Snapshot take_lanes(const std::vector<Buffer<Word>>& lanes)
+        {
+            static const char* const K_NAMES[K_LANES] = {"lane 0", "lane 1", "lane 2", "lane 3"};
+            Snapshot shot;
+            for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                take(shot, K_NAMES[lane], Image(lanes[lane].data(), lanes[lane].data() + K_LANE_N));
+            return shot;
+        }
+
+        /**
+         * @brief Runs the lane workload for K_STEPS steps on @p rt and copies the lanes out.
+         * @param timed Whether an observer is added for the run, which makes the run record device timing.
+         */
+        Snapshot run_lanes(const Runtime& rt, bool timed)
+        {
+            std::vector<Buffer<Word>> lanes = seeded_lanes(rt);
+            std::optional<Testing::RunRecorder> recorder;
+            if (timed)
+                recorder.emplace(rt);
+            auto g = rt.graph();
+            record_lanes(g, lanes);
+
+            drive(g, Drive::Blocking, K_STEPS);
+
+            return take_lanes(lanes);
+        }
+
+        /** @brief Returns the lanes the workload leaves after K_STEPS steps, computed on the host in recorded order. */
+        Snapshot lane_reference()
+        {
+            std::vector<Image> lanes(K_LANES, Image(K_LANE_N));
+            for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                for (std::size_t i = 0; i < K_LANE_N; ++i)
+                    lanes[lane][i] = lane_seed(lane, i);
+
+            for (std::size_t step = 0; step < K_STEPS; ++step)
+                for (std::size_t level = 0; level < K_LEVELS; ++level)
+                    for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                    {
+                        const std::size_t node = level * K_LANES + lane;
+                        const Image& next = lanes[(lane + 1) % K_LANES];
+                        for (std::size_t i = 0; i < K_LANE_N; ++i)
+                            lanes[lane][i] = lane_mix(lanes[lane][i], crosses(level) ? next[i] : 0u, node);
+                    }
+
+            static const char* const K_NAMES[K_LANES] = {"lane 0", "lane 1", "lane 2", "lane 3"};
+            Snapshot shot;
+            for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                take(shot, K_NAMES[lane], lanes[lane]);
+            return shot;
+        }
+
+        /** @brief Returns the program's runtime that keeps every run on the scheduler, with or without the funnel. */
+        Runtime& scheduler_runtime(bool submit_funnel)
+        {
+            TestSupport::RuntimeShape shape;
+            shape.force_scheduler = true;
+            shape.submit_funnel = submit_funnel;
+            return TestSupport::RuntimeEnvironment::runtime(shape);
+        }
+
+        /** @brief Returns how many node records the one observed run of the lane workload left on @p rt. */
+        std::size_t lane_records(const Runtime& rt)
+        {
+            std::vector<Buffer<Word>> lanes = seeded_lanes(rt);
+            Testing::RunRecorder recorder(rt);
+            auto g = rt.graph();
+            record_lanes(g, lanes);
+
+            drive(g, Drive::Blocking, K_STEPS);
+
+            return recorder.count() == 1 ? recorder.last().events.size() : 0;
+        }
+
+        /** @brief Names a runtime shape and whether a run on it says it was funnelled. */
+        struct FunnelReportRow
+        {
+            const char* name;     /**< The row's label. */
+            bool force_scheduler; /**< Whether the runtime keeps every run on the scheduler. */
+            bool submit_funnel;   /**< Whether the runtime has the funnel. */
+            bool funnelled;       /**< What RunReport::funnelled must say. */
+        };
+
+        /** @brief Prints a row by its label, so a failing row names itself. */
+        void PrintTo(const FunnelReportRow& row, std::ostream* os)
+        {
+            *os << row.name;
+        }
+
+        /** @brief Returns what RunReport::funnelled says of one run of a one-kernel graph on the runtime of @p row. */
+        bool funnelled_on(const FunnelReportRow& row)
+        {
+            TestSupport::RuntimeShape shape;
+            shape.force_scheduler = row.force_scheduler;
+            shape.submit_funnel = row.submit_funnel;
+            const Runtime& rt = TestSupport::RuntimeEnvironment::runtime(shape);
+            auto buf = rt.buffer<Word>(K_LANE_N).value();
+            Word* p = buf.data();
+            auto g = rt.graph();
+            g.add(K_LANE_N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<Word>(i); });
+            return g.run().value().funnelled;
+        }
     } // namespace
 } // namespace
 
@@ -783,6 +962,21 @@ class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected
 
 /** @brief Fixture of the tests of DynamicGraph::allow_chain() on the runtime that is not forced onto the scheduler. */
 class Medium_DynamicGraphChain : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the rows of the lane workload run untimed (false) and timed (true), funnel off against on. */
+class Medium_SubmitFunnelOutputs : public ::testing::TestWithParam<bool>
+{
+};
+
+/** @brief Fixture of the rows that run on the scheduler without (false) and with (true) the submit funnel. */
+class Medium_SubmitFunnel : public ::testing::TestWithParam<bool>
+{
+};
+
+/** @brief Fixture of the rows of runtime shapes and what RunReport::funnelled says of a run on each. */
+class Medium_SubmitFunnelReport : public ::testing::TestWithParam<LayerEquivalenceTests::FunnelReportRow>
 {
 };
 
@@ -927,7 +1121,39 @@ namespace LayerEquivalenceTests
 
         EXPECT_EQ(moved.run(K_STEPS).value().layer, ExecutionLayer::Chain);
     }
+
+    /** @brief Tests that the lane workload leaves the same bytes on the scheduler with the funnel on as with it off. */
+    TEST_P(Medium_SubmitFunnelOutputs, AFunnelledRunLeavesTheBytesOfTheRunWithoutIt)
+    {
+        const Snapshot without = run_lanes(scheduler_runtime(false), GetParam());
+        const Snapshot with = run_lanes(scheduler_runtime(true), GetParam());
+
+        expect_identical(lane_reference(), without, "host model vs funnel off");
+        expect_identical(without, with, "funnel off vs funnel on");
+    }
+
+    /** @brief Tests that a timed run of the lane workload keeps one node record per node and step. */
+    TEST_P(Medium_SubmitFunnel, ATimedRunKeepsOneRecordPerNode)
+    {
+        EXPECT_EQ(lane_records(scheduler_runtime(GetParam())), K_LANE_NODES * K_STEPS);
+    }
+
+    /** @brief Tests that RunReport::funnelled says whether a submit funnel submitted the run's kernel nodes. */
+    TEST_P(Medium_SubmitFunnelReport, TheReportSaysWhetherTheRunWasFunnelled)
+    {
+        EXPECT_EQ(funnelled_on(GetParam()), GetParam().funnelled);
+    }
 } // namespace LayerEquivalenceTests
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_SubmitFunnelOutputs, ::testing::Values(false, true));
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_SubmitFunnel, ::testing::Values(false, true));
+
+INSTANTIATE_TEST_SUITE_P(
+    Rows, Medium_SubmitFunnelReport,
+    ::testing::Values(LayerEquivalenceTests::FunnelReportRow{"scheduler without the funnel", true, false, false},
+                      LayerEquivalenceTests::FunnelReportRow{"scheduler with the funnel", true, true, true},
+                      LayerEquivalenceTests::FunnelReportRow{"chain on a runtime with the funnel", false, true, false}));
 
 INSTANTIATE_TEST_SUITE_P(Rows, Medium_LayerEquivalence, ::testing::Values(false, true));
 

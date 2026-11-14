@@ -6,4 +6,6 @@
 sushiruntime_add_module_tests(
     MODULE work_stealing
     SOURCES
+        test_mpsc_ring.cpp
+        test_spsc_ring.cpp
         test_work_stealing_deque.cpp)

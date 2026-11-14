@@ -53,6 +53,7 @@ namespace SushiRuntime
         PinPolicy pinning = PinPolicy::Pin; /**< Whether workers bind to cores at all. */
         bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
         bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
+        bool submit_funnel = false;         /**< Submits the scheduler's kernel nodes from one thread per device. */
 
         /** @brief The machine's name in NodeFacts; empty is the host name. */
         std::string node_name;

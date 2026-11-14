@@ -290,6 +290,10 @@ The header and the first three fields of `REJECT` and `GOODBYE` stay frozen, so 
 is refused in words. The golden bytes of the two messages and the version table of the module
 README change in the same commit.
 
+### The scheduler's submit funnel
+
+The opt-in submit funnel of the scheduler is designed on [a page of GRAPH_REPLAY](../GRAPH_REPLAY/SUBMIT_FUNNEL.md).
+
 ## Phases
 
 Hierarchy first: the vocabulary, then what records it, then what decides on it, then the wire.

@@ -1,6 +1,6 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
-**Status:** Open — P0, P1, P3 and P4 are built; P0, P1 and P3 are not measured; P2, P5 and P6 are not started
+**Status:** Open — P0, P1, P3, P4 and P6 are built; P0, P1, P3 and P6 are not measured; P2 and P5 are not started
 **About:** SushiEngine's matter device solver is launch-bound on the device.
 **Modules:** modules/engine/execution
 
@@ -160,6 +160,13 @@ A plan that stays on the scheduler submits from every worker, and the submission
 locks inside DPC++ and the CUDA driver. [The submit funnel page](SUBMIT_FUNNEL.md) maps those
 locks, measures the alternatives and holds the opt-in design phase P6 builds.
 
+With `RuntimeConfig::submit_funnel` on, each device gets one submitting thread on top of the
+workers. A worker hands a ready kernel node to it through a lock-free ring and takes the event
+back through a lock-free ring of its own, so only that thread enters the device's submission
+locks. The queue, the dependencies and the one event per node stay as they are, so outputs and
+`NodeEventRecord`s are the same as without the funnel, and `RunReport::funnelled` says that the
+funnel submitted a run's kernel nodes. Off, which is the default, the scheduler runs as before.
+
 ## Phases
 
 | Id | Phase | State |
@@ -170,7 +177,7 @@ locks, measures the alternatives and holds the opt-in design phase P6 builds.
 | P3 | Device-side sizing in scan, sort and reduce, so the matter solver's substep becomes replayable. The primitives' existing bit-equality tests hold on every layer | built |
 | P4 | Layer 1 for DynamicGraph as an opt-in: allow_chain(true) makes each composition classify its plan, so a chainable composed plan runs as a chain; off by default, so today's scheduler path is unchanged. Test: a composed plan gives bit-identical outputs on the chain and on the scheduler, and RunReport names the layer | built |
 | P5 | Layer 2 for a graph that opts in, Graph or DynamicGraph: a chainable plan with no device-sized node and no timed run is recorded once per composition and replayed with one submission per step; any record failure falls back to layer 1 and logs once. Test: replay equals layer 1 bit for bit over many steps | planned |
-| P6 | Submit funnel for the scheduler path, opt-in through RuntimeConfig::submit_funnel and off by default: per device, workers push ready kernel nodes into a lock-free ring and one thread submits them with the same queue, dependencies and per-node events (SUBMIT_FUNNEL.md). Test: a wide plan gives bit-identical outputs with the funnel on and off, profiling off and on, and a timed run keeps one NodeEventRecord per node | planned |
+| P6 | Submit funnel for the scheduler path, opt-in through RuntimeConfig::submit_funnel and off by default: per device, workers push ready kernel nodes into a lock-free ring and one thread submits them with the same queue, dependencies and per-node events (SUBMIT_FUNNEL.md). Test: a wide plan gives bit-identical outputs with the funnel on and off, profiling off and on, and a timed run keeps one NodeEventRecord per node | built |
 
 Each phase ends with the spike's table re-measured through `Graph::run` on every device the
 machine has, so the gain is shown, not assumed. P0, P1 and P3 have not had that measurement.

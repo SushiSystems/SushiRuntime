@@ -74,6 +74,7 @@ namespace SushiRuntime
                 counters.remote_steals = metrics.remote_steals;
                 counters.tasks_completed = metrics.tasks_completed;
                 counters.tasks_offloaded = metrics.tasks_offloaded;
+                counters.tasks_funnelled = metrics.tasks_funnelled;
                 return counters;
             }
 
@@ -85,6 +86,7 @@ namespace SushiRuntime
                 metrics.remote_steals = counters.remote_steals;
                 metrics.tasks_completed = counters.tasks_completed;
                 metrics.tasks_offloaded = counters.tasks_offloaded;
+                metrics.tasks_funnelled = counters.tasks_funnelled;
                 return metrics;
             }
 

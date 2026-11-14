@@ -62,6 +62,12 @@ namespace SushiRuntime
         [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent completed_host_event(Task* task);
 
         /**
+         * @brief Builds the ready event of a task whose work did not run to its end.
+         * @return An event the poller reaps at once and reports to no offload coordinator.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent skipped_dispatch_event(Task* task);
+
+        /**
          * @brief Builds the event a worker pushes to EventPolling after a submission.
          * @param event The submission's event.
          * @param submitted What submitted_device_work() said of the submission; false pushes it as ready.

@@ -409,6 +409,7 @@ namespace SushiRuntime
             for (size_t i = 0; i < workers; ++i)
                 m.tasks_completed += impl_->scheduler.completed_task_count(static_cast<int>(i));
             m.tasks_offloaded = static_cast<std::size_t>(impl_->scheduler.offloaded_task_count());
+            m.tasks_funnelled = static_cast<std::size_t>(impl_->scheduler.funnelled_task_count());
             return m;
         }
 

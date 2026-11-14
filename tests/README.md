@@ -31,7 +31,7 @@ per program that makes the runtime and the device queue on first use and release
 last test, and `context_environment.hpp` does the same for the one device `RuntimeContext` an engine
 test program shares; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
 never builds its own. A test that needs another configuration asks the environment for the runtime
-of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer), made once per
+of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer, the submit funnel), made once per
 shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
 scheduler (true). `stepping_tick_source.hpp` is a SushiProfiler tick source that moves by one on every reading, so the zones of a
 collector built over it nest the same on every run, and `buffer_contents.hpp` reads, fills and windows a buffer's contents,

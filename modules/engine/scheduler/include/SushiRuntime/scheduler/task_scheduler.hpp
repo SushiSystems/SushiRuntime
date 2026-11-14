@@ -283,6 +283,13 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t offloaded_task_count() const noexcept;
 
                 /**
+                 * @brief Returns how many kernel nodes a submit funnel has taken so far.
+                 * @return A lifetime total, 0 when the funnel is off; diff two readings to measure one run.
+                 * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
+                 */
+                [[nodiscard]] std::uint64_t funnelled_task_count() const noexcept;
+
+                /**
                  * @brief Lets the installed coordinator mark the nodes a worker may run.
                  * @pre None of the nodes has been submitted.
                  * @param nodes Borrowed for the call; with no coordinator nothing happens.

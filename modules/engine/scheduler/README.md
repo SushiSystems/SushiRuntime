@@ -107,7 +107,7 @@ the terminal sentinel is reaped.
 ### poll_events: an event that throws
 
 get_info and wait() can throw. An entry whose query or wait throws is turned, in that pass, into
-what skipped_event() of worker_rounds.cpp builds for a task whose work threw: ready, with no event,
+what skipped_dispatch_event() of dispatch_record.hpp builds for a task whose work threw: ready, with no event,
 not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
@@ -193,7 +193,7 @@ submission reached a device: a host body that hands none over and returns a comp
 `== sycl::event{}`, never true in DPC++) did not; under profiling a complete event whose timestamps
 read is still work, so a fast kernel keeps its span. dispatched_event() takes that answer, builds the
 polled event and under profiling snapshots widths and thread and keeps the steady reading taken before
-the submit call.
+the submit call. skipped_dispatch_event() builds the ready, not executed event of a skipped or failed task.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
 work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device.
@@ -274,9 +274,10 @@ TaskScheduler owns a fixed-size pool of worker threads started once (start()) an
 graph runs. Each run is gated by a pair of arm_for_execution() and submit(root); the sentinel node's
 completion promise unblocks the caller. Workers steal from node-local victims first; cross-node
 steals are tracked separately so the RunReport can report the balance within and across NUMA nodes.
-TaskScheduler composes `PendingWork` (the injector queues and the run flags), `RunState`, `WorkerRounds` (the deques
-and `run_round()`, which never blocks) and the two shells that run the rounds, `WorkerThreads` and `ExecutorRounds`
-(set_executor()). All five are private to the module; the public interface is TaskScheduler's.
+TaskScheduler composes `PendingWork` (the injector queues and the run flags), `RunState`, `SubmitFunnels` (a submit
+funnel per device when `WorkerPoolSettings::submit_funnel` is on; [its page](source/submit_funnel.md)), `WorkerRounds`
+(the deques and `run_round()`, which never blocks) and the two shells that run the rounds, `WorkerThreads` and
+`ExecutorRounds` (set_executor()). All six are private; the public interface is TaskScheduler's.
 
 ### first_core
 
@@ -591,7 +592,7 @@ triggered. The sentinel is exempt: it must run to deliver the outcome and unbloc
 
 A late-bound node that is disabled for the step, a sleeping island or a system switched off
 by level of detail, runs no kernel either and takes the same route, so the DAG drains as it
-would for a completed node. Both kinds are pushed by `skipped_event()` with `executed` false,
+would for a completed node. Both kinds are pushed by `skipped_dispatch_event()` with `executed` false,
 so the poller does not report them to the offload coordinator. Toggling a subsystem costs no
 recompile. The relaxed load of `enabled` is safe: the step boundary's completion barrier and
 the acquire/release submit path supply the happens-before. The sentinel carries no bindings,

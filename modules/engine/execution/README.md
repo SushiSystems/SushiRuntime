@@ -391,8 +391,8 @@ the targets of the rules against them. A graph holds no facts of its own.
 
 ### RuntimeSettings
 
-RuntimeSettings is separate from the hardware filter: it shapes the runtime itself (threads,
-placement, background work), not which devices are selected. Every field defaults to the behaviour a
+RuntimeSettings is separate from the hardware filter: it shapes the runtime itself (threads, placement,
+background work, the submit funnel), not which devices are selected. Every field defaults to the behaviour a
 deterministic simulation wants, because that is the primary workload. A batch consumer opts out of
 the parts it does not need.
 

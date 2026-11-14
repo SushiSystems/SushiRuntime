@@ -77,7 +77,7 @@ fill_run_report() maps scheduler counters and device placement onto the public R
 The report holds the outcome, the task count, the NUMA and the distributed counts; no timing, which
 reaches an observer through the `RunObservation`, and the profiler through zones, values and counters.
 `before` and `after` are the scheduler execution metrics snapshotted before the run started and
-after it completed. It writes into a caller-owned report so a steady-state tick can hand back the
+after it completed; `funnelled` is true when `tasks_funnelled` moved between them. It writes into a caller-owned report so a steady-state tick can hand back the
 same object every run: `report` is reset first, which keeps the vector storage the previous run
 allocated.
 

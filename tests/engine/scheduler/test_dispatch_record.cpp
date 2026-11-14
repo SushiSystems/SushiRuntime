@@ -116,6 +116,17 @@ TEST(Small_DispatchRecord, AnInlineHostNodeIsReady)
     EXPECT_EQ(pe.device_index, K_HOST_DEVICE_INDEX);
 }
 
+/** @brief Tests that a skipped task is pushed ready, holds no event and is marked as not executed. */
+TEST(Small_DispatchRecord, ASkippedTaskIsReadyAndNotExecuted)
+{
+    Internal::Graph::Node node;
+    const EventPolling::PolledEvent pe = skipped_dispatch_event(&node);
+    EXPECT_TRUE(pe.ready);
+    EXPECT_FALSE(pe.has_event);
+    EXPECT_FALSE(pe.executed);
+    EXPECT_EQ(pe.task, &node);
+}
+
 /** @brief Tests that a submission that reached no device is pushed ready and holds no event. */
 TEST(Small_DispatchRecord, ASubmissionThatReachedNoDeviceIsReady)
 {

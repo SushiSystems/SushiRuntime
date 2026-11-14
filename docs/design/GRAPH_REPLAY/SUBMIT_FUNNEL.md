@@ -94,27 +94,52 @@ device's submission locks. Off by default; with it off, nothing in the scheduler
 This follows the owner's ruling for the runtime: a feature is added, no existing behaviour is
 removed or changed, and the runtime names no client.
 
+The owner ruled on the rest on 2026-11-14:
+
+| # | Subject | Ruling |
+| --- | --- | --- |
+| 1 | Switch | `RuntimeConfig::submit_funnel`, copied into `RuntimeSettings::submit_funnel`, off by default. With it off, behaviour, timing paths and tests are today's, and nothing is removed |
+| 2 | Workers | A worker takes no lock: it pushes into a lock-free MPSC ring and takes its events back from a lock-free landing ring of its own |
+| 3 | Thread count | The funnel thread comes on top of `worker_count` and is not counted in it |
+| 4 | Report | `RunReport::funnelled` says whether a submit funnel submitted any kernel node of the run |
+| 5 | Rings | The rings are a shared lock-free brick in `modules/engine/work_stealing`, `MPSCRing` and `SPSCRing`, with Small tests of their own |
+| 6 | Home | This page stays under GRAPH_REPLAY; LAYERED_EXECUTION, which owns the scheduler, links to it |
+| 7 | Timing | A timed run keeps one event per node, and `NodeEventRecord` does not change |
+
 ## Design
 
 ### Shape
 
-- **`SubmitFunnel`**, one per device of the `DeviceQueueSet`, created only when the setting is on.
-  It owns a bounded multi-producer, single-consumer ring of dispatch records and one thread that
-  drains it.
-- A **dispatch record** carries what `WorkerRounds::execute_task` holds at the submit site today:
-  the task, the selected queue, the node's `sycl_deps`, the profiling flag, the step, the device
-  index and the originating worker's id.
+- **`SubmitFunnel`**, one per device of the `DeviceQueueSet`, created only when the setting is on
+  and held by `SubmitFunnels` in the scheduler's parts. It owns a bounded multi-producer,
+  single-consumer ring of 1024 dispatch records (`MPSCRing`) and one thread, `sr-funnel-<device>`,
+  that drains it. `TaskScheduler::start()` starts the thread and `stop()` joins it after the
+  workers have ended.
+- A **dispatch record** (`FunnelRecord`) carries what `WorkerRounds::execute_task` holds at the
+  submit site: the node, the selected queue, the profiling flag, the step, the device index and
+  the originating worker's id; the dependencies are the node's own `sycl_deps`.
 - The funnel thread pops records in order and calls the same `Internal::Graph::submit_task` the
-  worker calls today, with the same queue and the same dependencies. It reads `submit_steady_ns`
-  just before the call, so the ledger's bound on the kernel's start stays true and gets tighter.
+  worker calls, with the same queue and the same dependencies. It reads `submit_steady_ns` just
+  before the call, so the ledger's bound on the kernel's start stays true and gets tighter. A
+  submission that throws fails the run as it does on a worker: the funnel records the named
+  failure and lands the node as skipped, so its successors fire and are skipped in turn.
 - The resulting dispatched entry goes back to the originating worker through a **landing ring**,
-  one single-producer, single-consumer ring per worker. At the top of each poll round the worker
-  moves its landed entries into its `ActiveEventList`. Polling, successor release, the in-flight
-  count and the quiescence latch are unchanged: a node in the funnel is in flight exactly as a
-  node whose event the worker is polling.
-- When its ring is empty the funnel thread backs off as an idle worker does: it yields, then
-  sleeps. The runtime is C++17 (RW-16 is blocked), so there is no `atomic::wait`; a condition
-  variable may park it, taken only on the idle edge, never on the submit path.
+  one single-producer, single-consumer ring of 256 entries (`SPSCRing`) per worker and per funnel.
+  At the top of each round, before it polls, the worker moves its landed entries into its
+  `ActiveEventList`. Polling, successor release, the in-flight count and the quiescence latch are
+  unchanged: a node in the funnel is in flight exactly as a node whose event the worker is
+  polling. A per-worker count of nodes still in a funnel keeps the worker from parking or exiting
+  before they land.
+- **A full ring.** A worker whose push finds the record ring full submits the node itself, on
+  today's path, so it never waits and never drops a node. The funnel thread, when a worker's
+  landing ring is full, keeps the entry in an overflow of its own and moves it in once the worker
+  has made room; the worker never sees it full.
+- While a run is armed the funnel thread yields between empty polls, as a worker with events in
+  flight does. Once the run is disarmed it yields 100 times, then parks on a condition variable
+  that `arm()` wakes; the mutex is taken only on that edge, by the arming thread and the parking
+  thread, never by a worker on the submit path. The park lasts at most 100 ms, so a record pushed
+  while no run is armed is still served. The runtime is C++17 (RW-16 is blocked), so there is no
+  `atomic::wait`.
 
 ### What the funnel takes, and what it leaves
 
@@ -124,6 +149,8 @@ removed or changed, and the runtime names no client.
 | `HOST` node that submits device work | Today's path: its body runs on the worker and submits there. It is rarer than a kernel node, and running a host body on the funnel thread would stall every other submission |
 | Pure host node | Today's path: inline on the worker |
 | Skipped, disabled or aborted node | Today's path: pushed ready, never submitted |
+| A device task that is not a graph node | Today's path |
+| A kernel node whose queue matched no device, or whose push found the ring full | Today's path |
 | A run of layer 1 or layer 2 | Not affected: both already submit from one thread |
 
 The funnel changes who calls `submit_task`, not what it submits. Queue selection
@@ -165,10 +192,11 @@ records. A worker gains a `dispatch.funnel_push` zone.
 
 | Path | Owner (`sr design owner`) | Change |
 | --- | --- | --- |
-| `modules/engine/scheduler` | LAYERED_EXECUTION | New files for the funnel and the landing ring; the submit site in `worker_rounds.cpp` pushes a record when the device has a funnel; the poll round drains the landing ring |
-| `modules/engine/work_stealing` | none | The bounded MPSC and SPSC rings, beside the work-stealing deque, if the owner wants them as a shared brick |
-| `modules/engine/execution/include/SushiRuntime/execution/runtime_settings.hpp` | GRAPH_REPLAY | A `submit_funnel` flag, off by default |
-| `modules/surface/api/include/SushiRuntime/api/runtime/runtime_config.hpp`, `modules/surface/api/source/runtime.cpp` | LAYERED_EXECUTION | The public `RuntimeConfig::submit_funnel` flag, copied into the settings |
+| `modules/engine/scheduler` | LAYERED_EXECUTION | `submit_funnel.*` and `submit_funnels.*`; the submit site in `worker_rounds.cpp` pushes a record when the device has a funnel; each round drains the landing rings; `WorkerPoolSettings::submit_funnel`; `TaskScheduler::funnelled_task_count()`; `skipped_dispatch_event()` in `dispatch_record.hpp`, shared by the worker and the funnel |
+| `modules/engine/work_stealing` | none | `MPSCRing` and `SPSCRing`, beside the work-stealing deque |
+| `modules/engine/execution` | GRAPH_REPLAY | `RuntimeSettings::submit_funnel`, off by default and copied into the pool settings; `ExecutionMetrics::tasks_funnelled` |
+| `modules/surface/api` | LAYERED_EXECUTION | The public `RuntimeConfig::submit_funnel` flag, copied into the settings; `RunCounters::tasks_funnelled`; `fill_run_report()` sets `RunReport::funnelled` |
+| `modules/foundation/report` | PROFILING | `RunReport::funnelled` |
 | `modules/engine/task` | LAYERED_EXECUTION | None: `submit_task` is called unchanged |
 
 The scheduler and the public config belong to LAYERED_EXECUTION, so P6 keeps that topic's intent
@@ -176,18 +204,17 @@ and does not change placement, the worker pool's size or its pinning.
 
 ### How P6 is tested
 
-A plan run with the funnel on and off gives bit-identical outputs, on a DAG wide enough that
-several workers submit at once, with profiling off and on; a timed run with the funnel on records
-one `NodeEventRecord` per node, as without it. The probe's table is re-measured through
+A plan run with the funnel on and off gives bit-identical outputs, on a DAG of four lanes with
+edges across lanes, with profiling off and on; a timed run records one `NodeEventRecord` per node
+and step with the funnel on and off; `RunReport::funnelled` is true only for a scheduler run on a
+runtime with the funnel (`tests/surface/api/graph/test_dynamic_graph/test_layer_equivalence.cpp`).
+On the scheduler itself, with the funnel off and on, a cancelled run and a disabled node submit
+nothing, a submission that throws fails the run naming its node and skips what follows, and
+`stop()` ends the pool with the funnel idle and right after a burst of submissions
+(`tests/engine/scheduler/test_task_scheduler.cpp`). The rings have tests of their own
+(`tests/engine/work_stealing/test_mpsc_ring.cpp` and `test_spsc_ring.cpp`, over the contract in `tests/support/bounded_ring_contract.hpp`). The probe's table is re-measured through
 `Graph::run` with the funnel on and off, at 1, 4 and 12 workers.
 
 ### Open questions for the owner
 
-- Should the funnel thread count against `worker_count`, or come on top of it? On a 12-thread
-  machine with 12 workers it oversubscribes by one thread per device.
-- Should `RunReport` say that a run was funnelled? It is a public field, so a new one is the
-  owner's call; without it, only the setting says so.
-- Should the rings live in `modules/engine/work_stealing` as a shared brick, or stay private to the
-  scheduler?
-- Does this page belong to LAYERED_EXECUTION, which owns the scheduler, rather than to GRAPH_REPLAY?
 - AdaptiveCpp and Level Zero are not measured; their locks may sit elsewhere.

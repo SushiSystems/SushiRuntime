@@ -86,6 +86,18 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Builds the ready event of a task whose work did not run to its end.
+         */
+        EventPolling::PolledEvent skipped_dispatch_event(Task* task)
+        {
+            EventPolling::PolledEvent skipped;
+            skipped.task = task;
+            skipped.ready = true;
+            skipped.executed = false;
+            return skipped;
+        }
+
+        /**
          * @brief Builds the event a worker pushes to EventPolling after a submission.
          */
         EventPolling::PolledEvent dispatched_event(const sycl::event& event, bool submitted, Task* task,

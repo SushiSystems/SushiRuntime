@@ -78,6 +78,8 @@ namespace SushiRuntime
 
             report.distributed_statistics.tasks_offloaded_to_network =
                 after.tasks_offloaded - before.tasks_offloaded;
+
+            report.funnelled = after.tasks_funnelled != before.tasks_funnelled;
         }
 
     } // namespace Detail
