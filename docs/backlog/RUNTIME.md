@@ -5,10 +5,7 @@
 | ID | Pri | State | Title | Done when | Blocked by | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | RW-79 | P2 | open | Build the global handle design, phases H0 to H10 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
-| RW-138 | P1 | open | Find why the submit funnel leaves a host-work plan's kernel nodes on the workers | With submit_funnel on, an editor trace shows dispatch.submit on one funnel thread per device and on no scheduler worker |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
-| RW-139 | P1 | open | Chain a plan whose host work the dependencies leave unordered | Such a plan runs as a chain or its device part does, outputs equal to the scheduler's, and the editor shows no 'host work ... unordered' refusal |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
 | RW-140 | P2 | open | Measure what a timed chained submit costs over an untimed one | A benchmark row gives host us per chained submit with and without device timing on CUDA, and the gap is named by cause |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
-| RW-141 | P2 | open | Replay a chainable plan as one recorded command graph (GRAPH_REPLAY P5) | P5's test passes: replay equals layer 1 bit for bit over many steps, and a forced record failure falls back and logs once |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
 | RW-142 | P2 | open | Let a replay with a late window run its steps back to back | A replayed plan whose window reads host words submits every step without waiting for the previous replay, bytes equal to layer 1 |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
 | RW-143 | P3 | open | Test replay_refusal on an in-memory placement memory | A Small test pins each replay refusal reason without a device |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
 | RW-144 | P2 | open | Measure the spike table through Graph::run with layer 2 on CUDA and OpenCL | GRAPH_REPLAY carries per-node replay cost for both backends, measured through Graph::run |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
