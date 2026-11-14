@@ -62,6 +62,7 @@ sushiruntime_add_module_tests(
         graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
         graph/plumbing/test_step_driver/test_replay.cpp
+        graph/plumbing/test_step_driver/test_run_placement.cpp
         graph/test_recorder/test_registration_index.cpp
         graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp
@@ -118,6 +119,7 @@ sushiruntime_add_module_tests(
         graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
         graph/plumbing/test_step_driver/test_replay.cpp
+        graph/plumbing/test_step_driver/test_run_placement.cpp
         graph/test_recorder/test_registration_index.cpp
         graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp

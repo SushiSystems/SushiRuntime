@@ -124,7 +124,8 @@ A plan is rebuilt only after the graph changed. `compile_count()` counts the bui
 ### Run
 
 A runtime has one engine, so one run is in flight on it at a time. A plan runs on one of three
-layers, and `RunReport::layer` names the one that ran.
+device layers, or on the calling thread when its graph's run placement policy sends it there, and
+`RunReport::layer` names the one that ran.
 
 - **The scheduler.** A pool of worker threads, each with its own deque, takes nodes whose
   predecessors have finished. An idle worker steals from another. An event poller watches the
@@ -135,6 +136,12 @@ layers, and `RunReport::layer` names the one that ran.
 - **The replay.** A chained plan whose graph opts in with `allow_replay(true)` is recorded once as
   a SYCL command graph and replayed with one submission per step. A timed run, a task body, a
   device-sized node or a failed recording keeps the plan on the chain.
+- **The host.** A graph given a `RunPlacementPolicy` with `set_run_placement_policy()` asks it once
+  per blocking run. An answer of `RunPlacement::Host` runs every step on the calling thread
+  through each node's host form, and the report names `ExecutionLayer::Host`; a plan with a node
+  that has no host form or touches device memory stays on the device. The policy is the caller's:
+  the runtime ships no threshold
+  ([RUN_PLACEMENT](../design/LAYERED_EXECUTION/RUN_PLACEMENT.md)).
 
 The engine classifies each plan. It refuses the chain for a plan that holds native host work, a
 node the offload coordinator acts on, a device value read at dispatch, a node with no USM

@@ -539,6 +539,19 @@ plan holding a task body, a State rule or a node sized on the device run on the 
 recording that throws keeps the plan on the chain until it is compiled or composed again, and says so
 once in the log (`docs/design/GRAPH_REPLAY/README.md`, layer 2).
 
+### set_run_placement_policy
+
+`set_run_placement_policy(std::shared_ptr<RunPlacementPolicy>)`, which `Graph` and `DynamicGraph`
+take from the step driver, gives the graph a policy and returns the graph; null, the default, removes
+it, and every run goes as it went before. A blocking run asks the policy once, before its first step,
+with a `RunDescription`: the node count, the steps asked for, the launched items, the nodes of
+unknown width, and the flops, bytes and node count of the stated `NodeCost`s. An answer of
+`RunPlacement::Host` runs every step of that run on the calling thread through each node's host
+form, and `RunReport::layer` names `ExecutionLayer::Host`. A plan with a node that has no host form,
+that names no region, that an offload coordinator prepared or that touches device memory stays on
+the device. `run_async()` does not ask the policy. A move carries the policy to the target
+(`docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md`).
+
 ### refresh_updaters
 
 refresh_updaters() clears the aggregated list in `steps_` and appends one pointer per live region,

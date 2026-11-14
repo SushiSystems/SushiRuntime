@@ -24,7 +24,8 @@ so the module sits in the foundation tier, below both.
 
 `RunReport` holds the outcome of a run: success, cancellation, the task count, the execution layer,
 whether a submit funnel submitted any of its kernel nodes (`funnelled`), the NUMA and distributed
-counts. It holds no timing. A run's timing leaves the runtime through a
+counts. `ExecutionLayer::Host` names a run a graph's run placement policy sent to the calling
+thread, which submitted no device work. It holds no timing. A run's timing leaves the runtime through a
 `RunObserver`, and the profiler's zones, values and counters carry the rest.
 
 ### reset
@@ -49,7 +50,7 @@ holds the runtime weakly, so a handle that outlives its runtime removes nothing.
 
 | Member | Meaning |
 | --- | --- |
-| `layer` | Path that submitted the run's device work |
+| `layer` | Path that ran the run's steps |
 | `table` | The plan's `NodeTable`, shared by every run of the plan |
 | `events` | One `NodeEventRecord` per dispatch |
 | `device_clocks` | One `ClockPairing` per device that ran a kernel or a task body of the run |

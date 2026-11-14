@@ -44,16 +44,21 @@
 #include <SushiRuntime/execution/chain_replay.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/host_step_plan.hpp>
+#include <SushiRuntime/execution/host_step_run.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/placement/run_placement.hpp>
+#include <SushiRuntime/placement/run_placement_policy.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
+#include "run_description_builder.hpp"
 #include "run_report_builder.hpp"
 
 namespace SushiRuntime
@@ -190,6 +195,12 @@ namespace SushiRuntime
                 return run.submit_step();
             }
 
+            /** @brief Runs one step of a hosted run on this thread, stamping its index into dispatch records. */
+            Result<void> submit_one(Internal::Execution::HostStepRun& run, std::size_t step)
+            {
+                return run.submit_step(static_cast<std::uint32_t>(step));
+            }
+
             /**
              * @brief Runs the steps from this thread on one in-order queue, as a chain or a replay.
              * @tparam InOrderRun ChainRun or ChainReplay, bound to the target's plan.
@@ -268,6 +279,40 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Runs the steps on this thread through each node's host form.
+             * @pre host_step_refusal() returned null for the target's plan.
+             * @return The number of steps run, or the fault a step recorded.
+             * @see docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md
+             */
+            Result<std::size_t> run_hosted(const StepTarget& target, StepPredicate keep_going,
+                                           RuntimeContext& context, ExecutionEngine& engine,
+                                           StepSync sync)
+            {
+                Internal::Execution::HostStepRun hosted(context, *engine_plan(target.plan));
+                return run_in_order(hosted, target, keep_going, engine, sync);
+            }
+
+            /**
+             * @brief Returns whether the graph's policy places this run on the host and the plan
+             *        can run there; a refused plan is logged and stays on the device.
+             * @pre target.placement is not null.
+             * @see docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md
+             */
+            bool placed_on_host(const StepTarget& target, RuntimeContext& context,
+                                const CompiledGraph& plan, std::size_t steps)
+            {
+                SR_ZONE(context.profile_collector(), "run.placement");
+                if (target.placement->place(describe_run(plan, steps)) != RunPlacement::Host)
+                    return false;
+                const char* refusal = Internal::Execution::host_step_refusal(plan, context);
+                if (refusal == nullptr)
+                    return true;
+                SR_LOG_DEBUG(K_API_LOG_CATEGORY, "A run its policy placed on the host runs on the device: {}.",
+                             refusal);
+                return false;
+            }
+
+            /**
              * @brief Returns the layer a blocking run of the plan takes; a replay is recorded here
              *        the first time the plan takes it.
              * @pre plan.profiling holds what this run asks for.
@@ -296,6 +341,8 @@ namespace SushiRuntime
             {
                 switch (layer)
                 {
+                    case ExecutionLayer::Host:
+                        return run_hosted(target, keep_going, context, engine, sync);
                     case ExecutionLayer::Replay:
                         return run_replayed(target, keep_going, context, engine, sync);
                     case ExecutionLayer::Chain:
@@ -338,7 +385,9 @@ namespace SushiRuntime
 
             // A hook may write what a kernel reads, so each step ends before the next hook.
             const StepSync hooked_sync = target.hooks->empty() ? sync : StepSync::EveryStep;
-            const ExecutionLayer layer = choose_layer(target, context, plan);
+            const bool hosted = target.placement != nullptr &&
+                                placed_on_host(target, context, plan, expected_invocations);
+            const ExecutionLayer layer = hosted ? ExecutionLayer::Host : choose_layer(target, context, plan);
             const Result<std::size_t> stepped =
                 run_on_layer(layer, target, keep_going, context, engine, hooked_sync);
             if (!stepped)

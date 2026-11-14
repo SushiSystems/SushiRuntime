@@ -1,7 +1,8 @@
 # placement
 
 The rule model that says where a node runs: the plain records a caller fills from its own format,
-and the rule set that checks them, keeps them in order and picks the rule that wins for a node.
+and the rule set that checks them, keeps them in order and picks the rule that wins for a node. It
+also holds the port through which a caller places a whole run of a graph on the device or the host.
 
 It depends on `core`, for `Result`, `PlacementClass`, `OperationID` and the export macro, and on
 `machine`, for `NodeLabel` and `DeviceKind`. It includes no SYCL header, so a module that only moves
@@ -14,6 +15,9 @@ rules between machines does not compile against SYCL.
 | `placement_rule.hpp` | `PlacementRule` with `PlacementMatch`, `PlacementTarget`, `AbsentPolicy` and `AbsentAction`, plain records with no behaviour |
 | `placement_rules.hpp` | `PlacementRules`: `add()` checks and keeps a rule, `resolve()` returns the position of the winning rule, `rule()`, `size()` and `empty()` read the set, and `K_MAX_DURATION` is the longest `Wait` bound and deadline `add()` accepts |
 | `placement_target_matching.hpp` | `device_on()`, `machine_matches()`, `pick_device()`, `machine_names_match()`, `describe_rule()`, `describe_target()` and `K_DEFAULT_PLACEMENT_DEVICE`: a target read against the `NodeFacts` of one machine |
+| `run_placement.hpp` | `RunPlacement`: `Device` or `Host`, the answer a run placement policy gives |
+| `run_description.hpp` | `RunDescription`: the counts a policy reads of one run before its first step |
+| `run_placement_policy.hpp` | `RunPlacementPolicy`: the port a caller implements, `place(const RunDescription&)` |
 
 Every name is declared in `SushiRuntime`. `PlacementRules` and the six functions are exported
 with `SUSHIRUNTIME_API` and built from `source/placement_rules.cpp` and
@@ -105,3 +109,6 @@ gives each a first label of its own.
   scope reads its rule's target the same way.
 - `offload_coordination` reads a rule's target with `device_on()` against each worker's facts and
   against the master's own facts.
+- `api` asks the `RunPlacementPolicy` a graph was given once per blocking run, with the
+  `RunDescription` it measures from the plan
+  ([RUN_PLACEMENT](../../../docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md)).

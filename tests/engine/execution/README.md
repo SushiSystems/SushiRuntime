@@ -165,6 +165,26 @@ a second scheduled run is refused; an idle change is taken only from an idle mar
 Compiles `offload_host.hpp` alone. `OffloadHost` holds no logic of its own; the scheduler engine's
 offload tests and `RuntimeContext::install_offload()` cover what it carries.
 
+## compile_host_reachable_memory.cpp
+
+Compiles `host_reachable_memory.hpp` alone. The port holds no logic; `test_host_step_plan.cpp`
+passes it a table of its own.
+
+## test_host_step_plan.cpp
+
+Small. `host_step_refusal()` over plans built by hand with `TaskGraph` and a `TableReachableMemory`
+the test fills: nodes with host forms on recorded memory are accepted, and a native host node is
+accepted whatever it names. A node with no host form, a node on memory the table does not hold, a
+node that names no region, an offload candidate and an empty plan are each refused.
+
+## test_host_step_run.cpp
+
+Small. `HostStepRun` on a host context from `TestSupport::make_host_context()`, over plans whose
+nodes append a digit to one cell, so the cell spells the order they ran in. Three dependent nodes
+give 123; a second step after a re-arm runs again; a disabled late-bound node runs nothing and
+frees its successor; a node whose host form throws ends the step with an error that carries the
+message, and its successor never runs.
+
 ## test_runtime_context.cpp
 
 `Small_RuntimeContextCollector` covers the collector a `RuntimeContext` records into: a context built with

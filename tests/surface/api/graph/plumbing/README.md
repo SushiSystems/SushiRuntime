@@ -269,3 +269,20 @@ backends on layer 1; the tests that need a recording skip on those.
 | `TheForceChainFlagOfTheConfigKeepsAReplayOnTheChain` | A runtime built with `RuntimeConfig::force_chain` runs an opted-in graph on the chain. |
 | `AStateRuleIsRefusedWithItsReason` | A State rule keeps the plan on the chain, and the debug record names the reason once. |
 | `ATaskBodyIsRefusedWithItsReason` | A task body keeps the plan on the chain, and the debug record names the reason once. |
+
+## test_step_driver/test_run_placement.cpp
+
+Small, on a host runtime. A `ScriptedPolicy` answers from a list, one answer per run, and keeps every
+`RunDescription` it was shown. The workload is a `DynamicGraph` under `allow_chain(true)` with two
+kernels over one seeded buffer in two regions, each stating its width; the second states a cost.
+On a host runtime the engine's own run reports `ExecutionLayer::Scheduler`.
+
+| Test | What it proves |
+| --- | --- |
+| `NoPolicyLeavesTheLayerAndTheBytes` | A graph with no policy, and one whose policy was set and then removed, run on `Scheduler` with the same bytes, and the removed policy is never asked. |
+| `ADeviceAnswerTakesTheLayerOfNoPolicy` | A `Device` answer gives the layer and the bytes of the same graph with no policy, and the policy is asked once. |
+| `AHostAnswerRunsOnTheHostWithTheEnginesBytes` | Over three runs of five steps, a `Host` answer reports `ExecutionLayer::Host` and leaves the bytes the engine leaves. |
+| `EachRunRecordsItsOwnPlacement` | Answers of `Host`, `Device`, `Host` give the layers `Host`, `Scheduler`, `Host`, one question per run. |
+| `TheDescriptionCountsWhatThePlanStates` | The description holds 2 nodes, 5 steps, 128 launched items, no unsized node, and the one stated cost of 11 flops and 13 bytes. |
+| `AHostAnswerForAPlanOnDeviceMemoryStaysOnTheEngine` | A `Host` answer for a kernel over a `Residency::Device` buffer runs on the engine. |
+

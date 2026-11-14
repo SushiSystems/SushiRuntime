@@ -8,7 +8,7 @@ path. [The page of api/graph](../README.md) has the classes a consumer names.
 | --- | --- |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), allow_replay() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), allow_replay(), set_run_placement_policy() and the step loop |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
 ## builder_surface.hpp
@@ -552,6 +552,19 @@ writes the counters `run.tasks`, `run.steals`, `transfer.h2d_bytes` and `transfe
 allow_replay() sits on the driver, so `Graph` and `DynamicGraph` share one setting and one spelling;
 target() copies it into `StepTarget::may_replay`, and the step loop replays only a plan that would
 run as a chain (`api/graph/README.md`, allow_replay). A move copies the setting to the destination.
+
+### StepDriver: set_run_placement_policy
+
+set_run_placement_policy() gives `Graph` and `DynamicGraph` one `RunPlacementPolicy`, held as a
+`std::shared_ptr`; null removes it. target() hands its address to `StepTarget::placement`. A
+blocking run with a policy asks it once, before its first step, with the `RunDescription`
+`describe_run()` measures from the plan (`source/run_description_builder.hpp`), under the zone
+`run.placement`. An answer of `Host` for a plan `host_step_refusal()` accepts runs every step of the
+run through `HostStepRun` on the calling thread, by the same step loop as the chain, and the report
+names `ExecutionLayer::Host`. Any other answer, and a `Host` answer for a refused plan, which is
+logged at `DEBUG`, take the layer the run takes with no policy. run_async() does not ask the
+policy. A move takes the policy to the destination
+([RUN_PLACEMENT](../../../../../../../../docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md)).
 
 ### StepDriver: moves
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-14 — api: Added `set_run_placement_policy()` to both graph kinds; with no policy a run is unchanged, and a `Host` answer runs it on the calling thread as `ExecutionLayer::Host` (RW-147).
 - 2026-11-14 — api: Added `allow_replay(bool)` to both graph kinds, off by default, which replays a chained plan as one recorded command graph per step, with `ExecutionLayer::Replay` and `RuntimeConfig::force_chain` (RW-141).
 - 2026-11-14 — execution: Changed `classify_chain()` to refuse only two HOST nodes no path orders, and a `DynamicGraph` under `allow_chain(true)` to chain such a pair when they share no declared byte (RW-139, GRAPH_REPLAY P7).
 - 2026-11-14 — scheduler: With `submit_funnel` on, HOST bodies that submit device work and plain device tasks run on the funnel thread, and a full ring backs the record up on the worker, so no worker submits (RW-138).

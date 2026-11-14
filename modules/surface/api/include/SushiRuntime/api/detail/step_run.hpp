@@ -45,6 +45,8 @@
 
 namespace SushiRuntime
 {
+    class RunPlacementPolicy;
+
     namespace Detail
     {
         /**
@@ -102,6 +104,7 @@ namespace SushiRuntime
             std::size_t node_count = 0;                     /**< Nodes one step dispatches. */
             bool may_chain = false;                         /**< Whether the graph allows a chain. */
             bool may_replay = false;                        /**< Whether the graph opted into replaying its chain. */
+            RunPlacementPolicy* placement = nullptr;        /**< The graph's run placement policy; null for none. */
         };
 
         /** @brief Says whether a chained run may skip the host wait between steps. */

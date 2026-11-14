@@ -1,6 +1,6 @@
 # Layered execution
 
-**Status:** Open — R1 to R12, R14 and R15 built and not yet compiled or run; R13 waits on the owner's machines
+**Status:** Open — R1 to R12, R14 and R15 built and not yet compiled or run; R16 building; R13 waits on the owner's machines
 **About:** What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
 **Modules:** `modules/engine/scheduler`, `modules/engine/task`, `modules/surface/api`
 
@@ -294,6 +294,11 @@ README change in the same commit.
 
 The opt-in submit funnel of the scheduler is designed on [a page of GRAPH_REPLAY](../GRAPH_REPLAY/SUBMIT_FUNNEL.md).
 
+### Run placement
+
+A caller's policy that sends a whole run of a graph to the device or to the calling thread is
+designed on [its page](RUN_PLACEMENT.md), with the owner's rulings of 2026-11-14.
+
 ## Phases
 
 Hierarchy first: the vocabulary, then what records it, then what decides on it, then the wire.
@@ -327,6 +332,7 @@ the task's own commit.
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R7 | `ThreadLocalMagazine` teardown | built |
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R8 | A node label on the ordinary `add()` overloads | built |
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R9 | A multi-colour (or persistent-kernel) dispatch node | planned |
+| R16 | Run placement: a client RunPlacementPolicy answers Host or Device per blocking run of a Graph or DynamicGraph; Host runs the steps through HostStepRun and Node::run_on_host(), RUN_PLACEMENT.md. Done when: a small test sees no policy keep today's layer, a Host answer run as ExecutionLayer::Host with the bytes of the engine's run, and a refused plan stay on the device | building |
 
 R13 is a measurement and comes after the labels and the rules, as the owner ordered on
 2026-10-20: it is taken once the placement it is measured under exists.

@@ -51,7 +51,7 @@ namespace SushiRuntime
      */
     struct RunObservation
     {
-        ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that submitted the run's device work. */
+        ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that ran the run's steps. */
         std::shared_ptr<const NodeTable> table;           /**< Names, operations and costs of the plan's nodes, shared by every run of the plan. */
         std::vector<NodeEventRecord> events;              /**< One record per dispatch; a device record is on its device's event clock, a host record on the steady clock. */
         std::vector<DeviceClock> device_clocks;           /**< One pairing per device that ran a kernel of the run. */

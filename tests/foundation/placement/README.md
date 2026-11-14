@@ -62,3 +62,25 @@ with a CPU, then a GPU.
 | `Small_PlacementTargetMatching.Regression_ADeviceOnAMachineNeedsTheMachinePartToMatch` | `device_on()` gives none when the machine part names another machine. |
 | `Small_PlacementTargetMatching.Regression_MachineNamesCompareByCaseAndFirstLabel` | `machine_names_match()` treats `Rack-7`, `RACK-7` and `rack-7.lab.example.com` as one machine, and `rack-70` and `lab.rack-7` as others. |
 | `Small_PlacementTargetMatching.Regression_MachineMatchesComparesATargetNameLikeMachineNamesMatch` | `machine_matches()` applies the same comparison to a target's name and a machine's name. |
+
+## compile_run_placement.cpp
+
+Compiles `run_placement.hpp` alone. `RunPlacement` holds two enumerators and no logic; the step
+driver's run placement tests cover what each answer does.
+
+## test_run_description.cpp
+
+The file tests RunDescription, the counts a run placement policy reads.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RunDescription.ADefaultDescriptionCountsNothing` | Every field of a description made with no values is zero. |
+| `Small_RunDescription.ADescriptionIsATriviallyCopyableValue` | The struct is trivially copyable, and a copy keeps every field, a 41-bit item count among them. |
+
+## test_run_placement_policy.cpp
+
+The file tests RunPlacementPolicy through a threshold policy the test writes, as a caller would.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RunPlacementPolicy.ACallersPolicyAnswersThroughThePort` | Called through the port, the policy answers `Host` below its threshold and `Device` at it, and keeps a count of its calls. |

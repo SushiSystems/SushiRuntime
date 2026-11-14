@@ -444,8 +444,9 @@ parameter list, and a kind added later gets all three with no code of its own.
 
 A StepDriver is a class template over the graph that owns it; the loops that run a plan are not.
 StepTarget is what the template hands the library for one call: the runtime, the plan, the
-per-step hooks, the node count, whether the graph allows a chain, and a function pointer that
-restores the plan's run state. The pointers are borrowed for the call.
+per-step hooks, the node count, whether the graph allows a chain and a replay, the graph's run
+placement policy or null, and a function pointer that restores the plan's run state. The pointers
+are borrowed for the call.
 
 ### StepPredicate
 
@@ -456,7 +457,9 @@ node.
 
 ### run_steps
 
-run_steps() holds the scheduler loop and the chain loop. A chain is taken when the graph allows
+run_steps() holds the scheduler loop and the chain loop. A graph's run placement policy is asked
+first, when the graph has one, and a `Host` answer for a plan the host can run takes the chain loop
+over a `HostStepRun`. Otherwise a chain is taken when the graph allows
 it, the plan classified as one, and the runtime was not told to force the scheduler. With a
 caller's hook registered the chain waits after every step, because a hook may write what a kernel
 reads.

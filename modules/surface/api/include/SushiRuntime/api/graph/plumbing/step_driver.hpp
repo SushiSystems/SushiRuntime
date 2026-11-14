@@ -52,6 +52,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/placement/run_placement_policy.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 namespace SushiRuntime
@@ -265,6 +266,19 @@ namespace SushiRuntime
                     return owner();
                 }
 
+                /**
+                 * @brief Gives the graph a policy that places each blocking run on the device or
+                 *        the host; null, the default, removes it and every run goes as before.
+                 *
+                 * run_async() does not ask it. A move keeps the policy.
+                 * @see docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md
+                 */
+                Owner& set_run_placement_policy(std::shared_ptr<RunPlacementPolicy> policy) noexcept
+                {
+                    placement_policy_ = std::move(policy);
+                    return owner();
+                }
+
             protected:
                 StepDriver() = default;
 
@@ -279,6 +293,7 @@ namespace SushiRuntime
                     other.end_step_before_move();
                     step_hooks_ = std::move(other.step_hooks_);
                     replay_allowed_ = other.replay_allowed_;
+                    placement_policy_ = std::move(other.placement_policy_);
                 }
 
                 /**
@@ -295,6 +310,7 @@ namespace SushiRuntime
                         other.end_step_before_move();
                         step_hooks_ = std::move(other.step_hooks_);
                         replay_allowed_ = other.replay_allowed_;
+                        placement_policy_ = std::move(other.placement_policy_);
                     }
                     return *this;
                 }
@@ -389,6 +405,7 @@ namespace SushiRuntime
                     named.node_count = self.node_count();
                     named.may_chain = self.may_chain();
                     named.may_replay = replay_allowed_;
+                    named.placement = placement_policy_.get();
                     return named;
                 }
 
@@ -709,6 +726,9 @@ namespace SushiRuntime
 
                 /** @brief Whether allow_replay() lets a chained plan replay; a move copies it. */
                 bool replay_allowed_ = false;
+
+                /** @brief The policy set_run_placement_policy() gave; null for none, and a move takes it. */
+                std::shared_ptr<RunPlacementPolicy> placement_policy_;
         };
     } // namespace Detail
 } // namespace SushiRuntime

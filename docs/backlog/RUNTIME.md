@@ -11,6 +11,12 @@
 | RW-144 | P2 | open | Measure the spike table through Graph::run with layer 2 on CUDA and OpenCL | GRAPH_REPLAY carries per-node replay cost for both backends, measured through Graph::run |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
 | RW-145 | P2 | open | Stop a task body on the funnel thread deadlocking on an unordered node | A body that waits on an unordered node under the funnel either runs or is refused with a named error, never deadlocks |  | `docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md` | 2026-11-14 |
 | RW-146 | P2 | open | Give the four GRAPH_REPLAY units of RW-141 their mirrored tests | chain_replay, chained_run_mark, recorded_steps and submit_form each have a mirrored test file and no known finding |  | `docs/design/GRAPH_REPLAY/README.md` | 2026-11-14 |
+| RW-147 | P1 | open | Let a client policy run a graph's small runs on the calling thread | LAYERED_EXECUTION R16's small tests pass: no policy keeps the layer, Host runs as ExecutionLayer::Host with equal bytes, a refused plan stays on the device |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
+| RW-148 | P2 | open | Label host and replay runs by their own layer in the profiler | device_source.cpp names Host and Replay runs by their ExecutionLayer, with a test per layer |  | `modules/surface/profiling/source/device_source.cpp` | 2026-11-14 |
+| RW-149 | P2 | open | Refuse a nested run from a host body during a host-placed run | A nested run() from a host body of a Host-placed run on a host runtime is refused with a named error, tested |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
+| RW-150 | P2 | open | Count a host-placed run's tasks as host tasks in the run report | fill_run_report counts a Host run's tasks as host tasks on a GPU runtime, tested |  | `modules/foundation/report/include/SushiRuntime/report/run_report.hpp` | 2026-11-14 |
+| RW-151 | P3 | open | Record ExecutionLayer::Host in the PROFILING design topic | The PROFILING topic names ExecutionLayer::Host and links RUN_PLACEMENT |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
+| RW-152 | P3 | open | Measure host_step_refusal's per-run region lock cost | A benchmark row gives host_step_refusal's cost per run for a 4-node and a 64-node plan |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
 
 ## Known issues
 

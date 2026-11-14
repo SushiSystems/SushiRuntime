@@ -266,6 +266,12 @@ The devices of a host context are a `DeviceQueueSet` built over an `InMemoryQueu
 memory is host USM. The engine submits nothing to a queue, but a scheduler, a `ChainRun` or a task
 body built over the context's parts gets a host queue for each device, a different one per device.
 
+## host_reachable_memory.hpp, host_step_plan.hpp and host_step_run.hpp
+
+`HostReachableMemory` and `host_step_refusal()` say whether a plan's steps may run on the calling
+thread ([their page](source/host_step_plan.md)), and `HostStepRun` runs them there
+([its page](source/host_step_run.md)).
+
 ## offload_host.hpp
 
 ### OffloadHost

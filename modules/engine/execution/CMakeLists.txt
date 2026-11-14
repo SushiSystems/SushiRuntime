@@ -11,6 +11,8 @@ sushiruntime_add_module(
         chain_replay.cpp
         chain_run.cpp
         host_execution_engine.cpp
+        host_step_plan.cpp
+        host_step_run.cpp
         scheduler_execution_engine.cpp
         runtime_context.cpp
     DEPENDS
@@ -26,4 +28,4 @@ sushiruntime_add_module(
         report
         machine
         profile
-    PRIVATE_DEPENDS log sycl placement)
+    PRIVATE_DEPENDS log sycl placement region)

@@ -7,11 +7,14 @@ sushiruntime_add_module_tests(
     MODULE execution
     SOURCES
         compile_execution_log_category.cpp
+        compile_host_reachable_memory.cpp
         compile_offload_host.cpp
         test_chain_plan.cpp
         test_chain_run.cpp
         test_dropped_dispatches.cpp
         test_execution_engine.cpp
+        test_host_step_plan.cpp
+        test_host_step_run.cpp
         test_run_failures.cpp
         test_run_marker.cpp
         test_run_observer_registry.cpp
