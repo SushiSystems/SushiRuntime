@@ -332,7 +332,7 @@ the task's own commit.
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R7 | `ThreadLocalMagazine` teardown | built |
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R8 | A node label on the ordinary `add()` overloads | built |
 | PHYSICS_SUBSTRATE_REQUIREMENTS-R9 | A multi-colour (or persistent-kernel) dispatch node | planned |
-| R16 | Run placement: a client RunPlacementPolicy answers Host or Device per blocking run of a Graph or DynamicGraph; Host runs the steps through HostStepRun and Node::run_on_host(), RUN_PLACEMENT.md. Done when: a small test sees no policy keep today's layer, a Host answer run as ExecutionLayer::Host with the bytes of the engine's run, and a refused plan stay on the device | building |
+| R16 | Run placement: a client RunPlacementPolicy answers Host or Device per blocking run of a Graph or DynamicGraph; Host runs the steps through HostStepRun and Node::run_on_host(), RUN_PLACEMENT.md. Done when: a small test sees no policy keep today's layer, a Host answer run as ExecutionLayer::Host with the bytes of the engine's run, and a refused plan stay on the device | built |
 
 R13 is a measurement and comes after the labels and the rules, as the owner ordered on
 2026-10-20: it is taken once the placement it is measured under exists.
