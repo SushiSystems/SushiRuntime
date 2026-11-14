@@ -31,6 +31,7 @@
 #include <SushiRuntime/api/detail/late_window.hpp>
 
 #include <atomic>
+#include <cstdint>
 
 #include <SushiRuntime/task/late_bindings.hpp>
 
@@ -40,6 +41,14 @@ namespace SushiRuntime
 {
     namespace Detail
     {
+        static_assert(K_LATE_WORD_ENABLED == Internal::Graph::LateBindings::K_REPLAY_WORD_ENABLED &&
+                          K_LATE_WORD_COUNT == Internal::Graph::LateBindings::K_REPLAY_WORD_COUNT &&
+                          K_LATE_WORD_BASE == Internal::Graph::LateBindings::K_REPLAY_WORD_BASE,
+                      "The surface reads the words in the order the engine's replay writes them.");
+        static_assert(K_LATE_REST_OF_CAPACITY ==
+                          static_cast<std::uint64_t>(Internal::Graph::LateBindings::K_USE_BAKED),
+                      "The replay writes K_USE_BAKED as the count that takes the rest of the capacity.");
+
         LateWindow read_late_window(const LateControls* controls) noexcept
         {
             const Internal::Graph::LateBindings& bindings = *engine_controls(controls);
@@ -52,6 +61,7 @@ namespace SushiRuntime
                 ? bindings.device_count + bindings.device_count_index : nullptr;
             window.base_slot = (bindings.device_base != nullptr)
                 ? bindings.device_base + bindings.device_base_index : nullptr;
+            window.words = bindings.replay_words;
             return window;
         }
     } // namespace Detail

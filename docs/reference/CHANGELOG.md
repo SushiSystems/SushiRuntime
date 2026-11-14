@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-14 — api: Added `allow_replay(bool)` to both graph kinds, off by default, which replays a chained plan as one recorded command graph per step, with `ExecutionLayer::Replay` and `RuntimeConfig::force_chain` (RW-141).
+- 2026-11-14 — execution: Changed `classify_chain()` to refuse only two HOST nodes no path orders, and a `DynamicGraph` under `allow_chain(true)` to chain such a pair when they share no declared byte (RW-139, GRAPH_REPLAY P7).
+- 2026-11-14 — scheduler: With `submit_funnel` on, HOST bodies that submit device work and plain device tasks run on the funnel thread, and a full ring backs the record up on the worker, so no worker submits (RW-138).
+- 2026-11-14 — tests: Added `Benchmark_TimedChainSubmit`, which prints host microseconds per chained submit and per run of 51 kernels with and without an observer (RW-140).
 - 2026-11-14 — api: Added `RuntimeConfig::submit_funnel`, off by default; while on, one thread per device submits the scheduler's kernel nodes through lock-free rings, and `RunReport::funnelled` says so (GRAPH_REPLAY P6).
 - 2026-11-14 — api: Added `DynamicGraph::allow_chain(bool)`, off by default; while on, every composition classifies the composed plan, so a chainable one runs on the in-order chain (GRAPH_REPLAY P4).
 - 2026-11-14 — profiling: Paired device clocks from span start and end against host submit and reap, with a drift allowance; `command_submit`, which drifts 33.5 ppm, is no longer read (RW-134, `86a6638d`).

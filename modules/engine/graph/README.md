@@ -321,9 +321,9 @@ allocation that no node of the plan declares as written. Every node of the next 
 observes the bytes written. The caller writes only while no execution of the plan is in flight.
 
 A plan fixes the addresses its kernels receive, not the bytes behind them, so the rule holds on
-the scheduler path and on the in-order chain. It binds a recorded command graph as well, layer 2
-of [`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY/README.md), which is not built: a recording
-that captured the bytes would break it. A Device allocation is outside the rule, since the host
+the scheduler path, on the in-order chain and on a replay, layer 2 of
+[`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY/README.md): a recorded command graph keeps the
+addresses its nodes were submitted with and reads the bytes behind them when it is replayed. A Device allocation is outside the rule, since the host
 cannot address it. The write is not a node and the rule adds no ordering; the caller orders it by
 writing between executions.
 

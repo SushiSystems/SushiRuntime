@@ -77,6 +77,19 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Says whether a described node's command group submits the same work at every
+         *        step, which decides whether a recorded command graph may keep it.
+         * @see docs/design/GRAPH_REPLAY/README.md
+         */
+        enum class SubmitForm : std::uint8_t
+        {
+            StepBound,   /**< It may read host state that changes between steps. */
+            Fixed,       /**< It submits the same work at every step. */
+            LateWindow,  /**< A late-bound window; recorded at capacity, it reads its controls from host words. */
+            DeviceSized  /**< It launches at capacity and reads its width from a word a predecessor wrote. */
+        };
+
+        /**
          * @brief Holds the addresses a State rule reads and writes at its next step.
          *
          * Both lists are null for a rule that names no operation.
@@ -123,6 +136,9 @@ namespace SushiRuntime
 
             /** @brief Launch width baked on the node; K_WIDTH_UNKNOWN leaves it unset. */
             std::size_t width = K_WIDTH_UNKNOWN;
+
+            /** @brief What a recorded command graph may keep of the submission; a verb that sets none is StepBound. */
+            SubmitForm submit_form = SubmitForm::StepBound;
 
             /**
              * @brief Untracked and Task: index of the device the node is placed on; a Task that

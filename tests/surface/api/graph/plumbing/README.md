@@ -135,7 +135,7 @@ The three regression tests install the in-memory coordinator of `task` through
 `TestSupport::InstalledOffload`, which calls `AdvancedControls::install_offload()` for their own scope and
 removes it after, since each test owns its host runtime and the install is undone with the test.
 
-## test_step_driver.cpp
+## test_step_driver/test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types
 expose the same ones, which `ErrorCode` each kind of failure carries, and what a report counts. The
@@ -248,3 +248,24 @@ the queue and through nothing else. The two tests run in `Medium_RunDriverLayers
 one on a runtime forced onto the scheduler. `AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRun` expects
 `KernelFailed` from `run()`. `AnAsynchronousErrorDoesNotOutliveTheRun` then expects `Runtime::wait()` to find no error
 left in a queue. They are compiled for DPC++ only, since AdaptiveCpp has no `host_task`.
+
+## test_step_driver/test_replay.cpp
+
+Medium. A graph that calls `allow_replay(true)` must leave the bytes layer 1 leaves, and its report must
+name the layer that ran. Each workload records a fixed kernel and an `add_dynamic` window whose enabled
+flag, count and base change at every step, so a recording that kept one step's window fails the byte
+comparison. The layer expected of a replay is `ExecutionLayer::Replay` on CUDA and OpenCL and
+`ExecutionLayer::Chain` elsewhere, as decision 4 of `docs/design/GRAPH_REPLAY/README.md` keeps other
+backends on layer 1; the tests that need a recording skip on those.
+
+| Test | What it proves |
+| --- | --- |
+| `AReplayedGraphLeavesTheBytesOfTheChain` | Three runs of 24 steps of a replayed `Graph` and of its twin on the chain leave the same bytes after each run, and each report names its layer. |
+| `AReplayedDynamicGraphLeavesTheBytesOfTheChain` | The same for a `DynamicGraph` whose two kernels sit in two regions, under `allow_chain(true)`. |
+| `AGraphNotAllowedToReplayRunsOnTheChain` | A graph that never called `allow_replay()` runs on the chain. |
+| `ARecompositionRecordsTheNewPlanOnce` | A raw command group counts its calls: two runs of one composition call it once, the recording's; a region added later recomposes once and records once more. |
+| `AFailedRecordingFallsBackToTheChainAndLogsOnce` | A raw command group throws on its first call, which is the recording's. Three runs report the chain, one warning says the recording failed, and every step of every run ran once. |
+| `ATimedRunReportsTheChain` | A run while an observer is added reports the chain, as does its observation; the next untimed run replays the recording again, and the bytes match the chain twin. |
+| `TheForceChainFlagOfTheConfigKeepsAReplayOnTheChain` | A runtime built with `RuntimeConfig::force_chain` runs an opted-in graph on the chain. |
+| `AStateRuleIsRefusedWithItsReason` | A State rule keeps the plan on the chain, and the debug record names the reason once. |
+| `ATaskBodyIsRefusedWithItsReason` | A task body keeps the plan on the chain, and the debug record names the reason once. |

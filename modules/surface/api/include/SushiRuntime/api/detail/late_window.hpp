@@ -59,7 +59,20 @@ namespace SushiRuntime
             const std::uint32_t* count_slot = nullptr; /**< Device-written count, or null. */
             const std::uint32_t* base_slot = nullptr;  /**< Device-written base, or null. */
             bool rest_of_capacity = false;             /**< No host count was set for the step. */
+            const std::uint64_t* words = nullptr;      /**< Host words a recording reads the controls from, or null. */
         };
+
+        /** @brief Index of the enabled flag within LateWindow::words. */
+        constexpr std::size_t K_LATE_WORD_ENABLED = 0;
+
+        /** @brief Index of the host count, or the rest-of-capacity sentinel, within LateWindow::words. */
+        constexpr std::size_t K_LATE_WORD_COUNT = 1;
+
+        /** @brief Index of the host base within LateWindow::words. */
+        constexpr std::size_t K_LATE_WORD_BASE = 2;
+
+        /** @brief The host count that stands for the rest of the capacity from the base. */
+        constexpr std::uint64_t K_LATE_REST_OF_CAPACITY = ~std::uint64_t{0};
 
         /**
          * @brief Reads a node's per-step controls once, for the submit of one step.
@@ -141,6 +154,41 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Submits a late-bound node at capacity for a recorded command graph: each
+         *        work-item reads the enabled flag, the count and the base from host words.
+         * @param words The node's words; the replay writes them before each submission.
+         * @pre fault is not null.
+         * @see docs/design/GRAPH_REPLAY/README.md
+         */
+        template <class F>
+        inline void submit_recorded_window(sycl::handler& h, const std::uint64_t* words,
+                                           std::size_t capacity, std::uint32_t* fault,
+                                           const F& kernel)
+        {
+            require_device_pass<F>();
+            // One work-item even at capacity zero, so a fault there is still recorded.
+            h.parallel_for(sycl::range<1>(capacity == 0 ? 1 : capacity),
+                           [words, capacity, fault, kernel](sycl::id<1> i)
+            {
+                if (words[K_LATE_WORD_ENABLED] == 0)
+                    return;
+                const std::size_t base = static_cast<std::size_t>(words[K_LATE_WORD_BASE]);
+                const std::uint64_t stated = words[K_LATE_WORD_COUNT];
+                const std::size_t count = (stated == K_LATE_REST_OF_CAPACITY)
+                    ? capacity - (base < capacity ? base : capacity)
+                    : static_cast<std::size_t>(stated);
+                if (base > capacity || count > capacity - base)
+                {
+                    if (i[0] == 0)
+                        record_device_fault(fault, K_DEVICE_FAULT_WINDOW, base, count, capacity);
+                    return;
+                }
+                if (i[0] < count)
+                    kernel(base + i[0]);
+            });
+        }
+
+        /**
          * @brief Submits a late-bound node, reading a device count or base inside the kernel.
          * @param controls Not null; read through read_late_window() only.
          * @param capacity Work-items a node with a device slot launches.
@@ -156,6 +204,11 @@ namespace SushiRuntime
         {
             require_device_pass<F>();
             const LateWindow window = read_late_window(controls);
+            if (window.words != nullptr)
+            {
+                submit_recorded_window(h, window.words, capacity, fault, kernel);
+                return;
+            }
             if (window.count_slot == nullptr && window.base_slot == nullptr)
             {
                 const std::optional<LiveRange> range =

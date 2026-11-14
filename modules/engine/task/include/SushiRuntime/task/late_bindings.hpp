@@ -77,6 +77,25 @@ namespace SushiRuntime
 
             /** @brief Element index of the live base within device_base. */
             std::size_t device_base_index = 0;
+
+            /** @brief Index of the enabled flag, zero or one, within replay_words. */
+            static constexpr std::size_t K_REPLAY_WORD_ENABLED = 0;
+
+            /** @brief Index of the live count, or K_USE_BAKED, within replay_words. */
+            static constexpr std::size_t K_REPLAY_WORD_COUNT = 1;
+
+            /** @brief Index of the live base within replay_words. */
+            static constexpr std::size_t K_REPLAY_WORD_BASE = 2;
+
+            /** @brief Number of words a recorded node reads from replay_words. */
+            static constexpr std::size_t K_REPLAY_WORDS = 3;
+
+            /**
+             * @brief Points, while a recording submits the node, at the host-USM words its
+             *        recorded kernel reads in place of enabled, count and base; null otherwise.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            std::uint64_t* replay_words = nullptr;
         };
 
     } // namespace Graph

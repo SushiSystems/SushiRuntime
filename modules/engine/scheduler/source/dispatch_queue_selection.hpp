@@ -62,11 +62,12 @@ namespace SushiRuntime
          * @param node The task as a placed graph node, or nullptr for a plain task.
          * @param profiling The run's profiling flag, read once for the dispatch.
          * @param fallback_numa NUMA node whose devices serve a plain task.
-         * @return The selection; see DispatchQueueSelection.
+         * @param find_device Whether a plain task's device is looked up even without profiling, for the submit funnel.
          */
         [[nodiscard]] DispatchQueueSelection select_dispatch_queue(Internal::Device::DeviceQueueSet& devices,
                                                                    const Internal::Graph::Node* node,
-                                                                   bool profiling, int fallback_numa);
+                                                                   bool profiling, int fallback_numa,
+                                                                   bool find_device);
 
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

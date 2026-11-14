@@ -19,10 +19,10 @@ a node the installed coordinator acts on, a device value read at dispatch, a nod
 region, a region this context did not allocate, two devices, or a stated device that
 `placement_of()` refuses, which the scheduler then reports. A chained node runs on the device
 `placement_of()` gives it, so a stated device in its owner's context wins on the chain as it does
-at dispatch. A plan that holds a HOST node and leaves two of its nodes unordered is not chained
-either: the chain runs host bodies one after another on the calling thread, which would serialise
-work the scheduler runs at the same time, such as the distributed worker's batch of dispatches over
-disjoint buffers.
+at dispatch. Two HOST nodes no path orders keep the plan off under `UnorderedHostWork::Refused`, a
+static plan's rule; under `InTurnWhenDisjoint`, a composed plan's, they chain when both name every
+byte they touch and share none, reads included. A HOST node only kernels leave unordered does not
+count (`docs/design/GRAPH_REPLAY/README.md`, "Task bodies the dependencies leave unordered").
 
 classify_chain() keeps the first reason it refused the chain in `ChainPlan::not_chainable`, a string
 literal, and logs it once, at `DEBUG` under `sushiruntime.execution`, where the plan is classified, so a
@@ -37,6 +37,11 @@ chained node would leave the version of a shared buffer it wrote where it was.
 
 The operation a node names does not decide. With no coordinator installed a named node is chained
 like an unnamed one, and so is a node the installed coordinator keeps nothing for.
+
+## chain_replay.hpp
+
+`ChainReplay`, `prepare_replay()`, `replay_refusal()` and `replays_on()` replay a chained plan as one
+recorded command graph per step; [their page](source/chain_replay.md) records why they behave as they do.
 
 ## chain_run.hpp
 
@@ -416,6 +421,12 @@ first_core = 4. The field is ignored under PinPolicy::Float. If the range would 
 machine's last core the runtime clamps it and logs what it did, instead of pinning to core indices
 the OS will silently ignore.
 
+### force_chain
+
+force_chain keeps every chained plan on layer 1 even when its graph called `allow_replay(true)`, so a
+replayed run can be compared with the chain on the same graph. It is off by default and does not
+touch a plan the scheduler runs.
+
 ### rebalancer
 
 The rebalancer is off by default. It migrates tasks between workers on a 5 ms heartbeat, which
@@ -431,29 +442,8 @@ source comments state the invariant and point here.
 
 ### chain_run.cpp
 
-#### The event buffer belongs to the plan
-
-`ChainRun` reserves `pending_events` on the plan, not on itself. A fresh `ChainRun` binds to
-the same plan every tick, so growing `graph_.chain.pending_events` once and reusing it keeps
-later runs free of allocation. Reserving in the run would pay for a new buffer each time
-this short-lived object is built.
-
-#### submit_node_discarding
-
-The in-order queue carries the ordering a returned event would, and the run waits once in
-`wait()`, so no caller reads a per-node event on this path.
-
-#### submit_profiled
-
-Each submission keeps the steady reading taken before its submit call; finish() takes another after
-the run's single wait, and `record_events()` hands both, with each dispatch's start and end, to the
-ledger's narrow_pairing(), as the scheduler's poller does. Unlike the scheduler, this path never keeps an inline host node:
-`node_kind_is_chainable` in `chain_plan.cpp` admits only a KERNEL node or a HOST node that
-submits device work. An empty event here would be a rare, unexpected case, not the routine
-one the scheduler guards against. The event is therefore kept unconditionally.
-`record_events()` reads the timestamps through `read_dispatch_timestamps()`, across the events a body
-handed over when it handed over any; an unreadable event is counted in the ledger as a dropped
-dispatch.
+Why ChainRun keeps its event buffer on the plan and how it reads its events is on
+[the chain_run page](source/chain_run.md).
 
 ### execution_engine.cpp
 
@@ -539,8 +529,9 @@ also sees what the writer did before it.
 
 `begin_chained_run()` and `end_chained_run()` are virtual members of `ExecutionEngine` that do
 nothing by default, so `ChainRun` marks whatever engine the context holds and names no engine
-class. `ChainRun::RunMark` holds the mark. It is the last member, so the destructor's drain runs
-before the mark is released, and a constructor that throws after it was taken releases it.
+class. A `ChainedRunMark` (`chained_run_mark.hpp`) holds the mark for a ChainRun and for a
+ChainReplay. It is the last member of each, so the destructor's drain runs before the mark is
+released, and a constructor that throws after it was taken releases it.
 
 #### The log level of a run
 

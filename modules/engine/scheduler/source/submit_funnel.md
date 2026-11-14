@@ -22,19 +22,27 @@ reports it as `ExecutionMetrics::tasks_funnelled`.
 
 ### The record ring
 
-`WorkerRounds::execute_task()` builds a `FunnelRecord` at the submit site of a graph node that is
-not a host node, once the node is placed and its queue chosen, and pushes it into the funnel of the
-queue's device through `MPSCRing::try_push()`. The push takes no lock. A worker whose push finds
-the ring full, or whose queue matched no device, submits the node itself as it does with the funnel
-off.
+`WorkerRounds::execute_task()` builds a `FunnelRecord` at the submit site of every dispatch that
+reaches a queue: a kernel node, a HOST node that submits device work, and a task that is not a
+graph node. It does so once the node is placed and its queue chosen, and `SubmitFunnels::hand()`
+pushes the record into the funnel of the queue's device through `MPSCRing::try_push()`. The push
+takes no lock. With the funnel on, `select_dispatch_queue()` looks up the device of a plain task's
+queue even without profiling, so that task finds its funnel too.
+
+A record whose push finds the ring full stays in the worker's backlog, and `SubmitFunnels::land()`
+pushes it again at the top of each round; a worker never submits it itself. Only a dispatch whose
+queue matched no device, which the queue set's own queues never produce, is submitted by the worker
+as with the funnel off.
 
 ### The thread
 
 The thread, named `sr-funnel-<device>` so the profiler records its zones, pops records in order and
-calls `Internal::Graph::submit_task()` with the record's queue and the node's `sycl_deps`, inside a
-`dispatch.submit` zone. Under profiling it reads the steady clock just before the call, and
-`dispatched_event()` builds the event the worker would have built, with the funnel thread as the
-submitting thread. A submission that throws is named with `name_failure()`, logged, recorded in the
+calls `submit_dispatch()` (`dispatch_record.hpp`), the same submit sequence a worker runs, which calls
+`Internal::Graph::submit_task()` with the record's queue and the node's `sycl_deps` inside a
+`dispatch.submit` zone. For a HOST node that call runs the body on the funnel thread, and under
+profiling it collects the events the body hands over, as the worker does. Under profiling the thread
+reads the steady clock just before the call, and `dispatched_event()` builds the event the worker
+would have built, with the funnel thread as the submitting thread. A submission that throws is named with `name_failure()`, logged, recorded in the
 run's `RunOutcome` and landed as `skipped_dispatch_event()`, as `execute_task()` does on a worker.
 
 While a run is armed the thread yields between empty polls. Once the run is disarmed it yields 100
@@ -48,8 +56,9 @@ Each worker has an `SPSCRing` of 256 events in each funnel. The funnel thread is
 and the worker its only consumer. When a worker's ring is full the thread keeps the event in an
 overflow of its own and moves it in later, before it pops the next record.
 
-`WorkerRounds` counts, per worker, the nodes that are in a funnel and have not landed. The worker
-raises the count before its push and lowers it when it lands events at the top of each round,
-before it polls. `in_flight_empty()` reads it with the event list, so a worker with a node in a
-funnel neither parks nor exits, and `has_work()` keeps an executor posting its rounds. The count
-stays at zero with the funnel off.
+`SubmitFunnels` counts, per worker, the records it was handed that have not landed, the backlog
+included. `hand()` raises the count before the push and `land()` lowers it at the top of each round,
+before the worker polls. `WorkerRounds::in_flight_empty()` reads it through `is_idle()` with the
+event list, so a worker with a record in a funnel or in its backlog neither parks nor exits, and
+`has_work()` keeps an executor posting its rounds. With the funnel off there is no worker side and
+`is_idle()` is always true.

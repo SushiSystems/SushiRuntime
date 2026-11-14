@@ -162,45 +162,130 @@ namespace SushiRuntime
                 }
                 return order;
             }
+
+            /** @brief Marks a node that is not a HOST node in the rank table of for_each_unordered_host_pair(). */
+            constexpr std::uint32_t K_NOT_HOST = ~std::uint32_t{0};
+
             /**
-             * @brief Reports whether the chain would serialise two host bodies the plan leaves
-             *        unordered: it holds a HOST node and some node of @p order is not a
-             *        successor of the node before it.
-             * @param order A topological order of every non-sentinel node of the plan.
+             * @brief Calls @p visit for every pair of HOST nodes no path of the plan orders.
+             *
+             * One walk of @p order carries, per node, the set of HOST nodes that reach it; a HOST
+             * node meets each earlier HOST node missing from its set. O((nodes + edges) * hosts / 64).
+             * @param visit Called as visit(earlier, later); a false return stops the walk.
+             * @return False if @p visit stopped the walk.
              */
-            bool orders_unordered_host_work(const std::vector<Internal::Graph::Node*>& order)
+            template <class Visit>
+            bool for_each_unordered_host_pair(const Internal::Graph::CompiledGraph& graph,
+                                              const std::vector<Internal::Graph::Node*>& order, Visit&& visit)
             {
                 using Mode = Internal::Scheduler::Task::ExecutionMode;
-                const bool has_host = std::any_of(order.begin(), order.end(),
-                                                  [](const Internal::Graph::Node* node)
-                                                  {
-                                                      return node->execution_mode() == Mode::Host;
-                                                  });
-                if (!has_host)
+                const Internal::Graph::Node* sentinel = graph.sentinel.get();
+                const std::size_t count = graph.all_nodes.size();
+
+                std::vector<std::uint32_t> rank(count, K_NOT_HOST);
+                std::vector<const Internal::Graph::Node*> hosts;
+                for (const Internal::Graph::Node* node : order)
+                {
+                    if (node->execution_mode() != Mode::Host)
+                        continue;
+                    rank[node->plan_index] = static_cast<std::uint32_t>(hosts.size());
+                    hosts.push_back(node);
+                }
+                if (hosts.size() < 2)
+                    return true;
+
+                const std::size_t words = (hosts.size() + 63) / 64;
+                std::vector<std::uint64_t> reached_by(count * words, 0);
+                for (Internal::Graph::Node* node : order)
+                {
+                    std::uint64_t* mine = &reached_by[node->plan_index * words];
+                    const std::uint32_t own = rank[node->plan_index];
+                    if (own != K_NOT_HOST)
+                    {
+                        for (std::uint32_t earlier = 0; earlier < own; ++earlier)
+                        {
+                            const bool reaches = ((mine[earlier / 64] >> (earlier % 64)) & 1u) != 0;
+                            if (!reaches && !visit(*hosts[earlier], *node))
+                                return false;
+                        }
+                        mine[own / 64] |= std::uint64_t{1} << (own % 64);
+                    }
+
+                    node->for_each_successor([&](Internal::Graph::Node* succ)
+                    {
+                        const std::size_t index = succ->plan_index;
+                        if (succ == sentinel || index >= count || graph.all_nodes[index].get() != succ)
+                            return;
+                        std::uint64_t* theirs = &reached_by[index * words];
+                        for (std::size_t w = 0; w < words; ++w)
+                            theirs[w] |= mine[w];
+                    });
+                }
+                return true;
+            }
+
+            /**
+             * @brief Reports whether every region a node names is tracked and fixed across steps.
+             * @return False for a region with no base, or for a node whose live lists re-point
+             *         its addresses before each step.
+             */
+            bool declares_every_byte(const Internal::Graph::Node& node) noexcept
+            {
+                const Internal::Graph::OffloadState* offload = node.offload_state();
+                if (offload != nullptr && (offload->live_reads != nullptr || offload->live_writes != nullptr))
+                    return false;
+                const auto tracked = [](const BufferRegion& region) { return region.valid(); };
+                return std::all_of(node.io_reads_.begin(), node.io_reads_.end(), tracked) &&
+                       std::all_of(node.io_writes_.begin(), node.io_writes_.end(), tracked);
+            }
+
+            /**
+             * @brief Reports whether two nodes declare every byte they touch and no byte in common,
+             *        reads included.
+             */
+            bool share_no_declared_byte(const Internal::Graph::Node& a, const Internal::Graph::Node& b) noexcept
+            {
+                if (!declares_every_byte(a) || !declares_every_byte(b))
                     return false;
 
-                for (std::size_t position = 1; position < order.size(); ++position)
+                const auto meets_b = [&b](const BufferRegion& region)
                 {
-                    bool follows = false;
-                    order[position - 1]->for_each_successor(
-                        [&follows, next = order[position]](Internal::Graph::Node* succ)
-                        {
-                            follows = follows || succ == next;
-                        });
-                    if (!follows)
-                        return true;
-                }
-                return false;
+                    const auto meets = [&region](const BufferRegion& other) { return region.overlaps(other); };
+                    return std::any_of(b.io_reads_.begin(), b.io_reads_.end(), meets) ||
+                           std::any_of(b.io_writes_.begin(), b.io_writes_.end(), meets);
+                };
+                return std::none_of(a.io_reads_.begin(), a.io_reads_.end(), meets_b) &&
+                       std::none_of(a.io_writes_.begin(), a.io_writes_.end(), meets_b);
+            }
+
+            /**
+             * @brief Reports whether the chain may run in turn every pair of HOST nodes the plan
+             *        leaves unordered.
+             * @param graph The plan @p order was built from, after capture_base_state().
+             * @param order A topological order of every non-sentinel node of the plan.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            bool admits_unordered_host_work(const Internal::Graph::CompiledGraph& graph,
+                                            const std::vector<Internal::Graph::Node*>& order,
+                                            UnorderedHostWork rule)
+            {
+                return for_each_unordered_host_pair(graph, order,
+                    [rule](const Internal::Graph::Node& earlier, const Internal::Graph::Node& later)
+                    {
+                        return rule == UnorderedHostWork::InTurnWhenDisjoint &&
+                               share_no_declared_byte(earlier, later);
+                    });
             }
         } // namespace
 
         /**
          * @brief Classifies a compiled plan for the in-order chain.
          */
-        Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
+        Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context,
+                                                  UnorderedHostWork unordered_host)
         {
             return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory()),
-                                  context.offload() != nullptr);
+                                  context.offload() != nullptr, unordered_host);
         }
 
         /**
@@ -208,7 +293,7 @@ namespace SushiRuntime
          */
         Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph,
                                                   const Internal::Graph::PlacementMemory& memory,
-                                                  bool has_coordinator)
+                                                  bool has_coordinator, UnorderedHostWork unordered_host)
         {
             const Internal::Graph::Node* sentinel = graph.sentinel.get();
             std::size_t node_count = 0;
@@ -251,8 +336,11 @@ namespace SushiRuntime
             plan.order = topological_order(graph);
             if (plan.order.size() != node_count)
                 return refuse("the plan has no complete topological order");
-            if (orders_unordered_host_work(plan.order))
-                return refuse("a chain would order host work the dependencies leave unordered");
+            if (!admits_unordered_host_work(graph, plan.order, unordered_host))
+                return refuse(unordered_host == UnorderedHostWork::Refused
+                                  ? "a chain would order host work the dependencies leave unordered"
+                                  : "a chain would order host work the dependencies leave unordered over "
+                                    "shared or undeclared data");
 
             plan.chainable = true;
             plan.queue_index = static_cast<std::size_t>(device);

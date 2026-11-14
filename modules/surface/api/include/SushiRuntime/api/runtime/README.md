@@ -23,7 +23,8 @@ between two handles, such as a graph and the buffers recorded in it; `api/graph/
 
 `RuntimeConfig` is the one argument of `Runtime::create()`. It holds the device filter (`devices`)
 and the co-tenancy contract: worker count, core placement, pinning policy, the background
-rebalancer, the forced scheduler path and the submit funnel (`submit_funnel`, off by default: the
+rebalancer, the forced scheduler path, `force_chain`, which keeps a graph that allows a replay on
+the chain, and the submit funnel (`submit_funnel`, off by default: the
 scheduler's kernel nodes are then submitted by one thread per device, on top of the workers; see
 `docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md`). `node_name` and `labels` describe the machine to
 `topology()`. A runtime inside a game shares the machine with a render

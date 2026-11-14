@@ -70,7 +70,7 @@ namespace SushiRuntime
             std::size_t remote_steals = 0;      /**< Successful steals that crossed NUMA nodes. */
             std::size_t tasks_completed = 0;    /**< Tasks completed across all workers. */
             std::size_t tasks_offloaded = 0;    /**< Dispatches an offload coordinator took. */
-            std::size_t tasks_funnelled = 0;    /**< Kernel nodes a submit funnel took. */
+            std::size_t tasks_funnelled = 0;    /**< Dispatches a submit funnel took. */
         };
 
         /**

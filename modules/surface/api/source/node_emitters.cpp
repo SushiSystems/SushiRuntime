@@ -42,6 +42,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
+#include <SushiRuntime/task/submit_form.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
@@ -71,6 +72,23 @@ namespace SushiRuntime
             {
                 if (width != ::SushiRuntime::K_WIDTH_UNKNOWN)
                     node.baked_width = width;
+            }
+
+            /** @brief Returns the engine's form of a described node's submission. */
+            Internal::Graph::SubmitForm engine_form(SubmitForm form) noexcept
+            {
+                switch (form)
+                {
+                    case SubmitForm::Fixed:
+                        return Internal::Graph::SubmitForm::Fixed;
+                    case SubmitForm::LateWindow:
+                        return Internal::Graph::SubmitForm::LateWindow;
+                    case SubmitForm::DeviceSized:
+                        return Internal::Graph::SubmitForm::DeviceSized;
+                    case SubmitForm::StepBound:
+                        break;
+                }
+                return Internal::Graph::SubmitForm::StepBound;
             }
 
             /** @brief Hands a State rule's node the live fields of a rule that has them. */
@@ -190,6 +208,7 @@ namespace SushiRuntime
             const Emitter emit = K_EMITTERS[static_cast<std::size_t>(description.kind)];
             Internal::Graph::Node& node = emit(backing_graph, description, registration);
             node.host_form = description.host_form;
+            node.submit_form = engine_form(description.submit_form);
             return node;
         }
 

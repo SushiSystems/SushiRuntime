@@ -8,7 +8,7 @@ path. [The page of api/graph](../README.md) has the classes a consumer names.
 | --- | --- |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), allow_replay() and the step loop |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
 ## builder_surface.hpp
@@ -358,7 +358,7 @@ Graph and DynamicGraph take every run entry from the driver, so the two cannot d
 Every entry is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
 the RunHandle. There is one form of each. A caller that cannot go on after a failed run writes
 `graph.run().value()`, which stops the process with the error's message.
-`tests/surface/api/graph/plumbing/test_step_driver.cpp` holds the list as `static_assert`s.
+`tests/surface/api/graph/plumbing/test_step_driver/test_step_driver.cpp` holds the list as `static_assert`s.
 
 No entry throws, also when memory runs out while it builds an Error: every Error of the driver
 and of RunHandle is built by Detail::error_without_throwing() of `core/error.hpp`, which returns the
@@ -547,6 +547,12 @@ path that ran the step, so `finish_step()` fills `RunReport::layer` without aski
 stage zones of the entries are `run.steps`, `run.submit_step` and `run.finish_step`, and every run
 writes the counters `run.tasks`, `run.steals`, `transfer.h2d_bytes` and `transfer.d2h_bytes`.
 
+### StepDriver: allow_replay
+
+allow_replay() sits on the driver, so `Graph` and `DynamicGraph` share one setting and one spelling;
+target() copies it into `StepTarget::may_replay`, and the step loop replays only a plan that would
+run as a chain (`api/graph/README.md`, allow_replay). A move copies the setting to the destination.
+
 ### StepDriver: moves
 
 The marker of a pending step never moves, and the driver's move operations leave no step pending
@@ -729,13 +735,19 @@ baseline and calls `CompiledGraph::capture_base_state()`. That gives the plan wh
 `Internal::Execution::classify_chain()` reads, as a static graph's build does: each node's plan index
 is its position in `plan_.all_nodes`, and the in-degree baseline counts its intra-region and
 cross-region predecessors. The topological order classify_chain() builds over that baseline follows
-every edge, inside a region and across regions, and leaves the sentinel out. capture_base_state()
+every edge, inside a region and across regions, and leaves the sentinel out. classify_plan() passes
+`UnorderedHostWork::InTurnWhenDisjoint`, so two task bodies no path orders chain when they share no
+declared byte (`modules/engine/execution/README.md`). capture_base_state()
 also builds the node table, so the plan keeps it whichever way it is published.
 
 A commit with the chain off leaves the plan unclassified and empties a chain an earlier commit
 classified, and invalidate_plan() does the same, so the chain's order never names a freed node.
 chain_unclassified() is true while the chain is allowed and no commit since has classified the
 plan; DynamicGraph composes again at its next run when it is.
+
+Every classification replaces the plan's chain record, so it drops the command graph an earlier
+composition recorded, and release_chain() drops it as well; the next replayed run records the new
+plan once (`docs/design/GRAPH_REPLAY/README.md`, layer 2).
 
 ### commit: undo before free
 

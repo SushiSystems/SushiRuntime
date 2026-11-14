@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/chain_plan.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -42,25 +43,38 @@ namespace SushiRuntime
         class RuntimeContext;
 
         /**
+         * @brief Says what the chain does with two HOST nodes no path of the plan orders.
+         * @see docs/design/GRAPH_REPLAY/README.md
+         */
+        enum class UnorderedHostWork : std::uint8_t
+        {
+            Refused,           /**< Such a pair keeps the plan on the scheduler. */
+            InTurnWhenDisjoint /**< Such a pair chains when the caller opted in and their regions share no byte. */
+        };
+
+        /**
          * @brief Classifies a compiled plan for the in-order chain.
          * @param graph A plan after capture_base_state().
          * @param context The context whose USM registry owns the plan's regions.
+         * @param unordered_host Refused unless the plan's caller opted into the chain.
          * @return The classification; not chainable on any doubt.
          * @see modules/engine/execution/README.md
          */
         SUSHIRUNTIME_API Internal::Graph::ChainPlan
-        classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context);
+        classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context,
+                       UnorderedHostWork unordered_host = UnorderedHostWork::Refused);
 
         /**
          * @brief Classifies a compiled plan for the in-order chain, reading memory through a port.
          * @param graph A plan after capture_base_state().
          * @param memory Which device owns each region and how many devices there are.
          * @param has_coordinator Whether an offload coordinator is installed.
+         * @param unordered_host What a pair of unordered HOST nodes does.
          * @see modules/engine/execution/README.md
          */
         SUSHIRUNTIME_API Internal::Graph::ChainPlan
         classify_chain(const Internal::Graph::CompiledGraph& graph, const Internal::Graph::PlacementMemory& memory,
-                       bool has_coordinator);
+                       bool has_coordinator, UnorderedHostWork unordered_host = UnorderedHostWork::Refused);
 
     } // namespace Execution
 } // namespace SushiRuntime

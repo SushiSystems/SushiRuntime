@@ -227,7 +227,7 @@ so the counts they compare are not stable there.
 `Testing::RefusingFill` is a host task that fills a range, and whose copy constructor throws a
 `std::runtime_error` while a flag the test holds is set. Recording moves the task, and every
 build of a plan copies it into the node, so the flag decides whether a build throws.
-`graph/plumbing/test_step_driver.cpp` and `graph/plumbing/test_region_composer.cpp` include the
+`graph/plumbing/test_step_driver/test_step_driver.cpp` and `graph/plumbing/test_region_composer.cpp` include the
 header by name.
 
 ## hooked_copy_task.hpp

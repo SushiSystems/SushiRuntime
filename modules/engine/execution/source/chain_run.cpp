@@ -67,30 +67,9 @@ namespace SushiRuntime
             // An abandoned run leaves its events on the plan; clear() keeps the capacity.
             graph.chain.pending_events.clear();
 
-            // The plan owns the reserved event buffer (modules/engine/execution/README.md).
+            // The plan owns the reserved event buffer (modules/engine/execution/source/chain_run.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
                 graph.chain.pending_events.reserve(graph.chain.order.size());
-        }
-
-        /** @brief Marks a chained run in progress on @p engine. */
-        ChainRun::RunMark::RunMark(ExecutionEngine& engine) noexcept : engine_(&engine)
-        {
-            engine_->begin_chained_run();
-        }
-
-        /** @brief Clears the mark unless release() already did. */
-        ChainRun::RunMark::~RunMark()
-        {
-            release();
-        }
-
-        /** @brief Clears the mark; a second call does nothing. */
-        void ChainRun::RunMark::release() noexcept
-        {
-            if (engine_ == nullptr)
-                return;
-            engine_->end_chained_run();
-            engine_ = nullptr;
         }
 
         /**
@@ -154,7 +133,7 @@ namespace SushiRuntime
             /** @brief Releases the run mark when finish() returns. */
             struct MarkRelease
             {
-                RunMark& mark; /**< The mark to release. */
+                ChainedRunMark& mark; /**< The mark to release. */
 
                 /** @brief Releases the mark. */
                 ~MarkRelease()
@@ -194,7 +173,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Submits one node and keeps its event for the ledger (modules/engine/execution/README.md).
+         * @brief Submits one node and keeps its event for the ledger (modules/engine/execution/source/chain_run.md).
          */
         void ChainRun::submit_profiled(Internal::Graph::Node& node, std::uint32_t step)
         {

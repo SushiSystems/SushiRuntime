@@ -37,13 +37,11 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/task_submission.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 namespace SushiRuntime
 {
@@ -154,34 +152,28 @@ namespace SushiRuntime
 
         void SubmitFunnel::submit(FunnelRecord& record)
         {
-            Internal::Graph::Node& node = *record.node;
+            Task& task = *record.task;
 
-            // The kernel cannot start before this reading, which bounds the device's clock pairing.
-            const std::uint64_t submit_steady_ns = record.profiling ? Internal::Observability::steady_now_ns() : 0;
-
-            sycl::event event;
+            EventPolling::PolledEvent dispatched;
             Result<void> ran = SYCL::translate_exceptions([&]()
             {
-                SR_ZONE_FINE(collector_, "dispatch.submit");
-                event = Internal::Graph::submit_task(*record.queue, node, &node.sycl_deps, nullptr);
+                dispatched = submit_dispatch(*record.queue, task, record.node, record.profiling, record.step,
+                                             record.device_index, collector_);
             });
             funnelled_.fetch_add(1, std::memory_order_relaxed);
 
             if (!ran)
             {
-                Error failure = name_failure(node, ran.error());
+                Error failure = name_failure(task, ran.error());
                 SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "{}; the run is aborted and its remaining tasks are skipped.",
                              failure.message);
                 outcome_.record(std::move(failure));
-                // The failed node lands as ready so its successors fire, as on the worker's own path.
-                land(record.worker, skipped_dispatch_event(&node));
+                // The failed task lands as ready so its successors fire, as on the worker's own path.
+                land(record.worker, skipped_dispatch_event(&task));
                 return;
             }
 
-            const std::vector<sycl::event> no_handed_over;
-            const bool submitted = submitted_device_work(false, record.profiling, event, no_handed_over);
-            land(record.worker, dispatched_event(event, submitted, &node, &node, record.profiling, record.step,
-                                                 record.device_index, {}, submit_steady_ns));
+            land(record.worker, std::move(dispatched));
         }
 
         void SubmitFunnel::land(std::size_t worker, EventPolling::PolledEvent event)

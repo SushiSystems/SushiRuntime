@@ -44,7 +44,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_builder_surface.cpp
         graph/plumbing/test_plan_cache.cpp
         graph/plumbing/test_region_composer.cpp
-        graph/plumbing/test_step_driver.cpp
+        graph/plumbing/test_step_driver/test_step_driver.cpp
         graph/test_access.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp
@@ -61,6 +61,7 @@ sushiruntime_add_module_tests(
         graph/test_recorder/test_recorder_scratch.cpp
         graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
+        graph/plumbing/test_step_driver/test_replay.cpp
         graph/test_recorder/test_registration_index.cpp
         graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp
@@ -101,7 +102,7 @@ sushiruntime_add_module_tests(
         graph/benchmark_graph.cpp
         graph/plumbing/test_builder_surface.cpp
         graph/plumbing/test_plan_cache.cpp
-        graph/plumbing/test_step_driver.cpp
+        graph/plumbing/test_step_driver/test_step_driver.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp
         graph/test_dynamic_graph/test_dynamic_graph_regions.cpp
@@ -116,6 +117,7 @@ sushiruntime_add_module_tests(
         graph/test_recorder/test_recorder_scratch.cpp
         graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
+        graph/plumbing/test_step_driver/test_replay.cpp
         graph/test_recorder/test_registration_index.cpp
         graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp

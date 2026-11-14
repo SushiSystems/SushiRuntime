@@ -97,6 +97,7 @@ namespace SushiRuntime
                                      std::size_t capacity, F&& kernel, std::size_t width)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::LateWindow;
             description.kind = NodeKind::Dynamic;
             description.reads = std::move(reads);
             description.writes = std::move(writes);

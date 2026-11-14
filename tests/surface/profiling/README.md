@@ -399,6 +399,39 @@ the figures.
 | --- | --- |
 | `Benchmark_RunOverhead.CostOfOneRunInEachState` | The per-run cost of the zones at the level this library was compiled at, for four states. |
 
+## benchmark_timed_chain_submit.cpp
+
+Measures what device timing adds to the host time of a chained submit (RW-140). One chainable static
+`Graph` of 51 dependent kernels over 64 floats runs through `Graph::run()` on the default device, 200
+runs a row, one run to a period of a session that is open with no source on both rows. The untimed row
+has no observer. The timed row adds one ungated observer, so `wants_device_timing()` is true when each
+run is armed. Each row prints one `SR_MEASUREMENT` line: `submit_us_per_node_*` is the
+`chain.submit_step` zone of a run divided by 51, `run_wall_us_*` is a steady clock around `Graph::run()`
+(the wait and the event records included), and `layer=chain` says every run took the chain. The
+suite is a `Benchmark_` suite, run by `sr bench`; it passes or fails nothing about the figures.
+
+| Benchmark | What it measures |
+| --- | --- |
+| `Benchmark_TimedChainSubmit.HostCostOfAChainedSubmitWithAndWithoutDeviceTiming` | Host microseconds per chained submit and per run, without and with an observer. |
+
+Expected cost split of the timed row over the untimed one, per node, expected and not measured. The
+sources are `modules/engine/execution/source/chain_run.cpp`, `modules/engine/task/source/task_submission.cpp`
+and `docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md`; the DPC++ and CUDA adapter sources are not in the
+toolchain's include folder, so the driver-side rows rest on that page.
+
+| Cost of a timed submit, per node | Inside `chain.submit_step` | Expected size |
+| --- | --- | --- |
+| Three CUDA events created per command by the CUDA adapter, one of them recorded on the host-submit-time stream, plus the two `cuEventRecord`s around the kernel, all under the driver's per-context serialisation | Yes | The bulk of the gap, tens of microseconds |
+| A device timestamp read by SYCL for the submission time | Yes | One driver call, a few microseconds |
+| `queue.submit` returning an `event` (an the SYCL event object, the in-order queue keeping its last event) in place of `experimental::submit`, which returns none | Yes | One to two microseconds |
+| A queue built with `enable_profiling` in place of the plain in-order queue, so every command takes the profiling path above | Yes | Carried by the first two rows |
+| `steady_now_ns()`, `snapshot_widths()`, `current_thread_index()` and a `PendingEvent` moved into the reserved vector | Yes | Under 0.2 microseconds, no allocation |
+| `reset_profiling()`, `collect_profiling()`, `notify_run()`, two `get_profiling_info` reads per event and the ledger writes in `record_events()`, and destroying the 153 CUDA events | No, in the run wall only | Grows with the node count; the run wall row shows it |
+
+The expected order is: the adapter's per-command event work first, then the timestamp read, then the
+event object. The 40 to 50 microseconds of the editor trace are taken as one figure of the first two rows
+plus whatever the editor adds around them; the row is how that is checked.
+
 ## compile_source_names.cpp
 
 Includes `source_names.hpp` alone, so the build fails if the header misses an include. It holds no test.

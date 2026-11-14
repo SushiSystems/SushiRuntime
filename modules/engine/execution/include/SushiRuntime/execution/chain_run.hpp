@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/execution/chained_run_mark.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 
@@ -94,29 +95,6 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> finish();
 
             private:
-                /** @brief Marks a chained run in progress on an engine until released or destroyed. */
-                class RunMark
-                {
-                    public:
-                        /** @brief Marks a chained run in progress on @p engine. */
-                        explicit RunMark(ExecutionEngine& engine) noexcept;
-
-                        /** @brief Clears the mark unless release() already did. */
-                        ~RunMark();
-
-                        RunMark(const RunMark&) = delete;
-                        RunMark& operator=(const RunMark&) = delete;
-                        RunMark(RunMark&&) = delete;
-                        RunMark& operator=(RunMark&&) = delete;
-
-                        /** @brief Clears the mark; a second call does nothing. */
-                        void release() noexcept;
-
-                    private:
-                        /** @brief The marked engine; null once released. */
-                        ExecutionEngine* engine_;
-                };
-
                 /**
                  * @brief Submits one node's device work to the queue.
                  * @param node The node to submit.
@@ -149,7 +127,7 @@ namespace SushiRuntime
                 sycl::queue& queue_;            /**< In-order queue on the plan's device. */
                 bool profiling_;                /**< Whether the plan requested profiling. */
                 bool finished_ = false;         /**< Whether finish() drained the queue. */
-                RunMark run_mark_;              /**< The run's mark; last, so it outlasts the drain. */
+                ChainedRunMark run_mark_;       /**< The run's mark; last, so it outlasts the drain. */
         };
 
     } // namespace Execution

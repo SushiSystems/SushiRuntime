@@ -44,6 +44,7 @@
 #include "run_recorder.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
+#include "support/submitting_threads.hpp"
 
 using namespace SushiRuntime;
 
@@ -894,6 +895,57 @@ namespace LayerEquivalenceTests
             return shot;
         }
 
+        /** @brief The level whose nodes the task-body variant of the lane workload records as task bodies. */
+        constexpr std::size_t K_BODY_LEVEL = 6;
+        static_assert(!crosses(K_BODY_LEVEL), "a task-body node rewrites its own lane only");
+
+        /**
+         * @brief Records the node at K_BODY_LEVEL of @p lane as a task body that submits the node's kernel itself.
+         * @param threads Notes the thread each body runs on; must outlive the graph's runs.
+         */
+        void record_lane_body(Graph& g, std::vector<Buffer<Word>>& lanes, std::size_t lane,
+                              TestSupport::SubmittingThreads& threads)
+        {
+            const std::size_t node = K_BODY_LEVEL * K_LANES + lane;
+            Buffer<Word>& own = lanes[lane];
+            Word* own_data = own.data();
+            g.add_task(Reads(own), Writes(own),
+                       [own_data, node, &threads](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+                       {
+                           threads.note();
+                           return queue.submit([&](sycl::handler& handler)
+                           {
+                               handler.depends_on(dependencies);
+                               handler.parallel_for(sycl::range<1>(K_LANE_N), [own_data, node](sycl::id<1> i)
+                               {
+                                   own_data[i[0]] = lane_mix(own_data[i[0]], 0u, node);
+                               });
+                           });
+                       });
+        }
+
+        /** @brief Runs the lane workload with K_BODY_LEVEL as task bodies for K_STEPS steps and copies the lanes out. */
+        Snapshot run_lanes_with_bodies(const Runtime& rt, bool timed, TestSupport::SubmittingThreads& threads)
+        {
+            std::vector<Buffer<Word>> lanes = seeded_lanes(rt);
+            std::optional<Testing::RunRecorder> recorder;
+            if (timed)
+                recorder.emplace(rt);
+            auto g = rt.graph();
+            for (std::size_t level = 0; level < K_LEVELS; ++level)
+                for (std::size_t lane = 0; lane < K_LANES; ++lane)
+                {
+                    if (level == K_BODY_LEVEL)
+                        record_lane_body(g, lanes, lane, threads);
+                    else
+                        record_lane_node(g, lanes, level, lane);
+                }
+
+            drive(g, Drive::Blocking, K_STEPS);
+
+            return take_lanes(lanes);
+        }
+
         /** @brief Returns the program's runtime that keeps every run on the scheduler, with or without the funnel. */
         Runtime& scheduler_runtime(bool submit_funnel)
         {
@@ -943,6 +995,76 @@ namespace LayerEquivalenceTests
             auto g = rt.graph();
             g.add(K_LANE_N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<Word>(i); });
             return g.run().value().funnelled;
+        }
+
+        /** @brief Owns the data of the task-pair workload: two outputs and a source both tasks may read. */
+        struct TaskPair
+        {
+            /** @brief Allocates the data on @p rt and writes the starting values. */
+            explicit TaskPair(const Runtime& rt)
+                : left(rt.buffer<Word>(K_TILE_N).value()),
+                  right(rt.buffer<Word>(K_TILE_N).value()),
+                  source(rt.buffer<Word>(K_TILE_N).value())
+            {
+                for (std::size_t i = 0; i < K_TILE_N; ++i)
+                {
+                    left[i]   = static_cast<Word>(i) * 7u + 2u;
+                    right[i]  = static_cast<Word>(i) ^ 0x5BD1E995u;
+                    source[i] = static_cast<Word>(i) * 13u + 5u;
+                }
+            }
+
+            Buffer<Word> left;   /**< Rewritten by the first task body. */
+            Buffer<Word> right;  /**< Rewritten by the second task body. */
+            Buffer<Word> source; /**< Read by both bodies in the shared-read form, by neither otherwise. */
+        };
+
+        /**
+         * @brief Records a task body that submits one kernel rewriting @p out, reading @p from when given.
+         * @param from Elements read, or nullptr; must be the data of the buffer @p reads names.
+         */
+        void record_task_body(Region& region, const Reads& reads, Buffer<Word>& out, const Word* from, Word salt)
+        {
+            Word* into = out.data();
+            region.add_task(reads, Writes(out),
+                            [into, from, salt](sycl::queue& queue, const std::vector<sycl::event>& after)
+                            {
+                                return queue.submit([&](sycl::handler& handler)
+                                {
+                                    handler.depends_on(after);
+                                    handler.parallel_for(sycl::range<1>(K_TILE_N), [into, from, salt](sycl::id<1> id)
+                                    {
+                                        const std::size_t i = id[0];
+                                        const Word read = (from != nullptr) ? from[i] : 0u;
+                                        into[i] = into[i] * 29u + read + salt + static_cast<Word>(i);
+                                    });
+                                });
+                            });
+        }
+
+        /**
+         * @brief Runs two task-body regions the plan leaves unordered on a DynamicGraph allowed to chain,
+         *        K_RUNS runs of K_STEPS steps.
+         * @param share_source True to make both bodies read the source buffer; false for disjoint data.
+         */
+        LayeredSnapshot run_task_pair(const Runtime& rt, bool share_source)
+        {
+            TaskPair data(rt);
+            LayeredSnapshot result;
+
+            auto world = rt.dynamic_graph();
+            world.allow_chain(true);
+            const Word* from = share_source ? data.source.data() : nullptr;
+            const Reads reads = share_source ? Reads(data.source) : Reads{};
+            record_task_body(world.region(K_KEY_SCALE), reads, data.left, from, 3u);
+            record_task_body(world.region(K_KEY_MIX), reads, data.right, from, 5u);
+
+            for (std::size_t r = 0; r < K_RUNS; ++r)
+                result.layers.push_back(world.run(K_STEPS).value().layer);
+
+            take(result.shot, "left", Image(data.left.data(), data.left.data() + K_TILE_N));
+            take(result.shot, "right", Image(data.right.data(), data.right.data() + K_TILE_N));
+            return result;
         }
     } // namespace
 } // namespace
@@ -1110,6 +1232,27 @@ namespace LayerEquivalenceTests
         EXPECT_EQ(world.run(K_STEPS).value().layer, ExecutionLayer::Scheduler);
     }
 
+    /**
+     * @brief Tests that two task bodies the composed plan leaves unordered over disjoint data run as a chain
+     *        and leave the bytes of the forced scheduler.
+     */
+    TEST_F(Medium_DynamicGraphChain, UnorderedTaskBodiesOverDisjointDataChainWithTheSchedulersBytes)
+    {
+        const LayeredSnapshot chained = run_task_pair(runtime(), false);
+        const LayeredSnapshot scheduled = run_task_pair(scheduler_runtime(false), false);
+
+        EXPECT_EQ(chained.layers, std::vector<ExecutionLayer>(K_RUNS, ExecutionLayer::Chain));
+        EXPECT_EQ(scheduled.layers, std::vector<ExecutionLayer>(K_RUNS, ExecutionLayer::Scheduler));
+        expect_identical(scheduled.shot, chained.shot, "forced scheduler vs chain");
+    }
+
+    /** @brief Tests that two task bodies the composed plan leaves unordered and that read one buffer run on the scheduler. */
+    TEST_F(Medium_DynamicGraphChain, UnorderedTaskBodiesReadingOneBufferRunOnTheScheduler)
+    {
+        EXPECT_EQ(run_task_pair(runtime(), true).layers,
+                  std::vector<ExecutionLayer>(K_RUNS, ExecutionLayer::Scheduler));
+    }
+
     /** @brief Tests that a DynamicGraph moved from one allowed to chain keeps the setting. */
     TEST_F(Medium_DynamicGraphChain, AMovedGraphKeepsItsChainSetting)
     {
@@ -1130,6 +1273,23 @@ namespace LayerEquivalenceTests
 
         expect_identical(lane_reference(), without, "host model vs funnel off");
         expect_identical(without, with, "funnel off vs funnel on");
+    }
+
+    /**
+     * @brief Tests that the lane workload with a level of task bodies leaves the same bytes with the funnel on as
+     *        with it off, and that with it on every body runs on the one funnel thread.
+     */
+    TEST_P(Medium_SubmitFunnelOutputs, TaskBodiesSubmitFromTheFunnelThreadAndLeaveTheSameBytes)
+    {
+        TestSupport::SubmittingThreads off_threads;
+        TestSupport::SubmittingThreads on_threads;
+
+        const Snapshot without = run_lanes_with_bodies(scheduler_runtime(false), GetParam(), off_threads);
+        const Snapshot with = run_lanes_with_bodies(scheduler_runtime(true), GetParam(), on_threads);
+
+        expect_identical(lane_reference(), without, "host model vs funnel off");
+        expect_identical(without, with, "funnel off vs funnel on");
+        EXPECT_EQ(on_threads.ids().size(), 1u) << "every task body runs on the device's one funnel thread";
     }
 
     /** @brief Tests that a timed run of the lane workload keeps one node record per node and step. */

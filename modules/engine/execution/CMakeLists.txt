@@ -8,6 +8,7 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         chain_plan.cpp
+        chain_replay.cpp
         chain_run.cpp
         host_execution_engine.cpp
         scheduler_execution_engine.cpp

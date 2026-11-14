@@ -186,9 +186,9 @@ tasks go where any worker can take them.
 
 ### dispatched_event
 
-execute_task() reads the profiling flag and the task's execution mode once per dispatch and passes
-them to the functions of this header. completed_host_event() builds the ready event of a host node
-that ran inline. For a submitted task it calls two more. submitted_device_work() tells whether the
+execute_task() reads the profiling flag once per dispatch. completed_host_event() builds the ready event of a host
+node that ran inline. submit_dispatch(), which a worker and a submit funnel both call, reads the steady clock,
+submits inside `dispatch.submit` and calls two more. submitted_device_work() tells whether the
 submission reached a device: a host body that hands none over and returns a complete event (not
 `== sycl::event{}`, never true in DPC++) did not; under profiling a complete event whose timestamps
 read is still work, so a fast kernel keeps its span. dispatched_event() takes that answer, builds the
@@ -275,7 +275,7 @@ graph runs. Each run is gated by a pair of arm_for_execution() and submit(root);
 completion promise unblocks the caller. Workers steal from node-local victims first; cross-node
 steals are tracked separately so the RunReport can report the balance within and across NUMA nodes.
 TaskScheduler composes `PendingWork` (the injector queues and the run flags), `RunState`, `SubmitFunnels` (a submit
-funnel per device when `WorkerPoolSettings::submit_funnel` is on; [its page](source/submit_funnel.md)), `WorkerRounds`
+funnel per device when `WorkerPoolSettings::submit_funnel` is on, taking every dispatch that reaches a queue, HOST bodies included; [its page](source/submit_funnel.md)), `WorkerRounds`
 (the deques and `run_round()`, which never blocks) and the two shells that run the rounds, `WorkerThreads` and
 `ExecutorRounds` (set_executor()). All six are private; the public interface is TaskScheduler's.
 
@@ -620,7 +620,7 @@ host node submits no dispatch, so its `launched_width` and `live_width` stay `K_
 ##### Zones and logs of a dispatch
 
 `execute_task()` opens the fine zone `dispatch.task`; the inline host body is inside `dispatch.host`
-and a device or host-with-queue submission inside `dispatch.submit`. The search for a task to steal is
+and a device or host-with-queue submission inside `dispatch.submit`, which with the submit funnel on opens on the funnel thread while the worker opens `dispatch.funnel_push`. The search for a task to steal is
 the detail zone `worker.steal`. Each of the nine acquisitions of `PendingWork::mutex_` goes through
 `SR_LOCK_WAIT(collector_, "lock.pending", ...)`, with the collector `PendingWork` is built over, so a contended one writes a `lock.pending` zone and an
 uncontended one writes nothing. The park on the condition variable is not one of them: the worker is

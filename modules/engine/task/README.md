@@ -31,7 +31,8 @@ fields it stores behind `OffloadState::payload`.
 | `ready_sink.hpp` | `Internal::Scheduler::ReadySink` |
 | `task_types.hpp` | `Internal::Graph::TaskType`, `Internal::Graph::TaskMetadata` |
 | `task_work.hpp` | `Internal::Graph::TaskWork`, `Internal::Graph::HostWork` |
-| `late_bindings.hpp` | `Internal::Graph::LateBindings` |
+| `late_bindings.hpp` | `Internal::Graph::LateBindings`, with the `replay_words` a recording hands a late-bound node |
+| `submit_form.hpp` | `Internal::Graph::SubmitForm`, what a recorded command graph may keep of a node's submission (`docs/design/GRAPH_REPLAY/README.md`) |
 | `small_event_vector.hpp` | `Internal::Graph::SmallEventVector` |
 | `region_link.hpp` | `Internal::Graph::RegionLink` |
 | `node_profiling.hpp` | `Internal::Graph::NodeProfiling` |

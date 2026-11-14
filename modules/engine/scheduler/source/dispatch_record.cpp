@@ -29,9 +29,11 @@
 
 #include <utility>
 
+#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
+#include <SushiRuntime/task/task_submission.hpp>
 
 namespace SushiRuntime
 {
@@ -123,6 +125,33 @@ namespace SushiRuntime
                 dispatched.submit_steady_ns = submit_steady_ns;
             }
             return dispatched;
+        }
+
+        /**
+         * @brief Submits a task, or runs its host body, and builds the event its dispatch polls on.
+         */
+        EventPolling::PolledEvent submit_dispatch(sycl::queue& queue, Task& task, Internal::Graph::Node* node,
+                                                  bool profiling, std::uint32_t step, std::uint32_t device_index,
+                                                  Profile::Collector& collector)
+        {
+            const bool host = task.execution_mode() == Task::ExecutionMode::Host;
+
+            // The kernel cannot start before this reading, which bounds the device's clock pairing.
+            const std::uint64_t submit_steady_ns = profiling ? Internal::Observability::steady_now_ns() : 0;
+
+            // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
+            sycl::event event;
+            std::vector<sycl::event> handed_over;
+            {
+                SR_ZONE_FINE(collector, "dispatch.submit");
+                event = Internal::Graph::submit_task(queue, task, node ? &node->sycl_deps : nullptr,
+                                                     (profiling && host) ? &handed_over : nullptr);
+            }
+            const bool submitted = submitted_device_work(host, profiling, event, handed_over);
+
+            // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).
+            return dispatched_event(event, submitted, &task, node, profiling, step, device_index,
+                                    std::move(handed_over), submit_steady_ns);
         }
 
     } // namespace Internal::Scheduler

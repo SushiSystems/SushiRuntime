@@ -87,9 +87,10 @@ What the table says:
 
 ## Decision
 
-The scheduler path gains an opt-in **submit funnel**: per device, workers hand ready kernel nodes
-to one submitting thread through a lock-free ring, and that thread is the only one that enters the
-device's submission locks. Off by default; with it off, nothing in the scheduler changes.
+The scheduler path gains an opt-in **submit funnel**: per device, workers hand every ready dispatch,
+a kernel node or a HOST node that submits device work, to one submitting thread through a
+lock-free ring, and that thread is the only one that enters the device's submission locks. Off by
+default; with it off, nothing in the scheduler changes.
 
 This follows the owner's ruling for the runtime: a feature is added, no existing behaviour is
 removed or changed, and the runtime names no client.
@@ -116,10 +117,14 @@ The owner ruled on the rest on 2026-11-14:
   that drains it. `TaskScheduler::start()` starts the thread and `stop()` joins it after the
   workers have ended.
 - A **dispatch record** (`FunnelRecord`) carries what `WorkerRounds::execute_task` holds at the
-  submit site: the node, the selected queue, the profiling flag, the step, the device index and
-  the originating worker's id; the dependencies are the node's own `sycl_deps`.
+  submit site: the task, the task as a graph node (null for a plain task), the selected queue, the
+  profiling flag, the step, the device index and the originating worker's id; the dependencies
+  are the node's own `sycl_deps`.
 - The funnel thread pops records in order and calls the same `Internal::Graph::submit_task` the
-  worker calls, with the same queue and the same dependencies. It reads `submit_steady_ns` just
+  worker calls, with the same queue and the same dependencies. For a kernel node that submits its
+  command group; for a HOST node it runs the body, so every `queue.submit` the body makes leaves
+  from the funnel thread. A timed HOST node's handed-over events are collected on that thread,
+  under the same `DispatchEventScope`, which is thread-local. It reads `submit_steady_ns` just
   before the call, so the ledger's bound on the kernel's start stays true and gets tighter. A
   submission that throws fails the run as it does on a worker: the funnel records the named
   failure and lands the node as skipped, so its successors fire and are skipped in turn.
@@ -130,10 +135,12 @@ The owner ruled on the rest on 2026-11-14:
   unchanged: a node in the funnel is in flight exactly as a node whose event the worker is
   polling. A per-worker count of nodes still in a funnel keeps the worker from parking or exiting
   before they land.
-- **A full ring.** A worker whose push finds the record ring full submits the node itself, on
-  today's path, so it never waits and never drops a node. The funnel thread, when a worker's
-  landing ring is full, keeps the entry in an overflow of its own and moves it in once the worker
-  has made room; the worker never sees it full.
+- **A full ring.** A worker whose push finds the record ring full keeps the record in a backlog
+  of its own (`SubmitFunnels`, one per worker) and pushes it again at the top of each round,
+  before it lands its events. It never waits, never drops a node and never submits: the record
+  counts as in flight, so the worker neither parks nor exits until it has landed. The funnel
+  thread, when a worker's landing ring is full, keeps the entry in an overflow of its own and
+  moves it in once the worker has made room; the worker never sees it full.
 - While a run is armed the funnel thread yields between empty polls, as a worker with events in
   flight does. Once the run is disarmed it yields 100 times, then parks on a condition variable
   that `arm()` wakes; the mutex is taken only on that edge, by the arming thread and the parking
@@ -146,14 +153,31 @@ The owner ruled on the rest on 2026-11-14:
 | Node | Path with the funnel on |
 | --- | --- |
 | `KERNEL` node on a device queue | The funnel |
-| `HOST` node that submits device work | Today's path: its body runs on the worker and submits there. It is rarer than a kernel node, and running a host body on the funnel thread would stall every other submission |
-| Pure host node | Today's path: inline on the worker |
+| `HOST` node that submits device work, the run's completion sentinel among them | The funnel: its body runs on the funnel thread, so its own submissions leave from there |
+| Pure host node | Today's path: inline on the worker. It submits nothing |
 | Skipped, disabled or aborted node | Today's path: pushed ready, never submitted |
-| A device task that is not a graph node | Today's path |
-| A kernel node whose queue matched no device, or whose push found the ring full | Today's path |
+| A device task that is not a graph node | The funnel: with the funnel on, `select_dispatch_queue()` looks up the device of its queue even without profiling |
+| A dispatch whose push found the record ring full | The funnel, later: the record waits in the worker's backlog |
+| A dispatch whose queue matched no device | Today's path. It cannot happen: a node's queue is its placed device's, and a plain task's comes from `queue_or_numa_local()`, a queue of the set |
 | A run of layer 1 or layer 2 | Not affected: both already submit from one thread |
 
-The funnel changes who calls `submit_task`, not what it submits. Queue selection
+The first build left HOST nodes on the workers. An editor trace with the funnel on then still
+showed `dispatch.submit` on all 12 workers, about 3000 each at a 70 us mean, because the plans the
+chain refuses for host work hold HOST nodes that submit device work (RW-138). Routing those
+bodies through the funnel thread is the only route that needs no new public surface: a body is
+handed a `sycl::queue&`, and a call on it cannot be intercepted. A queue-facing seam that the body
+submits through and the funnel backs would change the public body signature, which is the
+owner's decision, and the worker would still wait on each submission's event.
+
+A body on the funnel thread costs two things. It delays every later submission to its device by
+the body's own run time; a body is expected to enqueue work and return, as the kernel path does.
+And a body must not wait for a node the DAG leaves unordered with it: that node's record may sit
+behind the body in the same ring, so the wait never ends. A body that waits only on its own
+submissions or on its dependencies is safe, since every dependency was submitted before the body's
+record was pushed.
+
+The funnel changes who calls `submit_task` and on which thread a HOST body runs, not what either
+submits. Queue selection
 (`select_dispatch_queue`), the out-of-order queue, the event per node and the order the DAG
 allows all stay as they are, so every output is the same as without the funnel. One in-order queue
 per lane measured a little faster (538 against 697 us), but it needs a lane assignment the
@@ -172,8 +196,9 @@ none either: one replay per step. The funnel is for plans that stay on the sched
 host nodes, plans across devices, and a `DynamicGraph` without `allow_chain(true)`. A device with a
 funnel and a chain on the same queue do not meet: a run takes one path.
 
-The `dispatch.submit` zone moves to the funnel thread, so that thread must be one the collector
-records. A worker gains a `dispatch.funnel_push` zone.
+The `dispatch.submit` zone moves to the funnel thread for kernel nodes and HOST bodies alike, so
+that thread must be one the collector records. A worker gains a `dispatch.funnel_push` zone and
+keeps no `dispatch.submit` zone.
 
 ### Alternatives set aside
 
@@ -192,7 +217,7 @@ records. A worker gains a `dispatch.funnel_push` zone.
 
 | Path | Owner (`sr design owner`) | Change |
 | --- | --- | --- |
-| `modules/engine/scheduler` | LAYERED_EXECUTION | `submit_funnel.*` and `submit_funnels.*`; the submit site in `worker_rounds.cpp` pushes a record when the device has a funnel; each round drains the landing rings; `WorkerPoolSettings::submit_funnel`; `TaskScheduler::funnelled_task_count()`; `skipped_dispatch_event()` in `dispatch_record.hpp`, shared by the worker and the funnel |
+| `modules/engine/scheduler` | LAYERED_EXECUTION | `submit_funnel.*` and `submit_funnels.*`, which hold each worker's in-flight count and full-ring backlog; the submit site in `worker_rounds.cpp` hands every dispatch to the funnel when the device has one; `select_dispatch_queue()` looks up a plain task's device when the funnel is on; each round pushes its backlog again and drains the landing rings; `WorkerPoolSettings::submit_funnel`; `TaskScheduler::funnelled_task_count()`; `skipped_dispatch_event()` and `submit_dispatch()`, the one submit sequence, in `dispatch_record.hpp`, shared by the worker and the funnel |
 | `modules/engine/work_stealing` | none | `MPSCRing` and `SPSCRing`, beside the work-stealing deque |
 | `modules/engine/execution` | GRAPH_REPLAY | `RuntimeSettings::submit_funnel`, off by default and copied into the pool settings; `ExecutionMetrics::tasks_funnelled` |
 | `modules/surface/api` | LAYERED_EXECUTION | The public `RuntimeConfig::submit_funnel` flag, copied into the settings; `RunCounters::tasks_funnelled`; `fill_run_report()` sets `RunReport::funnelled` |
@@ -209,9 +234,13 @@ edges across lanes, with profiling off and on; a timed run records one `NodeEven
 and step with the funnel on and off; `RunReport::funnelled` is true only for a scheduler run on a
 runtime with the funnel (`tests/surface/api/graph/test_dynamic_graph/test_layer_equivalence.cpp`).
 On the scheduler itself, with the funnel off and on, a cancelled run and a disabled node submit
-nothing, a submission that throws fails the run naming its node and skips what follows, and
-`stop()` ends the pool with the funnel idle and right after a burst of submissions
-(`tests/engine/scheduler/test_task_scheduler.cpp`). The rings have tests of their own
+nothing, a submission that throws fails the run naming its node and skips what follows,
+`stop()` ends the pool with the funnel idle and right after a burst of submissions, HOST nodes
+that submit device work and kernel nodes all submit from one thread, and a flood of 4096 kernel
+nodes, four times the record ring, still submits from one thread
+(`tests/engine/scheduler/test_task_scheduler.cpp`). The lane workload with one level recorded as
+task bodies leaves the bytes of the host model with the funnel off and on, untimed and timed, and
+with the funnel on every body runs on one thread (`test_layer_equivalence.cpp`). The rings have tests of their own
 (`tests/engine/work_stealing/test_mpsc_ring.cpp` and `test_spsc_ring.cpp`, over the contract in `tests/support/bounded_ring_contract.hpp`). The probe's table is re-measured through
 `Graph::run` with the funnel on and off, at 1, 4 and 12 workers.
 

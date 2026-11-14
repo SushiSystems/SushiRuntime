@@ -56,6 +56,7 @@ namespace SushiRuntime
                                     Launch launch, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = launch_count(launch);
@@ -76,6 +77,7 @@ namespace SushiRuntime
                                    std::size_t n, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = n;
@@ -97,6 +99,7 @@ namespace SushiRuntime
                                  std::size_t width)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = width;

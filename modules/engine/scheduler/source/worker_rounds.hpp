@@ -50,6 +50,7 @@
 
 namespace SushiRuntime
 {
+    namespace Internal::Graph { struct Node; }
     namespace Internal::Topology { class TopologyView; }
     namespace Internal::Device { class DeviceQueueSet; }
     namespace Internal::Memory { class USMAllocator; }
@@ -158,23 +159,15 @@ namespace SushiRuntime
                     std::atomic<std::uint64_t> idle_ns{0};
                 };
 
-                /** @brief Holds how many of one worker's nodes wait in a submit funnel; written by that worker alone. */
-                struct alignas(K_CACHE_LINE_SIZE) FunnelledCounter
-                {
-                    std::atomic<std::size_t> value{0};
-                };
-
                 /** @brief Executes a single task and tracks its events; @p worker_id is the scheduler's worker id. */
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
 
                 /**
-                 * @brief Pushes @p record into the funnel of its device, when the device has one.
-                 * @return False when the device has no funnel or its ring is full; the caller then submits.
+                 * @brief Hands the dispatch of @p task to the submit funnel of its device, when the device has one.
+                 * @return False when the funnel is off or the device has no funnel; the caller then submits.
                  */
-                bool hand_to_funnel(FunnelRecord& record);
-
-                /** @brief Moves the events landed for worker @p thread_id into @p events. */
-                void land_funnelled(int thread_id, EventPolling::ActiveEventList& events);
+                bool hand_to_funnel(Task& task, Internal::Graph::Node* node, sycl::queue& queue, bool profiling,
+                                    std::uint32_t step, std::uint32_t device_index, int worker_id);
 
                 /** @brief Returns whether worker @p thread_id has no event in flight and no node in a submit funnel. */
                 bool in_flight_empty(int thread_id) const;
@@ -200,7 +193,6 @@ namespace SushiRuntime
                 std::atomic<std::size_t> local_steals_{0};
                 std::atomic<std::size_t> remote_steals_{0};
                 CompletedCounter completed_[K_MAX_WORKER_THREADS];
-                FunnelledCounter funnelled_[K_MAX_WORKER_THREADS];
                 TimeBuckets worker_time_[K_MAX_WORKER_THREADS];
         };
     } // namespace Internal::Scheduler

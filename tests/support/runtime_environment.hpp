@@ -58,14 +58,15 @@ struct RuntimeShape
     bool rebalancer = false;      /**< Whether the background rebalancer runs. */
     std::size_t instance = 0;     /**< Tells apart two runtimes of one configuration, for a test that needs two. */
     bool submit_funnel = false;   /**< Whether the scheduler's kernel nodes go through a submit funnel. */
+    bool force_chain = false;     /**< Whether a chained run never replays. */
 
     /** @brief Orders shapes field by field, so a shape can key the environment's runtimes. */
     [[nodiscard]] friend bool operator<(const RuntimeShape& left, const RuntimeShape& right) noexcept
     {
         return std::tie(left.force_scheduler, left.worker_count, left.rebalancer, left.instance,
-                        left.submit_funnel) <
+                        left.submit_funnel, left.force_chain) <
                std::tie(right.force_scheduler, right.worker_count, right.rebalancer, right.instance,
-                        right.submit_funnel);
+                        right.submit_funnel, right.force_chain);
     }
 
     /** @brief Returns the RuntimeConfig this shape names. */
@@ -76,6 +77,7 @@ struct RuntimeShape
         made.worker_count = worker_count;
         made.rebalancer = rebalancer;
         made.submit_funnel = submit_funnel;
+        made.force_chain = force_chain;
         return made;
     }
 };

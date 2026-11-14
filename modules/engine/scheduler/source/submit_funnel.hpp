@@ -23,7 +23,7 @@
 
 /**
  * @file submit_funnel.hpp
- * @brief Declares SubmitFunnel, the one thread that submits a device's kernel nodes for every worker.
+ * @brief Declares SubmitFunnel, the one thread that submits a device's dispatches for every worker.
  * @author Mustafa Garip
  * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
  */
@@ -55,13 +55,16 @@ namespace SushiRuntime
 
     namespace Internal::Scheduler
     {
+        class Task;
+
         /**
-         * @brief Holds what a worker knows at the submit site of a kernel node, handed to the funnel.
+         * @brief Holds what a worker knows at the submit site of a dispatch, handed to the funnel.
          * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
          */
         struct FunnelRecord
         {
-            Internal::Graph::Node* node = nullptr;             /**< The kernel node; the worker's reference travels with it. */
+            Task* task = nullptr;                              /**< The task; the worker's reference travels with it. */
+            Internal::Graph::Node* node = nullptr;             /**< The task as a graph node, or null for a plain task. */
             sycl::queue* queue = nullptr;                      /**< The queue select_dispatch_queue() chose. */
             bool profiling = false;                            /**< The run's profiling flag, read once for the dispatch. */
             std::uint32_t step = 0;                            /**< The step the dispatch belongs to. */
@@ -72,13 +75,15 @@ namespace SushiRuntime
         /**
          * @brief Owns one device's record ring, a landing ring per worker and the thread that submits between them.
          *
-         * Workers push and land without a lock; the thread takes a mutex only to park while no run is armed.
+         * The thread submits a kernel node's command group and runs a HOST node's body, so the body's own
+         * submissions leave from it too. Workers push and land without a lock; the thread takes a mutex only to
+         * park while no run is armed.
          * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
          */
         class SubmitFunnel final
         {
             public:
-                /** @brief The records the ring holds; a worker whose push finds it full submits the node itself. */
+                /** @brief The records the ring holds; a worker whose push finds it full keeps the record and pushes it again. */
                 static constexpr std::size_t K_RECORD_CAPACITY = 1024;
 
                 /** @brief The events one worker's landing ring holds; the rest wait in the thread's own overflow. */
@@ -86,7 +91,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Builds the rings of @p workers workers; starts no thread.
-                 * @param device_index The device whose kernel nodes the funnel submits.
+                 * @param device_index The device whose dispatches the funnel submits.
                  * @param outcome Takes the failure of a submission; must outlive the funnel.
                  * @param collector Takes the funnel thread's zones; must outlive the funnel.
                  */
@@ -107,7 +112,7 @@ namespace SushiRuntime
                 /**
                  * @brief Hands a record to the thread; any worker may call it, and it takes no lock.
                  * @param record Moved from on success, left as it was on failure.
-                 * @return False when the ring is full, so the worker submits the node itself.
+                 * @return False when the ring is full; the record stays with the worker.
                  */
                 [[nodiscard]] bool try_push(FunnelRecord& record);
 
@@ -142,7 +147,7 @@ namespace SushiRuntime
                 /** @brief Pops and submits records until stop() is asked and the ring is empty. */
                 void run();
 
-                /** @brief Submits one record as the worker would have and lands its event. */
+                /** @brief Submits one record, or runs its host body, as the worker would have, and lands its event. */
                 void submit(FunnelRecord& record);
 
                 /** @brief Lands @p event for @p worker, in the thread's overflow when the ring is full. */
@@ -154,7 +159,7 @@ namespace SushiRuntime
                 /** @brief Waits until a run is armed or stop() is asked, or for at most K_PARK_TIMEOUT. */
                 void park();
 
-                /// @brief The device whose kernel nodes the funnel submits.
+                /// @brief The device whose dispatches the funnel submits.
                 std::uint32_t device_index_;
                 /// @brief Takes a submission's failure.
                 RunOutcome& outcome_;

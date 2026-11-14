@@ -31,7 +31,7 @@ per program that makes the runtime and the device queue on first use and release
 last test, and `context_environment.hpp` does the same for the one device `RuntimeContext` an engine
 test program shares; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
 never builds its own. A test that needs another configuration asks the environment for the runtime
-of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer, the submit funnel), made once per
+of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer, the submit funnel, forced onto the chain), made once per
 shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
 scheduler (true). `stepping_tick_source.hpp` is a SushiProfiler tick source that moves by one on every reading, so the zones of a
 collector built over it nest the same on every run, and `buffer_contents.hpp` reads, fills and windows a buffer's contents,
@@ -43,7 +43,8 @@ owns, `kernel_math.hpp` holds the index math and arithmetic of the `NdRange` tes
 of plain ids, so a small test calls them and the launch test passes them values out of `sycl::nd_item`, `worker_wire.hpp` holds the frames and handshake builders a test of a worker plays its master with,
 `heap_cache_allocator.hpp` is the heap adapter of the worker cache's allocator port,
 and `executor_fabric.hpp` joins a master and a worker endpoint of an `InProcessFabric` on `ExecutorDrive`s that a test steps: the unit under test takes one endpoint and the test reads what it sent, and the peers it closed, in the events the other endpoint records, `single_frame.hpp` yields one frame with any flag byte as a stream, `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
-SHA-256 digest as hexadecimal text.
+SHA-256 digest as hexadecimal text, and `submitting_threads.hpp` collects the distinct threads a test's command groups and task bodies
+were submitted from.
 
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.

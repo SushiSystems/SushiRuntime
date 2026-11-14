@@ -72,7 +72,7 @@ namespace SushiRuntime
          */
         DispatchQueueSelection select_dispatch_queue(Internal::Device::DeviceQueueSet& devices,
                                                      const Internal::Graph::Node* node, bool profiling,
-                                                     int fallback_numa)
+                                                     int fallback_numa, bool find_device)
         {
             DispatchQueueSelection selection;
 
@@ -88,8 +88,8 @@ namespace SushiRuntime
             sycl::queue& picked = devices.queue_or_numa_local(std::nullopt, fallback_numa);
             selection.queue = &picked;
 
-            // Skips the index lookup entirely on the default (non-profiled) path.
-            if (!profiling)
+            // Skips the index lookup entirely on the default path: no profiling and no submit funnel.
+            if (!profiling && !find_device)
                 return selection;
 
             const std::size_t idx = device_of(devices, picked);
@@ -100,7 +100,7 @@ namespace SushiRuntime
                 return selection;
             }
 
-            selection.unmatched = true;
+            selection.unmatched = profiling;
             return selection;
         }
 

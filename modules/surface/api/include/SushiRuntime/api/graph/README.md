@@ -516,13 +516,28 @@ does no work for the chain. While it is on, every composition classifies the pla
 rules (`modules/engine/execution/README.md`), so a run of a chainable plan is submitted from the calling
 thread in one topological order of the whole composed DAG, edges across regions included, and
 `RunReport::layer` names `ExecutionLayer::Chain`. A composition that adds or drops a region classifies
-the plan again. A plan that does not classify, such as one holding native host work, runs on the
-scheduler, and so does every run of a runtime built with `RuntimeConfig::force_scheduler`. A run that
+the plan again. The opt-in also states that the graph's task bodies keep the add_task contract: they
+wait for nothing and touch only the regions they name. So two task bodies the composed plan leaves
+unordered chain, run in turn on the calling thread, when they name every byte they touch and share
+none, reads included, where a static graph keeps such a pair on the scheduler
+(`docs/design/GRAPH_REPLAY/README.md`). A plan that does not classify, such as one holding native
+host work or two unordered task bodies that read one buffer, runs on the scheduler, and so does every run of a runtime built with `RuntimeConfig::force_scheduler`. A run that
 records device timing keeps one event per node on the chain, as a static graph's does. A step started
 with `run_async()` runs on the scheduler either way.
 
 Turning it on over a plan composed while it was off composes the plan again at the next run, which
 `compose_count()` counts; turning it off composes nothing. A move carries the setting to the target.
+
+### allow_replay
+
+`allow_replay(bool)`, which `Graph` and `DynamicGraph` take from the step driver, lets a plan that runs
+as a chain replay one recorded command graph per step, and returns the graph. It is off by default; a
+`DynamicGraph` also needs `allow_chain(true)`. The first replayed run after a compile or a composition
+records the plan, and every run after it submits that recording once per step; `RunReport::layer`
+names `ExecutionLayer::Replay`. A timed run, a runtime built with `RuntimeConfig::force_chain`, and a
+plan holding a task body, a State rule or a node sized on the device run on the chain instead. A
+recording that throws keeps the plan on the chain until it is compiled or composed again, and says so
+once in the log (`docs/design/GRAPH_REPLAY/README.md`, layer 2).
 
 ### refresh_updaters
 

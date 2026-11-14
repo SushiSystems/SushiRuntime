@@ -78,6 +78,15 @@ namespace SushiRuntime
             bool force_scheduler = false;
 
             /**
+             * @brief Runs every chained plan on layer 1, never replayed, even when its graph opted in.
+             *
+             * Off by default. On, a plan that would replay a recorded step submits its nodes
+             * one by one instead, for comparison and debugging.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            bool force_chain = false;
+
+            /**
              * @brief Submits the scheduler's kernel nodes from one thread per device; off by default.
              * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
              */

@@ -333,6 +333,11 @@ nodes that keep a plan off the chain. No test makes a context or a device.
 | `Small_ChainPlan.AHostNodeKeepsThePlanOff` | A host node keeps the plan off the chain. |
 | `Small_ChainPlan.ForeignMemoryKeepsThePlanOff` | A node on memory no device owns keeps the plan off the chain. |
 | `Small_ChainPlan.AnEmptyPlanIsNotChainable` | An empty plan is not chainable. |
+| `Small_ChainPlan.ATaskUnorderedOnlyWithAKernelChains` | A task node that only a kernel leaves unordered chains under the default rule. |
+| `Small_ChainPlan.TwoOrderedTasksChainInOrder` | Two task nodes the plan orders chain in that order under the default rule. |
+| `Small_ChainPlan.TwoUnorderedTasksStayOffWithoutTheOptIn` | Two unordered task nodes over disjoint data stay off the chain under `UnorderedHostWork::Refused`, and the refusal names the unordered host work. |
+| `Small_ChainPlan.TwoUnorderedTasksOverDisjointDataChainUnderTheOptIn` | The same two nodes chain under `UnorderedHostWork::InTurnWhenDisjoint`. |
+| `Small_ChainPlan.TwoUnorderedTasksReadingOneRegionStayOffUnderTheOptIn` | Two unordered task nodes that read one region stay off the chain under `InTurnWhenDisjoint`. |
 
 ## test_chain_run.cpp
 

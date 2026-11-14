@@ -244,8 +244,8 @@ namespace SushiRuntime
              * @brief Lets a chainable composed plan run as an in-order chain, or keeps every run
              *        on the scheduler; off by default.
              *
-             * While on, every composition classifies the plan, and turning it on over a composed
-             * plan composes it again at the next run. A move carries the setting.
+             * While on, every composition classifies the plan and may run in turn unordered task
+             * bodies over disjoint data; turning it on recomposes at the next run. A move keeps it.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             DynamicGraph& allow_chain(bool allowed) noexcept

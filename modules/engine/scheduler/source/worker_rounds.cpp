@@ -37,7 +37,6 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/observability/steady_time.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
@@ -45,7 +44,6 @@
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/task.hpp>
-#include <SushiRuntime/task/task_submission.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -108,7 +106,7 @@ namespace SushiRuntime
 
         bool WorkerRounds::in_flight_empty(int thread_id) const
         {
-            return events_[thread_id]->is_empty() && funnelled_[thread_id].value.load(std::memory_order_relaxed) == 0;
+            return events_[thread_id]->is_empty() && funnels_.is_idle(static_cast<std::size_t>(thread_id));
         }
 
         void WorkerRounds::add_idle_ns(int thread_id, std::uint64_t nanoseconds) noexcept
@@ -261,11 +259,6 @@ namespace SushiRuntime
             return nullptr;
         }
         /**
-         * @brief Retrieves the ordered list of victim workers to steal from.
-         * @param worker_id The ID of the worker.
-         * @return A vector of worker IDs ordered by NUMA distance.
-         */
-        /**
          * @brief Runs one round of a worker's active and drain phases (modules/engine/scheduler/README.md).
          * @param thread_id The ID of the worker the round belongs to.
          */
@@ -296,7 +289,7 @@ namespace SushiRuntime
             };
 
             drain_pending_submissions(thread_id);
-            land_funnelled(thread_id, active_events);
+            funnels_.land(static_cast<std::size_t>(thread_id), active_events);
             Task* task = nullptr;
 
             // A failed poll fails the run, not the thread (scheduler/README.md).
@@ -463,8 +456,9 @@ namespace SushiRuntime
                     }
                 }
 
+                // With the funnel on, a plain task's device is looked up too, so the task reaches that device's funnel.
                 const DispatchQueueSelection selection =
-                    select_dispatch_queue(devices_, node, profiling, K_TASK_NUMA_NODE);
+                    select_dispatch_queue(devices_, node, profiling, K_TASK_NUMA_NODE, funnels_.is_enabled());
                 const std::uint32_t dispatch_device = selection.device_index;
                 sycl::queue& queue = *selection.queue;
 
@@ -476,70 +470,34 @@ namespace SushiRuntime
                 // The step is read once, so the record names the step the dispatch was submitted in.
                 const std::uint32_t dispatch_step = run_.current_step.load(std::memory_order_acquire);
 
-                // A kernel node goes to its device's submit funnel when it has one (docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md).
-                if (node && !host && funnels_.is_enabled())
-                {
-                    FunnelRecord record;
-                    record.node = node;
-                    record.queue = &queue;
-                    record.profiling = profiling;
-                    record.step = dispatch_step;
-                    record.device_index = dispatch_device;
-                    record.worker = static_cast<std::size_t>(worker_id);
-                    if (hand_to_funnel(record))
-                        return;
-                }
+                // Every dispatch that reaches a queue goes to its device's submit funnel when it has one (docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md).
+                if (hand_to_funnel(*task, node, queue, profiling, dispatch_step, dispatch_device, worker_id))
+                    return;
 
-                // The kernel cannot start before this reading, which bounds the device's clock pairing.
-                const std::uint64_t submit_steady_ns = profiling ? Internal::Observability::steady_now_ns() : 0;
-
-                // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
-                sycl::event e;
-                std::vector<sycl::event> handed_over;
-                {
-                    SR_ZONE_FINE(run_.collector, "dispatch.submit");
-                    e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
-                                                     (profiling && host) ? &handed_over : nullptr);
-                }
-                const bool submitted = submitted_device_work(host, profiling, e, handed_over);
-
-                // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).
-                events.push(dispatched_event(e, submitted, task, node, profiling,
-                                             dispatch_step,
-                                             dispatch_device, std::move(handed_over), submit_steady_ns));
+                events.push(submit_dispatch(queue, *task, node, profiling, dispatch_step, dispatch_device,
+                                            run_.collector));
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));
         }
 
-        bool WorkerRounds::hand_to_funnel(FunnelRecord& record)
+        bool WorkerRounds::hand_to_funnel(Task& task, Internal::Graph::Node* node, sycl::queue& queue, bool profiling,
+                                          std::uint32_t step, std::uint32_t device_index, int worker_id)
         {
-            if (record.worker >= num_workers_)
-                return false;
-            SubmitFunnel* funnel = funnels_.of(record.device_index);
-            if (funnel == nullptr)
+            if (!funnels_.is_enabled() || worker_id < 0)
                 return false;
 
-            // Counted before the push, so the landing drain of this worker never sees the count below its events.
-            std::atomic<std::size_t>& waiting = funnelled_[record.worker].value;
-            waiting.fetch_add(1, std::memory_order_relaxed);
-            bool pushed = false;
-            {
-                SR_ZONE_FINE(run_.collector, "dispatch.funnel_push");
-                pushed = funnel->try_push(record);
-            }
-            if (!pushed)
-                waiting.fetch_sub(1, std::memory_order_relaxed);
-            return pushed;
-        }
+            FunnelRecord record;
+            record.task = &task;
+            record.node = node;
+            record.queue = &queue;
+            record.profiling = profiling;
+            record.step = step;
+            record.device_index = device_index;
+            record.worker = static_cast<std::size_t>(worker_id);
 
-        void WorkerRounds::land_funnelled(int thread_id, EventPolling::ActiveEventList& events)
-        {
-            std::atomic<std::size_t>& waiting = funnelled_[thread_id].value;
-            if (waiting.load(std::memory_order_relaxed) == 0)
-                return;
-            const std::size_t landed = funnels_.land(static_cast<std::size_t>(thread_id), events);
-            waiting.fetch_sub(landed, std::memory_order_relaxed);
+            SR_ZONE_FINE(run_.collector, "dispatch.funnel_push");
+            return funnels_.hand(record);
         }
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

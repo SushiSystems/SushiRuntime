@@ -74,11 +74,13 @@
 
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
+#include "support/submitting_threads.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Graph::Node;
 using SushiRuntime::Internal::Scheduler::TaskScheduler;
 using SushiRuntime::Internal::Scheduler::WorkerPoolSettings;
+using TestSupport::SubmittingThreads;
 
 namespace
 {
@@ -858,6 +860,45 @@ namespace
             nodes.push_back(make_counting_kernel_node(runs));
         return nodes;
     }
+
+    /** @brief The records the full-ring row pushes at once: four times the funnel's record ring. */
+    constexpr int K_FUNNEL_FLOOD = 4096;
+
+    /**
+     * @brief Builds a kernel node whose command group notes its submitting thread and adds one to @p runs.
+     * @param runs,threads Must outlive the node.
+     */
+    sushi_ptr<Node> make_noting_kernel_node(std::atomic<int>& runs, SubmittingThreads& threads)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->work = [&runs, &threads](sycl::handler& handler)
+        {
+            threads.note();
+            handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+        };
+        return node;
+    }
+
+    /**
+     * @brief Builds a HOST node whose body notes its thread and submits device work that adds one to @p runs.
+     * @param runs,threads Must outlive the node.
+     */
+    sushi_ptr<Node> make_device_submitting_host_node(std::atomic<int>& runs, SubmittingThreads& threads)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->metadata.name = "host body";
+        node->mode = Node::ExecutionMode::Host;
+        node->host_work = [&runs, &threads](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+        {
+            threads.note();
+            return queue.submit([&](sycl::handler& handler)
+            {
+                handler.depends_on(dependencies);
+                handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+            });
+        };
+        return node;
+    }
 } // namespace
 
 /**
@@ -999,6 +1040,52 @@ TEST_P(Medium_TaskSchedulerFunnel, StopRightAfterSubmitRunsEveryKernelNode)
 
     EXPECT_EQ(runs.load(), K_FUNNEL_BURST);
     EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(K_FUNNEL_BURST));
+}
+
+/**
+ * @brief Tests that HOST nodes that submit device work and kernel nodes all submit from the funnel thread when it
+ *        is on, and run the same work either way.
+ */
+TEST_P(Medium_TaskSchedulerFunnel, DeviceSubmittingHostNodesSubmitOnlyFromTheFunnelThread)
+{
+    constexpr int K_EACH = 16;
+    std::atomic<int> runs{0};
+    SubmittingThreads threads;
+    std::vector<sushi_ptr<Node>> nodes;
+    for (int index = 0; index < K_EACH; ++index)
+    {
+        nodes.push_back(make_device_submitting_host_node(runs, threads));
+        nodes.push_back(make_noting_kernel_node(runs, threads));
+    }
+
+    submit_all(*scheduler_, nodes);
+    scheduler_->wait_quiescent();
+
+    EXPECT_EQ(runs.load(), 2 * K_EACH);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(2 * K_EACH));
+    if (!GetParam())
+        return;
+    const std::vector<std::thread::id> submitters = threads.ids();
+    ASSERT_EQ(submitters.size(), 1u) << "every submission leaves from the one funnel thread of the device";
+    EXPECT_NE(submitters.front(), std::this_thread::get_id());
+}
+
+/** @brief Tests that a flood of kernel nodes larger than the record ring still submits only from the funnel thread. */
+TEST_P(Medium_TaskSchedulerFunnel, AFloodPastTheRecordRingSubmitsOnlyFromTheFunnelThread)
+{
+    std::atomic<int> runs{0};
+    SubmittingThreads threads;
+    std::vector<sushi_ptr<Node>> nodes;
+    for (int index = 0; index < K_FUNNEL_FLOOD; ++index)
+        nodes.push_back(make_noting_kernel_node(runs, threads));
+
+    submit_all(*scheduler_, nodes);
+    scheduler_->wait_quiescent();
+
+    EXPECT_EQ(runs.load(), K_FUNNEL_FLOOD);
+    EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(K_FUNNEL_FLOOD));
+    if (GetParam())
+        EXPECT_EQ(threads.ids().size(), 1u) << "a full ring keeps the record with the worker, which never submits";
 }
 
 INSTANTIATE_TEST_SUITE_P(Rows, Medium_TaskSchedulerFunnel, ::testing::Values(false, true));

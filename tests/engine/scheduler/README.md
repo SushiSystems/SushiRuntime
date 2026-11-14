@@ -16,8 +16,9 @@ interfaces, the system heartbeat clock (a sleep), a constant and a plain struct,
 
 ## test_dispatch_record.cpp
 
-The file tests the submission rule and the polled events of a dispatch. The submission rule runs as
-rows over its inputs; only the two tests that read a real event need a queue.
+The file tests the submission rule, the polled events of a dispatch and `submit_dispatch()`, the one
+submit sequence a worker and a submit funnel share. The submission rule runs as rows over its inputs;
+only the five tests that submit or read a real event need a queue.
 
 | Test | What it proves |
 | --- | --- |
@@ -32,6 +33,10 @@ rows over its inputs; only the two tests that read a real event need a queue.
 | `ASubmissionThatReachedADeviceWaitsOnItsEvent` | A submission that reached a device is pushed with its event, not ready. |
 | `Medium_DispatchRecord.ACompleteProfiledEventStillCountsAsSubmitted` | A host-task event from a profiling queue that completed before the read still counts as submitted. |
 | `Small_DispatchRecord.ACompleteEventIsNoWorkWithProfilingOff` | With profiling off a complete event is no device work. |
+| `Medium_DispatchRecord.ASubmittedKernelWaitsOnItsEventAndCarriesItsStepAndDevice` | `submit_dispatch()` of a kernel node returns its event, not ready, with the task, step and device it was given. |
+| `Medium_DispatchRecord.AHostBodyThatSubmitsNothingIsReady` | `submit_dispatch()` runs a HOST body, and a body that returns a default event is pushed ready. |
+| `Medium_DispatchRecord.ATimedDispatchCarriesASubmitReading` | A timed `submit_dispatch()` carries the steady reading taken before its submit call. |
+| `Medium_DispatchRecord.AThrowingCommandGroupLeavesWithItsException` | A command group that throws leaves `submit_dispatch()` with its exception, which the caller names. |
 
 The fixture derives its profiling queue from the context and device of the program's queue, once per
 process, because the program's queue does not profile.
@@ -244,6 +249,8 @@ count follows the row.
 | `AKernelNodeAfterAFailedSubmissionIsSkipped` | After that failure, a later kernel node of the run does not run and is not funnelled. |
 | `StopEndsAPoolWhoseFunnelIsIdle` | `stop()` after `disarm()` ends the pool with its funnel idle, and the run and the count stand. |
 | `StopRightAfterSubmitRunsEveryKernelNode` | `stop()` right after 200 submissions runs every node, all through the funnel when it is on. |
+| `DeviceSubmittingHostNodesSubmitOnlyFromTheFunnelThread` | Sixteen HOST nodes whose body submits a host task on its queue and sixteen kernel nodes all run; with the funnel on all 32 are funnelled and every body and command group runs on one thread that is not the test's (`support/submitting_threads.hpp`). |
+| `AFloodPastTheRecordRingSubmitsOnlyFromTheFunnelThread` | 4096 kernel nodes, four times the record ring, all run; with the funnel on all are funnelled and every command group runs on one thread, so a full ring sent none to a worker. |
 
 ### Steal order
 

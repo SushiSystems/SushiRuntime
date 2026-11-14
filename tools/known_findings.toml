@@ -34,3 +34,31 @@ rule = "rule_unsafe_name"
 path = "tests/platform/numa_lookup/test_numa_lookup.cpp"
 count = 1
 backlog = "RW-136"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/engine/execution/include/SushiRuntime/execution/chain_replay.hpp"
+count = 1
+backlog = "RW-146"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/engine/execution/include/SushiRuntime/execution/chained_run_mark.hpp"
+count = 1
+backlog = "RW-146"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/engine/graph/include/SushiRuntime/graph/recorded_steps.hpp"
+count = 1
+backlog = "RW-146"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/engine/task/include/SushiRuntime/task/submit_form.hpp"
+count = 1
+backlog = "RW-146"

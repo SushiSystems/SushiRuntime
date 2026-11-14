@@ -58,6 +58,19 @@ namespace
         };
     }
 
+    /** @brief Returns a task body that submits nothing and returns an empty event. */
+    HostWork submits_nothing()
+    {
+        return [](sycl::queue&, const std::vector<sycl::event>&) { return sycl::event{}; };
+    }
+
+    /** @brief Adds a HOST node that submits device work, reading @p reads and writing @p writes. */
+    Node& add_task_node(TaskGraph& graph, const std::vector<BufferRegion>& reads,
+                        const std::vector<BufferRegion>& writes)
+    {
+        return graph.add_task(TaskMetadata{}, reads, writes, submits_nothing());
+    }
+
     /** @brief Returns memory of @p devices devices in one context, with nothing recorded. */
     InMemoryPlacementMemory devices_in_one_context(std::size_t devices)
     {
@@ -163,4 +176,109 @@ TEST(Small_ChainPlan, AnEmptyPlanIsNotChainable)
     const CompiledGraph plan = compiled(graph);
 
     EXPECT_FALSE(classify_chain(plan, memory, false).chainable);
+}
+
+/** @brief Tests that a task node only kernels leave unordered chains, with no opt-in. */
+TEST(Small_ChainPlan, ATaskUnorderedOnlyWithAKernelChains)
+{
+    int task_cell = 0;
+    int kernel_cell = 0;
+    InMemoryPlacementMemory memory = devices_in_one_context(1);
+    memory.record(&task_cell, 0);
+    memory.record(&kernel_cell, 0);
+    const std::vector<BufferRegion> task_region{BufferRegion(&task_cell)};
+    const std::vector<BufferRegion> kernel_region{BufferRegion(&kernel_cell)};
+    TaskGraph graph;
+    add_task_node(graph, {}, task_region);
+    graph.add_node(add_one(&kernel_cell), kernel_region, kernel_region);
+    const CompiledGraph plan = compiled(graph);
+
+    const ChainPlan chain = classify_chain(plan, memory, false);
+
+    ASSERT_TRUE(chain.chainable) << chain.not_chainable;
+    EXPECT_EQ(chain.order.size(), 2u);
+}
+
+/** @brief Tests that two task nodes the plan orders chain in that order, with no opt-in. */
+TEST(Small_ChainPlan, TwoOrderedTasksChainInOrder)
+{
+    int first_cell = 0;
+    int second_cell = 0;
+    InMemoryPlacementMemory memory = devices_in_one_context(1);
+    memory.record(&first_cell, 0);
+    memory.record(&second_cell, 0);
+    const std::vector<BufferRegion> first_region{BufferRegion(&first_cell)};
+    const std::vector<BufferRegion> second_region{BufferRegion(&second_cell)};
+    TaskGraph graph;
+    Node& first = add_task_node(graph, {}, first_region);
+    Node& second = add_task_node(graph, first_region, second_region);
+    const CompiledGraph plan = compiled(graph);
+
+    const ChainPlan chain = classify_chain(plan, memory, false);
+
+    ASSERT_TRUE(chain.chainable) << chain.not_chainable;
+    ASSERT_EQ(chain.order.size(), 2u);
+    EXPECT_EQ(chain.order[0], &first);
+    EXPECT_EQ(chain.order[1], &second);
+}
+
+/** @brief Tests that two unordered task nodes over disjoint data stay off the chain without the opt-in. */
+TEST(Small_ChainPlan, TwoUnorderedTasksStayOffWithoutTheOptIn)
+{
+    int first_cell = 0;
+    int second_cell = 0;
+    InMemoryPlacementMemory memory = devices_in_one_context(1);
+    memory.record(&first_cell, 0);
+    memory.record(&second_cell, 0);
+    TaskGraph graph;
+    add_task_node(graph, {}, {BufferRegion(&first_cell)});
+    add_task_node(graph, {}, {BufferRegion(&second_cell)});
+    const CompiledGraph plan = compiled(graph);
+
+    const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::Refused);
+
+    EXPECT_FALSE(chain.chainable);
+    EXPECT_STREQ(chain.not_chainable, "a chain would order host work the dependencies leave unordered");
+}
+
+/** @brief Tests that two unordered task nodes over disjoint data chain under the opt-in. */
+TEST(Small_ChainPlan, TwoUnorderedTasksOverDisjointDataChainUnderTheOptIn)
+{
+    int first_cell = 0;
+    int second_cell = 0;
+    InMemoryPlacementMemory memory = devices_in_one_context(1);
+    memory.record(&first_cell, 0);
+    memory.record(&second_cell, 0);
+    TaskGraph graph;
+    add_task_node(graph, {}, {BufferRegion(&first_cell)});
+    add_task_node(graph, {}, {BufferRegion(&second_cell)});
+    const CompiledGraph plan = compiled(graph);
+
+    const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::InTurnWhenDisjoint);
+
+    ASSERT_TRUE(chain.chainable) << chain.not_chainable;
+    EXPECT_EQ(chain.order.size(), 2u);
+}
+
+/** @brief Tests that two unordered task nodes reading one region stay off the chain under the opt-in. */
+TEST(Small_ChainPlan, TwoUnorderedTasksReadingOneRegionStayOffUnderTheOptIn)
+{
+    int shared_cell = 0;
+    int first_cell = 0;
+    int second_cell = 0;
+    InMemoryPlacementMemory memory = devices_in_one_context(1);
+    memory.record(&shared_cell, 0);
+    memory.record(&first_cell, 0);
+    memory.record(&second_cell, 0);
+    const std::vector<BufferRegion> shared_region{BufferRegion(&shared_cell)};
+    TaskGraph graph;
+    add_task_node(graph, shared_region, {BufferRegion(&first_cell)});
+    add_task_node(graph, shared_region, {BufferRegion(&second_cell)});
+    const CompiledGraph plan = compiled(graph);
+
+    const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::InTurnWhenDisjoint);
+
+    EXPECT_FALSE(chain.chainable);
+    EXPECT_STREQ(chain.not_chainable,
+                 "a chain would order host work the dependencies leave unordered over shared or undeclared data");
 }

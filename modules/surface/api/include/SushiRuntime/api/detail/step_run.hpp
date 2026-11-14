@@ -101,6 +101,7 @@ namespace SushiRuntime
             void (*rearm)(void* owner) = nullptr;           /**< Restores the plan's run state. */
             std::size_t node_count = 0;                     /**< Nodes one step dispatches. */
             bool may_chain = false;                         /**< Whether the graph allows a chain. */
+            bool may_replay = false;                        /**< Whether the graph opted into replaying its chain. */
         };
 
         /** @brief Says whether a chained run may skip the host wait between steps. */

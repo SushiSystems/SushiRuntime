@@ -104,6 +104,7 @@ namespace SushiRuntime
                                       Launch launch, Pointers pointers, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = launch_count(launch);

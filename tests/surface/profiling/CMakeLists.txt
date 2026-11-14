@@ -33,8 +33,10 @@ sushiruntime_add_module_tests(
         test_span_loss_tally.cpp
     BENCHMARK_SOURCES
         benchmark_run_overhead.cpp
+        benchmark_timed_chain_submit.cpp
     DEVICE_SOURCES
         benchmark_run_overhead.cpp
+        benchmark_timed_chain_submit.cpp
         test_register_profiler_parts/test_collect_profiling.cpp
         test_register_profiler_parts/test_device_timing_window.cpp
         test_register_profiler_parts/test_graph_identity.cpp

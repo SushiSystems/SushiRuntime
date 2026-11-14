@@ -84,6 +84,7 @@ namespace SushiRuntime
         {
             require_device_pass<F>();
             NodeDescription description;
+            description.submit_form = SubmitForm::DeviceSized;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = width;

@@ -52,6 +52,7 @@
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/task/region_link.hpp>
 #include <SushiRuntime/task/small_event_vector.hpp>
+#include <SushiRuntime/task/submit_form.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
@@ -184,6 +185,12 @@ namespace SushiRuntime
 
             /** @brief Elements this node launches over, or K_WIDTH_UNKNOWN. */
             std::size_t baked_width = K_WIDTH_UNKNOWN;
+
+            /**
+             * @brief Says what a recorded command graph may keep of this node's submission.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            SubmitForm submit_form = SubmitForm::StepBound;
 
             /**
              * @brief Identifies the public add() call that registered this node; zero until

@@ -76,7 +76,8 @@ namespace SushiRuntime
     enum class ExecutionLayer : std::uint8_t
     {
         Scheduler, /**< Nodes dispatched by the worker pool as their predecessors complete. */
-        Chain      /**< Nodes submitted in compiled order to one in-order queue, one wait per run. */
+        Chain,     /**< Nodes submitted in compiled order to one in-order queue, one wait per run. */
+        Replay     /**< One recorded command graph of the chain's order, submitted once per step. */
     };
 
     /**
@@ -92,7 +93,7 @@ namespace SushiRuntime
         bool cancelled = false;                     /**< Whether the run stopped early on a cancellation request. */
         std::size_t total_tasks_executed = 0;       /**< Local (all NUMA) + remote tasks. */
         ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that submitted this run's device work. */
-        bool funnelled = false;                     /**< Whether a submit funnel submitted any of this run's kernel nodes. */
+        bool funnelled = false;                     /**< Whether a submit funnel submitted any of this run's dispatches. */
 
         // B. Waiting
         double network_latency_wait_ms = 0.0;       /**< Idle time awaiting remote results. Reserved: always 0 in v1. */

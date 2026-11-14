@@ -251,6 +251,20 @@ namespace SushiRuntime
                     return build_plan_guarded();
                 }
 
+                /**
+                 * @brief Lets a plan that runs as a chain replay one recorded step per step, or
+                 *        keeps it on the chain; off by default.
+                 *
+                 * On, the caller states that every command group it recorded submits the same work
+                 * at every step. A move keeps the setting.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                Owner& allow_replay(bool allowed) noexcept
+                {
+                    replay_allowed_ = allowed;
+                    return owner();
+                }
+
             protected:
                 StepDriver() = default;
 
@@ -264,6 +278,7 @@ namespace SushiRuntime
                 {
                     other.end_step_before_move();
                     step_hooks_ = std::move(other.step_hooks_);
+                    replay_allowed_ = other.replay_allowed_;
                 }
 
                 /**
@@ -279,6 +294,7 @@ namespace SushiRuntime
                         end_step_before_move();
                         other.end_step_before_move();
                         step_hooks_ = std::move(other.step_hooks_);
+                        replay_allowed_ = other.replay_allowed_;
                     }
                     return *this;
                 }
@@ -372,6 +388,7 @@ namespace SushiRuntime
                     named.rearm = [](void* graph) { static_cast<Owner*>(graph)->rearm_plan(); };
                     named.node_count = self.node_count();
                     named.may_chain = self.may_chain();
+                    named.may_replay = replay_allowed_;
                     return named;
                 }
 
@@ -689,6 +706,9 @@ namespace SushiRuntime
 
                 /** @brief The hooks before_each_step() added, in the order they were added. */
                 Detail::BeforeStepHooks step_hooks_;
+
+                /** @brief Whether allow_replay() lets a chained plan replay; a move copies it. */
+                bool replay_allowed_ = false;
         };
     } // namespace Detail
 } // namespace SushiRuntime

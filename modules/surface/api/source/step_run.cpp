@@ -41,6 +41,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/execution/chain_replay.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -177,18 +178,30 @@ namespace SushiRuntime
                 return executed;
             }
 
+            /** @brief Submits one step of a chained run, stamping its index into event records. */
+            Result<void> submit_one(Internal::Execution::ChainRun& run, std::size_t step)
+            {
+                return run.submit_step(static_cast<std::uint32_t>(step));
+            }
+
+            /** @brief Submits one step of a replayed run; every step replays the same recording. */
+            Result<void> submit_one(Internal::Execution::ChainReplay& run, std::size_t)
+            {
+                return run.submit_step();
+            }
+
             /**
-             * @brief Runs the steps as an in-order chain from this thread.
+             * @brief Runs the steps from this thread on one in-order queue, as a chain or a replay.
+             * @tparam InOrderRun ChainRun or ChainReplay, bound to the target's plan.
              * @return The number of steps run, or the fault a step recorded.
              * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
              */
-            Result<std::size_t> run_chained(const StepTarget& target, StepPredicate keep_going,
-                                            RuntimeContext& context, ExecutionEngine& engine,
-                                            StepSync sync)
+            template <class InOrderRun>
+            Result<std::size_t> run_in_order(InOrderRun& run, const StepTarget& target,
+                                             StepPredicate keep_going, ExecutionEngine& engine,
+                                             StepSync sync)
             {
-                CompiledGraph& plan = *engine_plan(target.plan);
                 const StepMachinery& steps = *target.steps;
-                Internal::Execution::ChainRun chain(context, plan);
                 const bool wait_every_step = (sync == StepSync::EveryStep);
                 const bool advance_unchecked = !wait_every_step;
                 std::size_t executed = 0;
@@ -201,13 +214,12 @@ namespace SushiRuntime
                     target.hooks->run(executed);
                     steps.before_step();
                     target.rearm(target.owner);
-                    Result<void> submitted =
-                        chain.submit_step(static_cast<std::uint32_t>(executed));
+                    Result<void> submitted = submit_one(run, executed);
                     if (!submitted)
                         return make_error(std::move(submitted.error()));
                     if (wait_every_step)
                     {
-                        Result<void> waited = chain.wait();
+                        Result<void> waited = run.wait();
                         if (!waited)
                             return make_error(std::move(waited.error()));
                         if (std::optional<Error> fault = steps.take_fault())
@@ -216,7 +228,7 @@ namespace SushiRuntime
                     }
                     ++executed;
                 }
-                Result<void> finished = chain.finish();
+                Result<void> finished = run.finish();
                 if (!finished)
                     return make_error(std::move(finished.error()));
                 if (std::optional<Error> fault = steps.take_fault())
@@ -226,6 +238,72 @@ namespace SushiRuntime
                 if (advance_unchecked && executed != 0)
                     steps.after_step();
                 return executed;
+            }
+
+            /**
+             * @brief Runs the steps as an in-order chain from this thread.
+             * @return The number of steps run, or the fault a step recorded.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+             */
+            Result<std::size_t> run_chained(const StepTarget& target, StepPredicate keep_going,
+                                            RuntimeContext& context, ExecutionEngine& engine,
+                                            StepSync sync)
+            {
+                Internal::Execution::ChainRun chain(context, *engine_plan(target.plan));
+                return run_in_order(chain, target, keep_going, engine, sync);
+            }
+
+            /**
+             * @brief Runs the steps as replays of the plan's recorded step from this thread.
+             * @pre prepare_replay() returned true for the target's plan.
+             * @return The number of steps run, or the fault a step recorded.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            Result<std::size_t> run_replayed(const StepTarget& target, StepPredicate keep_going,
+                                             RuntimeContext& context, ExecutionEngine& engine,
+                                             StepSync sync)
+            {
+                Internal::Execution::ChainReplay replay(context, *engine_plan(target.plan));
+                return run_in_order(replay, target, keep_going, engine, sync);
+            }
+
+            /**
+             * @brief Returns the layer a blocking run of the plan takes; a replay is recorded here
+             *        the first time the plan takes it.
+             * @pre plan.profiling holds what this run asks for.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            ExecutionLayer choose_layer(const StepTarget& target, RuntimeContext& context,
+                                        CompiledGraph& plan)
+            {
+                const Internal::Execution::RuntimeSettings& settings = context.settings();
+                if (!target.may_chain || !plan.chain.chainable || settings.force_scheduler)
+                    return ExecutionLayer::Scheduler;
+                // A timed run needs one event per node, which a replay does not give.
+                if (!target.may_replay || plan.profiling || settings.force_chain)
+                    return ExecutionLayer::Chain;
+                return Internal::Execution::prepare_replay(context, plan) ? ExecutionLayer::Replay
+                                                                          : ExecutionLayer::Chain;
+            }
+
+            /**
+             * @brief Runs the steps on the layer chosen for them.
+             * @return The number of steps run, or the fault a step recorded.
+             */
+            Result<std::size_t> run_on_layer(ExecutionLayer layer, const StepTarget& target,
+                                             StepPredicate keep_going, RuntimeContext& context,
+                                             ExecutionEngine& engine, StepSync sync)
+            {
+                switch (layer)
+                {
+                    case ExecutionLayer::Replay:
+                        return run_replayed(target, keep_going, context, engine, sync);
+                    case ExecutionLayer::Chain:
+                        return run_chained(target, keep_going, context, engine, sync);
+                    case ExecutionLayer::Scheduler:
+                        break;
+                }
+                return run_scheduled(target, keep_going, engine);
             }
         } // namespace
 
@@ -260,11 +338,9 @@ namespace SushiRuntime
 
             // A hook may write what a kernel reads, so each step ends before the next hook.
             const StepSync hooked_sync = target.hooks->empty() ? sync : StepSync::EveryStep;
-            const bool chained = target.may_chain && plan.chain.chainable &&
-                                 !context.settings().force_scheduler;
-            const Result<std::size_t> stepped = chained
-                ? run_chained(target, keep_going, context, engine, hooked_sync)
-                : run_scheduled(target, keep_going, engine);
+            const ExecutionLayer layer = choose_layer(target, context, plan);
+            const Result<std::size_t> stepped =
+                run_on_layer(layer, target, keep_going, context, engine, hooked_sync);
             if (!stepped)
                 return make_error(stepped.error());
             const std::size_t executed = *stepped;
@@ -274,7 +350,7 @@ namespace SushiRuntime
             const std::size_t total_tasks = target.node_count * executed;
             fill_run_report(report, context, before, after, total_tasks);
             report.cancelled = engine.is_cancelled();
-            report.layer = chained ? ExecutionLayer::Chain : ExecutionLayer::Scheduler;
+            report.layer = layer;
 
             // Only explicit transfers are counted; implicit USM migration is not.
             write_run_counters(context.profile_collector(), before, after, total_tasks,

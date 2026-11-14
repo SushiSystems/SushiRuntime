@@ -398,6 +398,12 @@ closed struct. The fields a kind does not use stay at their defaults.
 A launch sized on the device and the late-count resolver are of kind Kernel: what sets them apart
 is inside the command group their header builds.
 
+`submit_form` says what a recorded command graph may keep of the node's submission, and the library
+copies it onto `Node::submit_form`. A launch, a captured launch and a raw command group are `Fixed`,
+an `add_dynamic` window is `LateWindow`, a launch sized on the device is `DeviceSized`, and every
+other description stays `StepBound`, which a recording refuses (`docs/design/GRAPH_REPLAY/README.md`,
+"What a recording refuses").
+
 ### LiveFields
 
 A State rule that names an operation may be run by something other than the local pool, and
@@ -575,7 +581,10 @@ node and step, and nothing per element.
 
 submit_late_window() submits the node from that window. A node with no device slot keeps its
 host-resolved range. One with a slot runs at its capacity, and each work-item past the live
-count returns (docs/design/GRAPH_REPLAY/README.md §D).
+count returns (docs/design/GRAPH_REPLAY/README.md §D). While a recording submits the node, the
+window carries `words`, and submit_recorded_window() launches at capacity: each work-item reads the
+enabled flag, the count and the base from the words the replay writes before each step, returns when
+the node is disabled or past the count, and records the window fault layer 1 records on the host.
 
 ### LiveRange
 

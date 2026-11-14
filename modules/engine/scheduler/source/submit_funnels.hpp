@@ -30,11 +30,13 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
+#include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
@@ -46,14 +48,15 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         /**
-         * @brief Owns one SubmitFunnel per device when the funnel is on, and none when it is off.
+         * @brief Owns one SubmitFunnel per device when the funnel is on, and none when it is off, and each worker's
+         *        side of them: its records not yet landed and those a full ring kept back.
          * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
          */
         class SubmitFunnels final
         {
             public:
                 /**
-                 * @brief Builds a funnel per device when @p enabled; starts no thread.
+                 * @brief Builds a funnel per device and a side per worker when @p enabled; starts no thread.
                  * @param outcome,collector Must outlive the funnels.
                  */
                 SubmitFunnels(bool enabled, std::size_t devices, std::size_t workers, RunOutcome& outcome,
@@ -72,10 +75,22 @@ namespace SushiRuntime
                 [[nodiscard]] SubmitFunnel* of(std::uint32_t device) noexcept;
 
                 /**
-                 * @brief Moves every event landed for worker @p worker into @p events.
+                 * @brief Takes @p record for the funnel of its device; only the worker the record names may call it.
+                 *
+                 * A record that finds the ring full stays in the worker's backlog, and land() pushes it again.
+                 * @return False when the record's device has no funnel; the caller then submits it.
+                 */
+                [[nodiscard]] bool hand(const FunnelRecord& record);
+
+                /**
+                 * @brief Pushes worker @p worker's backlog again, then moves every event landed for it into @p events.
+                 * @pre Called by worker @p worker alone.
                  * @return The number of events moved.
                  */
                 std::size_t land(std::size_t worker, EventPolling::ActiveEventList& events);
+
+                /** @brief Returns whether worker @p worker has no record in a funnel or in its backlog. */
+                [[nodiscard]] bool is_idle(std::size_t worker) const noexcept;
 
                 /** @brief Starts every funnel's thread. */
                 void start();
@@ -96,8 +111,20 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t funnelled_count() const noexcept;
 
             private:
+                /** @brief Holds one worker's side of the funnels, on its own cache line. */
+                struct alignas(K_CACHE_LINE_SIZE) WorkerSide
+                {
+                    std::atomic<std::size_t> waiting{0}; /**< Records handed and not landed; written by the worker alone. */
+                    std::vector<FunnelRecord> backlog;   /**< Records whose ring was full; touched by the worker alone. */
+                };
+
+                /** @brief Pushes the backlog of @p side again and keeps the records whose ring is still full. */
+                void push_backlog(WorkerSide& side);
+
                 /// @brief One funnel per device, by device index; empty when the setting is off.
                 std::vector<std::unique_ptr<SubmitFunnel>> funnels_;
+                /// @brief One side per worker, by worker id; empty when the setting is off.
+                std::vector<std::unique_ptr<WorkerSide>> workers_;
         };
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

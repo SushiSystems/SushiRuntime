@@ -420,7 +420,8 @@ namespace SushiRuntime
                     SR_ZONE_FINE(runtime.profile_collector(), "region.classify");
                     rearm();
                     plan_.capture_base_state();
-                    plan_.chain = Internal::Execution::classify_chain(plan_, runtime);
+                    plan_.chain = Internal::Execution::classify_chain(
+                        plan_, runtime, Internal::Execution::UnorderedHostWork::InTurnWhenDisjoint);
                     chain_classified_ = true;
                 }
 
@@ -432,6 +433,8 @@ namespace SushiRuntime
                     plan_.chain.chainable = false;
                     plan_.chain.not_chainable = nullptr;
                     plan_.chain.order.clear();
+                    plan_.chain.recorded.reset();
+                    plan_.chain.not_replayable = nullptr;
                     chain_classified_ = false;
                 }
 

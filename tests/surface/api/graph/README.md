@@ -234,8 +234,11 @@ tests of it assert `RunReport::layer`.
 | `AGraphNotAllowedToChainRunsOnTheScheduler` | `Medium_DynamicGraphChain`: a chainable composed plan of a graph that never called `allow_chain()` runs on the scheduler. |
 | `AllowingTheChainOverAComposedPlanChainsTheNextRun` | `allow_chain(true)` after a run composed without it puts the next run on the chain. |
 | `AChainedGraphWithAHostNodeRunsOnTheScheduler` | A graph allowed to chain whose fold region is native host work runs on the scheduler. |
+| `UnorderedTaskBodiesOverDisjointDataChainWithTheSchedulersBytes` | Two task-body regions the composed plan leaves unordered, each rewriting its own buffer, run as `Chain` on every run and leave the bytes the forced scheduler leaves. |
+| `UnorderedTaskBodiesReadingOneBufferRunOnTheScheduler` | The same two regions, both reading one source buffer, run on the scheduler. |
 | `AMovedGraphKeepsItsChainSetting` | The target of a move from a graph allowed to chain runs its regions on the chain. |
 | `AFunnelledRunLeavesTheBytesOfTheRunWithoutIt` | `Medium_SubmitFunnelOutputs`, untimed and timed rows: the lane workload, four lanes of twelve nodes whose every fourth level also reads the next lane, leaves the bytes of its host model on the runtime forced onto the scheduler, and the same bytes on that runtime with `RuntimeConfig::submit_funnel`. |
+| `TaskBodiesSubmitFromTheFunnelThreadAndLeaveTheSameBytes` | `Medium_SubmitFunnelOutputs`, untimed and timed rows: the lane workload with its seventh level recorded as task bodies that submit their own kernel leaves the bytes of the host model with the funnel off and on, and with it on every body runs on one thread. |
 | `ATimedRunKeepsOneRecordPerNode` | `Medium_SubmitFunnel`, rows without and with the funnel: a timed run of the lane workload leaves one `NodeEventRecord` per node and step. |
 | `TheReportSaysWhetherTheRunWasFunnelled` | `Medium_SubmitFunnelReport`: `RunReport::funnelled` is true for a scheduler run on a runtime with the funnel, and false without it or when the run takes the chain. |
 

@@ -32,8 +32,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/graph/recorded_steps.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
 
 namespace SushiRuntime
@@ -79,6 +81,19 @@ namespace SushiRuntime
              * The list keeps its capacity across runs.
              */
             std::vector<PendingEvent> pending_events;
+
+            /**
+             * @brief The step layer 2 recorded for this plan, or null; a new classification
+             *        drops it, so a recompile or a recomposition records again.
+             * @see docs/design/GRAPH_REPLAY/README.md
+             */
+            std::unique_ptr<RecordedSteps> recorded;
+
+            /**
+             * @brief Why the plan never replays, a string literal; null until a replay was
+             *        refused or its recording failed, and then for the plan's lifetime.
+             */
+            const char* not_replayable = nullptr;
         };
 
     } // namespace Graph

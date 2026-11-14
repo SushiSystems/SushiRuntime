@@ -53,6 +53,7 @@ namespace SushiRuntime
         NodeDescription untracked_launch_node(Launch launch, std::size_t device, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.kind = NodeKind::Untracked;
             description.device = device;
             description.width = launch_count(launch);
@@ -74,6 +75,7 @@ namespace SushiRuntime
         NodeDescription untracked_range_node(std::size_t n, std::size_t device, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.kind = NodeKind::Untracked;
             description.device = device;
             description.width = n;
@@ -93,6 +95,7 @@ namespace SushiRuntime
         NodeDescription untracked_raw_node(std::size_t device, F&& kernel)
         {
             NodeDescription description;
+            description.submit_form = SubmitForm::Fixed;
             description.kind = NodeKind::Untracked;
             description.device = device;
             description.work = CommandGroupWork(std::forward<F>(kernel));

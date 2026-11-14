@@ -283,7 +283,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t offloaded_task_count() const noexcept;
 
                 /**
-                 * @brief Returns how many kernel nodes a submit funnel has taken so far.
+                 * @brief Returns how many dispatches, kernel nodes and device-submitting HOST nodes, a submit funnel has taken so far.
                  * @return A lifetime total, 0 when the funnel is off; diff two readings to measure one run.
                  * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
                  */

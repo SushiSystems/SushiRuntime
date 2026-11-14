@@ -43,6 +43,9 @@ namespace SushiRuntime
             for (std::size_t device = 0; device < devices; ++device)
                 funnels_.push_back(std::make_unique<SubmitFunnel>(static_cast<std::uint32_t>(device), workers,
                                                                   outcome, collector));
+            workers_.reserve(workers);
+            for (std::size_t worker = 0; worker < workers; ++worker)
+                workers_.push_back(std::make_unique<WorkerSide>());
         }
 
         SubmitFunnel* SubmitFunnels::of(std::uint32_t device) noexcept
@@ -52,8 +55,33 @@ namespace SushiRuntime
             return funnels_[device].get();
         }
 
+        bool SubmitFunnels::hand(const FunnelRecord& record)
+        {
+            if (record.worker >= workers_.size())
+                return false;
+            SubmitFunnel* funnel = of(record.device_index);
+            if (funnel == nullptr)
+                return false;
+
+            // Counted before the push, so the worker's landing drain never sees the count below its events.
+            WorkerSide& side = *workers_[record.worker];
+            side.waiting.fetch_add(1, std::memory_order_relaxed);
+            FunnelRecord pushed = record;
+            if (!funnel->try_push(pushed))
+                side.backlog.push_back(record);
+            return true;
+        }
+
         std::size_t SubmitFunnels::land(std::size_t worker, EventPolling::ActiveEventList& events)
         {
+            if (worker >= workers_.size())
+                return 0;
+            WorkerSide& side = *workers_[worker];
+            if (side.waiting.load(std::memory_order_relaxed) == 0)
+                return 0;
+            if (!side.backlog.empty())
+                push_backlog(side);
+
             std::size_t landed = 0;
             EventPolling::PolledEvent event;
             for (const std::unique_ptr<SubmitFunnel>& funnel : funnels_)
@@ -64,7 +92,27 @@ namespace SushiRuntime
                     ++landed;
                 }
             }
+            side.waiting.fetch_sub(landed, std::memory_order_relaxed);
             return landed;
+        }
+
+        bool SubmitFunnels::is_idle(std::size_t worker) const noexcept
+        {
+            if (worker >= workers_.size())
+                return true;
+            return workers_[worker]->waiting.load(std::memory_order_relaxed) == 0;
+        }
+
+        void SubmitFunnels::push_backlog(WorkerSide& side)
+        {
+            std::size_t kept = 0;
+            for (FunnelRecord& record : side.backlog)
+            {
+                // hand() keeps only records whose device has a funnel, so of() finds one.
+                if (!of(record.device_index)->try_push(record))
+                    side.backlog[kept++] = record;
+            }
+            side.backlog.resize(kept);
         }
 
         void SubmitFunnels::start()

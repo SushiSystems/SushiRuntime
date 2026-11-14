@@ -22,18 +22,20 @@
 
 /**
  * @file test_dispatch_record.cpp
- * @brief Tests the pairing-claim policy and the polled events of a dispatch, two tests on a queue.
+ * @brief Tests the pairing-claim policy, the polled events of a dispatch and the submit sequence, five tests on a queue.
  * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -79,6 +81,18 @@ namespace
     EventPolling::PolledEvent unprofiled_submission(Internal::Graph::Node& node)
     {
         return dispatched_event(sycl::event{}, false, &node, &node, false, 3, 1, {sycl::event{}}, K_SUBMIT_STEADY_NS);
+    }
+
+    /** @brief Makes @p node a kernel node whose command group is an empty host task. */
+    void make_empty_kernel(Internal::Graph::Node& node)
+    {
+        node.work = [](sycl::handler& h) { SushiRuntime::Detail::enqueue_host_task(h, []() {}); };
+    }
+
+    /** @brief Returns the collector a test's dispatch.submit zones go to. */
+    Internal::Profile::Collector& test_collector()
+    {
+        return Internal::Profile::process_collector();
     }
 } // namespace
 
@@ -196,4 +210,61 @@ TEST_F(Medium_DispatchRecord, ACompleteProfiledEventStillCountsAsSubmitted)
 TEST(Small_DispatchRecord, ACompleteEventIsNoWorkWithProfilingOff)
 {
     EXPECT_FALSE(submitted_device_work(true, false, sycl::event{}, {}));
+}
+
+/** @brief Tests that a submitted kernel dispatch waits on its event and carries its task, step and device. */
+TEST_F(Medium_DispatchRecord, ASubmittedKernelWaitsOnItsEventAndCarriesItsStepAndDevice)
+{
+    Internal::Graph::Node node;
+    make_empty_kernel(node);
+
+    EventPolling::PolledEvent pe = submit_dispatch(queue(), node, &node, false, 4, 2, test_collector());
+    pe.event.wait();
+
+    EXPECT_FALSE(pe.ready);
+    EXPECT_TRUE(pe.has_event);
+    EXPECT_EQ(pe.task, &node);
+    EXPECT_EQ(pe.step, 4u);
+    EXPECT_EQ(pe.device_index, 2u);
+}
+
+/** @brief Tests that a host body that submits nothing is pushed ready, untimed. */
+TEST_F(Medium_DispatchRecord, AHostBodyThatSubmitsNothingIsReady)
+{
+    Internal::Graph::Node node;
+    node.mode = Internal::Graph::Node::ExecutionMode::Host;
+    bool ran = false;
+    node.host_work = [&ran](sycl::queue&, const std::vector<sycl::event>&)
+    {
+        ran = true;
+        return sycl::event{};
+    };
+
+    const EventPolling::PolledEvent pe = submit_dispatch(queue(), node, &node, false, 0, 0, test_collector());
+
+    EXPECT_TRUE(ran);
+    EXPECT_TRUE(pe.ready);
+    EXPECT_FALSE(pe.has_event);
+}
+
+/** @brief Tests that a timed dispatch carries the steady reading taken before its submit call. */
+TEST_F(Medium_DispatchRecord, ATimedDispatchCarriesASubmitReading)
+{
+    Internal::Graph::Node node;
+    make_empty_kernel(node);
+
+    EventPolling::PolledEvent pe = submit_dispatch(profiling_queue(), node, &node, true, 0, 0, test_collector());
+    pe.event.wait();
+
+    EXPECT_NE(pe.submit_steady_ns, 0u);
+}
+
+/** @brief Tests that a command group that throws leaves submit_dispatch() with its exception, for the caller to name. */
+TEST_F(Medium_DispatchRecord, AThrowingCommandGroupLeavesWithItsException)
+{
+    Internal::Graph::Node node;
+    node.work = [](sycl::handler&) { throw std::runtime_error("dispatch record test failure"); };
+
+    EXPECT_THROW(static_cast<void>(submit_dispatch(queue(), node, &node, false, 0, 0, test_collector())),
+                 std::runtime_error);
 }

@@ -123,7 +123,7 @@ A plan is rebuilt only after the graph changed. `compile_count()` counts the bui
 
 ### Run
 
-A runtime has one engine, so one run is in flight on it at a time. A plan runs on one of two
+A runtime has one engine, so one run is in flight on it at a time. A plan runs on one of three
 layers, and `RunReport::layer` names the one that ran.
 
 - **The scheduler.** A pool of worker threads, each with its own deque, takes nodes whose
@@ -132,12 +132,17 @@ layers, and `RunReport::layer` names the one that ran.
 - **The chain.** The calling thread submits the nodes in the plan's order to an in-order queue
   per device, with no worker hand-off and no polling. `run(steps)` submits every step and waits
   once; `run_for()` and `run_until()` wait after each step.
+- **The replay.** A chained plan whose graph opts in with `allow_replay(true)` is recorded once as
+  a SYCL command graph and replayed with one submission per step. A timed run, a task body, a
+  device-sized node or a failed recording keeps the plan on the chain.
 
 The engine classifies each plan. It refuses the chain for a plan that holds native host work, a
 node the offload coordinator acts on, a device value read at dispatch, a node with no USM
 region, a region the runtime did not allocate, or regions of two devices. `run_async()` uses the
 scheduler. A `DynamicGraph` does too, unless `allow_chain(true)` lets each composition classify its
-plan. Every graph of a runtime created with `RuntimeConfig::force_scheduler` uses the scheduler.
+plan. Every graph of a runtime created with `RuntimeConfig::force_scheduler` uses the scheduler, and
+`RuntimeConfig::force_chain` keeps a replay on the chain. With `RuntimeConfig::submit_funnel` the
+scheduler submits through one thread per device.
 [The execution README](../../modules/engine/execution/README.md) has the classification and the
 order of a run; [the scheduler README](../../modules/engine/scheduler/README.md) has the pool.
 
