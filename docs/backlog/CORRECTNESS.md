@@ -11,7 +11,6 @@
 | RW-83 | P2 | open | Make the no-line log tests fail when the capture is empty | AFloatingPoolLogsNoCoreMapLine and ARunNobodyCancelledLogsNoSkipLine fail when no record reaches the capture |  | `tests/engine/scheduler/test_task_scheduler.cpp` | 2026-11-06 |
 | RW-84 | P2 | open | Free four tests from the machine's core and device count | LogsAWorkerWhoseCoreHasNoNumaNode, FlatTopologyKeepsAllVictims and EachDeviceIsProbedOnce run and pass on a one-device, any-core machine |  | `tests/engine/scheduler/test_task_scheduler.cpp` | 2026-11-06 |
 | RW-85 | P2 | open | Size test_before_step_hooks right and build its descriptor test on Windows | test_before_step_hooks.cpp holds no Medium_ test without a device, and AFileDescriptorAboveIntIsRefusedWithItsValue compiles on Windows or is replaced |  | `tests/surface/api/detail/test_before_step_hooks.cpp` | 2026-11-06 |
-| RW-134 | P2 | open | Bound a device span's clock conversion by its stated pairing uncertainty | Every converted span lies within its run's stated pairing uncertainty, a cold first submit included, and a test pins it |  |  | 2026-11-10 |
 
 ## Known issues
 
@@ -23,4 +22,5 @@
 | KI-21 | own | AdaptiveCpp reports shared USM as host USM, so a range-copy borrow test aborts | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-75 | `tests/surface/api/interop/test_interop.cpp` | 2026-10-29 |
 | KI-22 | own | AdaptiveCpp refuses an unimportable handle kind for its missing bindless extension | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-75 | `tests/surface/memory_exchange/test_memory_exchange.cpp` | 2026-10-29 |
 | KI-24 | own | placement_of accepts a same-context device mismatch the dispatch span check refuses | none | none, the anchor logic is to be unified in one place | `modules/engine/scheduler/source/dispatch_placement.cpp` | 2026-11-01 |
-| KI-27 | own | A converted device span can lie outside its run's stated pairing uncertainty | Keep period marks 3 ms clear of a run's spans | RW-134 |  | 2026-11-10 |
+| KI-31 | toolchain | DPC++ command_submit drifts ~20 ms early; its device-host base is never refreshed | RW-134 pairs from start and end and the host's submit and reap | none, upstream getCurrentDeviceTime tests Diff before it is set |  | 2026-11-14 |
+| KI-32 | toolchain | CUDA event times are float ms since start; kernel times step 15.6-125 us with uptime | Trace within the first 4 minutes of a process; steps are 15.6 us there | none, the DPC++ CUDA adapter getElapsedTime; patch the toolchain |  | 2026-11-14 |
