@@ -75,6 +75,18 @@ namespace SushiRuntime
             return character;
         }
 
+        /** @brief Returns the device that holds a key, if any. */
+        [[nodiscard]] std::optional<std::size_t> with_key(const NodeFacts& machine,
+                                                          const DeviceKey& key) noexcept
+        {
+            for (std::size_t index = 0; index < machine.devices.size(); ++index)
+            {
+                if (machine.devices[index].key == key)
+                    return index;
+            }
+            return std::nullopt;
+        }
+
         /** @brief Returns the first device of a kind, if any. */
         [[nodiscard]] std::optional<std::size_t> first_of_kind(const NodeFacts& machine,
                                                                DeviceKind kind) noexcept
@@ -139,6 +151,8 @@ namespace SushiRuntime
                 return *target.device_index;
             return std::nullopt;
         }
+        if (target.device_key)
+            return with_key(machine, *target.device_key);
         if (target.device_kind)
             return first_of_kind(machine, *target.device_kind);
         if (target.device_min_memory)
@@ -177,6 +191,8 @@ namespace SushiRuntime
                    target.machine_label->value);
         if (target.device_index)
             append("device index " + std::to_string(*target.device_index));
+        if (target.device_key)
+            append("device key " + to_text(*target.device_key));
         if (target.device_kind)
             append(std::string("the first device of kind ") + kind_name(*target.device_kind));
         if (target.device_min_memory)

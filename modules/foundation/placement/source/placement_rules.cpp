@@ -148,6 +148,7 @@ namespace SushiRuntime
             const int machine_fields = (target.machine_name.empty() ? 0 : 1) +
                                        (target.machine_label.has_value() ? 1 : 0);
             const int device_fields = (target.device_index.has_value() ? 1 : 0) +
+                                      (target.device_key.has_value() ? 1 : 0) +
                                       (target.device_kind.has_value() ? 1 : 0) +
                                       (target.device_min_memory.has_value() ? 1 : 0);
             if (machine_fields == 0 && device_fields == 0)
@@ -158,7 +159,7 @@ namespace SushiRuntime
                        "target.machine_label, not both.";
             if (device_fields > 1)
                 return "the target names a device twice; pass one of target.device_index, "
-                       "target.device_kind and target.device_min_memory.";
+                       "target.device_key, target.device_kind and target.device_min_memory.";
             if (target.machine_label.has_value())
             {
                 const std::string& key = target.machine_label->key;

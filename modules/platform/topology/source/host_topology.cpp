@@ -31,6 +31,7 @@
 #include <SushiRuntime/topology/host_topology.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -65,6 +66,7 @@ namespace SushiRuntime
                 topology.devices[index].index = index;
                 topology.devices[index].name = "host device " + std::to_string(index);
                 topology.devices[index].kind = device_kind;
+                topology.devices[index].key.ordinal = static_cast<std::uint32_t>(index);
             }
             return topology;
         }

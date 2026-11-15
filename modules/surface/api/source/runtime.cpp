@@ -157,7 +157,7 @@ namespace SushiRuntime
                 facts->devices.reserve(devices.size());
                 for (const DeviceDescription& device : devices)
                     facts->devices.push_back(
-                        DeviceFacts{device.kind, device.name, device.memory_bytes});
+                        DeviceFacts{device.kind, device.name, device.memory_bytes, device.key});
                 runtime.set_machine_facts(std::move(facts));
             });
     }
@@ -225,6 +225,27 @@ namespace SushiRuntime
     const NodeFacts& Runtime::topology() const
     {
         return *Internal::ContextAccess::context(context_).machine_facts();
+    }
+
+    DeviceKey Runtime::device_key(DeviceIndex device) const
+    {
+        const NodeFacts& facts = topology();
+        SR_VERIFY(device.value() < facts.devices.size(),
+                  "Runtime::device_key: pass a device index below the device count.");
+        return facts.devices[device.value()].key;
+    }
+
+    Result<DeviceIndex> Runtime::device_index(const DeviceKey& key) const
+    {
+        const NodeFacts& facts = topology();
+        for (std::size_t index = 0; index < facts.devices.size(); ++index)
+        {
+            if (facts.devices[index].key == key)
+                return DeviceIndex{index};
+        }
+        return make_error(Error{ErrorCode::InvalidArgument,
+                                "Runtime::device_index: no device of this runtime holds the key " +
+                                    to_text(key) + "; pass a key Runtime::device_key() returned."});
     }
 
     PlacementScope Runtime::placement_scope(std::string_view name,

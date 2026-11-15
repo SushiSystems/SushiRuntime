@@ -40,6 +40,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 
@@ -255,6 +256,13 @@ TEST(Small_PlacementRules, AddRefusesEveryCaseOfTheRefusedWhenColumn)
                  {
                      r.target.device_index = 0;
                      r.target.device_kind = DeviceKind::GPU;
+                 }),
+         "device twice"},
+        {"a device key and a device index",
+         changed([](PlacementRule& r)
+                 {
+                     r.target.device_key = DeviceKey{};
+                     r.target.device_index = 0;
                  }),
          "device twice"},
         {"three device fields",

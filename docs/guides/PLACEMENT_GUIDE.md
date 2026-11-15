@@ -57,12 +57,12 @@ file. It has a match, a target and a policy:
 | Part | What it states |
 | --- | --- |
 | Match | a class (`a.b`), a class prefix (`a.b.*`, which matches the classes below `a.b` and not `a.b` itself) or any class; a key; an operation name |
-| Target | a machine by name or by a `key=value` label; a device by index, by kind or by a least amount of memory |
+| Target | a machine by name or by a `key=value` label; a device by index, by `DeviceKey`, by kind or by a least amount of memory |
 | Policy | a `priority` (larger wins; equals resolve by the order they were added), what happens when the target is absent (`Local`, `Wait` with a bound, `Fail`), a `deadline`, a `name` for messages |
 
 `PlacementRules::add()` checks each rule and refuses a malformed one with
 `ErrorCode::InvalidArgument` naming the rule: one with no match, an empty segment, a `*` other
-than a trailing `.*`, a target with no machine and no device, two machine or two device fields, or
+than a trailing `.*`, a target with no machine and no device, two machine or two device fields (index, key, kind and memory count as device fields), or
 a bound or deadline that is not positive.
 
 ```cpp
@@ -83,8 +83,10 @@ a replay reads no rule; `PlanNode::placement_rule` reports the winner.
 ## 4. On one machine
 
 The rules decide where data lives, and a tracked node runs where its memory lives. A scope's
-buffer lands on the device its rule names: the device of that index, the first of that kind, or
-the first with at least that much memory. A rule whose machine part names another machine makes
+buffer lands on the device its rule names: the device of that index, the device that holds that `DeviceKey`, the first of that kind, or
+the first with at least that much memory. A key names the same card whatever order the devices are
+listed in; `Runtime::device_key()` gives the key of a device and `Runtime::device_index()` the
+position a key holds in this run. A rule whose machine part names another machine makes
 the target absent here. When the target is absent, `Local` gives device 0, `Fail` returns
 `ErrorCode::InvalidArgument` naming the rule and the device, and `Wait` gives device 0 after its
 bound, since a local device never appears during a run.

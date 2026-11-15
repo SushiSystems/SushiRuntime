@@ -10,4 +10,5 @@ sushiruntime_add_module(
         placement_target_matching.cpp
     DEPENDS
         core
+        handle
         machine)

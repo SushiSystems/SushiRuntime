@@ -90,6 +90,7 @@ namespace SushiRuntime
                 descriptor.info.backend = descriptor.device.get_backend();
                 descriptor.info.numa_node = node.numa_node_id;
                 descriptor.info.memory_bytes = node.global_mem_size;
+                descriptor.info.key = node.key;
                 descriptor.info.compute_units = node.max_compute_units;
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 descriptor.info.kind = node.is_gpu ? DeviceKind::GPU : node.kind;

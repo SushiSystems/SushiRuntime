@@ -43,6 +43,7 @@
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 
@@ -190,6 +191,21 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API const NodeFacts& topology() const;
+
+            /**
+             * @brief Returns the key of a device: it names the same card in every run, whatever
+             *        order the devices are listed in.
+             * @pre device names a device of this runtime.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API DeviceKey device_key(DeviceIndex device) const;
+
+            /**
+             * @brief Returns the position of the device a key names in this run.
+             * @return The index, or ErrorCode::InvalidArgument when no device holds the key.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<DeviceIndex> device_index(const DeviceKey& key) const;
 
             /**
              * @brief Returns the scope that names a placement class and a key, bound to this

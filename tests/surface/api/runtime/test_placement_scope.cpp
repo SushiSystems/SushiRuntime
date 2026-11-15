@@ -419,3 +419,29 @@ TEST(Small_PlacementScopeSecondDevice, ABufferLandsOnTheDeviceTheRuleNames)
     ASSERT_TRUE(buffer);
     EXPECT_EQ(buffer->device_index().value(), 1u);
 }
+
+/** @brief Tests that a rule naming a device key places on the device that holds the key. */
+TEST(Small_PlacementScopeDeviceKey, ARuleNamingADeviceKeyPlacesOnTheDeviceThatHoldsIt)
+{
+    HostRuntimeConfig config;
+    config.device_count = 2;
+    const Runtime runtime = Runtime::create_host(config).value();
+    PlacementTarget target;
+    target.device_key = runtime.device_key(DeviceIndex{1});
+    ASSERT_TRUE(runtime.set_placement_rules(rules_of(target, fail())));
+
+    EXPECT_EQ(runtime.placement_scope(K_CLASS).device()->value(), 1u);
+}
+
+/** @brief Tests that a rule naming a key no device holds follows the absent policy. */
+TEST(Small_PlacementScopeDeviceKey, ARuleNamingAnUnknownDeviceKeyFollowsTheAbsentPolicy)
+{
+    HostRuntimeConfig config;
+    config.device_count = 2;
+    const Runtime runtime = Runtime::create_host(config).value();
+    PlacementTarget target;
+    target.device_key = DeviceKey{DeviceBackend::CUDA, HardwareIDKind::None, {}, 9};
+    ASSERT_TRUE(runtime.set_placement_rules(rules_of(target, fail())));
+
+    EXPECT_FALSE(runtime.placement_scope(K_CLASS).device());
+}

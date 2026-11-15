@@ -31,10 +31,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
@@ -268,4 +270,35 @@ TEST(Small_PlacementTargetMatching, Regression_MachineMatchesComparesATargetName
 
     EXPECT_TRUE(machine_matches(named("RACK-7.lab.example.com"), rack_seven()));
     EXPECT_TRUE(machine_matches(named("Rack-7"), qualified));
+}
+
+/** @brief Returns a target that asks for the device that holds a key. */
+static PlacementTarget with_key(const DeviceKey& key)
+{
+    PlacementTarget target;
+    target.device_key = key;
+    return target;
+}
+
+/** @brief Tests that a target naming a key picks the same card whatever the device order. */
+TEST(Small_PlacementTargetMatching, ADeviceKeyPicksTheSameCardWhateverTheDeviceOrder)
+{
+    const DeviceKey first_card{DeviceBackend::CUDA, HardwareIDKind::UUID, {1}, 0};
+    const DeviceKey second_card{DeviceBackend::CUDA, HardwareIDKind::UUID, {2}, 0};
+    NodeFacts listed;
+    listed.devices = {DeviceFacts{DeviceKind::GPU, "Card", K_GPU_MEMORY, first_card},
+                      DeviceFacts{DeviceKind::GPU, "Card", K_GPU_MEMORY, second_card}};
+    NodeFacts reordered = listed;
+    std::swap(reordered.devices[0], reordered.devices[1]);
+
+    EXPECT_EQ(pick_device(with_key(second_card), listed), std::optional<std::size_t>(1));
+    EXPECT_EQ(pick_device(with_key(second_card), reordered), std::optional<std::size_t>(0));
+}
+
+/** @brief Tests that a target naming a key no device holds picks none. */
+TEST(Small_PlacementTargetMatching, ADeviceKeyNoDeviceHoldsPicksNone)
+{
+    EXPECT_EQ(pick_device(with_key(DeviceKey{DeviceBackend::HIP, HardwareIDKind::None, {}, 3}),
+                          rack_seven()),
+              std::nullopt);
 }

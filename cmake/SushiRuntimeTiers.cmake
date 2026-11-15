@@ -76,6 +76,8 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     sycl            core
     placement       core
     placement       machine
+    placement       handle
+    machine         handle
     test_runner     log
     test_runner     report
     dependency_tracking task

@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <string>
 
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 
 namespace SushiRuntime
@@ -44,5 +45,6 @@ namespace SushiRuntime
         DeviceKind kind = DeviceKind::Other; /**< Class of the device. */
         std::string name;                    /**< Name the device reports. */
         std::uint64_t memory_bytes = 0;      /**< Global memory of the device. */
+        DeviceKey key{};                     /**< Names the physical device across runs. */
     };
 } // namespace SushiRuntime

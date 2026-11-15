@@ -25,6 +25,7 @@ sushiruntime_add_module(
         step_run.cpp
     DEPENDS
         core
+        handle
         report
         log
         region

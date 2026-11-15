@@ -47,7 +47,7 @@ pass instead.
 | Part | Refused when |
 | --- | --- |
 | Match | class, key and operation are all empty; a class has an empty segment; a `*` stands anywhere but a trailing `.*`; a prefix has more than `PlacementClass::K_MAX_PREFIX_DEPTH` segments |
-| Target | no machine and no device; both `machine_name` and `machine_label`; more than one of `device_index`, `device_kind` and `device_min_memory`; a label key that is empty or holds `=` |
+| Target | no machine and no device; both `machine_name` and `machine_label`; more than one of `device_index`, `device_key`, `device_kind` and `device_min_memory`; a label key that is empty or holds `=` |
 | Policy | a `Wait` bound or a `deadline` that is not positive, or above `K_MAX_DURATION` |
 
 An exact class of any depth is accepted, since `PlacementClass` compares it by its whole-name hash.
@@ -81,7 +81,7 @@ the position in `NodeFacts::devices`, or none.
 `machine_matches()` compares the machine part: a `machine_name` matches `NodeFacts::name` by
 `machine_names_match()`, a `machine_label` is one of the machine's labels with that key and that
 value, and a target with no machine part matches every machine. `pick_device()` reads the device
-part alone: the device at `device_index`, the first device of `device_kind`, or the first device
+part alone: the device at `device_index`, the device that holds `device_key`, the first device of `device_kind`, or the first device
 with at least `device_min_memory` bytes; it returns none when the machine has no such device, and
 `K_DEFAULT_PLACEMENT_DEVICE` (0) for a target with no device part. `describe_rule()` and
 `describe_target()` give the phrases an error names a rule and its target with: the rule's name in

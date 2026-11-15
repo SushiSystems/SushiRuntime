@@ -127,6 +127,7 @@ scope. The winning rule's target is matched against `Runtime::topology()`:
 | --- | --- |
 | `machine_name`, `machine_label` | This machine when the name or the label is the machine's own; otherwise the target is absent here |
 | `device_index` | That device, or absent when the machine has fewer devices |
+| `device_key` | The device whose `DeviceFacts::key` equals it, or absent; the same card whatever order the devices are listed in |
 | `device_kind` | The first device of that kind, or absent |
 | `device_min_memory` | The first device with at least that many bytes, or absent |
 | none of the device fields | Device 0 |
@@ -189,6 +190,15 @@ for entry. The name is `RuntimeConfig::node_name`, or the host name when that is
 that cannot be read returns `Unsupported`. The operating system is the one the library was compiled
 for. The facts live in one shared allocation that the `Runtime` and its scopes hold, so the
 reference stays valid until the `Runtime` is moved from or destroyed.
+
+### device_key and device_index
+
+`device_key(DeviceIndex)` returns the `DeviceKey` of a device: the backend and hardware id that
+name the same card in every run. `device_index(DeviceKey)` returns the position that key holds in
+this run, or `InvalidArgument` when no device of the runtime holds it. Both read the `key` of each
+`DeviceFacts`, which `create()` copies from discovery; a host runtime keys its devices by their
+position. A placement rule that names a `DeviceKey` resolves to the same card when the order of
+the devices changes.
 
 A label key is refused with `InvalidArgument` when it is empty, holds `=` or repeats the key of an
 earlier label. The message names the label's position and key and says what to pass instead. A value

@@ -36,6 +36,7 @@
 #include <optional>
 #include <string>
 
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_label.hpp>
 
@@ -88,6 +89,9 @@ namespace SushiRuntime
 
         /** @brief The position of the device on the machine. */
         std::optional<std::size_t> device_index;
+
+        /** @brief The key of the device; it names the same card whatever the device order. */
+        std::optional<DeviceKey> device_key;
 
         /** @brief The class of the device. */
         std::optional<DeviceKind> device_kind;

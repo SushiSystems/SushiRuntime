@@ -990,3 +990,43 @@ namespace TestSupport
     /** @brief Runs the runtime contract on a device, the boundary the host runtime stands in for. */
     INSTANTIATE_TYPED_TEST_SUITE_P(Medium_DeviceRuntime, RuntimeContract, ::DeviceRuntimeMaker, );
 } // namespace TestSupport
+
+/** @brief Tests that device_index returns the device whose key device_key gave. */
+TEST(Small_RuntimeDeviceKey, DeviceIndexReturnsTheDeviceWhoseKeyDeviceKeyGave)
+{
+    HostRuntimeConfig config;
+    config.device_count = 3;
+    const Runtime runtime = Runtime::create_host(config).value();
+
+    for (std::size_t position = 0; position < 3; ++position)
+    {
+        const DeviceKey key = runtime.device_key(DeviceIndex{position});
+        const Result<DeviceIndex> found = runtime.device_index(key);
+        ASSERT_TRUE(found);
+        EXPECT_EQ(found->value(), position);
+    }
+}
+
+/** @brief Tests that the devices of one runtime hold distinct keys. */
+TEST(Small_RuntimeDeviceKey, TheDevicesOfOneRuntimeHoldDistinctKeys)
+{
+    HostRuntimeConfig config;
+    config.device_count = 2;
+    const Runtime runtime = Runtime::create_host(config).value();
+
+    EXPECT_NE(runtime.device_key(DeviceIndex{0}), runtime.device_key(DeviceIndex{1}));
+}
+
+/** @brief Tests that device_index refuses a key no device holds. */
+TEST(Small_RuntimeDeviceKey, DeviceIndexRefusesAKeyNoDeviceHolds)
+{
+    HostRuntimeConfig config;
+    config.device_count = 2;
+    const Runtime runtime = Runtime::create_host(config).value();
+
+    const Result<DeviceIndex> refused =
+        runtime.device_index(DeviceKey{DeviceBackend::CUDA, HardwareIDKind::None, {}, 7});
+
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+}

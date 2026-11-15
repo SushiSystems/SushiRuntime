@@ -35,6 +35,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 
 namespace SushiRuntime
@@ -52,5 +53,6 @@ namespace SushiRuntime
         std::uint64_t memory_bytes = 0;                /**< Global memory of the device. */
         std::uint32_t compute_units = 0;               /**< Parallel compute units it has. */
         std::string driver_version = "unknown";        /**< Driver version; "unknown" when unread. */
+        DeviceKey key{};                               /**< Names the physical device across runs. */
     };
 } // namespace SushiRuntime
