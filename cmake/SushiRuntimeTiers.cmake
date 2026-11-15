@@ -17,6 +17,7 @@ set(SUSHIRUNTIME_TIER_ORDER
 # Module, then its tier. Inside a tier a dependency is listed before its consumer.
 set(SUSHIRUNTIME_MODULE_TIERS
     core            foundation
+    handle          foundation
     report          foundation
     region          foundation
     log             foundation

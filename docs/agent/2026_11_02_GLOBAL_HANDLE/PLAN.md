@@ -38,7 +38,7 @@ when its own context would not hold their reading; it still reviews and commits 
 
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
-| T01 | `foundation/handle` | | running |
+| T01 | `foundation/handle` | | done |
 | T02 | `platform/topology` | T01 | todo |
 | T03 | HIP probe | | done |
 | T38 | `cli`, `cmake/gpu`: the HIP backend on Windows | T03 | done |

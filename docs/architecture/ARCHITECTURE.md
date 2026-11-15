@@ -39,6 +39,7 @@ A module is public or internal.
 | --- | --- | --- | --- |
 | foundation | [core](../../modules/foundation/core/README.md) | public | Assertions, `Error`, `Result`, `OperationID`, `span`, the intrusive pointer, the version |
 | foundation | [report](../../modules/foundation/report/README.md) | public | `RunReport`, and `RunObserver`, `RunObservation` and the records and node table a run hands to its observers |
+| foundation | [handle](../../modules/foundation/handle/README.md) | public | `GlobalHandle` and `DeviceKey`, and the `HandleSpace` and `HandleResolver` interfaces; no SYCL |
 | foundation | [region](../../modules/foundation/region/README.md) | public | `BufferRegion`, the byte window a node reads or writes, and the liveness token |
 | foundation | [log](../../modules/foundation/log/README.md) | public | The front over SushiLog: `K_SUSHIRUNTIME_LOG_PROJECT` and the `SR_LOG_*` macros |
 | foundation | [profile](../../modules/foundation/profile/README.md) | internal | The front over SushiProfiler: the compiled level and the `SR_ZONE` macros |

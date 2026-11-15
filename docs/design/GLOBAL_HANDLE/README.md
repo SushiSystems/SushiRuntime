@@ -2,7 +2,7 @@
 
 **Status:** Open — H0 to H10 planned; the specification is in `docs/agent/2026_11_02_GLOBAL_HANDLE/`
 **About:** One identity for every buffer on every device and machine, resolved by the runtime, with the copies between devices planned as graph nodes.
-**Modules:** `modules/platform/memory`, `modules/foundation/region`, `modules/extension/buffer_exchange`
+**Modules:** `modules/foundation/handle`, `modules/platform/memory`, `modules/foundation/region`, `modules/extension/buffer_exchange`
 
 ## Problem
 
