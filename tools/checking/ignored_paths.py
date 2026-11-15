@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -44,6 +45,20 @@ def drop_ignored(root: Path, paths: list[Path]) -> list[Path]:
         return paths
     ignored = {Path(entry).resolve() for entry in output.split("\0") if entry}
     return [path for path in paths if path.resolve() not in ignored]
+
+
+def walk_files(root: Path) -> list[Path]:
+    """Returns every file below root, sorted, without entering a folder git ignores whole.
+
+    Pruning in place keeps a large ignored folder, such as a vendored dependency tree, from being listed
+    only to be dropped afterwards. Files git ignores by their own name are still left to ``drop_ignored``.
+    """
+    ignored = ignored_folders(root)
+    found: list[Path] = []
+    for folder, names, files in os.walk(root):
+        names[:] = [name for name in names if not ignored or (Path(folder) / name).resolve() not in ignored]
+        found.extend(Path(folder) / name for name in files)
+    return sorted(found)
 
 
 def ignored_folders(root: Path) -> frozenset[Path]:
