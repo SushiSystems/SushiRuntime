@@ -287,6 +287,11 @@ namespace SushiRuntime
                                                  std::move(observer));
     }
 
+    PartitionReport Runtime::partition_report() const
+    {
+        return PartitionReport{};
+    }
+
     Result<void> Runtime::wait() const
     {
         Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);

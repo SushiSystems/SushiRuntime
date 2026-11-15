@@ -74,6 +74,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
 # Consumer, then dependency: the edges allowed between two modules of one tier.
 set(SUSHIRUNTIME_SAME_TIER_EDGES
     report          core
+    report          handle
     sycl            core
     placement       core
     placement       machine

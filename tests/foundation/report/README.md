@@ -20,6 +20,12 @@ every tick stops allocating after the first run.
 `reset()` returns success, cancellation, the task count, the layer and the distributed count to
 their constructed values.
 
+## test_partition_report.cpp
+
+`PartitionReport::to_text()`: a plan gives a header line and one line per device in row order, a
+device with no node shows zeros, a refusal shows its sentence and the bytes each pool lacks. The
+suite is `Small_PartitionReport`.
+
 ## compile_dispatch_width.cpp
 
 Includes `dispatch_width.hpp` alone, so the build fails if the header misses an include. It holds no test.

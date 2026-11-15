@@ -69,14 +69,14 @@ when its own context would not hold their reading; it still reviews and commits 
 | T22 | horizons | T21 | done |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | done |
-| T46 | step driver, `platform/memory` retire, `engine/task` placement: host writes force a replan, retired handles free planned instances, planned-only nodes placed | T37, T21 | todo |
+| T46 | step driver, `platform/memory` retire, `engine/task` placement: host writes force a replan, retired handles free planned instances, planned-only nodes placed | T37, T21 | running |
 | T24 | device profile and cost model | T04, T23 | done |
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | done |
 | T25 | partitioner | T14, T24, T37 | done |
-| T48 | host pricing in the cost model, first-start measurement written to the profile file | T43 | todo |
+| T48 | host pricing in the cost model, first-start measurement written to the profile file | T43 | running |
 | T47 | partitioner in the composer, live intervals, one FNV helper | T25, T43 | todo |
 | T26 | partitioner search and floor tests | T25 | done |
-| T34 | `Runtime::partition_report()` | T25 | running |
+| T34 | `Runtime::partition_report()` | T25 | done |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
@@ -136,7 +136,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T45 | `opus` `low` | `engine/graph` `PlanCache`, `surface/api` static `Graph` | T21 | A static `Graph` with nodes on two devices gets its copies planned at compile, keeps the plan with the compiled graph and replays it with no planner call, as a `DynamicGraph` does |
 | T46 | `opus` `low` | the dynamic and static step drivers, the directory's retire path, `engine/task` `placement_of` | T37, T21 | A `write_range()` after a steady plan forces a replan before the next run; retiring a handle frees every instance the planner made for it and the file space a file-backed buffer added; a node using only planned buffers is placed on the default device until the partitioner gives one; both step drivers call `retire_coherence_history()` at a horizon every N steps; `platform/memory` README states the coherence map, `retire_history()` and `retire_coherence_history()` truly, and `tests/platform/memory` README lists T22's tests |
 | T48 | `opus` `low` | `engine/coherence` cost model and resolver, `engine/execution` runtime start | T43 | With a profile loaded, a copy through the host is priced from the host links the profile measured, never infinite; a runtime with no profile file measures each device with `DeviceProfileProbe` on first start and writes the file the next start reads |
-| T47 | `opus` `low` | `surface/api` `region_coherence`, `plan_cache`, `engine/coherence` partition model and hashes | T25, T43 | The composer and the static graph build a `PartitionProblem`, give each planned buffer its home from the assignment and refuse an unfitting job before loading; pool demand counts live intervals; `plan_hash` and `assignment_hash` share one FNV helper |
+| T47 | `opus` `low` | `surface/api` `region_coherence`, `plan_cache`, `engine/coherence` partition model and hashes | T25, T43 | The composer and the static graph build a `PartitionProblem`, give each planned buffer its home from the assignment and refuse an unfitting job before loading; pool demand counts live intervals; `plan_hash` and `assignment_hash` share one FNV helper; the runtime holds the last assignment so `partition_report()` has its rows, the report carries measured time per device, the measured step, the floor's modelled time and each copy's path, and a horizon calls `update_profile_file()` so a second run reads what the first measured |
 | T44 | `opus` `low` | `engine/task` `kernel_pointers`, node placement metadata, `surface/api` recorder `DeviceSlot` path | T39, T37 | A node whose kernel captures raw addresses is marked fixed to its home device and refused elsewhere with `InvalidGraph`; a bind with no instance on the node's device fails its verify; the dynamic `DeviceSlot` path binds through `KernelPointers` |
 | T42 | `sonnet` `low` | `engine/execution/source/runtime_memory_spaces.cpp`, `platform/device` | T13 | An integrated GPU reports the host pool as its shared pool, and `usable_pool_bytes` counts it once |
 

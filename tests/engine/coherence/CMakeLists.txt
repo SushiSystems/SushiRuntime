@@ -30,6 +30,7 @@ sushiruntime_add_module_tests(
         test_device_profile_file.cpp
         test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
+        test_dispatch_observation.cpp
         test_file_path.cpp
         test_fill_plan.cpp
         test_host_staged_path.cpp
@@ -39,14 +40,17 @@ sushiruntime_add_module_tests(
         test_partition_assignment.cpp
         test_partition_model.cpp
         test_partition_refusal.cpp
+        test_partition_report_builder.cpp
         test_peer_path.cpp
         test_pin_set.cpp
         test_plan_hash.cpp
         test_plan_splice.cpp
         test_planned_host_access.cpp
         test_pool_occupancy.cpp
+        test_profile_fold.cpp
         test_profile_measurement.cpp
         test_profile_transfer_cost.cpp
+        test_profile_update.cpp
         test_residency_options.cpp
         test_same_context_path.cpp
         test_staging_ring.cpp

@@ -6,4 +6,4 @@
 sushiruntime_add_module(
     NAME report TIER foundation
     HEADER_ONLY
-    DEPENDS core)
+    DEPENDS core handle)

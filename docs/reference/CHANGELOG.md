@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `PartitionReport` and `Runtime::partition_report()`, one row per device with nodes, bytes, modelled time and a refused job's shortfall (GLOBAL_HANDLE H7).
+- 2026-11-15 — coherence: Added folding of measured node throughput from the profiling ledger into the device profiles and the profile file (GLOBAL_HANDLE H7).
 - 2026-11-15 — api: Added `RuntimeConfig::device_profile_file`; a runtime given a profile file prices its planned copies through `CostModel`, and one without keeps the cost by bytes (GLOBAL_HANDLE H9).
 - 2026-11-15 — api: Added `AdvancedControls::install_transfer_observer()`, which reports the path each copy took (GLOBAL_HANDLE H9).
 - 2026-11-15 — coherence: Added `DeviceProfileProbe`, which measures a device's paths, memory and kernels on real SYCL devices (GLOBAL_HANDLE H9).

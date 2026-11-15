@@ -90,6 +90,7 @@ a copy constructor that returns fails the compile and not a test.
 | `AQueueOfAnUnknownDeviceStops` (medium) | `advanced().queue()` asked for the device after the last one stops the process. |
 | `ABufferNoDeviceCanHoldReturnsAllocationFailed` (medium) | `buffer()` asked for half the address space in bytes on the machine's devices returns `AllocationFailed`, and the message holds the element count. |
 | `AStateNoDeviceCanHoldReturnsAllocationFailed`, `AFailedAllocationLeavesTheRuntimeUsable` | `state()` asked for half the address space in bytes returns `AllocationFailed` on a host runtime, and a buffer of 16 bytes is granted afterwards. The memory module has no seam that makes an allocation fail. |
+| `ARuntimeHoldsNoPartitionYetAndItsReportHasNoRows` | `partition_report()` of a host runtime has no rows, is not refused and writes only the header line. |
 | `ABufferAddsOneLiveAllocation`, `AStateAddsTwoLiveAllocations`, `FreeingABufferAndAStateReturnsTheLiveAllocationCount` | `advanced().live_allocation_count()` rises by one for a buffer and by two for a state, and is back at its first value when both leave their scope. |
 
 ### Placement rules

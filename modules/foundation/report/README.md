@@ -3,7 +3,7 @@
 The module holds what a run reports about itself: the `RunReport` a run verb returns and the
 records it carries. It is header-only, and its headers are installed.
 
-It depends on the C++ standard library and on `core`, for `OperationID` and `NodeCost`.
+It depends on the C++ standard library, on `core`, for `OperationID` and `NodeCost`, and on `handle`, for `DeviceKey`.
 
 ## Public entry points
 
@@ -15,6 +15,7 @@ It depends on the C++ standard library and on `core`, for `OperationID` and `Nod
 | `node_table.hpp` | `NodeTable` and `NodeTableRow`, the names, operations and costs of a plan's nodes by registration index |
 | `drop_counts.hpp` | `DropCause` and `DropCounts`, how many dispatches a run left out of its timing |
 | `run_observer.hpp` | `RunObserver`, the interface that receives a run's timing, `RunObservation`, what it receives, and `RunObserverHandle`, which removes an observer |
+| `partition_report.hpp` | `PartitionReport` and `PartitionDeviceRow`, what a partition gave each device |
 | `dispatch_width.hpp` | `K_WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
 
 Every name is declared in `SushiRuntime`. The engine fills these types and a consumer reads them,
@@ -96,6 +97,18 @@ and a reading t converts to `steady_ns + (t - event_ns)`. The true steady time o
 lies within `uncertainty_ns` of it. The runtime fills it from the start and end of the run's
 dispatches against the host's submit and reap readings, as
 [the observability README](../../platform/observability/README.md#clock-pairings) says.
+
+## partition_report.hpp
+
+### PartitionReport
+
+`PartitionReport` holds one `PartitionDeviceRow` per device in `DeviceKey` order, and the modelled
+step time and floor flag of the plan. A row names the device and its pool, the nodes assigned to it,
+the bytes of the buffers homed on it, the modelled time of its nodes and, for a refused job, the
+bytes its pool lacked. A device that received no node has a row of zeros. `to_text()` writes one
+header line and one line per device, for a log. The coherence module fills it
+(`modules/engine/coherence/README.md`, "PartitionReportBuilder") and `Runtime::partition_report()`
+returns it.
 
 ## Tests
 

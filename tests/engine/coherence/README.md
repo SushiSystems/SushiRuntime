@@ -24,6 +24,31 @@ which builds from a seed a graph of three to eight nodes with forward edges and 
 fixed nodes, and returns the least step time; `placement_of()` turns an assignment into device
 indices of the model.
 
+
+## test_partition_report_builder.cpp
+
+The rows match the plan: nodes, bytes and modelled time per device, a device with no node as zeros, a
+buffer with a stated device counted at it, a refusal with the shortfall of each pool, the answer of
+`ListSchedulingPartitioner` against its own assignment, and the same report for the same inputs.
+
+## test_dispatch_observation.cpp
+
+A record becomes the device, the declared cost and the seconds; a host record takes the host key or is
+dropped; a record with an unknown node, no cost, no operations, an unknown device or no positive duration is
+dropped; the order of the records is kept.
+
+## test_profile_fold.cpp
+
+A folded profile prices the observed node at the measured time; the entry is the median, the lower one of
+an even count; the generic kind sets the base throughput; the rest of every profile is kept; an observation
+that says nothing changes nothing; the order of the observations does not matter.
+
+## test_profile_update.cpp
+
+Through a profile file in the temporary directory: a second run reads the throughput the first one
+measured, a run that measured nothing writes the same profiles, a later run folds over an earlier one, and a
+missing file is an error that creates nothing.
+
 ## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_probe_devices.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.

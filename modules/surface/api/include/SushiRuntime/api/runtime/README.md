@@ -306,6 +306,14 @@ forward-declares `RunObserver` and `RunObserverHandle`; a caller includes
 run finished and must not start a run or add or remove an observer. The `profiling` module's
 `register_profiler_parts()` is the host's way to put the observations on a SushiProfiler timeline.
 
+### partition_report
+
+`Runtime::partition_report()` returns a `PartitionReport` (`SushiRuntime/report/partition_report.hpp`): one
+row per device with the nodes and bytes it holds, the modelled time of its nodes and, for a refused job, the
+bytes its pool lacked, and `to_text()` for a log. The runtime holds no partition yet, since the composer does
+not place buffers by one, so the report has no rows and a refusal sentence of none. The rows are built by
+`make_partition_report()` of the `coherence` module from the partitioner's answer.
+
 ### set_rebalancer_enabled
 
 The rebalancer is off unless `RuntimeConfig::rebalancer` asked for it. Running it trades run-to-run

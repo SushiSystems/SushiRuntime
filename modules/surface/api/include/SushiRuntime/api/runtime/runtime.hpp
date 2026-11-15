@@ -47,6 +47,7 @@
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
+#include <SushiRuntime/report/partition_report.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
@@ -308,6 +309,16 @@ namespace SushiRuntime
              */
             [[nodiscard]] SUSHIRUNTIME_API RunObserverHandle
             add_run_observer(std::shared_ptr<RunObserver> observer) const;
+
+            /**
+             * @brief Returns what the partition in force gave each device: one row per device.
+             *
+             * The runtime holds no partition until the composer places buffers by one, so the
+             * report has no rows. Once it does, each row holds the nodes and bytes of a device, the
+             * modelled time of its nodes and, for a refused job, the bytes its pool lacked.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API PartitionReport partition_report() const;
 
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }

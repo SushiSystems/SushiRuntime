@@ -6,7 +6,7 @@ modules that name it and the tests, and are never installed. Its names are in
 `SushiRuntime::Internal::Coherence`. The design is in `docs/design/GLOBAL_HANDLE/README.md`,
 section "Coherence and copy planning".
 
-It depends on `core`, `handle`, `region`, `memory` and `task`.
+It depends on `core`, `handle`, `region`, `report`, `memory` and `task`.
 
 ## Public entry points
 
@@ -55,6 +55,10 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `assignment_hash.hpp` | `assignment_hash()`, the FNV-1a hash of an assignment |
 | `probe_devices.hpp` | `ProbeDevices` and `ProbeDevice`, the port that finds a device's queue and space by `DeviceKey` |
 | `device_profile_probe.hpp` | `DeviceProfileProbe` and `ProbeKernel`, the probe that times real SYCL devices |
+| `partition_report_builder.hpp` | `make_partition_report()`, the `PartitionReport` of a partitioner's answer |
+| `dispatch_observation.hpp` | `DispatchObservation`, `DeviceKeyTable` and `observe_dispatches()`, the ledger's records as measured work |
+| `profile_fold.hpp` | `fold_observations()`, which folds measured throughput into the device profiles |
+| `profile_update.hpp` | `update_profile_file()`, which folds a run into the profile file and writes it back |
 
 ## CoherencePlanner
 
@@ -254,6 +258,42 @@ with their declared size, edges, devices with their pool and copy path) and retu
 - `PartitionAssignment::home_of()` gives each `Residency::Planned` buffer the device of its first
   writer, or of its first reader when nothing writes it. `assignment_hash()` hashes the devices, the
   homes, the step time and the floor flag, so equal inputs and one profile file give equal hashes.
+
+## PartitionReportBuilder
+
+`make_partition_report()` turns a problem, a `CostModel` and a partitioner's answer into a `PartitionReport`
+(`modules/foundation/report/README.md`). It makes one row per device of the problem, in `DeviceKey` order, so
+a device that received no node has a row of zeros. For an assignment a row counts the nodes put on the device,
+the bytes of the buffers homed on it (a buffer with a stated device at that device, a planned buffer at the home
+the assignment gave it) and the sum of the model's node times of those nodes; a node the model cannot price adds
+nothing. The report carries the assignment's modelled step time and floor flag. For a refusal the rows hold no
+nodes and no bytes, each row holds the bytes its pool lacked (`PoolShortfall::missing()`), and the report holds
+the refusal's sentence. The function is pure.
+
+## Folding the ledger into the profile
+
+The profile entries a run measured go back into the profile file in three steps, one unit each, so a second
+run reads them.
+
+- `observe_dispatches()` turns the records `ProfilingLedger::collect()` appended to `RunObservation::events`
+  into `DispatchObservation` values: the device that ran the dispatch, the cost its node declared in the
+  `NodeTable`, and the seconds from the record's start to its end. A `DeviceKeyTable` maps a record's device
+  index to a `DeviceKey` and may name the host's key. A record is dropped when its node has no cost or counts
+  no operations, when its device has no key, or when its end does not follow its start. The unit reads the
+  records and the table and names neither the ledger nor the scheduler.
+- `fold_observations()` computes one throughput per observation, the node's operations over its seconds less
+  the time its bytes take at the device's memory bandwidth, the inverse of how `CostModel::node_time()` prices
+  a node, so the folded profile prices the same node at the measured time. The entry of a device and a kind
+  becomes the median of its samples, the lower one of an even count, and the generic kind sets
+  `base_throughput`. The median is robust against one slow dispatch and gives the same entry for any order of
+  records. A device with no profile receives nothing, since it is measured first; an observation whose time is
+  at most what its bytes need, or whose time or operations are not positive and finite, is dropped.
+- `update_profile_file()` reads the file the run was planned from, folds the observations into it and writes it
+  through `DeviceProfileFile::write()`, which uses a temporary file. The file a run reads stays frozen for that
+  run; the update is called when the run ends, and the next run reads the result. A missing file is an error
+  and nothing is created.
+
+The runtime does not call these yet; the calls belong where the run ends and the profile file is held.
 
 ## ProfileMeasurement
 

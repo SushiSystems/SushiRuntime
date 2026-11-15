@@ -1030,3 +1030,15 @@ TEST(Small_RuntimeDeviceKey, DeviceIndexRefusesAKeyNoDeviceHolds)
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
 }
+
+/** @brief Tests that a runtime holding no partition reports no rows. */
+TEST(Small_RuntimePartitionReport, ARuntimeHoldsNoPartitionYetAndItsReportHasNoRows)
+{
+    const Runtime runtime = Runtime::create_host().value();
+
+    const PartitionReport report = runtime.partition_report();
+
+    EXPECT_TRUE(report.rows.empty());
+    EXPECT_FALSE(report.refused);
+    EXPECT_EQ(report.to_text(), "partition: step 0 s, floor not taken\n");
+}
