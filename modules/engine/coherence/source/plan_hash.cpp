@@ -30,7 +30,7 @@
 
 #include <SushiRuntime/coherence/plan_hash.hpp>
 
-#include <SushiRuntime/coherence/fnv_hash.hpp>
+#include <SushiRuntime/partitioning/fnv_hash.hpp>
 
 namespace SushiRuntime
 {

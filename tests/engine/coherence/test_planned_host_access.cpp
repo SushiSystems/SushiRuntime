@@ -38,16 +38,16 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/coherence/planned_host_access.hpp>
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/logical_time_eviction.hpp>
+#include <SushiRuntime/coherence/planned_host_access.hpp>
 #include <SushiRuntime/coherence/residency_options.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/host_memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
-#include "fake_transfer_path.hpp"
+#include "support/fake_transfer_path.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;

@@ -62,10 +62,17 @@ Includes `worker_pool.hpp` alone, so the build fails if the header misses an inc
 
 ## test_node_split.cpp
 
-NodeSplit and SplitPart, how a node states that it may run in parts.
+NodeSplit, how a node states that it may run in parts.
 
 | Test | What it proves |
 | --- | --- |
 | `Small_NodeSplit.ADefaultSplitHoldsNoKernel` | A default split names axis zero, no extent and no kernel. |
 | `Small_NodeSplit.HoldsTheConsumersKernels` | The slice takes a part, a queue and the bound pointers, and the combine sees the parts in slice order. |
+
+## test_split_part.cpp
+
+SplitPart, the range and slice-order place of one part of a split node.
+
+| Test | What it proves |
+| --- | --- |
 | `Small_SplitPart.EqualityComparesEveryField` | Equality of a part compares every field. |

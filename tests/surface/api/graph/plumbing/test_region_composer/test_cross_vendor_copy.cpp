@@ -42,9 +42,9 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/transfer/transfer_observer.hpp>
 
 #include "support/buffer_contents.hpp"
 #include "support/runtime_environment.hpp"

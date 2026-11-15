@@ -33,13 +33,13 @@
 #include <memory>
 #include <vector>
 
-#include <SushiRuntime/coherence/cost_model.hpp>
-#include <SushiRuntime/coherence/partition_session.hpp>
-#include <SushiRuntime/coherence/profile_transfer_cost.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
-#include <SushiRuntime/coherence/transfer_path_tally.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device_profile/cost_model.hpp>
+#include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
+#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/transfer_path_tally.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

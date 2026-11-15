@@ -36,9 +36,9 @@
 #include <string>
 #include <utility>
 
-#include <SushiRuntime/coherence/device_profile_probe.hpp>
-#include <SushiRuntime/coherence/probe_devices.hpp>
-#include <SushiRuntime/coherence/profile_measurement.hpp>
+#include <SushiRuntime/device_profile/device_profile_probe.hpp>
+#include <SushiRuntime/device_profile/probe_devices.hpp>
+#include <SushiRuntime/device_profile/profile_measurement.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 #include "runtime_probe_kernels.hpp"

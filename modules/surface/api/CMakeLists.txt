@@ -52,6 +52,10 @@ sushiruntime_add_module(
         context_access
         engine_handles
         region_boundary
+        transfer
+        device_profile
+        partitioning
         coherence
+        partition_session
         topology
         profile)

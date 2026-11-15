@@ -48,7 +48,7 @@
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
-#include "../fake_transfer_path.hpp"
+#include "support/fake_transfer_path.hpp"
 #include "graph_case.hpp"
 #include "node_operation.hpp"
 

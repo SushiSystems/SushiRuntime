@@ -21,7 +21,8 @@ for the `sycl::queue` a slice receives; the other headers include no SYCL header
 | `operating_system.hpp` | `OperatingSystem`, the system a machine runs |
 | `node_label.hpp` | `NodeLabel`, one `key`/`value` pair a machine reports |
 | `device_facts.hpp` | `DeviceFacts`, a device's kind, name and memory in bytes |
-| `node_split.hpp` | `NodeSplit`, how a node states that it may be cut along one axis, and `SplitPart`, the range and slice-order place of one part |
+| `node_split.hpp` | `NodeSplit`, how a node states that it may be cut along one axis |
+| `split_part.hpp` | `SplitPart`, the range and slice-order place of one part; it includes no SYCL header, so `partitioning` reads it without SYCL |
 | `node_facts.hpp` | `NodeFacts`, the name, system, labels and devices of one machine |
 
 Every name is declared in `SushiRuntime`. `topology` reads the filter, `device` fills the

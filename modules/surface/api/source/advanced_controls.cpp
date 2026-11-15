@@ -39,11 +39,8 @@
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/coherence/partition_session.hpp>
-#include <SushiRuntime/coherence/placement_journal.hpp>
-#include <SushiRuntime/coherence/transfer_observer.hpp>
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -52,7 +49,10 @@
 #include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/placement_journal.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/transfer/transfer_observer.hpp>
 
 namespace SushiRuntime
 {

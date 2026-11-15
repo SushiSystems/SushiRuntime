@@ -36,16 +36,16 @@
 #include <string>
 #include <vector>
 #include <SushiRuntime/coherence/eviction_policy.hpp>
-#include <SushiRuntime/coherence/partition_session.hpp>
-#include <SushiRuntime/coherence/transfer_cost.hpp>
-#include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/run_observer_registry.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
 #include <SushiRuntime/memory/coherence_horizon.hpp>
@@ -54,14 +54,14 @@
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/partition_session/partition_session.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
-#include <SushiRuntime/execution/run_observer_registry.hpp>
-#include <SushiRuntime/execution/runtime_settings.hpp>
+#include <SushiRuntime/transfer/transfer_cost.hpp>
+#include <SushiRuntime/transfer/transfer_observer.hpp>
 
 namespace SushiRuntime
 {

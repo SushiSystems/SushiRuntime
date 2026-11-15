@@ -3,88 +3,6 @@
 The tests of the `coherence` module, mirroring `modules/engine/coherence/`.
 `tests/engine/coherence/CMakeLists.txt` builds them; `sr test` runs them with the rest.
 
-`fake_profile_probe.hpp` holds `FakeProfileProbe`, which answers every probe from fixed rates and a
-speed per device, with the builders `host_key()` and `round_profile()`.
-`fake_transfer_path.hpp` holds the doubles: `FakeTransferPath` connects every pair of spaces and
-copies with `memcpy`, `ClosedTransferPath` connects none, and `FixedMemoryProbe` reports one
-gigabyte free.
-
-`transfer_path_doubles.hpp` holds the doubles of the path tests: `CPUSpaceQueues` answers one SYCL CPU
-queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
-`RecordingTransferObserver` keeps each copy it hears.
-
-`partition_problem_builder.hpp` holds the partitioner tests' builders: `speed_model()` makes a
-`CostModel` of `round_profile()` devices, `add_devices()` gives each device a pool of its own and
-the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
-writes buffer `i` and reads buffer `i - 1`; `state_chain()` is that chain with node `i` also writing
-buffer `i - 1`, so every buffer outlives the step and is live for all of it. `independent_nodes()`
-builds nodes of 1000 operations with no edge, each writing a 100-byte buffer of its own.
-
-`rebalancing_parts.hpp` holds the rebalancing tests' builders: `runtime_factories()` gives the list
-scheduler and the floor, as the runtime does; `session_parts()` builds an active session over one
-`round_profile()` per speed; and `measure_step()` adds one measured step and one dispatch per listed
-device to a session's ledger.
-
-`random_partition_case.hpp` holds `SeededDraw`, a portable generator, and `random_partition_case()`,
-which builds from a seed a graph of three to eight nodes with forward edges and a speed per device.
-`best_feasible_step_time()` tries every placement of a model, keeps the ones that fit and honour
-fixed nodes, and returns the least step time; `placement_of()` turns an assignment into device
-indices of the model.
-
-
-## test_partition_report_builder.cpp
-
-The rows match the plan: nodes, bytes and modelled time per device, the measured time and copies of a
-`PartitionMeasurement` per device with the measured step, the floor's step and devices, a device with no node as zeros, a
-buffer with a stated device counted at it, a refusal with the shortfall of each pool, the answer of
-`ListSchedulingPartitioner` against its own assignment, and the same report for the same inputs.
-
-## test_dispatch_observation.cpp
-
-A record becomes the device, the declared cost and the seconds; a host record takes the host key or is
-dropped; a record with an unknown node, no cost, no operations, an unknown device or no positive duration is
-dropped; the order of the records is kept.
-
-## test_profile_fold.cpp
-
-A folded profile prices the observed node at the measured time; the entry is the median, the lower one of
-an even count; the generic kind sets the base throughput; the rest of every profile is kept; an observation
-that says nothing changes nothing; the order of the observations does not matter.
-
-## test_profile_update.cpp
-
-Through a profile file in the temporary directory: a second run reads the throughput the first one
-measured, a run that measured nothing writes the same profiles, a later run folds over an earlier one, and a
-missing file is an error that creates nothing.
-
-## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_probe_devices.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
-
-Each file includes one interface header alone.
-
-## test_same_context_path.cpp
-
-The path connects spaces of one context and no others, copies the bytes on the CPU queue, and tells
-its observer the name `same_context`. The tests skip when SYCL offers no CPU device.
-
-## test_peer_path.cpp
-
-The path connects two contexts only when access is granted and leaves one context to
-`SameContextPath`. It copies the bytes and names itself `peer`. A plan over both paths takes
-`same_context` for the copy inside a context and `peer` for the copy across contexts; the planned
-copy nodes move the bytes, and the observer records which path each copy took.
-
-## test_host_staged_path.cpp
-
-The path connects any two devices and the host with a device, never two host spaces. A copy
-between two spaces with no direct path matches bytes for sizes below, at and several times one ring
-slot, makes the ring once and reuses it, and the report names `host_staged` once per copy. A copy to
-or from the host is one memcpy with no slot. A copy with no queue on either side is refused.
-
-## test_staging_ring.cpp
-
-The ring makes no slot before the first acquire, makes all slots once, hands them out in ring
-order, skips a held slot, frees every slot with the ring and refuses when the memory has no room.
-
 ## test_coherence_planner/
 
 `CoherencePlanner` has two test files, so its tests sit in a folder of that name. The helpers of the
@@ -132,10 +50,6 @@ back and a plan that is not steady; a buffer named in `host_read` is copied back
 second plan starts from the state the first left, and a planner with no options frees every
 instance as before.
 
-## compile_eviction_policy.cpp and compile_residency_options.cpp
-
-Each file includes one header alone.
-
 ## test_logical_time_eviction.cpp
 
 The furthest next read is chosen, an instance never read again goes first, equal reads prefer the
@@ -150,38 +64,9 @@ A pin holds for its buffer and space only, pinning twice counts once, and unpinn
 
 Equal plans hash equal; each field of a step, the order of steps and the steady flag change the hash.
 
-## test_problem_hash.cpp
-
-Equal problems hash equal; a node's cost, placement or split, a buffer's bytes, an edge's bytes and
-a device's copy path each change the hash.
-
 ## test_copy_plan.cpp
 
 Two steps compare equal only when every field is equal.
-
-## test_cost_model.cpp
-
-A node's time is its operations over throughput plus its bytes over bandwidth, a kind with no entry
-takes the base throughput, a device with no profile has no time, and a device that cannot do the
-work takes infinite time. A copy's time is the latency plus the bytes over the bandwidth, and an
-unknown path has no time.
-
-## test_device_profile.cpp
-
-A kind with no entry takes the base throughput, and a path is found by name.
-
-## test_device_profile_file.cpp
-
-A profile written once and read back gives equal profiles and the same `CostModel` times, and a
-changed file changes them. The write order does not depend on the insertion order, a device missing
-from the file has no profile, a newer version is refused naming both versions, malformed text is
-refused with its line, a path name with white space is refused on write, and a file on disk reads
-back equal.
-
-## test_device_profile_set.cpp
-
-A device has a profile only after it is set, setting again replaces it, and profiles come in
-`DeviceKey` order.
 
 ## test_directory_planned_node_factory.cpp
 
@@ -213,215 +98,12 @@ holds and names a kind for each allocation, so the directory records its instanc
 | `ReleaseFreesThePlannedInstancesOfAHeldBufferAndLeavesItsHeldInstance` | For a buffer `mint_held()` made, `held_spaces()` names the held space alone, and `release()` frees the device instance a plan made and leaves the held bytes as they were. |
 | `AHostWriteIsRecordedAsAHostWriteOfTheHandle` | `write()` raises the handle's host-write mark in the directory. |
 
-## test_profile_measurement.cpp
-
-The profile holds the rates the fake probe reported, a faster device measures faster, only the kinds
-of the plan are measured, and a plan with no generic kind, a large copy no bigger than the small one,
-or a probe that reports no time is refused.
-
-## test_profile_transfer_cost.cpp
-
-With no model the cost is the uniform one, with a model it is the modelled seconds, and a copy the
-model cannot price costs infinity.
-
-## test_transfer_observer_slot.cpp
-
-An empty slot drops every copy, an installed observer hears each copy in order, and installing null
-stops the forwarding.
-
-## test_device_profile_probe.cpp
-
-Medium, on a SYCL CPU device; it skips when SYCL offers none. `ProfileMeasurement` measures a device
-through `DeviceProfileProbe`: capacity and reserve are the space's, and memory bandwidth, base
-throughput and the same-context path's bandwidth are above zero. A path name no path has is
-`Unsupported`, a kind with no kernel and a key with no device are refused.
-
-## test_transfer_cost.cpp
-
-The uniform cost prices every path by its bytes.
-
 ## test_usm_instance_allocator.cpp
 
 The instance of a space is made on its device and released there with no ERROR, host memory is
 released on the device it was made on, a device space names device USM and the host space host
 USM, and a space past the devices is refused.
 
-## test_file_path.cpp
+## compile_coherence_log_category.cpp, compile_eviction_policy.cpp, compile_instance_allocator.cpp, compile_planned_node_factory.cpp and compile_residency_options.cpp
 
-`Small_FilePath` writes a temporary file and checks that `FilePath` connects an added file space to
-any space that is not a file, streams ranges onto a SYCL CPU device through a two-slot ring with
-equal bytes and a peak of pinned memory equal to the ring, reads straight into the host with no
-slot, and refuses a space it does not hold or a range past the end of the file. After `remove()` the
-path does not connect the removed space, and a new space added under the same id is connected.
-`Large_FilePath` writes a file 1 GiB larger than the first CUDA GPU's memory into `temp` under the
-working directory, streams it window by window onto the GPU, checks the first and last 4 KiB of each
-window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
-with no CUDA GPU or too little disk, and deletes the file.
-
-## compile_partition_problem.cpp, compile_partitioner.cpp and compile_partitioner_factory.cpp
-
-Each file includes one partitioner header alone.
-
-## test_floor_partitioner.cpp
-
-Two independent nodes on two equal devices go to one device at the floor's step of one second, slower
-than the scheduler's plan, with `floor_taken` set; a job no fill plan fits is refused with
-`AllocationFailed`.
-
-## test_planned_homes.cpp
-
-Each buffer of a chain is homed on the device of the node that writes it, and a buffer with a stated
-device has no home.
-
-## test_rebalance_decision.cpp
-
-`Small_RebalanceDecision` is one row per case against a plan modelled at one second and a floor at 1.5:
-nothing measured or a time within the 10% margin keeps; a slower device replans; a step above the
-floor tries the floor unless the floor is in force or the pair was tried; a floor on trial stays when it
-measured faster and leaves when it did not.
-
-## test_placement_journal.cpp
-
-Appending numbers the entries in order. Parsing the text gives the same entries and writing them gives
-the same bytes; an unknown reason is refused with its line. `Medium_PlacementJournal` appends to a file,
-which holds exactly the text of the entries and reads back to them.
-
-## test_journal_replay.cpp
-
-A session over three devices partitions, replans for a throttled device and tries the floor. Every
-journal entry replays to the assignment it records, a journal read back from its text gives the same
-bytes and the same placements, and another problem is refused with `InvalidArgument`.
-
-## compile_partition_measurement.cpp
-
-Includes `partition_measurement.hpp` alone.
-
-## test_fnv_hash.cpp
-
-Folding two values hashes their sixteen little-endian bytes, against a byte-wise FNV-1a reference with
-the published constants.
-
-## test_graph_partition_problem.cpp
-
-`Small_GraphPartitionProblem` builds a writer of a planned buffer and a `FixedToHome` reader that writes
-a buffer device 1 owns: the owned buffer keeps its device and the other is planned, the reader waits on
-the writer for the bytes it reads, the reader stays on its owner's device, a node that declares a split
-carries its axis and extent, and a `Borrowed` buffer is left out.
-
-## test_partition_apply.cpp
-
-`Small_PartitionApply` partitions a three-node chain of planned buffers over two devices: each node is
-put on its assigned device, which is the home the assignment gives the buffer it writes first. An
-assignment of another graph, or one naming a device the problem lacks, is refused and changes no node.
-A cut node gets each part on the index of its device with its byte ranges; a part on a device the
-problem lacks is refused and changes no node; a node an earlier partition placed counts as free in
-the next problem.
-
-## test_partition_ledger.cpp
-
-Figures come per step: the measured step, each device's dispatch time and the copies into a device by
-path; a copy into a space with no device is left out, and a ledger with no step measures nothing.
-`take_horizon()` gives the dispatches since the last take, once.
-`Medium_PartitionLedger` writes a profile file: a second run reads the throughput the first one folded,
-and a ledger with nothing unfolded leaves the file alone.
-
-## test_partition_session.cpp
-
-A session with no partitioner is inactive and reports nothing. An unfitting job is refused with each
-pool's shortfall, in the error and in the report. The report of the last plan carries the measured step,
-each device's measured time and the floor's step, and a new plan starts an empty ledger.
-
-Rebalancing runs over two equal devices with one independent node each. A device measured at five
-times its model loses its node at the first horizon, and the horizon leaves the measured throughput in
-the profiles in memory. A step three times the floor's model, with every device at its model, puts the
-floor on trial and keeps it at the second horizon; a floor that measures slower gives the plan back and
-is not tried again. Every plan put in force is journalled and raises the generation.
-
-## test_transfer_path_tally.cpp
-
-Copies are counted by destination and path, each copy reaches the next observer, and `clear()` forgets
-every tally.
-
-## test_partition_refusal.cpp
-
-A pool's shortfall is the bytes required above the usable ones, and zero when the pool holds them.
-`to_error()` keeps the refusal's class and names each pool's required, usable and missing bytes.
-
-## test_partition_assignment.cpp
-
-`home_of()` returns the home of a homed buffer and nothing for another.
-
-## test_assignment_hash.cpp
-
-Equal assignments hash equal; another device or the floor flag changes the hash.
-
-## test_split_sizing.cpp
-
-`size_split()` sizes parts by speed and they sum to the extent; the rounding remainder goes to the
-fastest device, the first of equals; no device gets two parts and one with an infinite time gets
-none; an axis shorter than the device count gives fewer parts; equal inputs give equal parts; and a
-zero extent or no usable device gives none.
-
-## test_split_expansion.cpp
-
-On a three-node chain whose middle node is cut 7 to 3, `expand_splits()` gives one placed node per
-part with its share of the operations and of the written bytes, edges into the cut node reach each
-part whole and edges out of it carry each part's share, and every edge still runs forward. The reader
-of the cut node's output reads the parts' slices.
-`planned_splits()` gives disjoint written ranges that cover the buffer and whole read ranges. A
-node with one part stays whole.
-
-## test_pool_occupancy.cpp
-
-A buffer two nodes touch is counted once per pool, and a buffer with a stated home is held in its
-pool for the whole step. A chain holds only the two buffers live at each link, whatever order its nodes
-are added in, and a buffer read before any write is live for the whole step.
-
-## test_partition_model.cpp
-
-Devices that share a pool count it once and copy nothing between them, an edge across two pools adds
-its copy to the step, a backward edge is refused, a node that writes a buffer with a stated device is
-fixed to it, and a node placed on a device with no profile is refused.
-
-## test_fill_plan.cpp
-
-A seven-node `state_chain()` over three devices whose pools hold three nodes' buffers fills the fastest device,
-then the next, then the slowest, and crosses each device boundary once. When nothing is left, the
-last device takes the rest and the walk reports that it does not fit. The floor is a fitting plan,
-and there is none when no subset fits.
-
-## test_list_scheduling_partitioner/
-
-`ListSchedulingPartitioner` has three test files, so its tests sit in a folder of that name.
-
-### test_placement_and_refusal.cpp
-
-A node larger than every pool, and a job larger than the pools together, are refused as
-`AllocationFailed` with the bytes and the shortfall of each pool. A chain whose buffers exceed the
-pool together fits by live intervals. Two partitioners built from one
-profile set give assignments that hash equal, and so does a second run of one partitioner. A planned
-buffer is homed on its writer's device, the plan is never modelled slower than its floor, and a
-device with no profile receives no node.
-
-### test_partition_properties.cpp
-
-For each of 64 fixed seeds, `Small_PartitionProperties` builds a graph of three to eight nodes over
-two or three devices whose buffers fit one pool, and checks three properties; a failure names its
-seed. The partitioner's modelled step time is within 10% of the best that an exhaustive search over
-every fitting placement finds. No plan is modelled slower than its floor. With a device a thousand
-times slower added, that device gets no node. The search counts `devices ^ nodes` placements, at most
-6561 here, and prices each with `PartitionModel`.
-
-### test_splitting.cpp
-
-A node that writes 1200 bytes, more than a pool's 900 usable, and declares a split of extent 12
-runs as two parts on two devices of speed 2 and 1: 8 and 4 indices, writing bytes [0, 800) and
-[800, 1200). With `Splitting::Off` the same node is refused, and a node that fits whole has no
-parts. A node with no declared split is not cut, and a split plan hashes equal across runs. The
-parts, run through `dispatch_split()` on a CPU queue, give the bytes of one slice over the whole
-extent; the test skips without a CPU device.
-
-`Large_ListSchedulingPartitioner.ASplitProductStepIsShorterThanWithSplittingOff` runs on the first
-machine and skips with fewer than two GPUs. It times a product kernel whole on each GPU, builds the
-profiles from those times, and runs the parts the partitioner gives with splitting allowed and
-with it turned off; the split run, best of three after a warm-up, must take less wall time.
+Each file includes one header alone.

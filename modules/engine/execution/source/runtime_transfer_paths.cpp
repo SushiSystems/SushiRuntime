@@ -34,14 +34,14 @@
 #include <optional>
 #include <utility>
 
-#include <SushiRuntime/coherence/host_staged_path.hpp>
-#include <SushiRuntime/coherence/peer_access.hpp>
-#include <SushiRuntime/coherence/peer_path.hpp>
-#include <SushiRuntime/coherence/pinned_host_memory.hpp>
-#include <SushiRuntime/coherence/same_context_path.hpp>
-#include <SushiRuntime/coherence/space_queues.hpp>
-#include <SushiRuntime/coherence/staging_ring.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/transfer/host_staged_path.hpp>
+#include <SushiRuntime/transfer/peer_access.hpp>
+#include <SushiRuntime/transfer/peer_path.hpp>
+#include <SushiRuntime/transfer/pinned_host_memory.hpp>
+#include <SushiRuntime/transfer/same_context_path.hpp>
+#include <SushiRuntime/transfer/space_queues.hpp>
+#include <SushiRuntime/transfer/staging_ring.hpp>
 
 namespace SushiRuntime
 {

@@ -40,8 +40,9 @@ reliability and maintainability ruling over cost.
    runtime instance. The cost is 8 more bytes per edge.
 3. **The identity lives in a new foundation module, `modules/foundation/handle`.** It is header-only,
    with no SYCL dependency, so a consumer's own backend and the wire format can mint and carry
-   handles without the runtime. Residency lives in `modules/platform/memory`; copy planning and
-   partitioning live in a new `modules/engine/coherence`.
+   handles without the runtime. Residency lives in `modules/platform/memory`. Copy planning lives in
+   `modules/engine/coherence`, the copies in `transfer`, the device profiles in `device_profile` and
+   partitioning in `partitioning` and `partition_session`, all in `modules/engine`.
 4. **`Buffer::data()` stays public.** It returns the address of the buffer's instance on its home
    device. `Buffer::handle()` is the identity.
 5. **Determinism is part of the contract.** Handle ids, device keys, placement and copy plans are
@@ -252,8 +253,10 @@ deterministic.
 | `NodeCost` with read bytes, written bytes and operation kind; splittable-node declaration | `foundation/core` | nothing |
 | `CoherencePlanner` | `engine/coherence` | the `ResidencyDirectory`, `MemorySpace` and `TransferPath` interfaces |
 | `EvictionPolicy` strategies | `engine/coherence` | the `ResidencyDirectory` interface |
-| `TransferPath` strategies | `engine/coherence` | the `MemorySpace` interface |
-| `Partitioner`, `CostModel`, `DeviceProfile` | `engine/coherence` | `NodeCost`, the `MemorySpace` interface |
+| `TransferPath` strategies | `engine/transfer` | the `MemorySpace` interface |
+| `Partitioner` | `engine/partitioning` | `NodeCost`, `CostModel` |
+| `CostModel`, `DeviceProfile` | `engine/device_profile` | `NodeCost`, the `MemorySpace` interface |
+| `PartitionSession`, ledger, journal | `engine/partition_session` | `Partitioner`, `CostModel` |
 | Anchor rule, one copy | `engine/task` | `HandleResolver` |
 
 ### Public API

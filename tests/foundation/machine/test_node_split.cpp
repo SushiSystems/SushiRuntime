@@ -23,7 +23,7 @@
 
 /**
  * @file test_node_split.cpp
- * @brief Tests NodeSplit and SplitPart, how a node states that it may run in parts.
+ * @brief Tests NodeSplit, how a node states that it may run in parts.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
@@ -68,17 +68,4 @@ TEST(Small_NodeSplit, HoldsTheConsumersKernels)
 
     EXPECT_TRUE(split.slice);
     EXPECT_EQ(combined, parts);
-}
-
-/** @brief Tests that equality of a part compares every field. */
-TEST(Small_SplitPart, EqualityComparesEveryField)
-{
-    const SplitPart base{1, 2, 3, 4, 5};
-
-    EXPECT_TRUE(base == (SplitPart{1, 2, 3, 4, 5}));
-    EXPECT_TRUE(base != (SplitPart{0, 2, 3, 4, 5}));
-    EXPECT_TRUE(base != (SplitPart{1, 0, 3, 4, 5}));
-    EXPECT_TRUE(base != (SplitPart{1, 2, 0, 4, 5}));
-    EXPECT_TRUE(base != (SplitPart{1, 2, 3, 0, 5}));
-    EXPECT_TRUE(base != (SplitPart{1, 2, 3, 4, 0}));
 }

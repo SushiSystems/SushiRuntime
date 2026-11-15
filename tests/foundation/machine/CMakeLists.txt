@@ -15,4 +15,5 @@ sushiruntime_add_module_tests(
         test_device_filter.cpp
         test_node_facts.cpp
         test_node_label.cpp
-        test_node_split.cpp)
+        test_node_split.cpp
+        test_split_part.cpp)

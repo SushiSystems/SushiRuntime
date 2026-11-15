@@ -33,10 +33,10 @@
 #include <memory>
 #include <vector>
 
-#include <SushiRuntime/coherence/file_path.hpp>
-#include <SushiRuntime/coherence/transfer_observer.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/transfer/file_path.hpp>
+#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

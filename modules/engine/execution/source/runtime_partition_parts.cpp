@@ -36,10 +36,10 @@
 #include <string>
 #include <utility>
 
-#include <SushiRuntime/coherence/floor_partitioner.hpp>
-#include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/partitioning/floor_partitioner.hpp>
+#include <SushiRuntime/partitioning/list_scheduling_partitioner.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime

@@ -35,11 +35,11 @@
 #include <set>
 #include <vector>
 
-#include <SushiRuntime/coherence/graph_partition_problem.hpp>
-#include <SushiRuntime/coherence/partition_assignment.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/partition_session/graph_partition_problem.hpp>
+#include <SushiRuntime/partitioning/partition_assignment.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime

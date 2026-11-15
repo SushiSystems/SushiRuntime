@@ -40,7 +40,11 @@ set(SUSHIRUNTIME_MODULE_TIERS
     work_stealing   engine
     scheduler       engine
     graph           engine
+    transfer        engine
+    device_profile  engine
+    partitioning    engine
     coherence       engine
+    partition_session engine
     execution       engine
     region_boundary engine
     probe_tasks     engine
@@ -95,9 +99,22 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     execution       task
     execution       scheduler
     execution       graph
+    execution       transfer
+    execution       device_profile
+    execution       partitioning
     execution       coherence
+    execution       partition_session
     region_boundary task
+    device_profile  transfer
+    partitioning    device_profile
     coherence       task
+    coherence       transfer
+    coherence       partitioning
+    partition_session task
+    partition_session transfer
+    partition_session device_profile
+    partition_session partitioning
+    partition_session coherence
     probe_tasks     task
     runtime_assembly execution
     runtime_assembly scheduler

@@ -9,71 +9,16 @@ sushiruntime_add_module_tests(
         compile_coherence_log_category.cpp
         compile_eviction_policy.cpp
         compile_instance_allocator.cpp
-        compile_partition_measurement.cpp
-        compile_partition_problem.cpp
-        compile_partitioner.cpp
-        compile_partitioner_factory.cpp
-        compile_peer_access.cpp
-        compile_pinned_host_memory.cpp
         compile_planned_node_factory.cpp
-        compile_probe_devices.cpp
-        compile_profile_probe.cpp
         compile_residency_options.cpp
-        compile_space_queues.cpp
-        compile_transfer_observer.cpp
-        compile_transfer_path.cpp
-        test_assignment_hash.cpp
         test_coherence_planner/test_planned_steps.cpp
         test_coherence_planner/test_randomized_equivalence.cpp
         test_copy_plan.cpp
-        test_cost_model.cpp
-        test_device_profile.cpp
-        test_device_profile_probe.cpp
-        test_device_profile_file.cpp
-        test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
-        test_dispatch_observation.cpp
-        test_file_path.cpp
-        test_fill_plan.cpp
-        test_floor_partitioner.cpp
-        test_fnv_hash.cpp
-        test_graph_partition_problem.cpp
-        test_host_staged_path.cpp
-        test_journal_replay.cpp
-        test_list_scheduling_partitioner/test_partition_properties.cpp
-        test_list_scheduling_partitioner/test_placement_and_refusal.cpp
-        test_list_scheduling_partitioner/test_splitting.cpp
         test_logical_time_eviction.cpp
-        test_partition_apply.cpp
-        test_partition_assignment.cpp
-        test_partition_ledger.cpp
-        test_partition_model.cpp
-        test_partition_refusal.cpp
-        test_partition_report_builder.cpp
-        test_partition_session.cpp
-        test_peer_path.cpp
         test_pin_set.cpp
-        test_placement_journal.cpp
         test_plan_hash.cpp
         test_plan_splice.cpp
-        test_planned_homes.cpp
         test_planned_host_access.cpp
-        test_pool_occupancy.cpp
-        test_problem_hash.cpp
-        test_profile_fold.cpp
-        test_profile_measurement.cpp
-        test_profile_transfer_cost.cpp
-        test_rebalance_decision.cpp
-        test_profile_update.cpp
         test_residency_options.cpp
-        test_same_context_path.cpp
-        test_split_expansion.cpp
-        test_split_sizing.cpp
-        test_staging_ring.cpp
-        test_transfer_cost.cpp
-        test_transfer_observer_slot.cpp
-        test_transfer_path_tally.cpp
-        test_usm_instance_allocator.cpp
-    DEVICE_SOURCES
-        test_device_profile_probe.cpp
-        test_list_scheduling_partitioner/test_splitting.cpp)
+        test_usm_instance_allocator.cpp)

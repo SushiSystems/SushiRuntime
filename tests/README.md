@@ -46,6 +46,24 @@ and `executor_fabric.hpp` joins a master and a worker endpoint of an `InProcessF
 SHA-256 digest as hexadecimal text, and `submitting_threads.hpp` collects the distinct threads a test's command groups and task bodies
 were submitted from.
 
+The tests of `transfer`, `device_profile`, `partitioning`, `partition_session` and `coherence` share four of them.
+`fake_profile_probe.hpp` holds `FakeProfileProbe`, which answers every probe from fixed rates and a
+speed per device, with the builders `host_key()` and `round_profile()`.
+`fake_transfer_path.hpp` holds the doubles: `FakeTransferPath` connects every pair of spaces and
+copies with `memcpy`, `ClosedTransferPath` connects none, and `FixedMemoryProbe` reports one
+gigabyte free.
+
+`transfer_path_doubles.hpp` holds the doubles of the path tests: `CPUSpaceQueues` answers one SYCL CPU
+queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
+`RecordingTransferObserver` keeps each copy it hears.
+
+`partition_problem_builder.hpp` holds the partitioner tests' builders: `speed_model()` makes a
+`CostModel` of `round_profile()` devices, `add_devices()` gives each device a pool of its own and
+the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
+writes buffer `i` and reads buffer `i - 1`; `state_chain()` is that chain with node `i` also writing
+buffer `i - 1`, so every buffer outlives the step and is live for all of it. `independent_nodes()`
+builds nodes of 1000 operations with no edge, each writing a 100-byte buffer of its own.
+
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.
 

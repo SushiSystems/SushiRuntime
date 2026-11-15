@@ -39,8 +39,6 @@
 
 #include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/coherence/residency_options.hpp>
-#include <SushiRuntime/coherence/transfer_cost.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
@@ -48,6 +46,8 @@
 #include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/transfer/transfer_cost.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

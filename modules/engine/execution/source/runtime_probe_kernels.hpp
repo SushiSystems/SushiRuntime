@@ -32,8 +32,8 @@
 
 #include <map>
 
-#include <SushiRuntime/coherence/device_profile_probe.hpp>
 #include <SushiRuntime/core/operation_kind.hpp>
+#include <SushiRuntime/device_profile/device_profile_probe.hpp>
 
 namespace SushiRuntime
 {

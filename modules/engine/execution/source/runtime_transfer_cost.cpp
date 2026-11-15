@@ -38,9 +38,9 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/coherence/cost_model.hpp>
-#include <SushiRuntime/coherence/device_profile_file.hpp>
-#include <SushiRuntime/coherence/profile_transfer_cost.hpp>
+#include <SushiRuntime/device_profile/cost_model.hpp>
+#include <SushiRuntime/device_profile/device_profile_file.hpp>
+#include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/handle_location.hpp>

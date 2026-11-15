@@ -271,7 +271,7 @@ job builds on them.
 
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
-| R01 | split `engine/coherence` into five modules | T57 | todo |
+| R01 | split `engine/coherence` into five modules | T57 | done |
 | R02 | per-part regions from the consumer in `NodeSplit` | R01 | todo |
 | R03 | concurrent split parts | R02 | todo |
 | R04 | one partition session per graph, ledger keyed by problem | R01 | todo |

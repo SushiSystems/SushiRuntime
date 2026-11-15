@@ -28,7 +28,7 @@ the chain, and the submit funnel (`submit_funnel`, off by default: the
 scheduler's kernel nodes are then submitted by one thread per device, on top of the workers; see
 `docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md`). `node_name` and `labels` describe the machine to
 `topology()`. `device_profile_file` names the device profile file the runtime reads once at create
-and prices its planned copies by (`modules/engine/coherence/README.md`); empty prices them by their
+and prices its planned copies by (`modules/engine/device_profile/README.md`); empty prices them by their
 bytes; a path with no file makes create measure every device and write the file, which the next start
 reads; a file that cannot be read refuses the create. A runtime inside a game shares the machine with a render
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
@@ -122,7 +122,7 @@ and each change of plan comes at the horizon the journalled run made it at, and 
 no profile file for it. A file that cannot be read or holds a malformed line is `InvalidArgument`; a
 call after a graph of the runtime was partitioned is `InvalidState`. A problem that differs from the
 entry's fails the graph's commit with the error, which names the entry.
-`modules/engine/coherence/README.md`, "Placement journal", holds the rule.
+`modules/engine/partition_session/README.md`, "Placement journal", holds the rule.
 
 ## placement_scope.hpp
 
@@ -326,7 +326,7 @@ floor's modelled step and devices; and `to_text()` for a log. The report is of t
 `PlanCache` partitioned: a runtime with a device profile file and two devices or more partitions a graph that
 touches a `Residency::Planned` buffer. Before that the report has no rows. A job no plan fits is refused at
 compile with `AllocationFailed` and each pool's shortfall. The rows come from `PartitionSession::report()` of
-the `coherence` module.
+the `partition_session` module.
 
 ### set_rebalancer_enabled
 

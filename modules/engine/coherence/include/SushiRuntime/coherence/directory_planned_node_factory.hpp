@@ -35,8 +35,8 @@
 
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/coherence/planned_node_factory.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

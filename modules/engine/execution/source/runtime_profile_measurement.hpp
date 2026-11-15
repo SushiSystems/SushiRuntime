@@ -32,11 +32,11 @@
 
 #include <vector>
 
-#include <SushiRuntime/coherence/device_profile_set.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/device_profile/device_profile_set.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

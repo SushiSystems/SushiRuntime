@@ -56,34 +56,34 @@
 
 #include <SushiLog/log/log_level.hpp>
 
-#include <SushiRuntime/coherence/device_profile_file.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
+#include <SushiRuntime/device_profile/device_profile_file.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
-#include <SushiRuntime/profile/profile.hpp>
-#include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
-#include <SushiRuntime/report/run_observer.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
+#include <SushiRuntime/runtime_assembly/context_factory.hpp>
+#include <SushiRuntime/sycl/sycl_compat.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/task/offload_sink.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_numa_reader.hpp>
 #include <SushiRuntime/topology/in_memory_topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
-#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
-#include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/task/offload_sink.hpp>
+#include <SushiRuntime/topology/sycl_device_enumerator.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
-#include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
 #include "support/context_environment.hpp"
 #include "support/host_context.hpp"

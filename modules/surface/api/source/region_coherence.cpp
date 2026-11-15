@@ -39,7 +39,6 @@
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
-#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
 #include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -47,6 +46,7 @@
 #include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
+#include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
 {

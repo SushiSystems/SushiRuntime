@@ -33,9 +33,9 @@
 #include <cstddef>
 #include <utility>
 
-#include <SushiRuntime/coherence/partition_apply.hpp>
-#include <SushiRuntime/coherence/partition_session.hpp>
-#include <SushiRuntime/coherence/problem_hash.hpp>
+#include <SushiRuntime/partition_session/partition_apply.hpp>
+#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partitioning/problem_hash.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
 namespace SushiRuntime

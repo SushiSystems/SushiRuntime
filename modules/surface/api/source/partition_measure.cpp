@@ -35,10 +35,10 @@
 #include <string>
 
 #include <SushiRuntime/api/api_log_category.hpp>
-#include <SushiRuntime/coherence/dispatch_observation.hpp>
-#include <SushiRuntime/coherence/partition_session.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/device_profile/dispatch_observation.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/partition_session/partition_session.hpp>
 #include <SushiRuntime/report/node_table.hpp>
 
 namespace SushiRuntime

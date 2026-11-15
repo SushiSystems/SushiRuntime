@@ -46,7 +46,6 @@
 
 #include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -54,11 +53,12 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
-#include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include <SushiRuntime/engine_handles/plan_access.hpp>
+#include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include "recorder_replay.hpp"
 #include "graph_partition.hpp"
 #include "host_write_watch.hpp"

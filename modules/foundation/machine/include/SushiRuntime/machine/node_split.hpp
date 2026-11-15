@@ -23,49 +23,23 @@
 
 /**
  * @file node_split.hpp
- * @brief Declares NodeSplit and SplitPart, how a node states that it may run in parts.
+ * @brief Declares NodeSplit, how a node states that it may run in parts.
  * @author Mustafa Garip
  * @see modules/foundation/machine/README.md
  */
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/machine/split_part.hpp>
 
 namespace SushiRuntime
 {
-    /**
-     * @brief Names one part of a split node: the range of the axis it covers and its place in slice order.
-     * @see modules/foundation/machine/README.md
-     */
-    struct SplitPart
-    {
-        std::uint32_t axis = 0;  /**< The axis the node is cut along, as the consumer numbers it. */
-        std::uint64_t begin = 0; /**< First index of the axis this part covers. */
-        std::uint64_t end = 0;   /**< One past the last index this part covers. */
-        std::size_t index = 0;   /**< Position of the part in slice order. */
-        std::size_t count = 0;   /**< How many parts the node was cut into. */
-
-        /** @brief Returns whether every field is equal. */
-        [[nodiscard]] constexpr bool operator==(const SplitPart& other) const noexcept
-        {
-            return axis == other.axis && begin == other.begin && end == other.end &&
-                   index == other.index && count == other.count;
-        }
-
-        /** @brief Returns whether a field differs. */
-        [[nodiscard]] constexpr bool operator!=(const SplitPart& other) const noexcept
-        {
-            return !(*this == other);
-        }
-    };
-
     /**
      * @brief States that a node may be cut along one axis into parts the runtime places.
      *
