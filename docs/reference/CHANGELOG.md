@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-16 — tools: Took the shared tools from SushiCore v0.14.0 into a lock file and moved the SushiCore pin to 0.14 (`tools/shared_tools.lock`).
 - 2026-11-16 — docs: Updated the GLOBAL_HANDLE topic to the code: modules, margin, copy model, profile fold, per-graph journal, planned and current state, concurrent split parts (GLOBAL_HANDLE R14).
 - 2026-11-16 — distributed: Replaced the `HandleOwnership` table with `classify_ownership()`, a pure function of the handle and the machine; no map, no mutex (GLOBAL_HANDLE R11).
 - 2026-11-16 — memory: Removed `ResidencyDirectory::entry_address()` from the public header; chunk stability is tested through `resolve()` across growth (GLOBAL_HANDLE R11).

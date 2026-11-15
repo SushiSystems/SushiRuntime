@@ -49,6 +49,9 @@ K_MODULE_DEPENDENCY_FILE = 'cli/sushistack.deps.toml'
 K_MODULE_HEADINGS = ('## Standalone', '## With SushiHub')
 K_MODULE_WORKSPACE_READ = '\\bhub (?:install|add|link|doctor|status|pin)\\b|SUSHISTACK_HOME|\\.sushistack\\b|workspace\\.toml'
 
+# The commit after which every commit carries a Backlog line, read by tools/commits/check_backlog_trailer.py.
+K_TRAILER_SINCE = "bddc81bbe8efd89a282e1e29cdc23120d79104f7"
+
 # The time limits of the testing skill, read by tools/testing/test_budget.py.
 K_TEST_TIMES: dict[str, float] = {
     "small_test_s": 0.1,
