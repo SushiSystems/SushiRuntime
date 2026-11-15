@@ -75,6 +75,7 @@ dispatch: T22 — haiku high, 81 turns, rung 1, passed
 dispatch: T26 — sonnet medium, rung 1, passed
 dispatch: T43 — opus low, 132 turns, rung 1, passed (skipped loading the style skills; checkers clean)
 dispatch: T34 — sonnet medium, 90 turns, rung 1, passed (wiring left to T47)
+dispatch: T30 — sonnet medium, 86 turns, rung 1, passed (SushiBLAS 18ad521b; skipped loading skills)
 ```
 
 ## T05: the residency directory

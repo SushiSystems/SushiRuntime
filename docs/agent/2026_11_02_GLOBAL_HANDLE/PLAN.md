@@ -82,8 +82,9 @@ when its own context would not hold their reading; it still reviews and commits 
 | T27 | rebalancing and journal | T22, T34 | todo |
 | T28 | wire version 5 | T10 | done |
 | T29 | owner per handle and recovery | T28 | done |
-| T30 | SushiBLAS handle, cost and split | T23, T25 | running |
+| T30 | SushiBLAS handle, cost and split | T23, T25 | done |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
+| T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | todo |
 | T32 | SushiBLAS conformance kernels | T30 | todo |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
 
@@ -172,7 +173,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 
 | Task | Runs on | Files | Waits on | Done when |
 | --- | --- | --- | --- | --- |
-| T36 | inline | `engine/coherence`: splitting a declared-splittable node into parts sized by device speed, at most one per device | T25, T30 | A split product's measured step on the first machine is shorter than with splitting turned off, and a node that fits no pool whole runs split |
+| T36 | inline | `engine/coherence`: splitting a declared-splittable node into parts sized by device speed, at most one per device; `NodeSplit::slice` receives the part's device queue and the pointers bound on that device (ruling of 2026-11-15) | T25, T30 | A split product's measured step on the first machine is shorter than with splitting turned off, and a node that fits no pool whole runs split |
 | T27 | inline | rebalancing at horizons, the measured floor check and the placement journal | T22, T34 | After one device is throttled its nodes move within two horizons; with a doctored profile the partitioner returns to the floor plan within two horizons; a journal replay gives the same placement and bytes |
 
 ### H6: distributed
@@ -188,6 +189,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | --- | --- | --- | --- | --- |
 | T30 | `sonnet` `medium` | SushiBLAS: tensors report their handle, matrix products declare `NodeCost` and a row or column split | T23, T25 | The SushiBLAS suite is green against the runtime branch |
 | T31 | `haiku` `high` | SushiEngine `modules/foundation/execution/include/SushiEngine/execution/backend/runtime_backend.hpp`: the `ResourceID` to `GlobalHandle` table; then SushiAI's build, unchanged | T06 | The SushiEngine suite is green, and SushiAI's build result is in `REPORT.md` with each break named |
+| T49 | `sonnet` `medium` | SushiBLAS worktree `D:/Projects/.worktrees/sushiblas-global_handle`: `tensor.hpp`, `scratch.hpp`, `reduce.hpp`, `counting_sort.cpp`, `prefix_scan.cpp`, host blocks, `gemm_split.hpp` | T30, T36 | Every `BufferRegion` names a handle, a host tensor has a minted host handle, and the GEMM slice runs on the queue and pointers the runtime gives its part |
 | T32 | `sonnet` `medium` | SushiBLAS tests: the conformance kernel set (sum, dot, gemm, softmax, layer norm) on every device | T30 | Each operation gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each difference and why |
 | T33 | inline | SushiBLAS large test: a file-backed product graph larger than any one device's memory | T19, T27, T30 | On the first machine it runs across every device the plan gives a node, with no file reads after loading, equal bytes over ten runs, and a step time at most 1.05 times that of the floor plan's devices alone |
 
