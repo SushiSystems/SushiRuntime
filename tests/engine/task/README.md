@@ -101,6 +101,8 @@ generation and the device in the message. A death test starts a child process.
 | Test | What it proves |
 | --- | --- |
 | `HostUSMIsHostVisible` | A home instance of kind `Host` is host visible, and the slot names its home device. |
+| `ASlotMadeByHandleReadsItsHomeAddressFromTheDirectory` | A slot made from a handle alone takes the instance in its home space as its home address and names its home device. |
+| `ASlotMadeByHandleOfAPlannedBufferHasNoHomeAddress` | A slot made from the handle of a planned buffer with no home instance has a null home and no home device. |
 | `SharedUSMIsHostVisible` | A home instance of kind `Shared` is host visible. |
 | `DeviceUSMIsNotHostVisible` | A home instance of kind `Device` is not. |
 | `OnlyBorrowedMemoryOfUnknownKindIsHostVisible` | Of two instances of unknown kind, only the one whose handle carries `HandleFlags::Borrowed` is host visible. |

@@ -348,6 +348,11 @@ device work, so the chain layer takes it. The body is wrapped in a QueueWork exp
 add_task() has a second overload that takes a device work first, and a generic lambda would
 convert to both.
 
+operand_task_node() describes the same node with the handles of the operands its body reads, in
+order. It leaves `pointer_homes` empty, since a task names no address; attach_kernel_pointers()
+then reads each home from the residency directory. It marks the description `rebindable` when it
+names any handle, and the body reads its pointers through `bound_operands()`.
+
 ### State builders
 
 state_launch_node(view, launch, kernel), coupled_launch_node(out_view, views, launch, kernel)
@@ -410,7 +415,7 @@ closed struct. The fields a kind does not use stay at their defaults.
 | --- | --- | --- |
 | Kernel | `add_node(work, reads, writes)` | `pointer_handles`, `pointer_homes` for a captured launch |
 | Untracked | `add_node(work)`, then `place_on(device)` | `device` |
-| Task | `add_task(reads, writes, queue work)` | none |
+| Task | `add_task(reads, writes, queue work)` | `pointer_handles` for a task bound by handle |
 | Host | `add_native(reads, writes, worker work)` | none |
 | State | `add_node` with the regions `state_access` names | `state_access`, `live` |
 | Dynamic | `add_node` with `bindings` | `bindings` |
@@ -456,14 +461,15 @@ and no header template of another kind changes.
 ### attach_kernel_pointers
 
 attach_kernel_pointers() gives a node with pointers its `KernelPointers`, after RecorderReplay
-adds it: a capture launch, and a dynamic node with device slots. It reads the residency directory
-and builds each slot with `make_kernel_pointer_slot()`, which finds the home device and decides
+adds it: a capture launch, a task bound by handle, and a dynamic node with device slots. It reads the residency directory
+and builds each slot with `make_kernel_pointer_slot()`, taking the home from the directory when which finds the home device and decides
 whether the home is host visible (`modules/engine/task/README.md`, "The pointers a kernel
 receives"). A buffer with no device instance there, such as a planned buffer, has no home device
 and is resolved at every dispatch.
 
-add_described_node() writes `Node::kernel_addressing` from `NodeDescription::rebindable`: only a
-capture launch sets it, so only a capture launch may run away from the home of its data. Every
+add_described_node() writes `Node::kernel_addressing` from `NodeDescription::rebindable`: a
+capture launch and a task bound by handle set it, so only they may run away from the home of their
+data. Every
 other kind is `FixedToHome`, and `placement_of()` refuses it on a device where its raw addresses
 do not hold: another SYCL context, or a sibling device when one of its regions is device USM.
 

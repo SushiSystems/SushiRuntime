@@ -157,18 +157,21 @@ namespace SushiRuntime
             LiveFields live;
 
             /**
-             * @brief Kernel of a capture launch: the buffer of each pointer the kernel receives,
-             *        in argument order; empty for every other node.
+             * @brief Kernel of a capture launch, or task bound by handle: the buffer of each pointer
+             *        the work receives, in order; empty for every other node.
              */
             std::vector<GlobalHandle> pointer_handles;
 
-            /** @brief The home address of each pointer in pointer_handles, recorded at add(). */
+            /**
+             * @brief The home address of each pointer in pointer_handles, recorded at add(); a
+             *        task bound by handle leaves it empty and the directory gives each home.
+             */
             std::vector<void*> pointer_homes;
 
             /**
              * @brief True when every address the kernel reads comes from pointer_handles, so the
-             *        node may run on a device other than the home of its data; only a capture
-             *        launch sets it.
+             *        node may run on a device other than the home of its data; a capture launch
+             *        and a task bound by handle set it.
              */
             bool rebindable = false;
         };

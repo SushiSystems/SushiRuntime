@@ -201,11 +201,13 @@ advance is registered.
 
 ## test_emit_task.cpp
 
-The file tests `task_node()`: a task description whose work receives the queue.
+The file tests `task_node()` and `operand_task_node()`: task descriptions whose work receives the queue.
 
 | Test | What it proves |
 | --- | --- |
 | `Small_EmitTask.ATaskNodeDescribesItsKindWriteAndWork` | The description is a task node with the written region it was given and holds queue work. |
+| `Small_EmitTask.ATaskBoundByHandleIsRebindableWithItsHandlesInOrder` | `operand_task_node()` keeps the handles in the order given, leaves `pointer_homes` empty for the directory, and marks the description `rebindable`. |
+| `Small_EmitTask.ATaskWithoutHandlesStaysFixedToHome` | `task_node()` names no handle and leaves the description not `rebindable`. |
 | `Medium_EmitTask.ATaskNodeRunsOnTheQueue` | Its work runs on the queue it is handed and stores its value. |
 
 ## test_emit_tracked.cpp

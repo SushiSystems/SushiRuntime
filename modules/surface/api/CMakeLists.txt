@@ -9,6 +9,7 @@ sushiruntime_add_module(
     SOURCES
         advanced_controls.cpp
         assertion_logging.cpp
+        bound_operands.cpp
         bound_pointers.cpp
         buffer.cpp
         dispatch_events.cpp

@@ -35,6 +35,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/detail/node_description.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -59,6 +60,26 @@ namespace SushiRuntime
             description.writes = std::move(writes);
             description.width = width;
             description.work = QueueWork(std::forward<F>(kernel));
+            return description;
+        }
+
+        /**
+         * @brief Describes a task body that reads its operands' pointers through bound_operands(),
+         *        bound on the node's device at dispatch.
+         * @param handles The buffer of each operand, in the order the body reads them.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        NodeDescription operand_task_node(std::vector<BufferRegion> reads,
+                                          std::vector<BufferRegion> writes,
+                                          std::vector<GlobalHandle> handles, F&& kernel,
+                                          std::size_t width)
+        {
+            NodeDescription description = task_node(std::move(reads), std::move(writes),
+                                                    std::forward<F>(kernel), width);
+            description.pointer_handles = std::move(handles);
+            // The body reads no address but the bound operands, so it may run on any device.
+            description.rebindable = !description.pointer_handles.empty();
             return description;
         }
     } // namespace Detail

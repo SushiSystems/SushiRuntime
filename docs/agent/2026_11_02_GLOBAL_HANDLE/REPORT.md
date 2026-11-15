@@ -90,6 +90,7 @@ dispatch: T27 — opus low, rung 1, passed but for the bytes clause (moved to T5
 dispatch: T33 — sonnet medium, 27 turns, rung 1, failed (stopped on a missing SushiBLAS seam; T55 builds it)
 dispatch: T55 — opus low, 56 turns, rung 1, passed in part (recording by handle moved to T56 and T57)
 dispatch: T54 — opus low, 98 turns, rung 1, passed after one return (horizon in the journal)
+dispatch: T56 — opus low, 85 turns, rung 1, passed
 ```
 
 ## T05: the residency directory

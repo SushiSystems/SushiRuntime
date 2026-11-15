@@ -91,7 +91,8 @@ node on another device, the kernel must read the instance there. `Node::kernel_p
 `KernelPointerSlot` per pointer: the buffer's handle, the home address and the home device.
 `Node::execute()` calls `KernelPointers::bind()` with the node's device, `cached_queue_index_`, and
 opens a `KernelPointerScope` around the work; the capture launch's command group reads the table
-from the scope while it is built. A node with no table, or not yet placed, runs its work as before.
+from the scope while it is built. `Node::execute_host()` does the same around a task's queue body,
+which reads the table through `bound_operands()` for every kernel it submits. A node with no table, or not yet placed, runs its work as before.
 
 `bind()` keeps the home address of a slot whose home device is the node's device and reads no
 directory. Any other slot is resolved with `resolve_on_device()`, which is lock-free. A buffer with
@@ -135,9 +136,9 @@ bytes each part reads and writes, which the coherence planner plans part by part
 
 `Node::kernel_addressing` says whether a node's kernel may run away from the home of its data.
 It defaults to `KernelAddressing::FixedToHome`. The node builder in the API sets it to
-`Rebindable` only for a capture launch, whose description sets `NodeDescription::rebindable`,
-because every address that kernel reads comes from its table. A launch, a raw command group, an
-untracked node, a task body, a host body, a `State` rule and a dynamic node capture raw addresses
+`Rebindable` only for a capture launch and a task recorded with its operands' handles, whose
+descriptions set `NodeDescription::rebindable`, because every address their kernels read comes
+from the table. A launch, a raw command group, an untracked node, a task body without handles, a host body, a `State` rule and a dynamic node capture raw addresses
 in their own closures and stay fixed. The flag is never inferred from the table: a dynamic node
 has a table for its device slots and is still fixed. A fixed node may still run on another
 device where its raw addresses hold; "Placement rule order" says where.

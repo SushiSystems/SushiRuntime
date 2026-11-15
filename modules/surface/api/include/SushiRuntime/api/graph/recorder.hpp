@@ -327,6 +327,24 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Records a task as task(access, body) whose body reads its operands' pointers
+             *        through bound_operands(), so the task may run on any device.
+             * @param handles The buffer of each operand, in the order the body reads them; every
+             *        kernel the body submits uses the same bound pointers.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class F>
+            std::size_t task(Access access, std::vector<GlobalHandle> handles, F&& body,
+                             NodeOptions options = {})
+            {
+                return record(Detail::operand_task_node(std::move(access.reads),
+                                                        std::move(access.writes),
+                                                        std::move(handles),
+                                                        std::forward<F>(body), options.width),
+                              access.lives, options);
+            }
+
+            /**
              * @brief Records a task as task(access, body), handed the queue of a stated device.
              * @param placement Device the task runs on; over memory a device of this runtime
              *        owns, it must share that device's SYCL context or the run is refused. A

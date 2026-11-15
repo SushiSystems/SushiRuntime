@@ -88,6 +88,20 @@ namespace SushiRuntime
             return slot;
         }
 
+        KernelPointerSlot make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory,
+                                                   GlobalHandle handle, std::size_t device_count)
+        {
+            void* home = nullptr;
+            const Internal::Memory::EntryView entry = directory.inspect(handle);
+            if (entry.status == HandleStatus::Ok)
+            {
+                const ResolveOutcome outcome = directory.resolve(handle, entry.home);
+                if (outcome.status == HandleStatus::Ok)
+                    home = outcome.address;
+            }
+            return make_kernel_pointer_slot(directory, handle, home, device_count);
+        }
+
         KernelPointers::KernelPointers(std::vector<KernelPointerSlot> slots,
                                        const HandleResolver& resolver)
             : slots_(std::move(slots)), bound_(slots_.size(), nullptr), resolver_(&resolver)

@@ -629,6 +629,15 @@ The file tests Access: the regions it keeps in order and the observers of both s
 | `BareRegionsCarryNoObserver` | Regions given directly carry no liveness observer. |
 | `HandlesBringTheirObservers` | Handles given through Reads and Writes bring the observers of both. It needs a buffer, so it runs medium. |
 
+## test_bound_operands.cpp
+
+The file tests `bound_operands()`: the operand pointers a task bound by handle reads during its body.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_BoundOperands.OutsideABodyTheViewIsEmpty` | With no node dispatching, the view holds no pointer. |
+| `Small_BoundOperands.ATaskOnDeviceOneReadsTheCopiedInstanceInEveryKernel` | A table made by handle and bound on device 1 hands the copied instances to two kernels in a row; the home instances stay untouched. |
+
 ## test_dispatch_events.cpp
 
 A task body which submits several kernels is timed across every event it hands over. The three tests run

@@ -52,6 +52,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_region_composer/test_partition_hardware.cpp
         graph/plumbing/test_step_driver/test_step_driver.cpp
         graph/test_access.cpp
+        graph/test_bound_operands.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp
         graph/test_dynamic_graph/test_dynamic_graph_regions.cpp

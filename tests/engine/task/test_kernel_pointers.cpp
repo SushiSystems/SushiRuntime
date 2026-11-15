@@ -150,6 +150,35 @@ namespace
         EXPECT_EQ(slot.home_device, std::optional<std::size_t>(0));
     }
 
+    /** @brief Tests that a slot made from a handle alone takes its home address from the directory. */
+    TEST(Small_KernelPointerSlot, ASlotMadeByHandleReadsItsHomeAddressFromTheDirectory)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Device);
+
+        const KernelPointerSlot slot = make_kernel_pointer_slot(directory, handle, 2);
+
+        EXPECT_EQ(slot.home, static_cast<void*>(&home));
+        EXPECT_EQ(slot.home_device, std::optional<std::size_t>(0));
+    }
+
+    /** @brief Tests that a slot made from the handle of a planned buffer with no home instance has no home address. */
+    TEST(Small_KernelPointerSlot, ASlotMadeByHandleOfAPlannedBufferHasNoHomeAddress)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        const GlobalHandle handle = minted(directory);
+        ASSERT_EQ(directory.describe(handle, sizeof(int), Internal::Memory::ElementLayout{sizeof(int), alignof(int)},
+                                     host_memory_space()),
+                  HandleStatus::Ok);
+
+        const KernelPointerSlot slot = make_kernel_pointer_slot(directory, handle, 2);
+
+        EXPECT_EQ(slot.home, nullptr);
+        EXPECT_EQ(slot.home_device, std::nullopt);
+    }
+
     /** @brief Tests that a slot made over shared USM is host visible. */
     TEST(Small_KernelPointerSlot, SharedUSMIsHostVisible)
     {

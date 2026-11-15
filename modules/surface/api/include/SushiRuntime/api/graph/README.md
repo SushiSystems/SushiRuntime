@@ -18,6 +18,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, the determinism, the cost and the split of a node |
 | `dispatch_events.hpp` | `note_dispatch_event()`, which a host-work body calls for each event it submitted |
+| `bound_operands.hpp` | BoundOperands and `bound_operands()`, the operand pointers a task bound by handle reads |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
 BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
@@ -277,6 +278,15 @@ The same node as task(access, body, placement), with a nullary `host_form` that 
 without a queue. A runtime with no device runs the host form where a device runtime runs the body; a
 task without one is refused on the host runtime as before.
 
+### task(access, handles, body)
+
+The same node as task(access, body), with one handle per operand the body reads, in the order it
+reads them. The body takes no address from its closure: it reads each operand through
+`bound_operands()`, which returns the table the node bound on its device for this dispatch, and
+hands those pointers to every kernel it submits. The node gets a `KernelPointers` table, whose home
+addresses the residency directory gives, and is `KernelAddressing::Rebindable`, so the planner may
+place it on a device in another SYCL context and copy its regions there. The other task forms bind
+nothing and stay `FixedToHome`.
 ### record: liveness
 
 record() takes the liveness observers of the typed handles a node names, so a run can detect a
@@ -428,6 +438,14 @@ body may call it unconditionally. The returned event stays the one the scheduler
 completion; a body that hands over nothing is timed by it, as a body with one kernel is. The collector is
 a thread-local scope the dispatcher opens (`modules/engine/task/README.md`).
 
+## bound_operands.hpp
+
+### bound_operands
+
+`bound_operands()` returns a `BoundOperands` view of the pointer table the node being dispatched
+on this thread bound on its device: one pointer per handle given to task(access, handles, body), in
+that order. `as<T>(index)` casts one. The view is valid only during the body, and empty outside one.
+It reads the same thread-local scope the capture launches read (`modules/engine/task/README.md`).
 ## dynamic_graph.hpp
 
 ### DynamicGraph

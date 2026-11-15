@@ -89,6 +89,16 @@ namespace SushiRuntime
                                  void* home, std::size_t device_count);
 
         /**
+         * @brief Returns the slot of @p handle with its home address read from @p directory: the
+         *        instance in the handle's home space, or null when the home holds none yet.
+         * @param device_count Devices to look for the home instance on.
+         * @see modules/engine/task/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API KernelPointerSlot
+        make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory, GlobalHandle handle,
+                                 std::size_t device_count);
+
+        /**
          * @brief Holds the pointers one node's kernel receives, rebound to the node's device at
          *        each dispatch.
          *

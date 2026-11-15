@@ -37,6 +37,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_task.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
@@ -74,6 +75,34 @@ TEST(Small_EmitTask, ATaskNodeDescribesItsKindWriteAndWork)
     ASSERT_EQ(description.writes.size(), 1u);
     EXPECT_EQ(description.writes[0].base, TestSupport::region_at(&target).base);
     EXPECT_TRUE(std::holds_alternative<Detail::QueueWork>(description.work));
+}
+
+/** @brief Tests that a task bound by handle keeps its handles in order, leaves the homes to the directory and is rebindable. */
+TEST(Small_EmitTask, ATaskBoundByHandleIsRebindableWithItsHandlesInOrder)
+{
+    int target = 0;
+    const GlobalHandle first(0, 0, HandleKind::Buffer, HandleFlags::None, 1, 3);
+    const GlobalHandle second(0, 0, HandleKind::Buffer, HandleFlags::None, 2, 5);
+
+    const Detail::NodeDescription description = Detail::operand_task_node(
+        {}, {TestSupport::region_at(&target)}, {second, first}, store_seven(&target), 1);
+
+    EXPECT_EQ(description.kind, Detail::NodeKind::Task);
+    EXPECT_EQ(description.pointer_handles, (std::vector<GlobalHandle>{second, first}));
+    EXPECT_TRUE(description.pointer_homes.empty()) << "the directory gives each home";
+    EXPECT_TRUE(description.rebindable) << "the body reads only its bound operands";
+}
+
+/** @brief Tests that a task recorded without handles stays fixed to the home of its data. */
+TEST(Small_EmitTask, ATaskWithoutHandlesStaysFixedToHome)
+{
+    int target = 0;
+
+    const Detail::NodeDescription description =
+        Detail::task_node({}, {TestSupport::region_at(&target)}, store_seven(&target), 1);
+
+    EXPECT_TRUE(description.pointer_handles.empty());
+    EXPECT_FALSE(description.rebindable) << "the body captured addresses of its own";
 }
 
 /** @brief Fixture of the test that runs a task description on the program's runtime. */

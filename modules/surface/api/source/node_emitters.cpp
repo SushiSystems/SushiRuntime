@@ -227,9 +227,16 @@ namespace SushiRuntime
             std::vector<Internal::Graph::KernelPointerSlot> slots;
             slots.reserve(description.pointer_handles.size());
             for (std::size_t index = 0; index < description.pointer_handles.size(); ++index)
-                slots.push_back(Internal::Graph::make_kernel_pointer_slot(
-                    handles, description.pointer_handles[index], description.pointer_homes[index],
-                    device_count));
+            {
+                const GlobalHandle handle = description.pointer_handles[index];
+                // A task bound by handle records no home address; the directory gives it.
+                if (index < description.pointer_homes.size())
+                    slots.push_back(Internal::Graph::make_kernel_pointer_slot(
+                        handles, handle, description.pointer_homes[index], device_count));
+                else
+                    slots.push_back(
+                        Internal::Graph::make_kernel_pointer_slot(handles, handle, device_count));
+            }
             node.kernel_pointers_ =
                 std::make_unique<Internal::Graph::KernelPointers>(std::move(slots), handles);
         }

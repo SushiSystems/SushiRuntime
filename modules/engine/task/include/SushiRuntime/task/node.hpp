@@ -436,12 +436,21 @@ namespace SushiRuntime
                 work(h);
             }
 
-            /** @brief Executes the host work with a queue. */
+            /**
+             * @brief Executes the queue body, with its operands' pointers bound to the node's
+             *        device when it has any.
+             * @see modules/engine/task/README.md
+             */
             sycl::event execute_host(sycl::queue& queue,
                                      const std::vector<sycl::event>& dependencies) override
             {
-                if(host_work) return host_work(queue, dependencies);
-                return {};
+                if (!host_work)
+                    return {};
+                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                    return host_work(queue, dependencies);
+                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
+                const KernelPointerScope scope(*kernel_pointers_);
+                return host_work(queue, dependencies);
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */

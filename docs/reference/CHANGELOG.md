@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `Recorder::task(access, handles, body)`, a task whose body reads its operands through `bound_operands()` bound on the node's device, so the node is rebindable and may run on any device (GLOBAL_HANDLE T56).
+- 2026-11-15 — task: Added `make_kernel_pointer_slot(directory, handle, device_count)`, which reads a slot's home address from the residency directory, and bound a task's queue body to its pointer table at dispatch (GLOBAL_HANDLE T56).
 - 2026-11-15 — api: Added `AdvancedControls::replay_placements()`, which places a runtime's graphs from a placement journal, each change at the horizon it was made at (GLOBAL_HANDLE H7).
 - 2026-11-15 — runtime: Changed a static `Graph` to keep its partition across builds and build again when a horizon rebalances it (GLOBAL_HANDLE H7).
 - 2026-11-15 — coherence: Changed the placement journal to version 2, which records each entry's horizon; version 1 is read and upgraded (GLOBAL_HANDLE H7).
