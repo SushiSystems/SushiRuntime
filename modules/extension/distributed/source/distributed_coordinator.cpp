@@ -833,25 +833,22 @@ namespace SushiRuntime
             return snapshot;
         }
 
-        void DistributedCoordinator::on_release(void* /*address*/) noexcept
+        void DistributedCoordinator::on_retire(GlobalHandle handle) noexcept
         {
             Impl& impl = *impl_;
 
             try
             {
-                const std::vector<GlobalHandle> released = impl.buffers.unshare_retired();
-                if (released.empty())
+                const GlobalHandle released = impl.buffers.unshare(handle);
+                if (released.is_null())
                     return;
 
                 std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);
-                for (const GlobalHandle id : released)
-                {
-                    Wire::BufferReleaseMessage release;
-                    release.id = id;
-                    for (const PeerID worker : workers)
-                        impl.send_control(worker, release);
-                }
+                Wire::BufferReleaseMessage release;
+                release.id = released;
+                for (const PeerID worker : workers)
+                    impl.send_control(worker, release);
             }
             catch (const std::exception& error)
             {

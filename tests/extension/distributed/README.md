@@ -87,6 +87,13 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 | `LocalWritesRaiseTheVersionAndCostOnePull` | One offloaded read puts version 1 of a shared buffer in the worker's cache. One or two local tasks with no operation then rewrite the buffer, one row each, and a second offloaded read follows. The version rises by the number of writes, `chunks_sent` doubles, so the worker pulled once for all the writes, and the output holds the last write's bytes. This is the optimizer-then-replica step of a training run. |
 | `WorkerDeathFallsBackToLocal` | A `FallSilent` worker takes the dispatch and stops answering. With a liveness timeout of 300 ms the master closes it and resubmits the task, which finishes locally. Until the dispatch the worker answers pings, so it cannot be closed early on a slow machine. |
 
+### `ARetiredHandleIsUnsharedAndReleasedOnTheWorker`
+
+Three borrowed buffers are shared and one offloaded add puts them in the worker's cache. When they
+leave their scope their handles are retired: the cluster gives the first one no buffer handle, and
+`eventually` the worker's cache holds no bytes and its eviction count has risen. That shows the
+master unshared each buffer from its retire notification and sent `BUFFER_RELEASE`.
+
 ### `PolicySeesWorkerFactsAcrossReconnect`
 
 An `InMemoryOffloadPolicy` picks the first worker it is offered. A `ScriptedWorker` named `rack-7-gpu` registers with the labels `zone=a` and `tier=fast`,

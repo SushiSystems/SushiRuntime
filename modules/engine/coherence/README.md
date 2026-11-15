@@ -29,7 +29,7 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
 | `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
-| `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance |
+| `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance and names its kind of USM |
 | `usm_instance_allocator.hpp` | `USMInstanceAllocator`, the port over a `USMAllocator` |
 | `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step into a node |
 | `directory_planned_node_factory.hpp` | `DirectoryPlannedNodeFactory`, nodes that resolve through the directory |

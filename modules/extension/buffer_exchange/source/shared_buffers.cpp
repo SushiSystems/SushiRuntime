@@ -30,7 +30,6 @@
 
 #include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
-#include <algorithm>
 #include <cstring>
 
 #include <SushiRuntime/task/handle_location.hpp>
@@ -103,22 +102,6 @@ namespace SushiRuntime
 
             by_handle_.erase(known);
             return handle;
-        }
-
-        std::vector<GlobalHandle> SharedBuffers::unshare_retired()
-        {
-            std::vector<GlobalHandle> dropped;
-
-            std::lock_guard<std::mutex> lock(mutex_);
-            for (const auto& [handle, entry] : by_handle_)
-                if (resolver_.is_stale(handle))
-                    dropped.push_back(handle);
-
-            // The map's order is not defined; the handles go out in handle order.
-            std::sort(dropped.begin(), dropped.end());
-            for (const GlobalHandle handle : dropped)
-                by_handle_.erase(handle);
-            return dropped;
         }
 
         std::optional<BufferHandle> SharedBuffers::lookup(GlobalHandle handle) const

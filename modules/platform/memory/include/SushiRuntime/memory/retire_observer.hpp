@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* recording_usm_release_observer.hpp                                     */
+/* retire_observer.hpp                                                    */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,59 +22,39 @@
 /**************************************************************************/
 
 /**
- * @file recording_usm_release_observer.hpp
- * @brief Declares RecordingUSMReleaseObserver, which keeps the address of each release it hears.
+ * @file retire_observer.hpp
+ * @brief Declares RetireObserver, which ResidencyDirectory tells about every handle it retires.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
 
 #pragma once
 
-#include <mutex>
-#include <vector>
-
-#include <SushiRuntime/memory/usm_release_observer.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
         /**
-         * @brief Keeps the address of each release it hears, in arrival order, under a mutex.
-         *
-         * on_release() may be called from several threads at once, so the addresses are guarded
-         * by a mutex, and released() returns a copy taken under that mutex.
+         * @brief Receives each handle ResidencyDirectory::retire() retires.
          * @see modules/platform/memory/README.md
          */
-        class RecordingUSMReleaseObserver final : public USMReleaseObserver
+        class RetireObserver
         {
             public:
                 /**
-                 * @brief Appends @p address to the addresses heard so far.
-                 * @param address The address being released.
+                 * @brief Hears that a handle was retired.
+                 * @param handle The retired handle; it no longer resolves. Called on the thread
+                 *        that retired it, after the directory's lock is released, so the call
+                 *        may write to the directory. Several threads may call at once.
                  */
-                void on_release(void* address) noexcept override
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    released_.push_back(address);
-                }
+                virtual void on_retire(GlobalHandle handle) noexcept = 0;
 
-                /**
-                 * @brief Returns the addresses heard so far, oldest first.
-                 * @return A copy; releases heard after the call are not in it.
-                 */
-                [[nodiscard]] std::vector<void*> released() const
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    return released_;
-                }
-
-            private:
-                /** @brief Guards released_. */
-                mutable std::mutex mutex_;
-
-                /** @brief The addresses heard, in arrival order. */
-                std::vector<void*> released_;
+            protected:
+                /** @brief Keeps an observer from being destroyed through this interface. */
+                ~RetireObserver() = default;
         };
+
     } // namespace Internal::Memory
 } // namespace SushiRuntime

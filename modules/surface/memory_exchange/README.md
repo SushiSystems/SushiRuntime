@@ -55,10 +55,10 @@ functions of their inputs and return `std::optional<Error>`:
 | `descriptor.device` equals the device's UUID | `InvalidAccess` |
 
 File descriptor 0 is accepted, because it is a valid descriptor. Zero bytes that pass every check
-return an empty `Allocation`: no import, no mapping, no registry entry.
+return an empty `Allocation`: no import and no mapping.
 
-A mapped import is adopted into the runtime's allocator as `USMKind::Device`, so a later
-`Interop::borrow()` of it reads its kind from the record and asks SYCL nothing.
+A mapped import is recorded nowhere by this module. The buffer the API builds on it mints a handle
+whose directory entry records the instance as `USMKind::Device`; the allocator keeps no table.
 
 `device_import` is true only when the device also reports a UUID, so a device that passes the
 first check can always be matched against `descriptor.device`.
@@ -83,7 +83,7 @@ The default constructor probes through `probe_device_capabilities()`; the one th
 
 ### release_import
 
-Releasing an import is three steps: forget the address, unmap it, release the SYCL import object.
+Releasing an import is two steps: unmap the address, then release the SYCL import object.
 Each step runs in its own call of the translator, so a failed unmap still releases. A step that throws is logged
 once at ERROR with its name and the device index, and nothing is rethrown, because the steps run
 from a destructor and from `AllocationOwner::release`, which is `noexcept`.

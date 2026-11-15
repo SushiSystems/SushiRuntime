@@ -80,5 +80,4 @@ in progress: that needs a way to stop a thread inside `read()`, which `SharedBuf
 | `AnUnregisteredBufferIsGone` | Lookups by handle and by id find nothing, and `read` and `write` report `Gone`. |
 | `AHandleSharedAgainAfterUnshareStartsAtVersionOne` | A handle shared again after `unshare` starts at version 1. |
 | `TheNullHandleIsNeverShared` | Sharing the null handle gives a buffer handle with the null id and a lookup finds nothing. |
-| `UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRetired` | `unshare_retired` drops the buffer of a retired handle, returns its handle and keeps the others. |
 | `ABufferWhoseInstanceIsGoneIsGoneToAReader` | A buffer whose handle was retired reads as `Gone` and copies nothing. |

@@ -56,10 +56,10 @@ class Small_DispatchPlacement : public ::testing::Test
         /** @brief The device count the placement is checked against. */
         static constexpr std::size_t K_DEVICES = 2;
 
-        /// @brief Host memory of two devices; a test records ownership with adopt().
+        /// @brief Host memory of two devices; it answers which devices share a context.
         SushiRuntime::Internal::Memory::USMAllocator memory_{
             SushiRuntime::Internal::Memory::make_host_usm_source(K_DEVICES)};
-        /// @brief Gives each address of a test a handle that resolves to it.
+        /// @brief Gives each address of a test a handle that resolves to it on one device.
         TestSupport::HandleTable handles_;
         /// @brief The node placed.
         sushi_ptr<Node> node_ = make_sushi<Node>();
@@ -78,29 +78,25 @@ TEST_F(Small_DispatchPlacement, CachesTheDefaultDeviceOfARegionlessNode)
 TEST_F(Small_DispatchPlacement, CachesTheOwnerOfTheNodesRegion)
 {
     int cell = 0;
-    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
-    node_->io_writes_.emplace_back(handles_.place(&cell));
+    node_->io_writes_.emplace_back(handles_.place(&cell, 1));
 
     ASSERT_TRUE(place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES));
 
     EXPECT_EQ(node_->cached_queue_index_, 1);
-    memory_.forget(&cell);
 }
 
 /** @brief Tests that a placed node keeps its device when its region's owner changes before a later dispatch. */
 TEST_F(Small_DispatchPlacement, APlacedNodeKeepsItsDeviceOnALaterDispatch)
 {
     int cell = 0;
-    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
-    node_->io_writes_.emplace_back(handles_.place(&cell));
+    node_->io_writes_.emplace_back(handles_.place(&cell, 1));
     ASSERT_TRUE(place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES));
-    memory_.forget(&cell);
-    memory_.adopt(&cell, 0, sizeof(cell), std::nullopt);
+    ASSERT_EQ(handles_.retire(&cell), SushiRuntime::HandleStatus::Ok);
+    node_->io_writes_.front() = SushiRuntime::BufferRegion(handles_.place(&cell, 0));
 
     ASSERT_TRUE(place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES));
 
     EXPECT_EQ(node_->cached_queue_index_, 1);
-    memory_.forget(&cell);
 }
 
 /** @brief Tests that a placement past the device count is refused, naming the index and the count, and nothing is cached. */
@@ -122,15 +118,11 @@ TEST_F(Small_DispatchPlacement, PlacesANodeWhoseRegionsSpanTwoDevicesOnItsAnchor
 {
     int written = 0;
     int read = 0;
-    memory_.adopt(&written, 0, sizeof(written), std::nullopt);
-    memory_.adopt(&read, 1, sizeof(read), std::nullopt);
-    node_->io_writes_.emplace_back(handles_.place(&written));
-    node_->io_reads_.emplace_back(handles_.place(&read));
+    node_->io_writes_.emplace_back(handles_.place(&written, 0));
+    node_->io_reads_.emplace_back(handles_.place(&read, 1));
 
     ASSERT_TRUE(place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES));
 
     EXPECT_EQ(node_->cached_queue_index_, 0);
     EXPECT_TRUE(node_->locality_checked_);
-    memory_.forget(&written);
-    memory_.forget(&read);
 }

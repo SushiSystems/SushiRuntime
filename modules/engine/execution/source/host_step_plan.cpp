@@ -30,12 +30,13 @@
 
 #include <SushiRuntime/execution/host_step_plan.hpp>
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -50,14 +51,14 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Answers HostReachableMemory from a handle's address and the kind a USMAllocator recorded for it. */
-            class USMHostReachableMemory final : public HostReachableMemory
+            /** @brief Answers HostReachableMemory from the kind the residency directory recorded for a handle's instance. */
+            class DirectoryHostReachableMemory final : public HostReachableMemory
             {
                 public:
-                    /** @brief Reads @p memory and @p handles, which must outlive this object. */
-                    USMHostReachableMemory(const Internal::Memory::USMAllocator& memory,
-                                           const HandleResolver& handles) noexcept
-                        : memory_(memory), handles_(handles)
+                    /** @brief Reads @p handles, which must outlive this object, over @p device_count devices. */
+                    DirectoryHostReachableMemory(const Internal::Memory::ResidencyDirectory& handles,
+                                                 std::size_t device_count) noexcept
+                        : handles_(handles), device_count_(device_count)
                     {
 
                     }
@@ -66,20 +67,20 @@ namespace SushiRuntime
                     [[nodiscard]] bool host_reachable(GlobalHandle handle) const override
                     {
                         const std::optional<Internal::Graph::HandleLocation> location =
-                            Internal::Graph::locate(handles_, handle, memory_.device_count());
+                            Internal::Graph::locate(handles_, handle, device_count_);
                         if (!location)
                             return false;
-                        const std::optional<Internal::Memory::USMRegistry::Record> record =
-                            memory_.record_of(location->address);
-                        if (!record || !record->kind)
+                        const std::optional<Internal::Memory::USMKind> kind = handles_.instance_kind(
+                            handle, Internal::Graph::device_memory_space(location->device));
+                        if (!kind)
                             return false;
-                        return *record->kind == Internal::Memory::USMKind::Host ||
-                               *record->kind == Internal::Memory::USMKind::Shared;
+                        return *kind == Internal::Memory::USMKind::Host ||
+                               *kind == Internal::Memory::USMKind::Shared;
                     }
 
                 private:
-                    const Internal::Memory::USMAllocator& memory_; /**< The allocator whose records answer. */
-                    const HandleResolver& handles_;                /**< Resolves a handle to its address. */
+                    const Internal::Memory::ResidencyDirectory& handles_; /**< Resolves a handle and holds its kind. */
+                    std::size_t device_count_;                            /**< Devices a handle is looked for on. */
             };
 
             /** @brief Returns whether every region of @p regions lies in memory the host reaches. */
@@ -141,7 +142,7 @@ namespace SushiRuntime
 
         const char* host_step_refusal(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
-            return host_step_refusal(graph, USMHostReachableMemory(context.memory(), context.handles()));
+            return host_step_refusal(graph, DirectoryHostReachableMemory(context.handles(), context.memory().device_count()));
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

@@ -142,6 +142,8 @@ queue.
 | `NullAndForeignHandlesAreRefused` | The null handle gives `NullHandle`; a handle of another universe gives `ForeignUniverse`. |
 | `AFreedSlotIsReusedLowestFirstUnderTheNextGeneration` | With slots 3 and 5 of 0..5 retired, the next mints get 3 at the next generation, then 5, then 6. |
 | `GrowingPastOneChunkKeepsEarlierEntriesInPlace` | Minting past one chunk makes the second chunk and leaves the first entry at its address. |
+| `AnInstanceKeepsItsKindUntilItIsDroppedOrRetired` | An instance set with a kind reports it through `instance_kind()` and `EntryView::home_kind`; one set without a kind, a dropped one and one on a retired or reused slot report none. |
+| `LiveCountFollowsMintAndRetire` | `live_count()` rises with each mint and falls with each retire; a retire of a stale handle changes nothing. |
 | `ReadersResolveWhileAWriterMints` | Four reader threads resolve one live handle while the test thread mints and retires four chunks of others; every resolve returns the same address. |
 
 ## test_borrowed_index.cpp
@@ -154,139 +156,63 @@ queue.
 | `AnOverlappingRangeIsRefused` | A range inside or across a live range it does not equal is refused with `InvalidArgument`. |
 | `ANullOrEmptyRangeIsRefused` | A null address or a range of no bytes is refused. |
 
-## test_recording_usm_release_observer.cpp
+## test_retire_observer.cpp
 
-A `RecordingUSMReleaseObserver` keeps the addresses it hears. The test calls `on_release()` itself,
-with no allocator and no device.
+The file tests RetireObserver: the directory tells an observer of each handle it retires. The
+observers are local to the file; no allocator or device is involved.
 
 | Test | What it proves |
 | --- | --- |
-| `KeepsEachAddressInArrivalOrder` | The observer keeps each address it hears, in arrival order, repeats included. |
+| `HearsEachRetiredHandleOnce` | The observer hears a retired handle once; a second retire of the stale handle is not heard. |
+| `ARemovedObserverHearsNothingMore` | An observer removed before the retire is not told. |
+| `AnObserverMayMintFromInsideTheCall` | `on_retire()` runs after the writer lock is released, so it can mint. |
+| `SetRetireObserverReturnsOnlyAfterACallInFlightFinished` | Medium, since it hands a call over between real threads. An observer blocks inside `on_retire()`; a second thread removes it; the test opens the observer once the removal has begun and asserts the call had finished when the removal returned. It uses no sleep and no deadline. |
 
 ## test_usm_allocation_owner.cpp
 
-The file tests USMAllocationOwner: an Allocation returns its USM to the allocator once.
+The file tests USMAllocationOwner: an Allocation returns its USM to the allocator once, on its device.
 
 | Test | What it proves |
 | --- | --- |
-| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It runs small, on an allocator over `make_host_usm_source()`. |
+| `DestroyingTheAllocationFreesTheUSMOnItsDevice` | Destroying the allocation frees the USM once, against the device the owner was given. A source local to the file records each free with its device. |
 | `AnOwnerWithNoAllocatorLeavesTheMemoryAlone` | An owner with no allocator releases nothing; the memory it is handed keeps its value. |
 
 ## test_usm_allocator.cpp
 
-The file covers `USMAllocator`. The record, release and observer tests run small, on an allocator over a
+The file covers `USMAllocator`. The release and copy tests run small, on an allocator over a
 `make_host_usm_source(2)`. The kind test runs as rows and skips when no SYCL device supports the
 row's kind; the alignment of the real SYCL allocation is checked by `Medium_AlignedAllocation` in
-`tests/engine/execution/test_runtime_context.cpp`. The release observer is the module's `RecordingUSMReleaseObserver`, and the
-ERROR and WARN lines are read through `LogCapture`.
+`tests/engine/execution/test_runtime_context.cpp`. The ERROR and WARN lines are read through
+`LogCapture`.
 
-### `AllocatesIsUsableIsCountedAndIsReleased`
+### `AllocatesIsUsableAndIsReleased`
 
-One row per kind. A device writes device USM; the host writes host and shared USM.
+One row per kind. A device writes device USM; the host writes host and shared USM. The release on
+the device it was allocated on logs no ERROR.
 
-### `AnAllocationResolvesToItsDeviceAtItsBase`, `AnInteriorAddressFindsItsBase`, `TheAddressPastTheEndHasNoBase` and `AReleasedAllocationHasNoBase`
+### `TheFirstReleaseLogsNothing` and `ANullReleaseLogsNothing`
 
-An allocation answers for its device at its first address through `device_of` and `owning_device`. An
-interior address has no device of its own and finds its base through `containing_base`; the address one
-past the end and a released allocation find none.
+A release of a block on its device, and a release of null, log no ERROR line.
 
-### `RecordOfKeepsTheKindAnAllocationWasMadeAs` and `RecordOfAnAdoptedAddressHasNoKind`
+### `AReleaseOnADeviceTheAllocatorDoesNotHoldLogsAndFreesNothing`
 
-An allocation's record holds its device and the kind requested until it is released; an adopted
-address is recorded with no kind.
+The test releases a heap block against a device index past the allocator's devices. The release
+logs exactly one ERROR line, and the block keeps its bytes, which one whole-buffer comparison
+checks.
 
-### `AdoptRecordsTheDeviceOfAnAddress`, `AnAdoptedAddressContainsItsBytes`, `ForgetDropsTheRecordWithoutFreeing` and `ForgetIgnoresNull`
+### `CopyMovesTheBytesOnTheNamedDevice`
 
-`adopt` records a device and counts the address live, and an adopted address with a length resolves
-from inside it. `forget` drops the record and does not free; null is ignored.
+A copy into an allocation on the last device lands every byte.
 
-### `TheFirstReleaseLogsNothing` and `ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing`
+### `ABadDeviceIndexStopsWithTheIndexAndTheCount`
 
-The first release of a block logs no ERROR line. The second leaves `live_count` unchanged, and logs
-exactly one ERROR line that contains the address and the words "no record".
-
-### `ReleaseOfAnUnrecordedAddressLogsAndLeavesItAllocated`
-
-The test releases a heap block the allocator never recorded. The release logs exactly one ERROR line and
-leaves `live_count` unchanged. The block keeps its bytes, which one whole-buffer comparison checks.
-
-### `TheReleaseObserverHearsNothingBeforeARelease`, `ANullReleaseAndAForgetAreNotHeard`, `AnAdoptedAddressIsHeardWhenReleased` and `ARemovedObserverHearsNothingMore`
-
-Each test states one promise of the observer: it hears nothing before a release, neither a null release
-nor a `forget` reaches it, an adopted address is reported like any other, and a removed observer is
-not told. That the observer hears a released address once is in `test_usm_release_observer.cpp`.
-
-### `SetReleaseObserverReturnsOnlyAfterAnObserverCallInFlightFinished`
-
-Medium, since it hands a call over between real threads. The test installs an observer whose `on_release`
-blocks, then releases an adopted address on a second thread, so one call is in flight. A third thread
-removes the observer; the test waits until that thread has begun, opens the observer, and asserts that the
-call had run to its end when the removal returned. It uses no sleep and no deadline.
+allocate() and copy() on a device past the last one stop the process with the index and the count.
 
 ### `Small_UsmAllocatorFailure.LogsTheRefusedRequest`
 
 The test asks a host source for the largest byte count, with an alignment of 64, under a `LogCapture` at
 `Warn`. It asserts the allocator returns null and logs exactly one `WARN` in the `memory` module
 whose message holds the byte count and the alignment.
-
-## test_usm_registry.cpp
-
-The registry holds values only, so every test but the threaded one runs small.
-
-### `fake`
-
-Registry keys are opaque and nothing is dereferenced, so distinct fake addresses are enough, and the
-test needs no `Runtime`.
-
-### `K_EXTENT`
-
-The fake addresses sit 64 bytes apart, so a 64-byte extent covers exactly one of them and never
-reaches its neighbour.
-
-### `TakeReportsTheOwner` and `ATakenPointerIsFoundByNoLookup`
-
-The free path erases the entry and reads the owner in one step. A second free of the same pointer
-must therefore be distinguishable from the first and must not report a stale device. The rows ask the
-registry for the taken pointer through `take`, `owner_of` and `containing_allocation`.
-
-### `RecordingAPointerTwiceKeepsTheLatestOwner`
-
-Recording a pointer twice is reachable only if an allocator handed back an address the registry had
-not been told was freed. The last writer wins, which matches the map assignment the runtime has
-always done. The test asserts it so that a future change of container does not quietly make the
-first writer win.
-
-### `ConcurrentRecordAndTakeLoseNothing`
-
-Buffers are constructed and destroyed from whichever thread owns them, so several threads write the
-registry at once. Every pointer the test records is taken exactly once, by exactly one thread. Each
-thread keeps what its takes returned, and the test compares them with the expected owners after the
-join.
-
-### `RecordOfReportsTheDeviceAndKindAtTheBaseOnly`
-
-record_of() returns the device and kind given to record(), no kind for an entry recorded without
-one, and nothing for an interior pointer or null.
-
-### `FindsTheAllocationOnlyInsideItsExtent`
-
-The graph builder needs this case: a caller offsets into a plan array and hands over an address that
-the table, which is keyed by base address, cannot find. The rows are an interior byte, the base, the
-last byte, one past the end, an unrelated pointer and null.
-
-### `AnEntryWithoutALengthResolvesOnlyAtItsBase`
-
-An adopted address whose importer knew no size must not read as zero-length and must not swallow
-offsets it cannot vouch for.
-
-## test_usm_release_observer.cpp
-
-The file tests USMReleaseObserver: the allocator tells an observer of each release, with its
-address.
-
-| Test | What it proves |
-| --- | --- |
-| `HearsEachReleaseWithItsAddress` | The observer hears the release of the address the allocator gave. |
 
 ## compile_memory_probe.cpp and compile_memory_space.cpp
 

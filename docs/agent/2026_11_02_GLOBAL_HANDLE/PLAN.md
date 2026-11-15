@@ -47,7 +47,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | done |
 | T07 | `surface/api` region composer | T06 | running |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
-| T09 | `platform/memory` `usm_registry` | T06 | running |
+| T09 | `platform/memory` `usm_registry` | T06 | done |
 | T10 | `extension/buffer_exchange` | T06 | done |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |

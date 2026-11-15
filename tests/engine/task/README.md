@@ -57,9 +57,9 @@ includes the adapter header alone.
 
 | Test | What it proves |
 | --- | --- |
-| `AnUnrecordedHandleHasNoDevice`, `AnUnrecordedAddressHasNoDevice` | A handle nobody recorded, or whose address nobody adopted, has no recorded and no owning device. |
+| `AnUnrecordedHandleHasNoDevice`, `ARetiredHandleHasNoDevice` | A handle nobody recorded, or one the directory retired, has no recorded and no owning device. |
 | `AHandleWithNoInstanceHasNoDevice` | A handle that resolves to no instance has no device. |
-| `ARecordedHandleNamesItsDevice`, `AnAdoptedAddressNamesItsDevice` | A recorded handle (small), or the handle of an adopted address (medium), names its device. |
+| `ARecordedHandleNamesItsDevice`, `AHandleNamesTheDeviceOfItsInstance` | A recorded handle, or a handle whose instance lies on a device's memory space, names that device. |
 | `TheDeviceCountIsTheNumberOfDevicesItWasBuiltWith` | The device count is the number of devices or allocator entries. |
 | `TwoDevicesInOneContextShareIt` | Two devices in one context share it. |
 

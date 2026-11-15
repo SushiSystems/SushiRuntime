@@ -108,7 +108,7 @@ TEST(Medium_ChainRun, EachStepRunsTheWholeChain)
         ASSERT_TRUE(run.finish().has_value());
     }
     EXPECT_EQ(*value, 12) << "(0 + 1) * 3 = 3, then (3 + 1) * 3 = 12; another order gives 4";
-    context->memory().release(value);
+    context->memory().release(value, 0);
 }
 
 /** @brief Tests that wait() returns once the submitted step is done. */
@@ -132,5 +132,5 @@ TEST(Medium_ChainRun, WaitReturnsAfterTheStep)
     ASSERT_TRUE(run.wait().has_value());
     EXPECT_EQ(*value, 1);
     ASSERT_TRUE(run.finish().has_value());
-    context->memory().release(value);
+    context->memory().release(value, 0);
 }

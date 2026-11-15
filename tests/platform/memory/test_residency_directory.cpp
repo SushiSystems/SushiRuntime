@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -81,6 +82,52 @@ namespace
 
         EXPECT_EQ(directory.retire(handle), HandleStatus::Ok);
         EXPECT_TRUE(directory.is_stale(handle));
+    }
+
+    TEST(Small_ResidencyDirectory, AnInstanceKeepsItsKindUntilItIsDroppedOrRetired)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle handle = mint_buffer(directory);
+        int device_storage = 0;
+        int borrowed_storage = 0;
+        const MemorySpaceID home(2);
+        const MemorySpaceID other(5);
+        ASSERT_EQ(directory.describe(handle, 4, ElementLayout{4, 4}, home), HandleStatus::Ok);
+        ASSERT_EQ(directory.set_instance(handle, home, &device_storage, USMKind::Device),
+                  HandleStatus::Ok);
+        ASSERT_EQ(directory.set_instance(handle, other, &borrowed_storage), HandleStatus::Ok);
+
+        EXPECT_EQ(directory.inspect(handle).home_kind, std::optional<USMKind>(USMKind::Device));
+        EXPECT_EQ(directory.instance_kind(handle, home), std::optional<USMKind>(USMKind::Device));
+        EXPECT_FALSE(directory.instance_kind(handle, other).has_value());
+
+        ASSERT_EQ(directory.drop_instance(handle, home), HandleStatus::Ok);
+        EXPECT_FALSE(directory.instance_kind(handle, home).has_value());
+        EXPECT_FALSE(directory.inspect(handle).home_kind.has_value());
+
+        ASSERT_EQ(directory.set_instance(handle, home, &device_storage, USMKind::Host),
+                  HandleStatus::Ok);
+        ASSERT_EQ(directory.retire(handle), HandleStatus::Ok);
+        EXPECT_FALSE(directory.instance_kind(handle, home).has_value());
+        const GlobalHandle reused = mint_buffer(directory);
+        ASSERT_EQ(reused.slot(), handle.slot());
+        ASSERT_EQ(directory.set_instance(reused, home, &device_storage), HandleStatus::Ok);
+        EXPECT_FALSE(directory.instance_kind(reused, home).has_value());
+    }
+
+    TEST(Small_ResidencyDirectory, LiveCountFollowsMintAndRetire)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        EXPECT_EQ(directory.live_count(), 0U);
+        const GlobalHandle first = mint_buffer(directory);
+        const GlobalHandle second = mint_buffer(directory);
+        EXPECT_EQ(directory.live_count(), 2U);
+
+        ASSERT_EQ(directory.retire(first), HandleStatus::Ok);
+        EXPECT_EQ(directory.retire(first), HandleStatus::StaleHandle);
+        EXPECT_EQ(directory.live_count(), 1U);
+        ASSERT_EQ(directory.retire(second), HandleStatus::Ok);
+        EXPECT_EQ(directory.live_count(), 0U);
     }
 
     TEST(Small_ResidencyDirectory, AStaleHandleReturnsStaleHandle)

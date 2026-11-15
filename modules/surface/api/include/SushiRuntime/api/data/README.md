@@ -58,7 +58,7 @@ the `Allocation` the engine returns for memory it exported or imported into the 
 operator[] and host() read the allocation's address and the size and call nothing.
 
 A window copy is the other call into the library: `Detail::copy_to_host()` and
-`Detail::copy_to_device()` find the queue that owns the allocation, copy, wait and count the
+`Detail::copy_to_device()` copy on the queue of the buffer's device, wait and count the
 bytes, and return a `Result<void>`. The vector a read fills is sized in the header, where the
 element type is known.
 
@@ -230,15 +230,13 @@ A private header of `source/`.
 
 ### usm_kind_of
 
-`Detail::usm_kind_of()` is the one place the api module asks what kind of USM an address is.
-Memory this runtime allocated answers from its own record: `USMAllocator` keeps the `USMKind` of
-every allocation it makes, so a runtime-made first address costs one hash probe and no SYCL call.
-Only memory with no recorded kind reaches `sycl::get_pointer_type`, which answers only for the
-context it is given, so the function picks the context by one rule. An address adopted with
-no kind is recorded with its device only, and is asked in that device's context. Unrecorded memory is
-asked in the context of the device the caller states, which is what Interop::borrow() does for
-memory another API made. With no stated device the allocator's `owning_device()` scan picks the
-context, which is what the late-bound slot check does for an interior pointer. A
+`Detail::usm_kind_of()` is the one place the api module asks what kind of USM memory is. It has
+two forms. The form that takes a handle answers from the residency directory: the entry of a
+buffer this runtime allocated records the `USMKind` of its home instance, so the answer costs a
+lock-free read and no SYCL call. A borrowed handle has no recorded kind; its home instance's address
+is then asked in the context of the device its home space names. The form that takes an address
+and a device asks `sycl::get_pointer_type` in that device's context, which is what Interop::borrow()
+does for memory another API made before any handle exists. No form searches an address table. A
 `sycl::exception` from the query reads as `unknown`, and the function logs it at `DEBUG` under
 `sushiruntime.api` with the address, the device and the exception text.
 

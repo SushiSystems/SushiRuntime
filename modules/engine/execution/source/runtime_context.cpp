@@ -227,8 +227,8 @@ namespace SushiRuntime
             {
                 stop_work();
 
-                // The allocator can outlive the coordinator this object releases below.
-                memory->set_release_observer(nullptr);
+                // The directory must not call the coordinator this object releases below.
+                handles.set_retire_observer(nullptr);
 
                 // The engine is destroyed before devices drains (modules/engine/execution/README.md).
                 engine.reset();

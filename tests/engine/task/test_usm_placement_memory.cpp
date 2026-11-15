@@ -43,7 +43,7 @@
 
 using SushiRuntime::Internal::Graph::USMPlacementMemory;
 
-/** @brief Holds an allocator over two host devices that share one context; a test records ownership with adopt(). */
+/** @brief Holds an allocator over two host devices that share one context; a test places each handle on a device. */
 class Small_USMPlacementMemoryContract : public ::testing::Test
 {
     protected:
@@ -62,11 +62,14 @@ class Small_USMPlacementMemoryContract : public ::testing::Test
         USMPlacementMemory memory_;
 };
 
-/** @brief Tests that the handle of an address nobody recorded has no device. */
-TEST_F(Small_USMPlacementMemoryContract, AnUnrecordedAddressHasNoDevice)
+/** @brief Tests that a retired handle has no device. */
+TEST_F(Small_USMPlacementMemoryContract, ARetiredHandleHasNoDevice)
 {
     int cell = 0;
-    TestSupport::expect_unrecorded_handle_has_no_device(memory_, handles_.place(&cell));
+    const SushiRuntime::GlobalHandle handle = handles_.place(&cell, 1);
+    ASSERT_EQ(handles_.retire(&cell), SushiRuntime::HandleStatus::Ok);
+
+    TestSupport::expect_unrecorded_handle_has_no_device(memory_, handle);
 }
 
 /** @brief Tests that a handle that resolves to no instance has no device. */
@@ -75,15 +78,12 @@ TEST_F(Small_USMPlacementMemoryContract, AHandleWithNoInstanceHasNoDevice)
     TestSupport::expect_unrecorded_handle_has_no_device(memory_, TestSupport::made_up_handle(1));
 }
 
-/** @brief Tests that the handle of an adopted address names its device. */
-TEST_F(Small_USMPlacementMemoryContract, AnAdoptedAddressNamesItsDevice)
+/** @brief Tests that a handle names the device its instance lies on. */
+TEST_F(Small_USMPlacementMemoryContract, AHandleNamesTheDeviceOfItsInstance)
 {
     int cell = 0;
-    allocator_.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
-    TestSupport::expect_recorded_handle_names_device(memory_, handles_.place(&cell), 1);
-
-    allocator_.forget(&cell);
+    TestSupport::expect_recorded_handle_names_device(memory_, handles_.place(&cell, 1), 1);
 }
 
 /** @brief Tests that the device count is the number of entries of the allocator. */

@@ -23,23 +23,18 @@
 
 /**
  * @file usm_allocator.hpp
- * @brief Declares USMAllocator, which allocates, records and releases USM on a set of devices.
+ * @brief Declares USMAllocator, which allocates and frees USM on a set of devices.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
 
 #pragma once
 
-#include <atomic>
 #include <cstddef>
 #include <memory>
-#include <optional>
-#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/profile/profile.hpp>
-#include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/memory/usm_source.hpp>
 
@@ -48,10 +43,9 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         /**
-         * @brief Allocates USM from a source of a fixed set of devices and remembers its device.
+         * @brief Allocates and frees USM from a source of a fixed set of devices; keeps no table.
          *
-         * Every method may be called from any thread at any time. Two calls that name the
-         * same address are ordered by the caller.
+         * Any thread may call any method; the caller orders two calls on one address.
          * @see modules/platform/memory/README.md
          */
         class SUSHIRUNTIME_API USMAllocator final
@@ -66,7 +60,7 @@ namespace SushiRuntime
                 explicit USMAllocator(std::unique_ptr<USMSource> source,
                                       Profile::Collector& collector = Profile::process_collector());
 
-                /** @brief Leaves live allocations alone; live_count() says how many remain. */
+                /** @brief Leaves live allocations alone; their owners free them. */
                 ~USMAllocator() = default;
 
                 USMAllocator(const USMAllocator&) = delete;
@@ -75,7 +69,7 @@ namespace SushiRuntime
                 USMAllocator& operator=(USMAllocator&&) = delete;
 
                 /**
-                 * @brief Allocates USM of the requested kind on the requested device, recorded.
+                 * @brief Allocates USM of the requested kind on the requested device.
                  * @param request Alignment 0 asks for none.
                  * @return The allocation, or null when the source could not satisfy it.
                  * @pre request.device_index names a device of the allocator.
@@ -83,68 +77,22 @@ namespace SushiRuntime
                 [[nodiscard]] void* allocate(const USMRequest& request);
 
                 /**
-                 * @brief Forgets an address and frees it on the source, against its device.
-                 * @param address Null is ignored. An adopted address is forgotten and not freed.
-                 *        An address with no record is not freed, and one ERROR names it. A free
-                 *        that throws is logged as one ERROR and the memory stays allocated.
+                 * @brief Frees an address on the source, against the device it was allocated on.
+                 * @param address Null is ignored. A free that throws is logged as one ERROR and
+                 *        the memory stays allocated.
+                 * @param device The device allocate() was asked for; one the allocator does not
+                 *        hold frees nothing and logs one ERROR.
                  * @see modules/platform/memory/README.md
                  */
-                void release(void* address) noexcept;
+                void release(void* address, std::size_t device) noexcept;
 
                 /**
-                 * @brief Records memory allocated elsewhere as belonging to a device.
-                 * @param address Stays the caller's to free; release() will not free it.
-                 * @param bytes Length of the mapping, or nothing when it is unknown.
-                 * @param kind Kind the mapping is, or nothing when the caller does not know it.
-                 * @pre device_index names a device of the allocator.
-                 */
-                void adopt(void* address, std::size_t device_index,
-                           std::optional<std::size_t> bytes, std::optional<USMKind> kind);
-
-                /** @brief Drops the record of an address without freeing it; null is ignored. */
-                void forget(void* address) noexcept;
-
-                /**
-                 * @brief Returns the device an address was recorded on, in constant time.
-                 * @param address The first address of an allocation; an interior one is unknown.
-                 * @return Nothing for null and for an address with no record.
-                 */
-                [[nodiscard]] std::optional<std::size_t> device_of(const void* address) const;
-
-                /**
-                 * @brief Returns the device and kind an address was recorded with, in constant
-                 *        time and with no SYCL call.
-                 * @param address The first address of an allocation; an interior one is unknown.
-                 * @return Nothing for null and for an address with no record; the kind is
-                 *         nothing for adopted memory.
-                 */
-                [[nodiscard]] std::optional<USMRegistry::Record> record_of(
-                    const void* address) const;
-
-                /**
-                 * @brief Returns the device of an address, asking SYCL when no record exists.
-                 * @return Nothing for null, for host USM and for memory no device of the source owns.
-                 * @see modules/platform/memory/README.md
-                 */
-                [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const;
-
-                /**
-                 * @brief Copies bytes on the device that owns an allocation and returns when they
-                 *        have arrived.
-                 * @param base Start of the allocation that holds the device side of the copy.
-                 * @param device The device that copies when no device owns base.
+                 * @brief Copies bytes on a device and returns when they have arrived.
+                 * @param device The device that owns the device side of the copy.
                  * @pre device names a device of the allocator; both ranges hold bytes.
                  */
-                void copy(const void* base, std::size_t device, void* destination,
-                          const void* source, std::size_t bytes);
-
-                /**
-                 * @brief Finds the first address of the recorded allocation an address falls in.
-                 * @param address Any address, interior or first. The search is linear in
-                 *        live_count().
-                 * @return Nothing for null and when no recorded allocation covers the address.
-                 */
-                [[nodiscard]] std::optional<const void*> containing_base(const void* address) const;
+                void copy(std::size_t device, void* destination, const void* source,
+                          std::size_t bytes);
 
                 /** @brief Counts the devices of the allocator, fixed at construction. */
                 [[nodiscard]] std::size_t device_count() const noexcept;
@@ -156,18 +104,6 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const;
 
-                /** @brief Counts the addresses recorded and not yet released or forgotten. */
-                [[nodiscard]] std::size_t live_count() const;
-
-                /**
-                 * @brief Installs the observer release() tells and waits out the calls in flight.
-                 * @param observer Null removes it. It must stay alive until a later call that
-                 *        replaces or removes it has returned.
-                 * @pre The caller is not inside on_release() of an observer of this allocator.
-                 * @see modules/platform/memory/README.md
-                 */
-                void set_release_observer(USMReleaseObserver* observer) noexcept;
-
             private:
                 /**
                  * @brief Fails a device index the allocator does not hold.
@@ -175,30 +111,12 @@ namespace SushiRuntime
                  */
                 void require_device(std::size_t device_index) const;
 
-                /**
-                 * @brief Forgets an address and frees it when a record names its device.
-                 * @param address Not null.
-                 */
-                void release_recorded(void* address);
-
                 /** @brief The memory of every device, fixed at construction; never null. */
                 std::unique_ptr<USMSource> source_;
 
                 /** @brief The collector the allocator's zones and values record into. */
                 Profile::Collector& collector_;
-
-                /** @brief Every live address, allocated here or adopted, and its device. */
-                USMRegistry registry_;
-
-                /** @brief The adopted subset of registry_: addresses release() must not free. */
-                USMRegistry adopted_;
-
-                /** @brief The observer release() tells, or null. */
-                std::atomic<USMReleaseObserver*> release_observer_{nullptr};
-
-                /** @brief Counts the release() calls between their observer load and its return. */
-                std::atomic<std::size_t> observer_calls_in_flight_{0};
         };
 
-    } // namespace Memory
+    } // namespace Internal::Memory
 } // namespace SushiRuntime

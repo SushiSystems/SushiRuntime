@@ -37,6 +37,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <vector>
 
@@ -48,6 +49,8 @@
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
+#include <SushiRuntime/memory/retire_observer.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 
 namespace SushiRuntime
 {
@@ -68,6 +71,7 @@ namespace SushiRuntime
             MemorySpaceID home;                     /**< Space the buffer was made on. */
             std::uint64_t valid_spaces = 0;         /**< Bit i set when space i holds an instance. */
             HandleStatus status = HandleStatus::Ok; /**< Ok, or why nothing was read. */
+            std::optional<USMKind> home_kind;       /**< Kind of the home instance; nothing when unknown. */
         };
 
         /**
@@ -117,18 +121,43 @@ namespace SushiRuntime
                                                     ElementLayout layout, MemorySpaceID home);
 
                 /**
-                 * @brief Records address as handle's instance on space.
+                 * @brief Records address as handle's instance on space, with the kind of USM it is.
+                 * @param kind The kind the instance was allocated as; nothing for memory the
+                 *        runtime did not allocate.
                  * @return Ok, NullHandle, StaleHandle, ForeignUniverse, or NotResident when space
                  *         is past K_MAX_MEMORY_SPACES or address is null.
                  */
                 [[nodiscard]] HandleStatus set_instance(GlobalHandle handle, MemorySpaceID space,
-                                                        void* address);
+                                                        void* address,
+                                                        std::optional<USMKind> kind = std::nullopt);
+
+                /**
+                 * @brief Returns the kind of handle's instance on space, without taking a lock.
+                 * @return Nothing when handle is not live, has no instance on space, or the
+                 *         instance's kind is unknown.
+                 */
+                [[nodiscard]] std::optional<USMKind> instance_kind(GlobalHandle handle,
+                                                                   MemorySpaceID space) const;
+
+                /**
+                 * @brief Installs the observer retire() tells and waits out the calls in flight.
+                 * @param observer Null removes it. It must stay alive until a later call that
+                 *        replaces or removes it has returned.
+                 * @pre The caller is not inside on_retire() of an observer of this directory.
+                 */
+                void set_retire_observer(RetireObserver* observer) noexcept;
 
                 /** @brief Forgets handle's instance on space; the memory itself is not freed. */
                 [[nodiscard]] HandleStatus drop_instance(GlobalHandle handle, MemorySpaceID space);
 
                 /** @brief Returns the size, layout, home and valid spaces of a live handle. */
                 [[nodiscard]] EntryView inspect(GlobalHandle handle) const;
+
+                /** @brief Counts the handles minted and not yet retired, Borrowed ones included. */
+                [[nodiscard]] std::size_t live_count() const noexcept
+                {
+                    return live_count_.load(std::memory_order_relaxed);
+                }
 
                 /** @brief Returns the universe this directory mints handles in. */
                 [[nodiscard]] std::uint32_t universe() const noexcept
@@ -177,6 +206,9 @@ namespace SushiRuntime
                     /// @brief Address of the instance on each space, or null.
                     std::array<std::atomic<void*>, K_MAX_MEMORY_SPACES> instances{};
 
+                    /// @brief Kind of the instance on each space plus one, or 0 when unknown.
+                    std::array<std::atomic<std::uint8_t>, K_MAX_MEMORY_SPACES> instance_kinds{};
+
                     /// @brief Valid spaces and version of each byte range; written by the planner only.
                     CoherenceIntervals coherence;
                 };
@@ -211,6 +243,15 @@ namespace SushiRuntime
 
                 /// @brief Lowest slot never handed out.
                 std::uint32_t next_fresh_slot_ = 0;
+
+                /// @brief Handles minted and not yet retired.
+                std::atomic<std::size_t> live_count_{0};
+
+                /// @brief The observer retire() tells, or null.
+                std::atomic<RetireObserver*> retire_observer_{nullptr};
+
+                /// @brief Counts the retire() calls between their observer load and its return.
+                std::atomic<std::size_t> observer_calls_in_flight_{0};
         };
 
         /**

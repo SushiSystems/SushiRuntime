@@ -1,6 +1,6 @@
 # memory
 
-The USM allocator and its allocation owner, the USM registry, the residency directory with its
+The USM allocator and its allocation owner, the residency directory with its retire observer and
 coherence interval map, the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`)
 and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
@@ -103,7 +103,12 @@ valid-spaces mask. Writers (mint, retire, describe, set_instance, drop_instance)
 among themselves and never block a reader.
 
 An entry holds its generation, a live flag, the size, the element layout, the home space and one
-address per memory space, with a 64-bit mask of the spaces that hold one. `K_MAX_MEMORY_SPACES` is
+address per memory space, with a 64-bit mask of the spaces that hold one. Beside each address it
+keeps the `USMKind` the instance was allocated as, stored as the kind plus one so that 0 means
+unknown: memory a caller borrowed has no kind. `set_instance()` takes the kind, `drop_instance()`
+and `retire()` clear it, `instance_kind()` reads it without a lock, and `EntryView::home_kind` is the
+kind of the home instance. A caller that asks what kind of USM a buffer is therefore asks the
+handle, and no table of addresses exists to ask. `K_MAX_MEMORY_SPACES` is
 64, one bit of that mask each. The coherence interval map of the design is not in the entry yet; it
 is added as one more member.
 
@@ -113,6 +118,19 @@ A retired slot goes back to a free list that hands out the lowest slot first, an
 handed out comes only after every freed one. The same program therefore gets the same handles in
 every run. Retire raises the generation at once, so every copy of the old handle resolves to
 `StaleHandle`. A slot whose generation wraps to 0 is not reused; generation 0 is the null handle.
+`live_count()` counts the handles minted and not retired, Borrowed ones included.
+
+### retire: the observer
+
+`set_retire_observer()` installs one `RetireObserver`. A successful `retire()` calls its
+`on_retire()` with the retired handle, on the retiring thread, after the writer mutex is released,
+so the observer may mint or retire in turn. A retire of a stale handle calls nothing. retire()
+counts itself in before it loads the observer and out after on_retire() returns, and
+`set_retire_observer()` stores the new pointer and then yields until that count is zero, so when
+it returns no call into the previous observer is running and the caller may destroy it. Both sides
+use `std::memory_order_seq_cst`: the store-then-read on one side and the increment-then-load on the
+other are the Dekker pattern, and a weaker order lets each side miss the other. An observer that
+calls set_retire_observer() from on_retire() waits for itself and never returns.
 
 ### resolve: a reader that races a retire
 
@@ -140,48 +158,6 @@ borrow; a range that overlaps a live range without equalling it is refused with
 borrow and retires the handle with the last. Its calls run when a buffer is made or dropped and
 take one mutex; no dispatch calls it.
 
-## usm_registry.hpp
-
-### USMRegistry
-
-USM is bound to the context it was allocated from: a pointer must be freed against that device's
-queue, and a kernel touching it must run there. SYCL offers no way to ask a pointer where it came
-from that is reliable across backends, so the runtime records it at allocation and looks it up
-later.
-
-USMRegistry has an invariant of its own: a pointer is known from allocation until it is freed,
-exactly once. That invariant is testable without standing up a Runtime.
-
-Every operation takes the same lock. That is not a bottleneck in practice: allocation happens when
-the caller constructs a Buffer or State, which is a setup-time act, and a measured run allocates
-nothing per step.
-
-### record
-
-Recording a pointer that is already known replaces its entry instead of rejecting it, which matches
-an allocator handing back an address whose free was never reported. `device_index` is the index of
-the owning device as the caller numbers its queues; the registry never interprets it.
-
-The entry also keeps the `USMKind` the allocation was made as. USMAllocator::allocate() passes the
-request's kind. adopt() takes the kind with no default, so every caller states it:
-`import_device_memory` states `USMKind::Device`, and a caller that cannot know passes nothing. record_of() returns
-device and kind in one constant-time probe, so a caller that asks what kind a runtime-made
-address is never needs `sycl::get_pointer_type`, which is a driver query on the CUDA backend.
-Every lookup takes `const void*`: the registry compares addresses and never writes through them.
-
-### containing_allocation
-
-containing_allocation() scans every entry, because the table is keyed by base address and an
-interior pointer hashes nowhere near its own allocation. That cost is linear in live allocations,
-and it is why this is a separate query and not a widening of owner_of(). Registration paths may call
-it; dispatch must not, and resolves exact base addresses through owner_of() in constant time.
-
-### take
-
-The free path needs both the lookup and the erase and must not be interruptible between them:
-looking up and then erasing under two separate locks would let a second free of the same pointer
-read an owner the first is already acting on. A null pointer resolves to nothing.
-
 ## usm_request.hpp
 
 ### USMRequest
@@ -195,26 +171,17 @@ call (`malloc_host`, `malloc_shared`, `malloc_device`); any other value selects 
 (`aligned_alloc_host`, `aligned_alloc_shared`, `aligned_alloc_device`) and is passed through
 unchecked, so an alignment SYCL refuses comes back as a null address.
 
-## usm_release_observer.hpp
+## retire_observer.hpp
 
-### USMReleaseObserver
+### RetireObserver
 
-The distributed layer keeps a table of buffers keyed by USM address and must drop a buffer's row
-when its memory goes away. The observer lets it hear that without the memory module including a
-distributed header, and without an `#ifdef` in the release path.
+The distributed layer keeps the buffers it shares keyed by handle and must drop a buffer when its
+handle is retired. The observer lets it hear that without the memory module including a
+distributed header, and without an `#ifdef` in the retire path. The handle it hears does not
+resolve, and its slot may already be minted again under a new generation, so the observer
+compares handles, never slots.
 
-on_release() runs before the registry forgets the address and before the memory is freed. A row
-dropped after the free could be matched by a new allocation that received the same address.
-
-The destructor is protected and not virtual because the allocator never owns its observer.
-
-## recording_usm_release_observer.hpp
-
-### RecordingUSMReleaseObserver
-
-RecordingUSMReleaseObserver is a USMReleaseObserver that keeps the address of each release it hears,
-in arrival order. `on_release()` may be called from several threads at once, so the list is guarded
-by a mutex, and `released()` returns a copy. It needs no device or thread.
+The destructor is protected and not virtual because the directory never owns its observer.
 
 ## usm_source.hpp
 
@@ -225,8 +192,8 @@ answers four questions about its devices: how many there are, which one owns an 
 two of them share one memory context, and a device's name for a log line. The owner promise is one
 for both adapters: a shared or device allocation of the source, an interior address included,
 resolves to its device, and host memory (a `Host` allocation, a stack or heap address) to none.
-`copy()` moves bytes on a device's memory engine and returns when they have arrived. The allocator
-keeps the records a caller reads; a source keeps only what its owner promise needs. Both adapters
+`copy()` moves bytes on a device's memory engine and returns when they have arrived. A source keeps
+only what its owner promise needs; the allocator keeps nothing. Both adapters
 pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and
 `Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
 its factory and holds it as a `USMSource`.
@@ -264,27 +231,25 @@ it keeps the owner promise as a device does.
 
 ### USMAllocator
 
-The allocator owns one `USMSource` for its whole life and asks it for every byte; it keeps the
-records itself; `copy()` asks `owning_device()` for the device that copies and hands the bytes to
-the source. A caller with device queues passes `make_sycl_usm_source(make_sycl_queues(queues))`; a `sycl::queue` is a
-handle, so the copies name the same queues as the caller's, and the memory module needs no header
-of the module that builds them. A device's index is the source's, the
-number USMRegistry stores.
+The allocator owns one `USMSource` for its whole life and asks it for every byte, and keeps no
+table of addresses. The residency directory records each instance, its space and its kind, and
+every question about a buffer is asked of its handle there. A caller with device queues passes
+`make_sycl_usm_source(make_sycl_queues(queues))`; a `sycl::queue` is a handle, so the copies name
+the same queues as the caller's, and the memory module needs no header of the module that builds
+them. A device's index is the source's.
 
-The source never changes after construction and is read without a lock. Each registry
-operation takes that registry's lock, and the observer is one atomic pointer beside a count of
-the calls into it. Calls on different
-addresses can therefore run on any threads at once. Two calls on the same address, a release and a
-lookup for example, are not ordered by the allocator; whoever owns the address orders them.
+The source never changes after construction and is read without a lock, so calls can run on any
+threads at once. Two calls on the same address, a release and a copy for example, are not ordered
+by the allocator; whoever owns the address orders them.
 
-The destructor frees nothing. An allocation still recorded at that point belongs to an owner that
-outlived the allocator, and live_count() is how a teardown check finds it.
+The destructor frees nothing. An allocation still live at that point belongs to an owner that
+outlived the allocator.
 
 ### allocate: the two failures
 
 A device index that names no device is a caller's mistake and stops the process through
 `SR_VERIFY`; the message carries the index and the device count. An allocation the source
-cannot satisfy returns null and records nothing, because running out of device memory is a
+cannot satisfy returns null, because running out of device memory is a
 condition a caller can handle. The allocator logs one WARN for it, under `sushiruntime.memory`,
 with the kind, the bytes, the alignment and the device index and name; the status the caller
 builds from the null does not log again.
@@ -297,33 +262,22 @@ size of the request; `release()` writes the fine zone `memory.release`. Both go 
 
 ### release
 
-An adopted address is forgotten and not freed. It was allocated outside the source, a mapping of
-another process's memory for example, and freeing it there is undefined. The allocator tells
-adopted addresses apart with a second USMRegistry that holds only them, because USMRegistry's
-entry has no field for it. allocate() clears that mark for the address it returns: an adopted
-mapping that was unmapped without forget() can leave its address to a later allocation, and the
-stale mark would then leak that allocation.
-
-An address with no record is not freed, and one ERROR names it. It is either USM that was never
-allocated here or a second release of the same address, and the allocator cannot tell which:
-freeing it would be a double free in the second case and a free against a guessed device in the
-first. An allocator with no device logs a WARN instead.
+`release(address, device)` frees against the device the address was allocated on, which its owner
+passes back: `USMAllocationOwner` keeps the device beside the allocator, the recorder's scratch keeps
+it in its deleter, and the coherence planner's instance allocator derives it from the memory
+space. A device the allocator does not hold frees nothing and logs one ERROR. The allocator cannot
+detect a second release of the same address or memory it never made, since it keeps no record;
+the owner that frees exactly once is the guard.
 
 release() is `noexcept`, because USMAllocationOwner calls it from a `noexcept` override and
-`Detail::Allocation` calls that from a destructor. A source free that throws is caught and logged as one
-ERROR; the record is already gone by then, so the address is not tracked.
+`Detail::Allocation` calls that from a destructor. A source free that throws is caught and logged as
+one ERROR, and the memory stays allocated.
 
-### set_release_observer
+### copy
 
-release() counts itself in before it loads the observer and out after on_release() returns.
-set_release_observer() stores the new pointer and then yields until that count is zero, so when
-it returns no call into the previous observer is running and the caller may destroy it. Both
-sides use `std::memory_order_seq_cst`: the store-then-read on one side and the increment-then-load on the other
-are the Dekker pattern, and a weaker order lets each side miss the other.
-
-The count covers every release() between those two points, whichever observer it loaded, so a
-removal made while other threads release without pause waits for a gap. An observer that calls
-set_release_observer() from on_release() waits for itself and never returns.
+`copy(device, destination, source, bytes)` moves bytes on the named device's memory engine. The
+caller names the device from the buffer's handle; a device the allocator does not hold stops the
+process through `SR_VERIFY`, as allocate() does.
 
 ### shares_context
 
@@ -332,15 +286,6 @@ the SYCL source compares their queues' contexts. The task module's
 `placement_of()` asks it before a stated device wins over the device that owns a node's memory,
 since USM is only usable from the context it was allocated in. `device_count()` lets it check an
 index first, because `shares_context()` stops the process on an index past the devices.
-
-### owning_device
-
-The record is the first answer and costs one hash lookup. Without a record the allocator asks the
-source's `resolve_owner()`. The SYCL source asks each queue's context for the pointer's kind and
-device: a shared allocation that matches is returned at once, a device allocation that matches is
-kept while the remaining queues are tried, host USM resolves to nothing, and a context that throws
-for an address it does not know counts as no match. The host source looks the address up among
-the shared and device allocations it made.
 
 ## coherence_intervals.hpp
 

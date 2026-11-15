@@ -219,11 +219,11 @@ A kernel dispatched on the profiling queue correctly dereferences a USM allocati
 context of the plain queue. The shared context is usable, not only reported.
 
 `Medium_InvalidNUMAQueue` and `Small_InvalidNUMAAllocation` cover the queue a NUMA ID routes to and the
-USM records of `memory()`: the context degrades without failing on an id no node has. The queue test runs
-one row for 999 and one for -5. `Small_LiveUSMCount` follows the live count through allocate and release,
-and through adopt and forget. `Medium_AlignedAllocation` is one row per kind, alignment and byte count;
-a shared row skips where the toolchain's aligned shared allocation ignores the alignment, which the
-fixture probes before the body runs. `Small_AlignedRecording` is one row per kind. Discovery and NUMA
+device an allocation of `memory()` lands on: the context degrades without failing on an id no node has.
+The queue test runs one row for 999 and one for -5. `Medium_AlignedAllocation` is one row per kind,
+alignment and byte count; a shared row skips where the toolchain's aligned shared allocation ignores the
+alignment, which the fixture probes before the body runs. `Small_AlignedRecording` is one row per kind
+and releases each block on its device with no ERROR. Discovery and NUMA
 mapping alone are tested in `tests/platform/topology/`.
 
 `Large_RuntimeContextNvidia` validates that an NVIDIA GPU is discovered through the CUDA SYCL backend and

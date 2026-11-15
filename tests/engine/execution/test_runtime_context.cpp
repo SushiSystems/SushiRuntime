@@ -51,6 +51,8 @@
 #include <SushiProfiler/collector/collector_settings.hpp>
 #include <SushiProfiler/collector/drain_batch.hpp>
 
+#include <SushiLog/log/log_level.hpp>
+
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -60,6 +62,7 @@
 #include <SushiRuntime/machine/device_filter.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
@@ -256,71 +259,18 @@ namespace TopologyTests
      *
      * A negative id is what a caller gets from a topology that reported no NUMA
      * information, so it has to resolve to something rather than index out of
-     * bounds. The pointer's owner is recorded against the fallback device.
+     * bounds. The allocation lands on a device the allocator holds.
      */
-    TEST_F(Small_InvalidNUMAAllocation, AnAllocationOnAnInvalidNUMAFallsBackAndIsRecorded)
+    TEST_F(Small_InvalidNUMAAllocation, AnAllocationOnAnInvalidNUMAFallsBackToAHeldDevice)
     {
         constexpr int INVALID_NUMA_ID = -5;
+        const std::size_t device = context().devices().device_for_numa(INVALID_NUMA_ID);
 
-        void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
-                                                       context().devices().device_for_numa(INVALID_NUMA_ID)});
+        void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0, device});
 
         ASSERT_NE(ptr, nullptr) << "Fallback allocation returned null.";
-        EXPECT_TRUE(context().memory().device_of(ptr).has_value())
-            << "The fallback allocation was not recorded against any device.";
-        context().memory().release(ptr);
-    }
-
-    /** @brief Tests that releasing a fallback allocation clears the record of its owner. */
-    TEST_F(Small_InvalidNUMAAllocation, ReleasingAFallbackAllocationClearsItsOwner)
-    {
-        constexpr int INVALID_NUMA_ID = -5;
-        void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
-                                                       context().devices().device_for_numa(INVALID_NUMA_ID)});
-        ASSERT_NE(ptr, nullptr);
-
-        context().memory().release(ptr);
-
-        EXPECT_FALSE(context().memory().device_of(ptr).has_value())
-            << "Freeing left the pointer's owner recorded.";
-    }
-
-    /** @brief Fixture of the tests that read the live USM count. */
-    class Small_LiveUSMCount : public HostContextFixture
-    {
-    };
-
-    /** @brief Tests that the live count follows each allocation and release. */
-    TEST_F(Small_LiveUSMCount, FollowsAllocateAndRelease)
-    {
-        const std::size_t baseline = context().memory().live_count();
-
-        void* shared = context().memory().allocate(
-            {Internal::Memory::USMKind::Shared, 128, 0, context().devices().device_for_numa(0)});
-        void* device = context().memory().allocate(
-            {Internal::Memory::USMKind::Device, 128, 0, context().devices().device_for_numa(0)});
-        ASSERT_NE(shared, nullptr);
-        ASSERT_NE(device, nullptr);
-        EXPECT_EQ(context().memory().live_count(), baseline + 2);
-
-        context().memory().release(shared);
-        EXPECT_EQ(context().memory().live_count(), baseline + 1);
-
-        context().memory().release(device);
-        EXPECT_EQ(context().memory().live_count(), baseline);
-    }
-
-    /** @brief Tests that the live count follows an adopted record and its forgetting. */
-    TEST_F(Small_LiveUSMCount, FollowsAdoptAndForget)
-    {
-        const std::size_t baseline = context().memory().live_count();
-        int external = 0;
-
-        context().memory().adopt(&external, 0, sizeof(external), std::nullopt);
-        EXPECT_EQ(context().memory().live_count(), baseline + 1);
-
-        context().memory().forget(&external);
-        EXPECT_EQ(context().memory().live_count(), baseline);
+        EXPECT_LT(device, context().memory().device_count());
+        context().memory().release(ptr, device);
     }
 
     /** @brief Fixture of the aligned allocation rows: a kind, an alignment and a byte count. */
@@ -347,7 +297,7 @@ namespace TopologyTests
 
         ASSERT_NE(ptr, nullptr);
         EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0u);
-        context().memory().release(ptr);
+        context().memory().release(ptr, 0);
     }
 
     INSTANTIATE_TEST_SUITE_P(
@@ -361,17 +311,16 @@ namespace TopologyTests
     {
     };
 
-    /** @brief Tests that the block is recorded once and dropped by release(). */
-    TEST_P(Small_AlignedRecording, IsRecordedOnceAndDroppedByRelease)
+    /** @brief Tests that the block is released on its device with no error. */
+    TEST_P(Small_AlignedRecording, IsReleasedOnItsDeviceWithNoError)
     {
-        const std::size_t baseline = context().memory().live_count();
-
         void* const ptr = context().memory().allocate({GetParam(), 256, 128, 0});
-
         ASSERT_NE(ptr, nullptr);
-        EXPECT_EQ(context().memory().live_count(), baseline + 1);
-        context().memory().release(ptr);
-        EXPECT_EQ(context().memory().live_count(), baseline);
+
+        TestRunner::LogCapture capture;
+        context().memory().release(ptr, 0);
+
+        EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 0u);
     }
 
     INSTANTIATE_TEST_SUITE_P(Rows, Small_AlignedRecording, ::testing::ValuesIn(K_ALIGNED_KINDS));

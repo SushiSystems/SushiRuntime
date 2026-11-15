@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-15 — memory: Removed `USMRegistry`; `USMAllocator` allocates and frees and keeps no address table, and the residency directory records each instance and its kind (GLOBAL_HANDLE H2).
+- 2026-11-15 — memory: Added `ResidencyDirectory::instance_kind()`, `live_count()` and a `RetireObserver` that hears each retired handle (GLOBAL_HANDLE H2).
+- 2026-11-15 — distributed: Changed the master to unshare a buffer and send `BUFFER_RELEASE` when its handle retires (GLOBAL_HANDLE H2).
+- 2026-11-15 — api: Changed `AdvancedControls::live_allocation_count()` to count the handles minted and not retired (GLOBAL_HANDLE H2).
 - 2026-11-15 — coherence: Added `EvictionPolicy`, `LogicalTimeEviction`, `PinSet` and `plan_hash()` for eviction by logical time (GLOBAL_HANDLE H3).
 - 2026-11-15 — coherence: Added `ResidencyOptions` and `CoherencePlanner::set_residency()` for capacity tracking, eviction and resident instances (GLOBAL_HANDLE H3).
 - 2026-11-15 — wire: Changed the protocol to version 5, which carries every buffer id as a 128-bit `GlobalHandle`; a version-4 peer is refused as a version mismatch, and `GlobalBufferID` is removed (GLOBAL_HANDLE H6).

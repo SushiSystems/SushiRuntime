@@ -681,9 +681,9 @@ for it. `memory_spaces()` holds the host's space and one per device (`source/run
 `transfer_paths()` holds `SameContextPath`, `PeerPath` and `HostStagedPath` with its staging ring
 (`source/runtime_transfer_paths.hpp`). Both are built once from the device set.
 
-The destructor then clears the allocator's release observer: a `Buffer` holds the allocator
-through `shared_memory()` and can release its memory after the context is gone, and the
-observer it would call is the coordinator `Impl` is about to release. The engine is destroyed
+The destructor then clears the directory's retire observer: the directory is a member and lives
+until after the body, so a handle retired in that window would otherwise call the coordinator
+`Impl` is about to release. The engine is destroyed
 next, which removes any dangling reference to a queue or to another `Impl` member. Only then
 is it safe to drain outstanding GPU work, which the `Internal::Device::DeviceQueueSet` does in its own
 destructor when `Impl`'s members are destroyed, so every hardware operation has completed
@@ -749,36 +749,22 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 
 #### USM ownership
 
-`Internal::Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Each allocation
-made by `RuntimeContext::memory().allocate()` is recorded, so the scheduler can run a task on
-the exact queue and context its data was allocated on. The record is the source of truth;
-pointer introspection stays only as a best-effort fallback.
+`Internal::Memory::USMAllocator` allocates and frees USM and keeps no table of addresses. Each buffer
+the context makes is a handle in `RuntimeContext::handles()`, the residency directory, whose
+entry records the instance on each memory space and the kind of USM it was allocated as. The
+scheduler reads a buffer's device from the space its handle resolves on, and the host-step
+planner reads the kind from the directory, so neither asks SYCL about a pointer.
 
-Introspection is unreliable for picking an owner. On a single platform, CUDA for example, a
-shared or device USM pointer is valid in sibling contexts too, but only the
-owning context reports it as exactly the kind it created: device USM reports `device` in its
-own context and shared USM reports `shared`. A context that does not own the pointer
-typically reports a different kind. CUDA shared USM was observed showing up as `device` in
-the CPU context. `memory().owning_device()` therefore never trusts the type alone. For USM that
-was not allocated through this context, such as a test calling bare `sycl::malloc_shared`,
-it prefers a queue that both reports device-or-shared and whose own device equals
-`get_pointer_device()`; that pair identifies the allocating queue, and a `shared` report
-settles it at once. Host USM, a null pointer, or anything that cannot be pinned takes the
-NUMA-local round-robin queue.
+Memory a caller brings has no kind in the directory. It enters through `borrowed_handles()`,
+the `BorrowedIndex`, on the device the caller states.
 
-`memory().release()` resolves and forgets the owner
-in one `take()`. Two separate locks would let a second free of the same pointer read an
-owner the first is already acting on. The free goes against the owning queue's context,
-which correctness requires; without a record it falls back to queue 0 as a best effort and
-logs a WARN. An address recorded through `memory().adopt()` is forgotten and not freed.
+The owner of an allocation frees it: `memory().release(address, device)` frees against the device
+it was allocated on, which `USMAllocationOwner` and the recorder's scratch keep beside the
+address. A device the allocator does not hold frees nothing and logs one ERROR.
 
-The allocator tells a `Internal::Memory::USMReleaseObserver` about a release before the record is
-dropped and the memory freed. The context installs none; `Distributed::Cluster::attach()`
-installs its coordinator there, and `~Impl` clears whatever is installed.
-
-`memory().containing_base()` resolves an interior pointer to the base `owner_of()` knows, for
-callers validating a pointer a user handed them. It is linear in live allocations, which
-makes it a registration-time query and not a dispatch-time one.
+The directory tells a `Internal::Memory::RetireObserver` about each handle it retires, after its
+lock is released. The context installs none; `Distributed::Cluster::attach()` installs its
+coordinator there, and `~Impl` clears whatever is installed.
 
 #### Offload coordinator
 

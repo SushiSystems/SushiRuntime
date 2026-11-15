@@ -168,7 +168,7 @@ namespace
             Internal::Topology::TopologyView topology_;
             /// @brief The entries a scheduler dispatches to.
             Internal::Device::DeviceQueueSet devices_;
-            /// @brief Allocator over the entries; a test records ownership with adopt().
+            /// @brief Allocator over the entries; it answers which entries share a context.
             Internal::Memory::USMAllocator memory_;
             /// @brief Resolves the handles of the nodes the scheduler places.
             TestSupport::HandleTable handles_;

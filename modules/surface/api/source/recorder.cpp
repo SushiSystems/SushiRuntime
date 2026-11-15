@@ -53,6 +53,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 
 #include "context_memory.hpp"
 #include "host_slot_check.hpp"
@@ -126,9 +127,9 @@ namespace SushiRuntime
                 return;
             }
             // The block returns to its context when the recorder lets go of it.
-            std::shared_ptr<void> owned(raw, [context](void* address)
+            std::shared_ptr<void> owned(raw, [context, device](void* address)
             {
-                context->memory().release(address);
+                context->memory().release(address, device.value());
             });
             scratch_.push_back(std::move(owned));
             block = raw;
@@ -202,16 +203,14 @@ namespace SushiRuntime
 
     Result<std::uint32_t*> Recorder::fault_record_for(const Dynamic& window)
     {
-        const std::uint32_t* count_words = Detail::DynamicAccess::count_slot(window).words;
-        const std::uint32_t* slot = (count_words != nullptr)
-            ? count_words : Detail::DynamicAccess::base_slot(window).words;
-        if (slot == nullptr)
+        const Detail::DeviceSlot& count_slot = Detail::DynamicAccess::count_slot(window);
+        const Detail::DeviceSlot& slot = (count_slot.words != nullptr)
+            ? count_slot : Detail::DynamicAccess::base_slot(window);
+        if (slot.words == nullptr)
             return host_fault_record();
-        const void* address = slot;
-        Internal::Memory::USMAllocator& memory =
-            Internal::ContextAccess::context(context_).memory();
-        const std::optional<const void*> base = memory.containing_base(address);
-        const std::optional<std::size_t> device = memory.device_of(base ? *base : address);
-        return fault_record(DeviceIndex{device.value_or(0)});
+        Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
+        const std::optional<Internal::Graph::HandleLocation> location =
+            Internal::Graph::locate(context.handles(), slot.buffer, context.devices().count());
+        return fault_record(DeviceIndex{location ? location->device : 0});
     }
 } // namespace SushiRuntime

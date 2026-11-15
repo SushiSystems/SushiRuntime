@@ -275,7 +275,7 @@ asserts the observable effect: the node still leaves a record. A regression that
 queue without profiling would fail the poller loudly and lose the record.
 
 One branch is left: the NUMA fallback of `devices().queue_or_numa_local()`, taken when
-`memory().owning_device()` does not recognise an anchor. A test
+the anchor's handle resolves on no device. A test
 cannot force it safely. Reaching it needs a device kernel that dereferences a pointer the runtime
 never allocated, which is an illegal access on a real GPU backend. That the observer builds a
 profiling queue is read through internal names and has no test.

@@ -39,7 +39,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
-#include <SushiRuntime/memory/usm_release_observer.hpp>
+#include <SushiRuntime/memory/retire_observer.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
@@ -73,7 +73,7 @@ namespace SushiRuntime
          * `switch` over message types; every lock belongs to a brick.
          */
         class SUSHIRUNTIME_API DistributedCoordinator final : public Internal::Graph::OffloadCoordinator,
-                                                              public Internal::Memory::USMReleaseObserver
+                                                              public Internal::Memory::RetireObserver
         {
             public:
                 /**
@@ -144,14 +144,13 @@ namespace SushiRuntime
                 [[nodiscard]] CoordinatorStatistics statistics() const noexcept;
 
                 /**
-                 * @brief Unshares each buffer whose handle was retired and tells each worker
-                 *        to drop it.
+                 * @brief Unshares the buffer of a retired handle and tells each worker to drop it.
                  *
-                 * The address is only the signal that memory was released; the buffers are named
-                 * by their handles. BUFFER_RELEASE goes out as a control frame per alive worker; a failure to
+                 * A handle that was never shared sends nothing. BUFFER_RELEASE goes out as a
+                 * control frame per alive worker, in the directory's worker order; a failure to
                  * queue one is swallowed, since the worker's budget evicts the buffer later.
                  */
-                void on_release(void* address) noexcept override;
+                void on_retire(GlobalHandle handle) noexcept override;
 
                 /** @brief Returns every counter, the two gauges and one entry per worker. */
                 [[nodiscard]] ClusterStatistics cluster_statistics() const;

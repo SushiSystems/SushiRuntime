@@ -116,7 +116,8 @@ namespace SushiRuntime
                         void* const address = allocator->allocate(step.space, step.end, step.alignment);
                         if (address == nullptr)
                             throw std::bad_alloc();
-                        if (directory->set_instance(step.handle, step.space, address) != HandleStatus::Ok)
+                        if (directory->set_instance(step.handle, step.space, address,
+                                                    allocator->kind_of(step.space)) != HandleStatus::Ok)
                         {
                             allocator->release(step.space, address);
                             throw std::runtime_error("coherence.allocate: the residency directory "

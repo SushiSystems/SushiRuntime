@@ -106,17 +106,19 @@ namespace SushiRuntime
          * @brief Mints the handle of a buffer the runtime made and records its home instance.
          * @param address The buffer's memory on its device; null mints nothing.
          * @param bytes,element_size,element_alignment Size and element layout of the buffer.
+         * @param residency The residency the memory was allocated with, recorded as its kind.
          * @return The handle, the null handle for a null address, or an AllocationFailed
          *         error when no slot is left.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> mint_handle(
             const ContextHandle& context, HandleKind kind, void* address, std::size_t bytes,
-            std::size_t element_size, std::size_t element_alignment, DeviceIndex device);
+            std::size_t element_size, std::size_t element_alignment, DeviceIndex device,
+            Residency residency);
 
         /**
          * @brief Returns the Borrowed handle of caller-owned memory: the live one when the same
          *        range is borrowed already, else a new one.
-         * @param device Device the memory is recorded on when the allocator knows no owner.
+         * @param device Device the memory is recorded on: its handle's home space.
          * @return The handle, the null handle for a null address or no bytes, or an
          *         InvalidArgument error when the range overlaps another borrowed range.
          */
@@ -129,27 +131,25 @@ namespace SushiRuntime
                                              GlobalHandle handle) noexcept;
 
         /**
-         * @brief Copies bytes of an allocation to host memory through its owning queue,
-         *        waits, and counts them as moved device to host.
-         * @param base Base address of the allocation; source lies inside it.
-         * @param device Device whose queue copies when no device of the context owns base.
+         * @brief Copies bytes of a buffer to host memory through its device's queue, waits,
+         *        and counts them as moved device to host.
+         * @param device The buffer's device; source lies inside the buffer.
          * @return Nothing, or a KernelFailed error when the device fails.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_host(const ContextHandle& context,
-                                                                 void* base, DeviceIndex device,
+                                                                 DeviceIndex device,
                                                                  const void* source,
                                                                  void* destination,
                                                                  std::size_t bytes) noexcept;
 
         /**
-         * @brief Copies host bytes into an allocation through its owning queue, waits, and
+         * @brief Copies host bytes into a buffer through its device's queue, waits, and
          *        counts them as moved host to device.
-         * @param base Base address of the allocation; destination lies inside it.
-         * @param device Device whose queue copies when no device of the context owns base.
+         * @param device The buffer's device; destination lies inside the buffer.
          * @return Nothing, or a KernelFailed error when the device fails.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_device(const ContextHandle& context,
-                                                                   void* base, DeviceIndex device,
+                                                                   DeviceIndex device,
                                                                    void* destination,
                                                                    const void* source,
                                                                    std::size_t bytes) noexcept;
@@ -474,7 +474,7 @@ namespace SushiRuntime
             {
                 Result<GlobalHandle> handle = Detail::mint_handle(
                     context, kind, block.allocation.address(), block.allocation.bytes(),
-                    sizeof(T), alignof(T), device_index);
+                    sizeof(T), alignof(T), device_index, residency);
                 if (!handle)
                     return make_error(std::move(handle.error()));
                 std::optional<Buffer> made;
@@ -568,8 +568,8 @@ namespace SushiRuntime
                 });
                 // A non-zero size_ implies a runtime and a non-null address.
                 if (copied && range.count != 0)
-                    copied = Detail::copy_to_host(context_, static_cast<void*>(data()),
-                                                  device_index_, data() + range.offset, out.data(),
+                    copied = Detail::copy_to_host(context_, device_index_, data() + range.offset,
+                                                  out.data(),
                                                   range.count * sizeof(T));
                 if (!copied)
                     return make_error(std::move(copied.error()));
@@ -598,8 +598,8 @@ namespace SushiRuntime
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
                 // A non-zero size_ implies a runtime and a non-null address.
-                return Detail::copy_to_device(context_, static_cast<void*>(data()),
-                                              device_index_, data() + range.offset, source.data(),
+                return Detail::copy_to_device(context_, device_index_, data() + range.offset,
+                                              source.data(),
                                               range.count * sizeof(T));
             }
 

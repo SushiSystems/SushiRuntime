@@ -41,8 +41,11 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
 {
@@ -78,17 +81,6 @@ namespace SushiRuntime
                 {usm_kind_for(residency), bytes, alignment, device_index.value()});
         }
 
-        /**
-         * @brief Returns the queue of the device that owns an address, or a queue of
-         *        NUMA node 0 when no device of the context owns it.
-         */
-        inline sycl::queue& owning_queue(Internal::Execution::RuntimeContext& context,
-                                         const void* address)
-        {
-            const std::optional<std::size_t> device = context.memory().owning_device(address);
-            return context.devices().queue_or_numa_local(device, 0);
-        }
-
         /** @brief Returns the SYCL allocation kind a recorded USM kind is. */
         [[nodiscard]] inline sycl::usm::alloc sycl_kind_of(Internal::Memory::USMKind kind) noexcept
         {
@@ -102,26 +94,17 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Reports which kind of USM an address is: the kind recorded at allocation,
-         *        else what SYCL answers in the context the data README names.
+         * @brief Asks SYCL which kind of USM an address is, in the context of a device's queue.
+         * @param device The device whose context is asked; nothing asks NUMA node 0's queue.
          * @return The allocation kind, or unknown when that context does not know it.
          * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
         [[nodiscard]] inline sycl::usm::alloc usm_kind_of(
             Internal::Execution::RuntimeContext& context, const void* address,
-            std::optional<std::size_t> stated_device = std::nullopt)
+            std::optional<std::size_t> device)
         {
-            const std::optional<Internal::Memory::USMRegistry::Record> record =
-                context.memory().record_of(address);
-            if (record && record->kind)
-                return sycl_kind_of(*record->kind);
             try
             {
-                std::optional<std::size_t> device = stated_device;
-                if (record)
-                    device = record->device_index;
-                else if (!device)
-                    device = context.memory().owning_device(address);
                 return sycl::get_pointer_type(
                     address, context.devices().queue_or_numa_local(device, 0).get_context());
             }
@@ -131,6 +114,27 @@ namespace SushiRuntime
                              "unknown.", address, error.what());
                 return sycl::usm::alloc::unknown;
             }
+        }
+
+        /**
+         * @brief Reports which kind of USM a handle's home instance is: the kind the directory
+         *        recorded at allocation, else what SYCL answers for borrowed memory.
+         * @return The allocation kind, or unknown for a handle that is not live or has no
+         *         home instance.
+         * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+         */
+        [[nodiscard]] inline sycl::usm::alloc usm_kind_of(
+            Internal::Execution::RuntimeContext& context, GlobalHandle handle)
+        {
+            const Internal::Memory::EntryView view = context.handles().inspect(handle);
+            if (view.status != HandleStatus::Ok)
+                return sycl::usm::alloc::unknown;
+            if (view.home_kind)
+                return sycl_kind_of(*view.home_kind);
+            const ResolveOutcome home = context.handles().resolve(handle, view.home);
+            if (home.status != HandleStatus::Ok)
+                return sycl::usm::alloc::unknown;
+            return usm_kind_of(context, home.address, Internal::Graph::device_of_space(view.home));
         }
     } // namespace Detail
 } // namespace SushiRuntime

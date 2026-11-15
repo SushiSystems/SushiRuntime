@@ -161,4 +161,6 @@ The uniform cost prices every path by its bytes.
 
 ## test_usm_instance_allocator.cpp
 
-The instance of a space is made on its device, and a space past the devices is refused.
+The instance of a space is made on its device and released there with no ERROR, host memory is
+released on the device it was made on, a device space names device USM and the host space host
+USM, and a space past the devices is refused.

@@ -91,10 +91,11 @@ signature and `execute_host()` are unchanged.
 2. No stated device: the owner.
 3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
 
-The allocator answers both questions, `owning_device()` and `shares_context()`, so the
-function needs no queue. It reads them through `PlacementMemory`, which is asked about a region's
-`GlobalHandle`; the form that takes a `USMAllocator` and a `HandleResolver` wraps them in
-`USMPlacementMemory`, which resolves the handle to its address and asks the allocator, and a test passes
+The function needs no queue. It reads both answers through `PlacementMemory`, which is asked about
+a region's `GlobalHandle`; the form that takes a `USMAllocator` and a `HandleResolver` wraps them
+in `USMPlacementMemory`. Its `owning_device()` is the lowest device the handle resolves to an
+instance on, read from the resolver alone; the allocator keeps no address table and answers only
+`shares_context()`. A test passes
 `InMemoryPlacementMemory` and needs no device. The scheduler's `place_for_dispatch()` passes the refusal on and
 refuses an index past the device count; `modules/engine/scheduler/README.md` holds why.
 

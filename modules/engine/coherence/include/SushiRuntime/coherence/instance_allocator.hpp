@@ -31,8 +31,10 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
 #include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 
 namespace SushiRuntime
 {
@@ -53,6 +55,13 @@ namespace SushiRuntime
 
                 /** @brief Frees what allocate() returned for space; null is ignored. */
                 virtual void release(MemorySpaceID space, void* address) noexcept = 0;
+
+                /**
+                 * @brief Returns the kind of USM allocate() makes on space, which the residency
+                 *        directory records with the instance.
+                 * @return Nothing when the memory is not USM.
+                 */
+                [[nodiscard]] virtual std::optional<Memory::USMKind> kind_of(MemorySpaceID space) const noexcept = 0;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

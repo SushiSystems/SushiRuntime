@@ -676,7 +676,7 @@ every graph node it dispatches; a node already placed keeps its device and is no
 The first dispatch asks `placement_of()` once and caches the
 answer on the node as `cached_queue_index_`. Steady-state replay then routes through
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
-`USMAllocator::owning_device()`. `place_for_dispatch()` returns `Result<void>`. A placement at or
+`PlacementMemory::owning_device()`. `place_for_dispatch()` returns `Result<void>`. A placement at or
 past the device count is an `ErrorCode::InvalidGraph` error with the index and the count, and
 `place_for_dispatch()` passes on the refusal `placement_of()` returns for a stated device in
 another context. execute_task() names the node in either and fails the run; neither failure is cached, so each recurs on a later run.

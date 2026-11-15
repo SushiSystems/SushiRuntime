@@ -23,7 +23,7 @@
 
 /**
  * @file usm_allocator.cpp
- * @brief Defines USMAllocator: the SYCL call per request, the records and the release path.
+ * @brief Defines USMAllocator: the SYCL call per request and the release path.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -34,7 +34,6 @@
 #include <exception>
 #include <memory>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include <SushiRuntime/core/assert.hpp>
@@ -80,11 +79,11 @@ namespace SushiRuntime
                 try
                 {
                     SR_LOG_ERROR(K_MEMORY_LOG_CATEGORY, "release of USM address {} threw '{}': the address may still be "
-                                 "allocated and is no longer tracked.", address, reason);
+                                 "allocated.", address, reason);
                 }
                 catch (...)
                 {
-                    std::fputs("SushiRuntime: a USM release threw and its record could not be "
+                    std::fputs("SushiRuntime: a USM release threw and the failure could not be "
                                "logged.\n", stderr);
                 }
             }
@@ -109,29 +108,25 @@ namespace SushiRuntime
                 return nullptr;
             }
 
-            registry_.record(address, request.device_index, request.bytes, request.kind);
-            // A mark left by an adopted mapping that once sat at this address would leak it.
-            adopted_.take(address);
             return address;
         }
 
-        void USMAllocator::release(void* address) noexcept
+        void USMAllocator::release(void* address, std::size_t device) noexcept
         {
             if (!address)
                 return;
 
             SR_ZONE_FINE(collector_, "memory.release");
 
-            // Counted before the load: zero read after a store means no call holds the old one.
-            observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);
-            if (USMReleaseObserver* const observer =
-                    release_observer_.load(std::memory_order_seq_cst))
-                observer->on_release(address);
-            observer_calls_in_flight_.fetch_sub(1, std::memory_order_seq_cst);
-
             try
             {
-                release_recorded(address);
+                if (device < source_->device_count())
+                {
+                    source_->free(address, device);
+                    return;
+                }
+                SR_LOG_ERROR(K_MEMORY_LOG_CATEGORY, "release of USM address {} names device {}, which the "
+                             "allocator does not hold: nothing was freed.", address, device);
             }
             catch (const std::exception& error)
             {
@@ -143,97 +138,11 @@ namespace SushiRuntime
             }
         }
 
-        void USMAllocator::release_recorded(void* address)
+        void USMAllocator::copy(std::size_t device, void* destination, const void* source,
+                                std::size_t bytes)
         {
-            const std::optional<std::size_t> device = registry_.take(address);
-            if (adopted_.take(address).has_value())
-                return;
-
-            if (device.has_value() && *device < source_->device_count())
-            {
-                source_->free(address, *device);
-                return;
-            }
-
-            if (source_->device_count() == 0)
-            {
-                SR_LOG_WARN(K_MEMORY_LOG_CATEGORY, "release of USM address {} with no record: the allocator holds no "
-                            "device, so nothing was freed.", address);
-                return;
-            }
-
-            SR_LOG_ERROR(K_MEMORY_LOG_CATEGORY, "release of USM address {} with no record (second release or foreign "
-                         "pointer): nothing was freed.", address);
-        }
-
-        void USMAllocator::adopt(void* address, std::size_t device_index,
-                                 std::optional<std::size_t> bytes, std::optional<USMKind> kind)
-        {
-            require_device(device_index);
-
-            // Marked before it is recorded: a recorded adopted address is never seen unmarked.
-            adopted_.record(address, device_index, bytes, kind);
-            registry_.record(address, device_index, bytes, kind);
-        }
-
-        void USMAllocator::forget(void* address) noexcept
-        {
-            registry_.take(address);
-            adopted_.take(address);
-        }
-
-        std::optional<std::size_t> USMAllocator::device_of(const void* address) const
-        {
-            const std::optional<std::size_t> device = registry_.owner_of(address);
-            if (device.has_value() && *device < source_->device_count())
-                return device;
-            return std::nullopt;
-        }
-
-        std::optional<USMRegistry::Record> USMAllocator::record_of(const void* address) const
-        {
-            const std::optional<USMRegistry::Record> record = registry_.record_of(address);
-            if (record.has_value() && record->device_index < source_->device_count())
-                return record;
-            return std::nullopt;
-        }
-
-        void USMAllocator::copy(const void* base, std::size_t device, void* destination,
-                                const void* source, std::size_t bytes)
-        {
-            const std::optional<std::size_t> owner = owning_device(base);
-            source_->copy(destination, source, bytes, owner.value_or(device));
-        }
-
-        std::optional<std::size_t> USMAllocator::owning_device(const void* address) const
-        {
-            if (!address)
-                return std::nullopt;
-
-            if (const std::optional<std::size_t> recorded = device_of(address))
-                return recorded;
-
-            return source_->resolve_owner(address);
-        }
-
-        std::optional<const void*> USMAllocator::containing_base(const void* address) const
-        {
-            const std::optional<USMRegistry::Containment> found =
-                registry_.containing_allocation(address);
-            return found.has_value() ? std::optional<const void*>(found->base) : std::nullopt;
-        }
-
-        std::size_t USMAllocator::live_count() const
-        {
-            return registry_.size();
-        }
-
-        void USMAllocator::set_release_observer(USMReleaseObserver* observer) noexcept
-        {
-            release_observer_.store(observer, std::memory_order_seq_cst);
-            // Stored before the count is read: a release() counted later loads the new observer.
-            while (observer_calls_in_flight_.load(std::memory_order_seq_cst) != 0)
-                std::this_thread::yield();
+            require_device(device);
+            source_->copy(destination, source, bytes, device);
         }
 
         std::size_t USMAllocator::device_count() const noexcept

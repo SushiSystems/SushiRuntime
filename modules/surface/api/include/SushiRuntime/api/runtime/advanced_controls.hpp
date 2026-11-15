@@ -95,9 +95,10 @@ namespace SushiRuntime
             [[nodiscard]] SUSHIRUNTIME_API WorkerPool worker_pool() const;
 
             /**
-             * @brief Returns how many USM allocations of the runtime are live.
-             * @return The allocations made through this runtime and not yet released: one per
-             *         Buffer, two per State, and what its graphs and extensions hold.
+             * @brief Returns how many buffer handles of the runtime are live.
+             * @return The handles the runtime's residency directory minted and has not retired:
+             *         one per Buffer, two per State, one per borrowed range, and what its graphs
+             *         and extensions hold.
              */
             [[nodiscard]] SUSHIRUNTIME_API std::size_t live_allocation_count() const;
 

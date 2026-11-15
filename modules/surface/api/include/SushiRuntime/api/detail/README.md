@@ -479,11 +479,11 @@ A private header of `source/`.
 
 ### host_slot_refusal
 
-The check asks the slot's own address first. When that answers anything but host, it resolves
-the address to the allocation containing it and asks again: a caller offsetting into a plan
-array hands over an interior pointer, which SYCL reports as unknown. It runs while add() builds a
-node, so the containment search never meets a dispatch. A null slot passes. A slot outside host
-USM, or one this runtime never allocated, is a rule the caller broke: the factories of
+The check asks the residency directory about the handle of the slot's buffer, which every
+`DeviceSlot` carries, so a slot at an element's offset is answered the same as one at the start of
+the buffer and no address is searched. The kind comes from `Detail::usm_kind_of()` on the handle. A
+slot with no address passes. A slot outside host USM, or one whose handle this runtime does not
+hold live, is a rule the caller broke: the factories of
 `vocabulary/dynamic.hpp` stop on a buffer of another residency, and
 Recorder::require_device_slots() stops on a slot of another runtime, for the count slot and then
 for the base slot of a Dynamic.

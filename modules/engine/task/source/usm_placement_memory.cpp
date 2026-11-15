@@ -48,15 +48,12 @@ namespace SushiRuntime
             const std::optional<HandleLocation> location = locate(handles_, handle, memory_.device_count());
             if (!location)
                 return std::nullopt;
-            return memory_.device_of(location->address);
+            return location->device;
         }
 
         std::optional<std::size_t> USMPlacementMemory::owning_device(GlobalHandle handle) const
         {
-            const std::optional<HandleLocation> location = locate(handles_, handle, memory_.device_count());
-            if (!location)
-                return std::nullopt;
-            return memory_.owning_device(location->address);
+            return recorded_device(handle);
         }
 
         std::size_t USMPlacementMemory::device_count() const

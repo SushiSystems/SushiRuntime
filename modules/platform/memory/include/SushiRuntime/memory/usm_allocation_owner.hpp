@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -48,11 +49,12 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Binds the owner to the allocator that allocated the address.
+                 * @brief Binds the owner to the allocator and the device that allocated the address.
                  * @param allocator Kept alive by this owner; null makes release() do nothing.
+                 * @param device The device the address was allocated on.
                  */
-                explicit USMAllocationOwner(std::shared_ptr<USMAllocator> allocator) noexcept
-                    : allocator_(std::move(allocator))
+                USMAllocationOwner(std::shared_ptr<USMAllocator> allocator, std::size_t device) noexcept
+                    : allocator_(std::move(allocator)), device_(device)
                 {
                 }
 
@@ -63,12 +65,15 @@ namespace SushiRuntime
                 void release(void* address) noexcept override
                 {
                     if (allocator_)
-                        allocator_->release(address);
+                        allocator_->release(address, device_);
                 }
 
             private:
                 /// @brief Allocator whose release() frees the address.
                 std::shared_ptr<USMAllocator> allocator_;
+
+                /// @brief Device the address was allocated on.
+                std::size_t device_;
         };
 
     } // namespace Memory

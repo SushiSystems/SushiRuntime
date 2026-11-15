@@ -48,7 +48,7 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         /**
-         * @brief Resolves each handle through a HandleResolver and asks the USMAllocator about the address.
+         * @brief Answers a handle's device from its instance in a HandleResolver, and context sharing from the USMAllocator.
          * @see modules/engine/task/README.md
          */
         class SUSHIRUNTIME_API USMPlacementMemory final : public PlacementMemory

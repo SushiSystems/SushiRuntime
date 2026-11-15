@@ -87,7 +87,7 @@ returns.
 
 Cluster::attach() is the way into the layer. It builds a master on a runtime, binds it to the
 runtime's offload sink, starts it and its transport, then installs it as the runtime's
-Internal::Graph::OffloadCoordinator and as the allocator's release observer, and returns a handle to its
+Internal::Graph::OffloadCoordinator and as the residency directory's retire observer, and returns a handle to its
 knobs and counters. Until attach() runs, the runtime is a
 single machine: no header of `api` or `execution` names a transport or a share, and a buffer is
 shared through the handle attach() returns.
@@ -112,11 +112,15 @@ expired on the monitor's first pass; `task_deadline` is the one timing where 0 m
 `Cluster::liveness_timeout()` returns `InvalidState` for a value below 1 ms like attach() does. It then builds the
 new master, binds it to `RuntimeContext::offload_sink()` and calls
 DistributedCoordinator::start(). Only when that returns `TransportStatus::Ok` does it stop and remove the
-coordinator the runtime held before, set the release observer and install the new coordinator.
+coordinator the runtime held before, set the retire observer and install the new coordinator.
 start() starts the transport, then the monitor, and logs
 `distributed master listening on 127.0.0.1:7000, protocol v5, authentication off`. The endpoint is
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
+
+When the directory retires a handle, the master unshares that handle's buffer with
+`SharedBuffers::unshare()` and sends `BUFFER_RELEASE` to each alive worker. A handle that was never
+shared sends nothing. The call runs on the thread that retired the handle, once per handle.
 
 The handle is a view. Copies name the same master and destroying one changes nothing. The class
 declares no move, so `std::move` of a handle copies it and the source stays usable. attach() is
@@ -129,7 +133,7 @@ on the runtime's surface.
 
 ### detach
 
-detach() stops the master, clears the allocator's release observer and removes the master from the
+detach() stops the master, clears the directory's retire observer and removes the master from the
 scheduler, in that order. Every graph compiled afterwards runs locally. detach() does nothing when
 the runtime has already released the master, which covers a destroyed runtime and a second
 attach() on the same runtime.

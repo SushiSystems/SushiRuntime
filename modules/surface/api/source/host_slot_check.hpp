@@ -40,7 +40,7 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
 
 #include "context_memory.hpp"
 
@@ -49,29 +49,25 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Returns the refusal of a slot that is neither null nor in host USM.
+         * @brief Returns the refusal of a slot that is neither empty nor in host USM.
          * @param what The builder call that named the slot, which opens the message.
-         * @return An InvalidAccess error for a slot that is not host USM and for one this
-         *         context never allocated, or nothing.
+         * @return An InvalidAccess error for a slot whose buffer is not host USM and for one
+         *         whose handle this context does not hold, or nothing.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         [[nodiscard]] inline std::optional<Error> host_slot_refusal(
-            Internal::Execution::RuntimeContext& context, const std::uint32_t* slot,
+            Internal::Execution::RuntimeContext& context, const DeviceSlot& slot,
             const char* what, std::size_t rule)
         {
-            if (slot == nullptr)
-                return std::nullopt;
-            const void* address = slot;
-            if (usm_kind_of(context, address) == sycl::usm::alloc::host)
+            if (slot.words == nullptr)
                 return std::nullopt;
             const std::string where = std::string(what) + ", rule " + std::to_string(rule);
-            const std::optional<const void*> base = context.memory().containing_base(address);
-            if (!base)
+            if (context.handles().inspect(slot.buffer).status != HandleStatus::Ok)
                 return Error{ErrorCode::InvalidAccess,
-                             where + ": this runtime never allocated the slot, so its residency "
-                             "is unknowable; pass a Residency::Host buffer this runtime "
-                             "allocated, with the element's index."};
-            if (usm_kind_of(context, *base) == sycl::usm::alloc::host)
+                             where + ": this runtime holds no live handle for the slot's buffer, "
+                             "so its residency is unknowable; pass a Residency::Host buffer this "
+                             "runtime allocated, with the element's index."};
+            if (usm_kind_of(context, slot.buffer) == sycl::usm::alloc::host)
                 return std::nullopt;
             return Error{ErrorCode::InvalidAccess,
                          where + ": the slot lies inside an allocation that is not "
@@ -82,7 +78,7 @@ namespace SushiRuntime
         /**
          * @brief Returns the refusal of a Dynamic whose device count or base slot is not host USM.
          *
-         * Resolves each slot's owning queue through the context's registry and
+         * Reads each slot's kind from its buffer's handle in the residency directory and
          * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,
          * "Late-bound device values"). A recorder asks it before it records the node.
          * @return The refusal of the count slot, else that of the base slot, else nothing.
@@ -91,10 +87,10 @@ namespace SushiRuntime
             Internal::Execution::RuntimeContext& context, const Dynamic& dyn, std::size_t rule)
         {
             std::optional<Error> refusal = host_slot_refusal(
-                context, DynamicAccess::count_slot(dyn).words, "sized_from_device", rule);
+                context, DynamicAccess::count_slot(dyn), "sized_from_device", rule);
             if (refusal)
                 return refusal;
-            return host_slot_refusal(context, DynamicAccess::base_slot(dyn).words,
+            return host_slot_refusal(context, DynamicAccess::base_slot(dyn),
                                      "based_at_device", rule);
         }
     } // namespace Detail

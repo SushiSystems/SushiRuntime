@@ -186,7 +186,7 @@ namespace SushiRuntime
                         return nullptr;
                     }
                 };
-                allocator.release = [&memory](void* address) { memory.release(address); };
+                allocator.release = [&memory](void* address) { memory.release(address, K_DEVICE_INDEX); };
                 return allocator;
             }
         } // namespace

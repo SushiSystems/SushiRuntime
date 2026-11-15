@@ -136,7 +136,7 @@ namespace
             ~DeviceFloats()
             {
                 if (data_ != nullptr)
-                    context_.memory().release(data_);
+                    context_.memory().release(data_, 0);
             }
 
             DeviceFloats(const DeviceFloats&) = delete;

@@ -79,8 +79,8 @@ namespace SushiRuntime
                 if (Internal::Graph::OffloadCoordinator* installed = context.offload())
                     installed->stop();
 
-                // The allocator forgets the coordinator before the context can destroy it.
-                context.memory().set_release_observer(nullptr);
+                // The directory forgets the coordinator before the context can destroy it.
+                context.handles().set_retire_observer(nullptr);
                 context.install_offload(nullptr);
             }
 
@@ -260,7 +260,7 @@ namespace SushiRuntime
 
             release_installed(context);
             state->context = &context;
-            context.memory().set_release_observer(&state->coordinator);
+            context.handles().set_retire_observer(&state->coordinator);
 
             auto attachment = std::make_shared<State::Attachment>(state);
             context.install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator>(

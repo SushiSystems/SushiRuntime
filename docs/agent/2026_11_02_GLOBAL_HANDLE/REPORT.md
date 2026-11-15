@@ -57,6 +57,7 @@ dispatch: T15 — sonnet medium, 48 turns, rung 1, passed
 dispatch: T16 — haiku high, 96 turns, rung 1, passed
 dispatch: T14 — sonnet medium, 102 turns, rung 1, passed
 dispatch: T20 — sonnet medium, 74 turns, rung 1, passed (written; measured in the closing run)
+dispatch: T09 — opus low, 235 turns, rung 2, passed
 ```
 
 ## T05: the residency directory

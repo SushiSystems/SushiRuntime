@@ -34,8 +34,11 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiLog/log/log_level.hpp>
+
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;
@@ -56,10 +59,29 @@ namespace
 
         void* const address = subject.allocate(MemorySpaceID(2), 64, 8);
         ASSERT_NE(address, nullptr);
-        EXPECT_EQ(memory->device_of(address), std::optional<std::size_t>(1));
 
+        TestRunner::LogCapture capture;
         subject.release(MemorySpaceID(2), address);
-        EXPECT_EQ(memory->live_count(), 0U);
+        EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 0U);
+    }
+
+    TEST(Small_USMInstanceAllocator, ReleasesHostMemoryOnTheDeviceItWasMadeOn)
+    {
+        USMInstanceAllocator subject(two_devices());
+        void* const address = subject.allocate(MemorySpaceID(0), 64, 8);
+        ASSERT_NE(address, nullptr);
+
+        TestRunner::LogCapture capture;
+        subject.release(MemorySpaceID(0), address);
+        EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 0U);
+    }
+
+    TEST(Small_USMInstanceAllocator, NamesDeviceUSMOnADeviceSpaceAndHostUSMOnTheHost)
+    {
+        const USMInstanceAllocator subject(two_devices());
+
+        EXPECT_EQ(subject.kind_of(MemorySpaceID(1)), std::optional<Internal::Memory::USMKind>(Internal::Memory::USMKind::Device));
+        EXPECT_EQ(subject.kind_of(MemorySpaceID(0)), std::optional<Internal::Memory::USMKind>(Internal::Memory::USMKind::Host));
     }
 
     TEST(Small_USMInstanceAllocator, RefusesASpacePastTheDevices)

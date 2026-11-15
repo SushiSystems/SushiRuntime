@@ -30,10 +30,29 @@
 
 #include <SushiRuntime/memory/residency_directory.hpp>
 
+#include <thread>
+
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
+        namespace
+        {
+            /** @brief Returns the stored form of a kind: the kind plus one, or 0 for nothing. */
+            [[nodiscard]] std::uint8_t encode_kind(std::optional<USMKind> kind) noexcept
+            {
+                return kind ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*kind) + 1U) : 0U;
+            }
+
+            /** @brief Returns the kind a stored value encodes, or nothing for 0. */
+            [[nodiscard]] std::optional<USMKind> decode_kind(std::uint8_t stored) noexcept
+            {
+                if (stored == 0)
+                    return std::nullopt;
+                return static_cast<USMKind>(stored - 1U);
+            }
+        } // namespace
+
         ResidencyDirectory::ResidencyDirectory(std::uint32_t universe)
             : universe_(universe), chunks_(new std::atomic<Chunk*>[K_MAX_CHUNKS])
         {
@@ -114,37 +133,57 @@ namespace SushiRuntime
             Entry* const entry = find_entry(slot);
             const std::uint32_t generation = entry->generation.load(std::memory_order_relaxed);
             entry->live.store(true, std::memory_order_release);
+            live_count_.fetch_add(1, std::memory_order_relaxed);
             return MintOutcome{GlobalHandle(universe_, 0, kind, flags, generation, slot),
                                HandleStatus::Ok};
         }
 
         HandleStatus ResidencyDirectory::retire(GlobalHandle handle)
         {
-            std::lock_guard<std::mutex> lock(writer_mutex_);
-            HandleStatus status = HandleStatus::Ok;
-            Entry* const entry = live_entry(handle, status);
-            if (!entry)
-                return status;
+            {
+                std::lock_guard<std::mutex> lock(writer_mutex_);
+                HandleStatus status = HandleStatus::Ok;
+                Entry* const entry = live_entry(handle, status);
+                if (!entry)
+                    return status;
 
-            const std::uint32_t next_generation = handle.generation() + 1;
-            entry->live.store(false, std::memory_order_relaxed);
-            entry->generation.store(next_generation, std::memory_order_relaxed);
-            // Readers that see the cleared fields below also see the new generation.
-            std::atomic_thread_fence(std::memory_order_release);
+                const std::uint32_t next_generation = handle.generation() + 1;
+                entry->live.store(false, std::memory_order_relaxed);
+                live_count_.fetch_sub(1, std::memory_order_relaxed);
+                entry->generation.store(next_generation, std::memory_order_relaxed);
+                // Readers that see the cleared fields below also see the new generation.
+                std::atomic_thread_fence(std::memory_order_release);
 
-            entry->valid_spaces.store(0, std::memory_order_relaxed);
-            for (std::atomic<void*>& instance : entry->instances)
-                instance.store(nullptr, std::memory_order_relaxed);
-            entry->size.store(0, std::memory_order_relaxed);
-            entry->element_size.store(1, std::memory_order_relaxed);
-            entry->element_alignment.store(1, std::memory_order_relaxed);
-            entry->home.store(0, std::memory_order_relaxed);
-            entry->coherence.clear();
+                entry->valid_spaces.store(0, std::memory_order_relaxed);
+                for (std::atomic<void*>& instance : entry->instances)
+                    instance.store(nullptr, std::memory_order_relaxed);
+                for (std::atomic<std::uint8_t>& kind : entry->instance_kinds)
+                    kind.store(0, std::memory_order_relaxed);
+                entry->size.store(0, std::memory_order_relaxed);
+                entry->element_size.store(1, std::memory_order_relaxed);
+                entry->element_alignment.store(1, std::memory_order_relaxed);
+                entry->home.store(0, std::memory_order_relaxed);
+                entry->coherence.clear();
 
-            // A slot whose generation wrapped to 0 is never reused, so no old handle matches it.
-            if (next_generation != 0)
-                free_slots_.push(handle.slot());
+                // A slot whose generation wrapped to 0 is never reused, so no old handle matches it.
+                if (next_generation != 0)
+                    free_slots_.push(handle.slot());
+            }
+
+            // Counted before the load: zero read after a store means no call holds the old one.
+            observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);
+            if (RetireObserver* const observer = retire_observer_.load(std::memory_order_seq_cst))
+                observer->on_retire(handle);
+            observer_calls_in_flight_.fetch_sub(1, std::memory_order_seq_cst);
             return HandleStatus::Ok;
+        }
+
+        void ResidencyDirectory::set_retire_observer(RetireObserver* observer) noexcept
+        {
+            retire_observer_.store(observer, std::memory_order_seq_cst);
+            // Stored before the count is read: a retire() counted later loads the new observer.
+            while (observer_calls_in_flight_.load(std::memory_order_seq_cst) != 0)
+                std::this_thread::yield();
         }
 
         ResolveOutcome ResidencyDirectory::resolve(GlobalHandle handle, MemorySpaceID space) const
@@ -194,7 +233,7 @@ namespace SushiRuntime
         }
 
         HandleStatus ResidencyDirectory::set_instance(GlobalHandle handle, MemorySpaceID space,
-                                                      void* address)
+                                                      void* address, std::optional<USMKind> kind)
         {
             std::lock_guard<std::mutex> lock(writer_mutex_);
             HandleStatus status = HandleStatus::Ok;
@@ -204,6 +243,7 @@ namespace SushiRuntime
             if (space.value() >= K_MAX_MEMORY_SPACES || !address)
                 return HandleStatus::NotResident;
             entry->instances[space.value()].store(address, std::memory_order_relaxed);
+            entry->instance_kinds[space.value()].store(encode_kind(kind), std::memory_order_relaxed);
             const std::uint64_t bit = std::uint64_t{1} << space.value();
             entry->valid_spaces.fetch_or(bit, std::memory_order_release);
             return HandleStatus::Ok;
@@ -221,7 +261,29 @@ namespace SushiRuntime
             const std::uint64_t bit = std::uint64_t{1} << space.value();
             entry->valid_spaces.fetch_and(~bit, std::memory_order_release);
             entry->instances[space.value()].store(nullptr, std::memory_order_relaxed);
+            entry->instance_kinds[space.value()].store(0, std::memory_order_relaxed);
             return HandleStatus::Ok;
+        }
+
+        std::optional<USMKind> ResidencyDirectory::instance_kind(GlobalHandle handle,
+                                                                 MemorySpaceID space) const
+        {
+            HandleStatus status = HandleStatus::Ok;
+            const Entry* const entry = live_entry(handle, status);
+            if (!entry || space.value() >= K_MAX_MEMORY_SPACES)
+                return std::nullopt;
+            const std::uint64_t mask = entry->valid_spaces.load(std::memory_order_acquire);
+            const std::uint8_t stored =
+                (mask >> space.value()) & 1U
+                    ? entry->instance_kinds[space.value()].load(std::memory_order_relaxed)
+                    : std::uint8_t{0};
+
+            // A retire that raced the loads above shows here as a new generation.
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if (entry->generation.load(std::memory_order_relaxed) != handle.generation() ||
+                !entry->live.load(std::memory_order_relaxed))
+                return std::nullopt;
+            return decode_kind(stored);
         }
 
         EntryView ResidencyDirectory::inspect(GlobalHandle handle) const
@@ -235,11 +297,15 @@ namespace SushiRuntime
             view.layout.size = entry->element_size.load(std::memory_order_relaxed);
             view.layout.alignment = entry->element_alignment.load(std::memory_order_relaxed);
             view.valid_spaces = entry->valid_spaces.load(std::memory_order_acquire);
+            if (view.home.value() < K_MAX_MEMORY_SPACES && ((view.valid_spaces >> view.home.value()) & 1U))
+                view.home_kind = decode_kind(
+                    entry->instance_kinds[view.home.value()].load(std::memory_order_relaxed));
 
             std::atomic_thread_fence(std::memory_order_acquire);
             if (entry->generation.load(std::memory_order_relaxed) != handle.generation() ||
                 !entry->live.load(std::memory_order_relaxed))
-                return EntryView{0, ElementLayout{}, MemorySpaceID(), 0, HandleStatus::StaleHandle};
+                return EntryView{0, ElementLayout{}, MemorySpaceID(), 0, HandleStatus::StaleHandle,
+                                 std::nullopt};
             return view;
         }
 

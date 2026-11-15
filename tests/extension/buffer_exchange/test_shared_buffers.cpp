@@ -419,23 +419,6 @@ TEST(Small_SharedBuffersTest, TheNullHandleIsNeverShared)
     EXPECT_FALSE(rig.buffers().lookup(GlobalHandle::null()).has_value());
 }
 
-TEST(Small_SharedBuffersTest, UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRetired)
-{
-    Bytes kept = pattern(K_BUFFER_BYTES, 9);
-    Bytes retired = pattern(K_BUFFER_BYTES, 10);
-    TestSupport::SharedBufferRig rig;
-    const BufferHandle kept_handle = rig.share(kept.data(), kept.size());
-    const BufferHandle retired_handle = rig.share(retired.data(), retired.size());
-    ASSERT_EQ(rig.table().retire(retired.data()), HandleStatus::Ok);
-
-    const std::vector<GlobalHandle> dropped = rig.buffers().unshare_retired();
-
-    ASSERT_EQ(dropped.size(), 1u);
-    EXPECT_EQ(dropped.front(), retired_handle.id);
-    EXPECT_TRUE(rig.buffers().lookup(kept_handle.id).has_value());
-    EXPECT_FALSE(rig.buffers().lookup(retired_handle.id).has_value());
-}
-
 TEST(Small_SharedBuffersTest, ABufferWhoseInstanceIsGoneIsGoneToAReader)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 9);

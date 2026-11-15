@@ -97,12 +97,6 @@ namespace SushiRuntime
                  */
                 GlobalHandle unshare(GlobalHandle handle) noexcept;
 
-                /**
-                 * @brief Stops sharing every buffer whose handle was retired.
-                 * @return The handles of the buffers dropped, in handle order.
-                 */
-                std::vector<GlobalHandle> unshare_retired();
-
                 /** @brief Returns the current wire handle of a buffer, or nothing. */
                 [[nodiscard]] std::optional<BufferHandle> lookup(GlobalHandle handle) const;
 

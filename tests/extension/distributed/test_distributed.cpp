@@ -630,6 +630,57 @@ namespace EndToEndTests
         }
     } // namespace
 
+    /**
+     * @brief Tests that retiring a shared buffer's handle unshares it and that the
+     *        BUFFER_RELEASE the master sends empties the worker's cache.
+     */
+    TEST(Medium_DistributedE2ETest, ARetiredHandleIsUnsharedAndReleasedOnTheWorker)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 256;
+        std::atomic<int> worker_runs{0};
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+
+        InProcessFabric fabric;
+        LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+
+        GlobalHandle retired = GlobalHandle::null();
+        std::uint64_t evictions_before = 0;
+        {
+            USMFloats a(queue, K_COUNT, 1.0f);
+            USMFloats b(queue, K_COUNT, 2.0f);
+            USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+            share(cluster, a);
+            share(cluster, b);
+            share(cluster, out);
+            {
+                auto graph = master_runtime.graph();
+                add_vec_add(graph, "vec_add", a, b, out);
+                graph.run().value();
+            }
+            ASSERT_EQ(worker_runs.load(), 1) << "the task ran on the local fallback, not on the worker";
+            ASSERT_GT(worker.statistics().cache_bytes, 0u);
+            ASSERT_TRUE(cluster.buffer_handle(a.handle()).has_value());
+            retired = a.handle();
+            evictions_before = worker.statistics().cache_evictions;
+        }
+
+        EXPECT_FALSE(cluster.buffer_handle(retired).has_value());
+        EXPECT_TRUE(eventually([&] { return worker.statistics().cache_bytes == 0; }))
+            << "no BUFFER_RELEASE emptied the worker's cache";
+        EXPECT_GT(worker.statistics().cache_evictions, evictions_before);
+
+        worker.stop();
+    }
+
     /** @brief Tests that inputs reach a worker, its kernel runs there and the output returns. */
     TEST(Medium_DistributedE2ETest, OffloadVectorAddRoundTrip)
     {
@@ -3109,7 +3160,7 @@ namespace TCPFaultsTests
                 /** @brief Releases the bytes. */
                 ~SharedBytes()
                 {
-                    memory_.release(data_);
+                    memory_.release(data_, 0);
                 }
 
                 SharedBytes(const SharedBytes&) = delete;

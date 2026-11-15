@@ -70,6 +70,11 @@ namespace
                 std::free(address);
             }
 
+            [[nodiscard]] std::optional<Internal::Memory::USMKind> kind_of(MemorySpaceID) const noexcept override
+            {
+                return std::nullopt;
+            }
+
             int held = 0; /**< Allocations not yet released. */
     };
 

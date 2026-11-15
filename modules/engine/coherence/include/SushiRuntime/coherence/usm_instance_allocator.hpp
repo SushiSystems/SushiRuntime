@@ -31,6 +31,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -55,6 +56,8 @@ namespace SushiRuntime
                                              std::size_t alignment) override;
 
                 void release(MemorySpaceID space, void* address) noexcept override;
+
+                [[nodiscard]] std::optional<Memory::USMKind> kind_of(MemorySpaceID space) const noexcept override;
 
             private:
                 /// @brief Allocator the instances come from.

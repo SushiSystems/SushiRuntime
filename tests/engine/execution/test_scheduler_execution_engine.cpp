@@ -632,8 +632,8 @@ namespace SYCLExecutionTests
         EXPECT_TRUE(TestSupport::is_within(TestSupport::measure_sum_error<double>(*sum, expected, expected, N)))
             << "Multi-stage pipeline produced an incorrect reduction.";
 
-        context.memory().release(data);
-        context.memory().release(sum);
+        context.memory().release(data, 0);
+        context.memory().release(sum, 0);
     }
 } // namespace SYCLExecutionTests
 
@@ -659,6 +659,7 @@ namespace ReplayHostWriteTests
                 /** @brief Allocates the word through @p context, which outlives this object. */
                 Word(RuntimeContext& context, USMKind kind, std::size_t device)
                     : context_(context),
+                      device_(device),
                       data_(static_cast<std::uint32_t*>(context.memory().allocate(
                           {kind, sizeof(std::uint32_t), 0, device})))
                 {
@@ -669,7 +670,7 @@ namespace ReplayHostWriteTests
                 ~Word()
                 {
                     if (data_ != nullptr)
-                        context_.memory().release(data_);
+                        context_.memory().release(data_, device_);
                 }
 
                 Word(const Word&) = delete;
@@ -685,6 +686,7 @@ namespace ReplayHostWriteTests
 
             private:
                 RuntimeContext& context_; /**< The context that allocated the word. */
+                std::size_t device_;      /**< The device the word was allocated on. */
                 std::uint32_t* data_;     /**< The word. */
         };
 

@@ -75,11 +75,11 @@ while any handle of the runtime lives. A device the runtime does not have stops 
 
 ### live_allocation_count
 
-live_allocation_count() is the number of USM allocations the runtime's allocator has handed out
-and not taken back. A Buffer holds one and a State two, and each returns its own when it is
-destroyed, so a test that expects a library to free what it allocated reads the count before and
-after. The count covers the whole runtime: scratch a recorder owns and buffers a worker agent
-caches are in it too.
+live_allocation_count() is the number of handles the runtime's residency directory has minted
+and not retired. A Buffer holds one and a State two, a borrowed range one, and each retires its
+own when it is destroyed, so a test that expects a library to free what it allocated reads the
+count before and after. The allocator keeps no table, so memory that has no handle, such as a
+recorder's scratch or a worker agent's cache, is not in the count.
 
 ### devices
 

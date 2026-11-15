@@ -59,22 +59,21 @@ namespace SushiRuntime
         namespace
         {
             /**
-             * @brief Copies bytes on the queue of the device that owns an allocation.
-             * @param base Start of the allocation that holds the device side of the copy.
-             * @param device Device whose queue copies when no device of the context owns base.
+             * @brief Copies bytes on the queue of the device a buffer lives on.
+             * @param device The buffer's device, which its handle's home space names.
              * @return The context the copy ran on, or a KernelFailed error when the copy
              *         throws, and an AllocationFailed error when it was refused memory.
              */
             [[nodiscard]] Result<Internal::Execution::RuntimeContext*>
-            copy_on_owning_queue(const ContextHandle& context, void* base, DeviceIndex device,
+            copy_on_device_queue(const ContextHandle& context, DeviceIndex device,
                                  void* destination, const void* source,
                                  std::size_t bytes) noexcept
             {
                 Internal::Execution::RuntimeContext& runtime =
                     Internal::ContextAccess::context(context);
                 Result<void> copied = Internal::SYCL::translate_exceptions(
-                    [&runtime, base, device, destination, source, bytes]()
-                { runtime.memory().copy(base, device.value(), destination, source, bytes); });
+                    [&runtime, device, destination, source, bytes]()
+                { runtime.memory().copy(device.value(), destination, source, bytes); });
                 if (!copied)
                     return make_error(std::move(copied.error()));
                 return &runtime;
@@ -82,19 +81,21 @@ namespace SushiRuntime
 
             /**
              * @brief Records the size, layout and device instance of a freshly minted handle.
+             * @param kind The kind of USM the instance is; nothing for borrowed memory.
              * @return Nothing, or the error the directory refused the entry with.
              */
             [[nodiscard]] Result<void> describe_entry(Internal::Memory::ResidencyDirectory& directory,
                                                       GlobalHandle handle, void* address,
                                                       std::size_t bytes, std::size_t element_size,
                                                       std::size_t element_alignment,
-                                                      std::size_t device)
+                                                      std::size_t device,
+                                                      std::optional<Internal::Memory::USMKind> kind)
             {
                 const MemorySpaceID space = Internal::Graph::device_memory_space(device);
                 HandleStatus status = directory.describe(
                     handle, bytes, Internal::Memory::ElementLayout{element_size, element_alignment}, space);
                 if (status == HandleStatus::Ok)
-                    status = directory.set_instance(handle, space, address);
+                    status = directory.set_instance(handle, space, address, kind);
                 if (status != HandleStatus::Ok)
                     return make_error(Error{Internal::Memory::error_code_of(status),
                                             "the residency directory refused the buffer's entry"});
@@ -105,7 +106,7 @@ namespace SushiRuntime
         Result<GlobalHandle> mint_handle(const ContextHandle& context, HandleKind kind,
                                          void* address, std::size_t bytes,
                                          std::size_t element_size, std::size_t element_alignment,
-                                         DeviceIndex device)
+                                         DeviceIndex device, Residency residency)
         {
             if (address == nullptr || !context)
                 return GlobalHandle::null();
@@ -117,7 +118,7 @@ namespace SushiRuntime
                                         "no handle is left for a new buffer"});
             Result<void> described = describe_entry(directory, minted.handle, address, bytes,
                                                     element_size, element_alignment,
-                                                    device.value());
+                                                    device.value(), usm_kind_for(residency));
             if (!described)
             {
                 static_cast<void>(directory.retire(minted.handle));
@@ -140,10 +141,9 @@ namespace SushiRuntime
             if (!borrowed->minted)
                 return borrowed->handle;
 
-            const std::optional<std::size_t> owner = runtime.memory().owning_device(address);
             Result<void> described = describe_entry(runtime.handles(), borrowed->handle, address,
                                                     bytes, element_size, element_alignment,
-                                                    owner.value_or(device.value()));
+                                                    device.value(), std::nullopt);
             if (!described)
             {
                 static_cast<void>(runtime.borrowed_handles().release(borrowed->handle));
@@ -181,7 +181,7 @@ namespace SushiRuntime
                 const std::shared_ptr<Internal::Execution::RuntimeContext> shared =
                     Internal::ContextAccess::shared(context);
                 auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
-                    shared->shared_memory());
+                    shared->shared_memory(), device);
                 void* address = malloc_residency_on(*shared, bytes, DeviceIndex{device},
                                                     residency, alignment);
                 // A null address would give the handle a null key, which skips tracking.
@@ -203,24 +203,24 @@ namespace SushiRuntime
             return block;
         }
 
-        Result<void> copy_to_host(const ContextHandle& context, void* base, DeviceIndex device,
+        Result<void> copy_to_host(const ContextHandle& context, DeviceIndex device,
                                   const void* source, void* destination,
                                   std::size_t bytes) noexcept
         {
             Result<Internal::Execution::RuntimeContext*> copied =
-                copy_on_owning_queue(context, base, device, destination, source, bytes);
+                copy_on_device_queue(context, device, destination, source, bytes);
             if (!copied)
                 return make_error(std::move(copied.error()));
             (*copied)->transfers().add_device_to_host(bytes);
             return {};
         }
 
-        Result<void> copy_to_device(const ContextHandle& context, void* base, DeviceIndex device,
+        Result<void> copy_to_device(const ContextHandle& context, DeviceIndex device,
                                     void* destination, const void* source,
                                     std::size_t bytes) noexcept
         {
             Result<Internal::Execution::RuntimeContext*> copied =
-                copy_on_owning_queue(context, base, device, destination, source, bytes);
+                copy_on_device_queue(context, device, destination, source, bytes);
             if (!copied)
                 return make_error(std::move(copied.error()));
             (*copied)->transfers().add_host_to_device(bytes);

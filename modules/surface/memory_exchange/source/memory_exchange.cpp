@@ -115,18 +115,12 @@ namespace SushiRuntime
             void* address = nullptr;             /**< Holds the mapped address, once mapped. */
             bool imported = false;               /**< Tells whether memory is held. */
             bool mapped = false;                 /**< Tells whether address is mapped. */
-            bool adopted = false;                /**< Tells whether address is registered. */
         };
 
         /// @brief Undoes the completed steps of @p progress in reverse order, each on its own.
         void release_import(Internal::Execution::RuntimeContext& context, std::size_t device_index,
                             const ImportProgress& progress) noexcept
         {
-            if (progress.adopted)
-                run_release_step("USMAllocator::forget", device_index, [&]
-                {
-                    context.memory().forget(progress.address);
-                });
             if (progress.mapped)
                 run_release_step("unmap_external_linear_memory", device_index, [&]
                 {
@@ -152,7 +146,7 @@ namespace SushiRuntime
                 {
                 }
 
-                /// @brief Forgets, unmaps and releases @p address.
+                /// @brief Unmaps and releases @p address.
                 void release(void* address) noexcept override
                 {
                     ImportProgress progress;
@@ -160,7 +154,6 @@ namespace SushiRuntime
                     progress.address = address;
                     progress.imported = true;
                     progress.mapped = true;
-                    progress.adopted = true;
                     release_import(*context_, device_index_, progress);
                 }
 
@@ -208,9 +201,6 @@ namespace SushiRuntime
                     progress_.mapped = true;
                 }
 
-                /// @brief Records that the address was adopted into the USM registry.
-                void mark_adopted() noexcept { progress_.adopted = true; }
-
                 /// @brief Disarms the guard once ownership has moved to its final owner.
                 void disarm() noexcept { armed_ = false; }
 
@@ -226,7 +216,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Imports, maps and adopts the memory a descriptor names.
+         * @brief Imports and maps the memory a descriptor names.
          * @return The mapped region, an empty allocation when @p bytes is zero, or the
          *         refusal of the device or of the descriptor.
          * @throws What SYCL and the standard library throw; the steps done are undone first.
@@ -284,10 +274,6 @@ namespace SushiRuntime
                 memory, descriptor.offset, bytes, queue);
             guard.mark_mapped(address);
 
-            context->memory().adopt(address, device_index, bytes,
-                                    Internal::Memory::USMKind::Device);
-            guard.mark_adopted();
-
             auto owner = std::make_unique<DeviceImportOwner>(context, device_index, memory);
             guard.disarm();
             return Detail::Allocation(address, bytes, std::move(owner));
@@ -306,7 +292,7 @@ namespace SushiRuntime
         {
             // The owner exists before the allocation it will free (modules/surface/memory_exchange/README.md).
             auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
-                context->shared_memory());
+                context->shared_memory(), device_index);
             void* address = context->memory().allocate(
                 {Internal::Memory::USMKind::Host, rounded, alignment, device_index});
             if (address == nullptr)

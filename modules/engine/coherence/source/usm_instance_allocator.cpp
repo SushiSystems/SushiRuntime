@@ -54,16 +54,22 @@ namespace SushiRuntime
                 return nullptr;
 
             Memory::USMRequest request;
-            request.kind = device ? Memory::USMKind::Device : Memory::USMKind::Host;
+            request.kind = *kind_of(space);
             request.bytes = bytes;
             request.alignment = alignment;
             request.device_index = device ? *device : 0;
             return allocator_->allocate(request);
         }
 
-        void USMInstanceAllocator::release(MemorySpaceID, void* address) noexcept
+        void USMInstanceAllocator::release(MemorySpaceID space, void* address) noexcept
         {
-            allocator_->release(address);
+            // allocate() puts host memory on device 0's source.
+            allocator_->release(address, Graph::device_of_space(space).value_or(0));
+        }
+
+        std::optional<Memory::USMKind> USMInstanceAllocator::kind_of(MemorySpaceID space) const noexcept
+        {
+            return Graph::device_of_space(space) ? Memory::USMKind::Device : Memory::USMKind::Host;
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

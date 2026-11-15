@@ -19,7 +19,7 @@ The words this repository's documents use. A term defined in code names the head
 | Late-bound value | A size, base or enable flag a plan leaves open and resolves at each run, on the host or from a value a kernel wrote on the device |
 | Residency | Where a `Buffer`'s memory lives: `Shared` (host-addressable USM, the default), `Device` (device USM, host access through `read_range` and `write_range`) or `Host` (pinned host USM, readable while kernels run) |
 | USM | SYCL unified shared memory: allocations addressed by plain pointers |
-| USM registry | `USMRegistry` of the internal `memory` module, the record of which device owns each USM allocation and how long it is |
+| Residency directory | `ResidencyDirectory` of the internal `memory` module: one entry per handle, holding each instance's address, memory space and kind of USM. The allocator keeps no table of its own |
 | EBR | Epoch-based reclamation: freeing memory other threads may still read, without locks (`memory/epoch_reclamation.hpp`, internal) |
 | Region | One partition of a `DynamicGraph`, keyed by a `RegionKey`. It compiles on its own and is added or dropped between steps |
 | Chain | The in-order path that runs a chainable plan from the calling thread, without the scheduler |
