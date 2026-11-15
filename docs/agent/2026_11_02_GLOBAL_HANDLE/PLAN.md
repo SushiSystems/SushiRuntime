@@ -262,3 +262,45 @@ Run and paste: `python tools/layering/check_layering.py .`, `python tools/testin
 `python tools/documentation/check_source_comments.py .`,
 `python tools/documentation/check_docs_truth.py .`, and each syntax check. `git add -A` your
 changes in your worktree. Do not commit.
+
+## Remediation after review
+
+The opus high review of 2026-11-15 found four correctness risks and ten SOLID breaches; the owner
+chose to fix them all before the closing build. R01 fixes the module boundaries first; every other
+job builds on them.
+
+| Job | Files | Waits on | Status |
+| --- | --- | --- | --- |
+| R01 | split `engine/coherence` into five modules | T57 | todo |
+| R02 | per-part regions from the consumer in `NodeSplit` | R01 | todo |
+| R03 | concurrent split parts | R02 | todo |
+| R04 | one partition session per graph, ledger keyed by problem | R01 | todo |
+| R05 | coherence map: planned state apart from current state, enforced phases | R01 | todo |
+| R06 | `RuntimeContext` narrowed to ports | R01 | todo |
+| R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | todo |
+| R08 | space and path kinds typed, not strings | R01 | todo |
+| R09 | statuses, not exceptions, on worker threads | R01 | todo |
+| R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |
+| R11 | unneeded state removed | R01 | todo |
+| R12 | model agrees with plan; insertion EFT; bounded search | R04 | todo |
+| R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | todo |
+| R14 | design and page truth | R12, R13 | todo |
+| R15 | profile fold with smoothing and minimum samples | R04 | todo |
+
+| Job | Route | Work | Waits on | Acceptance |
+| --- | --- | --- | --- | --- |
+| R01 | `opus` `low` | `engine/coherence` becomes `coherence` (planner, eviction, splice, planned nodes, planned host access), `transfer` (paths, ring, observer slot), `device_profile` (cost model, profiles, file, probe, measurement, fold), `partitioning` (problem, model, occupancy, partitioners, fill plans, splitting, hashes, report builder; no SYCL) and `partition_session` (session, ledger, journal, replay, rebalance); internal headers leave the public include root | T57 | Each module has one responsibility and its own README and tests, `partitioning` compiles without SYCL, the tier table and edges are declared, and no behaviour changes |
+| R02 | `opus` `low` | `NodeSplit`, splitting, planner, SushiBLAS `gemm_split` | R01 | A split part's read and write regions come from the consumer, the runtime holds no layout rule, and a row-major GEMM split by columns and a batched GEMM give the host reference on two devices |
+| R03 | `opus` `low` | `split_dispatch`, `run_split_node`, SushiBLAS slice | R02 | A slice returns its event, the parts of a cut node run at once and the node waits only on its parts' events (RW-154 closed) |
+| R04 | `opus` `low` | `partition_session`, `graph_partition`, `partition_measure` | R01 | Each graph owns its session, the ledger takes only measurements of the plan in force by problem hash, and two graphs on one runtime keep their own plans and reports |
+| R05 | `opus` `low` | `platform/memory` directory and intervals, `coherence` planner, `PlannedHostAccess`, step drivers | R01 | The plan writes a planned map, the current map changes only as steps complete, host access and horizon retirement run in a phase the runtime enforces, and two commits at once cannot race |
+| R06 | `sonnet` `medium` | `engine/execution` `RuntimeContext` and its callers | R01 | `RuntimeContext` hands out ports, not the concrete directory, and its owned parts are grouped so a new subsystem adds a part without editing the context's interface |
+| R07 | `sonnet` `medium` | `surface/api` `Buffer`, `State`; SushiBLAS `StorageBlock`, `PlannedBlock` | R01 | Planned and stated storage are two strategies behind one interface, `device_index()` is optional, and SushiBLAS's block contract holds for a planned block |
+| R08 | `sonnet` `medium` | `transfer` paths, `MemorySpace` kinds, pricing | R01 | Space and path kinds are types, no code compares a kind name string, and pricing keys on the path's identity |
+| R09 | `sonnet` `medium` | planned nodes, paths, staging ring, file path | R01 | Worker-thread code reports failure as a status the scheduler surfaces, and no exception crosses a worker boundary |
+| R10 | `sonnet` `medium` | `ResidencyView`, `KernelPointers`, `bound_operands`, SushiBLAS `OperandPointers` | R01 | Readers and writers of the directory see separate ports, `task`'s public header names no private dependency, and one typed bound-operand view serves the runtime and SushiBLAS |
+| R11 | `sonnet` `low` | `HandleOwnership`, `entry_address`, host-write tracking | R01 | Ownership is a function of the handle, the test seam is gone from the public header, and host writes are tracked outside the directory |
+| R12 | `opus` `low` | `partitioning` | R04 | The model charges a copy once per interval and space as the planner does, split parts are priced by what they copy, step time follows the scheduled order, placement is insertion-based EFT, and refinement and the floor search are bounded |
+| R13 | `opus` `low` | `coherence` splice, `transfer` staged path and ring | R05 | A copy waits only on the producer of the version it moves, two copies from one source run together, the staged path does not block a worker, and each context stages through its own pinned ring |
+| R14 | `sonnet` `low` | design pages, module READMEs | R12, R13 | The design status, phases, modules line, margin and copy-model claims state what the code does |
+| R15 | `sonnet` `low` | `device_profile` fold | R04 | A fold needs a minimum sample count and smooths toward the new median, so one noisy horizon does not move a plan |
