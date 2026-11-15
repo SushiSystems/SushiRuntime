@@ -92,6 +92,7 @@ dispatch: T55 — opus low, 56 turns, rung 1, passed in part (recording by handl
 dispatch: T54 — opus low, 98 turns, rung 1, passed after one return (horizon in the journal)
 dispatch: T56 — opus low, 85 turns, rung 1, passed
 dispatch: T57 — sonnet medium, rung 1, passed (SushiBLAS; only binding tasks go by handle)
+dispatch: T33 — sonnet medium, rung 2, passed (SushiBLAS; measured in the closing run)
 ```
 
 ## T05: the residency directory
