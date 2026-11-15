@@ -227,7 +227,7 @@ so the counts they compare are not stable there.
 `Testing::RefusingFill` is a host task that fills a range, and whose copy constructor throws a
 `std::runtime_error` while a flag the test holds is set. Recording moves the task, and every
 build of a plan copies it into the node, so the flag decides whether a build throws.
-`graph/plumbing/test_step_driver/test_step_driver.cpp` and `graph/plumbing/test_region_composer.cpp` include the
+`graph/plumbing/test_step_driver/test_step_driver.cpp` and `graph/plumbing/test_region_composer/test_region_composer.cpp` include the
 header by name.
 
 ## hooked_copy_task.hpp
@@ -238,7 +238,7 @@ header by name.
 `std::function<void()>` slot with the test; the first copy made after the test fills the slot
 empties it and calls the hook once. Recording moves the task and a plan build copies it, so a hook
 armed after recording runs inside the next build. `graph/plumbing/test_plan_cache.cpp` and
-`graph/plumbing/test_region_composer.cpp` include the header by name.
+`graph/plumbing/test_region_composer/test_region_composer.cpp` include the header by name.
 
 ## run_recorder.hpp
 

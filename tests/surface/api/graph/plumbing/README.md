@@ -77,7 +77,7 @@ message begins with the spelling of the call the user wrote and `rule 0`, and no
 | `TheFirstRefusalIsKept` | Three adds are made, the second with a launch past its State. `refusal()` then holds an `InvalidGraph` error whose message begins with `add_rule(launch, state, kernel), rule 1: `, and the graph holds the two valid rules. A later refused `add_rule` over an empty State does not replace it. |
 | `ARunReturnsTheRefusalAndRunsNothingUntilCleared` | Two runs in a row return that error and leave the target as it was. After `recorder().clear()` the refusal is gone, and a rule added then runs. |
 
-## test_region_composer.cpp
+## test_region_composer/test_region_composer.cpp
 
 The file covers the cross-region ordering the composer makes from the pins of
 `region_boundary`, whose own tests are in `tests/engine/region_boundary/`. The plan edges are not
@@ -285,4 +285,13 @@ On a host runtime the engine's own run reports `ExecutionLayer::Scheduler`.
 | `EachRunRecordsItsOwnPlacement` | Answers of `Host`, `Device`, `Host` give the layers `Host`, `Scheduler`, `Host`, one question per run. |
 | `TheDescriptionCountsWhatThePlanStates` | The description holds 2 nodes, 5 steps, 128 launched items, no unsized node, and the one stated cost of 11 flops and 13 bytes. |
 | `AHostAnswerForAPlanOnDeviceMemoryStaysOnTheEngine` | A `Host` answer for a kernel over a `Residency::Device` buffer runs on the engine. |
+
+## test_region_composer/test_cross_vendor_copy.cpp
+
+Large, on the first machine: a CUDA GPU and a HIP GPU in one runtime. Each test skips with its reason when the runtime drives no CUDA GPU or no HIP GPU, so other machines stay green. The HIP GPU is built in with `sr build --rocm`.
+
+| Test | What it proves |
+| --- | --- |
+| `TheDevicesOfTwoVendorsAreConnectedByTheHostStagedPath` | The first transfer path of the context that connects the two device spaces is `host_staged`, in both directions. The runtime registers no `TransferObserver`, so the test reads the planner's choice from the context's path list, which is the order the planner takes. |
+| `ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice` | A node on the CUDA GPU writes a 64 MiB buffer, a node on the HIP GPU reads it and writes a second buffer, and the second buffer equals the host reference. The test prints, and does not assert, the time of the run through the pinned staging ring and of a copy through pageable host memory. |
 

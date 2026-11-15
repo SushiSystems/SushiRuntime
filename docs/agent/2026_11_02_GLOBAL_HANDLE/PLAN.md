@@ -62,7 +62,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T17 | `engine/coherence` same-context and peer paths | T13 | done |
 | T18 | `engine/coherence` host-staged path | T17 | done |
 | T19 | file space and file path | T18 | todo |
-| T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | running |
+| T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | done |
 | T21 | copy plan replay | T13 | todo |
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
@@ -127,7 +127,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T39 | `opus` `low` | `engine/task` `handle_location.hpp` callers, dispatch in `engine/scheduler` and the task submit path | T13 | A kernel's captured buffer pointer is replaced by the instance resolved on its node's device at dispatch, and a test shows a node on device 1 reading the copied instance |
 | T40 | `sonnet` `medium` | `engine/task/source/node_placement.cpp` | T13 | A node stated on a device in another SYCL context than its anchor's owner is placed, with the copy planned, instead of refused |
 | T41 | `sonnet` `medium` | `platform/memory` `ResidencyView` port; `engine/coherence` planner and node factory | T13 | The planner and the node factory depend on the port, not on `ResidencyDirectory` |
-| T43 | `sonnet` `medium` | `engine/execution` runtime context and `RuntimeConfig`, `surface/api/source/region_coherence.cpp`, a device `ProfileProbe` | T24, T18 | A runtime given a profile file prices copies through `CostModel`, a runtime without one keeps the uniform cost, and `ProfileMeasurement` runs on a device through the real probe |
+| T43 | `sonnet` `medium` | `engine/execution` runtime context and `RuntimeConfig`, `surface/api/source/region_coherence.cpp`, a device `ProfileProbe` | T24, T18 | A runtime given a profile file prices copies through `CostModel`, a runtime without one keeps the uniform cost, and `ProfileMeasurement` runs on a device through the real probe; a caller installs a `TransferObserver` through `AdvancedControls`, and T20 asserts the path of each copy through it |
 | T42 | `sonnet` `low` | `engine/execution/source/runtime_memory_spaces.cpp`, `platform/device` | T13 | An integrated GPU reports the host pool as its shared pool, and `usable_pool_bytes` counts it once |
 
 ### H4: transfer paths and files
