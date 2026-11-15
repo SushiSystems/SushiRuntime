@@ -149,10 +149,16 @@ run reads them.
 - `fold_observations()` computes one throughput per observation, the node's operations over its seconds less
   the time its bytes take at the device's memory bandwidth, the inverse of how `CostModel::node_time()` prices
   a node, so the folded profile prices the same node at the measured time. The entry of a device and a kind
-  becomes the median of its samples, the lower one of an even count, and the generic kind sets
-  `base_throughput`. The median is robust against one slow dispatch and gives the same entry for any order of
-  records. A device with no profile receives nothing, since it is measured first; an observation whose time is
-  at most what its bytes need, or whose time or operations are not positive and finite, is dropped.
+  moves toward the median of its samples, the lower one of an even count, and the generic kind moves
+  `base_throughput`. A device and kind needs `K_MINIMUM_FOLD_SAMPLES` (8) samples in one fold before its entry
+  moves; with fewer it keeps its value. It then moves `K_FOLD_SMOOTHING_WEIGHT` (0.25) of the way to the
+  median, `new = old + 0.25 * (median - old)`, so one noisy horizon shifts a plan by a quarter of the distance
+  at most and repeated horizons converge to the median. An entry with no positive value, a kind never
+  measured or a zero base, takes the median outright. The median is robust against one slow dispatch and
+  gives the same entry for any order of records. The arithmetic is plain double operations on the
+  records, so the same inputs give the same doubles. A device with no profile receives nothing, since it is
+  measured first; an observation whose time is at most what its bytes need, or whose time or operations are
+  not positive and finite, is dropped.
 - `update_profile_file()` reads the file the run was planned from, folds the observations into it and writes it
   through `DeviceProfileFile::write()`, which uses a temporary file. The file a run reads stays frozen for that
   run; the update is called when the run ends, and the next run reads the result. A missing file is an error

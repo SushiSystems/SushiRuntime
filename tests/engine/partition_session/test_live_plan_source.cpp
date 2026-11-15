@@ -60,7 +60,7 @@ namespace
         EXPECT_NE(plan.value().answer.value().node_devices[0], plan.value().answer.value().node_devices[1]);
     }
 
-    TEST(Small_LivePlanSource, AHorizonOfAThrottledDeviceReplansAndFoldsIntoTheSharedProfiles)
+    TEST(Small_LivePlanSource, AHorizonOfAThrottledDeviceReplansAndFoldsASmoothedThroughputIntoTheSharedProfiles)
     {
         const std::shared_ptr<ProfileStore> store = speed_store({1.0, 1.0});
         LivePlanSource source(store, runtime_factories(), K_DEFAULT_REBALANCE_MARGIN);
@@ -77,8 +77,9 @@ namespace
 
         EXPECT_EQ(outcome.action, RebalanceAction::Replan);
         ASSERT_TRUE(outcome.plan.has_value());
-        EXPECT_EQ(outcome.plan->answer.value().node_devices, (std::vector<DeviceKey>{host_key(1), host_key(1)}));
-        EXPECT_EQ(store->model()->profiles().find(host_key(2))->base_throughput, 400.0);
+        // The throttled device moves to 1600 operations a second, so a node there still beats two nodes on host_key(1).
+        EXPECT_NE(outcome.plan->answer.value().node_devices[0], outcome.plan->answer.value().node_devices[1]);
+        EXPECT_EQ(store->model()->profiles().find(host_key(2))->base_throughput, smoothed_throughput(2000.0, 400.0));
     }
 
     TEST(Small_LivePlanSource, ASourcePlansWithWhatAnotherSessionFoldedAfterItWasBuilt)
@@ -92,6 +93,8 @@ namespace
 
         ASSERT_TRUE(plan.has_value());
         EXPECT_EQ(plan.value().model, store->model());
-        EXPECT_EQ(plan.value().answer.value().node_devices, (std::vector<DeviceKey>{host_key(1), host_key(1)}));
+        EXPECT_NE(plan.value().answer.value().node_devices[0], plan.value().answer.value().node_devices[1]);
+        EXPECT_EQ(plan.value().model->profiles().find(host_key(2))->base_throughput,
+                  smoothed_throughput(2000.0, 400.0));
     }
 } // namespace

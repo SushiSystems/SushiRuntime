@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
@@ -39,13 +40,19 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
+        /** @brief Samples a device and kind needs in one fold before its entry moves. */
+        inline constexpr std::size_t K_MINIMUM_FOLD_SAMPLES = 8;
+
+        /** @brief Share of the way an entry moves from its value toward the new median, in (0, 1]. */
+        inline constexpr double K_FOLD_SMOOTHING_WEIGHT = 0.25;
+
         /**
-         * @brief Returns profiles with each observed device and kind set to the throughput measured.
+         * @brief Returns profiles with each observed device and kind moved toward the throughput measured.
          *
-         * A sample is the operations of a cost over its seconds less its bytes at the memory bandwidth,
-         * so a folded profile prices the node at the measured time. An entry becomes the median of its
-         * samples, the lower one of an even count; the generic kind sets base_throughput. An observation
-         * of a device with no profile, or with no time left after its bytes, is dropped.
+         * A sample is a cost's operations over its seconds less its bytes at the memory bandwidth. A device
+         * and kind with fewer than K_MINIMUM_FOLD_SAMPLES samples keeps its entry; otherwise the entry moves
+         * K_FOLD_SMOOTHING_WEIGHT of the way to the lower median, or takes it when it holds no positive value.
+         * The generic kind moves base_throughput. An observation with no profile or no time left is dropped.
          */
         [[nodiscard]] DeviceProfileSet fold_observations(const DeviceProfileSet& profiles,
                                                          const std::vector<DispatchObservation>& observations);

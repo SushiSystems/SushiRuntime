@@ -60,8 +60,8 @@ namespace
 
         EXPECT_NE(folded, before);
         EXPECT_EQ(store.model(), folded);
-        // 1000 operations in 2.5 s with no bytes is 400 operations a second.
-        EXPECT_EQ(store.model()->profiles().find(host_key(2))->base_throughput, 400.0);
+        // 1000 operations in 2.5 s with no bytes is 400 operations a second; the entry at 2000 moves a quarter of the way.
+        EXPECT_EQ(store.model()->profiles().find(host_key(2))->base_throughput, smoothed_throughput(2000.0, 400.0));
         EXPECT_EQ(before->profiles().find(host_key(2))->base_throughput,
                   speed_model({1.0, 1.0})->profiles().find(host_key(2))->base_throughput);
     }
@@ -83,7 +83,7 @@ namespace
         first.join();
         second.join();
 
-        EXPECT_EQ(store.model()->profiles().find(host_key(1))->base_throughput, 400.0);
-        EXPECT_EQ(store.model()->profiles().find(host_key(2))->base_throughput, 400.0);
+        EXPECT_EQ(store.model()->profiles().find(host_key(1))->base_throughput, smoothed_throughput(2000.0, 400.0));
+        EXPECT_EQ(store.model()->profiles().find(host_key(2))->base_throughput, smoothed_throughput(2000.0, 400.0));
     }
 } // namespace

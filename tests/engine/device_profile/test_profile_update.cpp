@@ -36,6 +36,7 @@
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/device_profile/device_profile_file.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
+#include <SushiRuntime/device_profile/profile_fold.hpp>
 #include <SushiRuntime/device_profile/profile_update.hpp>
 
 #include "support/fake_profile_probe.hpp"
@@ -83,19 +84,35 @@ namespace
         return cost;
     }
 
+    /** @brief Returns one horizon of the compute kind on the first device, each dispatch taking seconds. */
+    std::vector<DispatchObservation> horizon(double seconds)
+    {
+        return std::vector<DispatchObservation>(K_MINIMUM_FOLD_SAMPLES,
+                                                DispatchObservation{host_key(1), compute_cost(), seconds});
+    }
+
     TEST_F(Small_ProfileUpdate, ASecondRunReadsTheThroughputTheFirstRunMeasured)
     {
         const DeviceProfileSet before = DeviceProfileFile::read(path()).value();
         const double modelled_before = CostModel(before).node_time(host_key(1), compute_cost()).value();
 
-        const std::vector<DispatchObservation> first_run{DispatchObservation{host_key(1), compute_cost(), 5.0}};
-        ASSERT_TRUE(update_profile_file(path(), first_run).has_value());
+        ASSERT_TRUE(update_profile_file(path(), horizon(5.0)).has_value());
 
         const DeviceProfileSet second_run = DeviceProfileFile::read(path()).value();
         const double modelled_after = CostModel(second_run).node_time(host_key(1), compute_cost()).value();
-        EXPECT_DOUBLE_EQ(modelled_after, 5.0);
+        const DeviceProfileSet expected = fold_observations(before, horizon(5.0));
+        EXPECT_DOUBLE_EQ(modelled_after, CostModel(expected).node_time(host_key(1), compute_cost()).value());
         EXPECT_NE(modelled_before, modelled_after);
         EXPECT_EQ(*second_run.find(host_key(2)), *before.find(host_key(2)));
+    }
+
+    TEST_F(Small_ProfileUpdate, ARunBelowTheMinimumLeavesTheFileProfilesAsTheyWere)
+    {
+        const DeviceProfileSet before = DeviceProfileFile::read(path()).value();
+
+        ASSERT_TRUE(update_profile_file(path(), {DispatchObservation{host_key(1), compute_cost(), 5.0}}).has_value());
+
+        EXPECT_EQ(DeviceProfileFile::read(path()).value(), before);
     }
 
     TEST_F(Small_ProfileUpdate, ARunThatMeasuredNothingWritesTheSameProfiles)
@@ -109,11 +126,12 @@ namespace
 
     TEST_F(Small_ProfileUpdate, ALaterRunFoldsOverTheEarlierOne)
     {
-        ASSERT_TRUE(update_profile_file(path(), {DispatchObservation{host_key(1), compute_cost(), 5.0}}).has_value());
-        ASSERT_TRUE(update_profile_file(path(), {DispatchObservation{host_key(1), compute_cost(), 2.0}}).has_value());
+        const DeviceProfileSet before = DeviceProfileFile::read(path()).value();
+        ASSERT_TRUE(update_profile_file(path(), horizon(5.0)).has_value());
+        ASSERT_TRUE(update_profile_file(path(), horizon(2.0)).has_value());
 
-        const DeviceProfileSet profiles = DeviceProfileFile::read(path()).value();
-        EXPECT_DOUBLE_EQ(CostModel(profiles).node_time(host_key(1), compute_cost()).value(), 2.0);
+        const DeviceProfileSet expected = fold_observations(fold_observations(before, horizon(5.0)), horizon(2.0));
+        EXPECT_EQ(DeviceProfileFile::read(path()).value(), expected);
     }
 
     TEST_F(Small_ProfileUpdate, AMissingFileIsAnErrorAndCreatesNothing)

@@ -37,6 +37,7 @@
 
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/device_profile/device_profile_file.hpp>
+#include <SushiRuntime/device_profile/profile_fold.hpp>
 #include <SushiRuntime/partition_session/partition_ledger.hpp>
 
 #include "support/fake_profile_probe.hpp"
@@ -145,19 +146,25 @@ namespace
     {
         PartitionLedger first_run;
         first_run.add_steps(1, 5.0);
-        first_run.add_dispatches({DispatchObservation{host_key(1), compute_cost(), 5.0}});
+        const std::vector<DispatchObservation> horizon(K_MINIMUM_FOLD_SAMPLES,
+                                                       DispatchObservation{host_key(1), compute_cost(), 5.0});
+        first_run.add_dispatches(horizon);
+        const DeviceProfileSet before = DeviceProfileFile::read(path()).value();
 
         const Result<bool> folded = first_run.fold_into(path());
 
         ASSERT_TRUE(folded.has_value());
         const DeviceProfileSet second_run = DeviceProfileFile::read(path()).value();
-        EXPECT_DOUBLE_EQ(CostModel(second_run).node_time(host_key(1), compute_cost()).value(), 5.0);
+        const DeviceProfileSet expected = fold_observations(before, horizon);
+        EXPECT_DOUBLE_EQ(CostModel(second_run).node_time(host_key(1), compute_cost()).value(),
+                         CostModel(expected).node_time(host_key(1), compute_cost()).value());
     }
 
     TEST_F(Medium_PartitionLedger, ALedgerWithNothingUnfoldedLeavesTheFileAlone)
     {
         PartitionLedger ledger;
-        ledger.add_dispatches({DispatchObservation{host_key(1), compute_cost(), 5.0}});
+        ledger.add_dispatches(std::vector<DispatchObservation>(K_MINIMUM_FOLD_SAMPLES,
+                                                               DispatchObservation{host_key(1), compute_cost(), 5.0}));
         ASSERT_TRUE(ledger.fold_into(path()).has_value());
         const DeviceProfileSet folded = DeviceProfileFile::read(path()).value();
 

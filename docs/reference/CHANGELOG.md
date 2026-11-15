@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Changed the profile fold to need 8 samples per device and kind and to move an entry a quarter of the way to the lower median (GLOBAL_HANDLE R15).
 - 2026-11-15 — runtime: Changed `NodeSplit::slice` to take its dependency events and return its event; a cut node submits every part, then waits only on its parts (RW-154, GLOBAL_HANDLE R03).
 - 2026-11-15 — runtime: Transfer paths, the staging ring and planned nodes report failure as a Result the run returns, so a refused allocation gives AllocationFailed instead of a throw on a worker (GLOBAL_HANDLE R09).
 - 2026-11-15 — runtime: Changed partitioning to one session per graph; a run counts only toward its own graph's plan, and each graph writes its own journal, `<profile>.<first problem hash>.journal` (GLOBAL_HANDLE R04).

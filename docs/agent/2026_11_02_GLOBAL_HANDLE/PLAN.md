@@ -285,7 +285,7 @@ job builds on them.
 | R12 | model agrees with plan; insertion EFT; bounded search | R04 | running |
 | R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | todo |
 | R14 | design and page truth | R12, R13 | todo |
-| R15 | profile fold with smoothing and minimum samples | R04 | running |
+| R15 | profile fold with smoothing and minimum samples | R04 | done |
 
 | Job | Route | Work | Waits on | Acceptance |
 | --- | --- | --- | --- | --- |
@@ -302,5 +302,5 @@ job builds on them.
 | R11 | `sonnet` `low` | `HandleOwnership`, `entry_address`, host-write tracking | R01 | Ownership is a function of the handle, the test seam is gone from the public header, and host writes are tracked outside the directory; two transfer paths whose ids collide are refused when the path list is built, and the tally keys on `TransferPathID` |
 | R12 | `opus` `low` | `partitioning` | R04 | The model charges a copy once per interval and space as the planner does, split parts are priced by what they copy, step time follows the scheduled order, placement is insertion-based EFT, and refinement and the floor search are bounded; `problem_hash` folds each split's declared regions |
 | R13 | `opus` `low` | `coherence` splice, `transfer` staged path and ring | R05 | A copy waits only on the producer of the version it moves, two copies from one source run together, the staged path does not block a worker, and each context stages through its own pinned ring |
-| R14 | `sonnet` `low` | design pages, module READMEs | R12, R13 | The design status, phases, modules line, margin and copy-model claims state what the code does |
+| R14 | `sonnet` `low` | design pages, module READMEs | R12, R13 | The design status, phases, modules line, margin, copy-model and fold (PARTITIONING.md:130: 8 samples, 0.25 smoothing) claims state what the code does |
 | R15 | `sonnet` `low` | `device_profile` fold | R04 | A fold needs a minimum sample count and smooths toward the new median, so one noisy horizon does not move a plan |

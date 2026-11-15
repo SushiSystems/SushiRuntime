@@ -67,6 +67,14 @@ namespace SushiRuntime
                 std::nth_element(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(middle), samples.end());
                 return samples[middle];
             }
+
+            /** @brief Returns current moved K_FOLD_SMOOTHING_WEIGHT of the way to median; a current that is not positive gives median. */
+            [[nodiscard]] double smoothed(double current, double median)
+            {
+                if (!(current > 0.0))
+                    return median;
+                return current + K_FOLD_SMOOTHING_WEIGHT * (median - current);
+            }
         } // namespace
 
         DeviceProfileSet fold_observations(const DeviceProfileSet& profiles,
@@ -87,11 +95,16 @@ namespace SushiRuntime
             for (auto& entry : samples)
             {
                 DeviceProfile profile = *folded.find(entry.first.first);
-                const double throughput = lower_median(entry.second);
+                if (entry.second.size() < K_MINIMUM_FOLD_SAMPLES)
+                    continue;
+                const double median = lower_median(entry.second);
                 if (entry.first.second.is_generic())
-                    profile.base_throughput = throughput;
+                    profile.base_throughput = smoothed(profile.base_throughput, median);
                 else
-                    profile.throughputs[entry.first.second] = throughput;
+                {
+                    double& throughput = profile.throughputs[entry.first.second];
+                    throughput = smoothed(throughput, median);
+                }
                 folded.set(entry.first.first, std::move(profile));
             }
             return folded;

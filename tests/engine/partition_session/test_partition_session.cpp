@@ -161,7 +161,7 @@ namespace
         EXPECT_EQ(copies->tallies().at({MemorySpaceID(2), TransferPathID::named("pcie")}).copies, 2u);
     }
 
-    TEST(Small_PartitionSession, AThrottledDeviceLosesItsNodeAtTheFirstHorizon)
+    TEST(Small_PartitionSession, AThrottledDeviceIsReplannedAtTheFirstHorizonAndKeepsANodeWhileTheFoldIsSmoothed)
     {
         PartitionSession session = split_session();
         ASSERT_NE(session.answer().value().node_devices[0], session.answer().value().node_devices[1]);
@@ -170,8 +170,9 @@ namespace
         measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
         const RebalanceAction action = session.rebalance();
 
+        // One horizon moves host_key(2) to 1600 operations a second: a node there takes 0.625 s, under the 1 s of two on host_key(1).
         EXPECT_EQ(action, RebalanceAction::Replan);
-        EXPECT_EQ(session.answer().value().node_devices, (std::vector<DeviceKey>{host_key(1), host_key(1)}));
+        EXPECT_NE(session.answer().value().node_devices[0], session.answer().value().node_devices[1]);
     }
 
     TEST(Small_PartitionSession, AHorizonFoldsTheMeasuredThroughputIntoTheSharedProfiles)
@@ -183,8 +184,8 @@ namespace
         measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
         static_cast<void>(session.rebalance());
 
-        // 1000 operations in 2.5 s with no bytes is 400 operations a second.
-        EXPECT_EQ(store->model()->profiles().find(host_key(2))->base_throughput, 400.0);
+        // 1000 operations in 2.5 s with no bytes is 400 operations a second; the entry at 2000 moves a quarter of the way.
+        EXPECT_EQ(store->model()->profiles().find(host_key(2))->base_throughput, smoothed_throughput(2000.0, 400.0));
     }
 
     TEST(Small_PartitionSession, ADoctoredProfileReturnsToTheFloorWithinTwoHorizons)

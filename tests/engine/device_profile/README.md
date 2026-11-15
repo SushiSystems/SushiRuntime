@@ -11,15 +11,18 @@ dropped; the order of the records is kept.
 
 ## test_profile_fold.cpp
 
-A folded profile prices the observed node at the measured time; the entry is the median, the lower one of
-an even count; the generic kind sets the base throughput; the rest of every profile is kept; an observation
-that says nothing changes nothing; the order of the observations does not matter.
+A fold moves an entry the smoothing weight of the way to the median, the lower one of an even count, and only
+with the minimum samples of a device and kind; below it nothing moves; one outlier horizon moves an entry by
+at most the weight of the distance; repeated horizons converge to the median and price the node at the measured
+time; an entry with no value takes the median; the generic kind moves the base throughput; the rest of every
+profile is kept; an observation that says nothing changes nothing; the order of the observations does not
+matter; the same inputs give the same doubles.
 
 ## test_profile_update.cpp
 
 Through a profile file in the temporary directory: a second run reads the throughput the first one
-measured, a run that measured nothing writes the same profiles, a later run folds over an earlier one, and a
-missing file is an error that creates nothing.
+measured as the fold gives it, a run below the minimum samples and a run that measured nothing write the same
+profiles, a later run folds over an earlier one, and a missing file is an error that creates nothing.
 
 ## test_cost_model.cpp
 

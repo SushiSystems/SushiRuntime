@@ -41,6 +41,7 @@
 #include <SushiRuntime/partition_session/partition_session.hpp>
 #include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/profile_store.hpp>
+#include <SushiRuntime/device_profile/profile_fold.hpp>
 #include <SushiRuntime/partitioning/floor_partitioner.hpp>
 #include <SushiRuntime/partitioning/list_scheduling_partitioner.hpp>
 
@@ -116,16 +117,31 @@ namespace SushiRuntime::Internal::Coherence
         return parts;
     }
 
-    /** @brief Returns the dispatches of one step in which each listed device ran one node of 1000 operations for its seconds. */
+    static_assert(1000 % K_MINIMUM_FOLD_SAMPLES == 0, "step_dispatches splits 1000 operations into whole samples.");
+
+    /**
+     * @brief Returns the dispatches of one step in which each listed device ran 1000 operations in its seconds.
+     *
+     * Each device's work is K_MINIMUM_FOLD_SAMPLES dispatches of an equal share, so a fold moves it. The shares
+     * are exact in binary for the seconds the tests use, so the seconds of a device still sum to the one given.
+     */
     [[nodiscard]] inline std::vector<DispatchObservation>
     step_dispatches(const std::vector<std::pair<DeviceKey, double>>& devices)
     {
         NodeCost cost;
-        cost.operations = 1000;
+        cost.operations = 1000 / K_MINIMUM_FOLD_SAMPLES;
         std::vector<DispatchObservation> observations;
         for (const std::pair<DeviceKey, double>& device : devices)
-            observations.push_back(DispatchObservation{device.first, cost, device.second});
+            for (std::size_t sample = 0; sample < K_MINIMUM_FOLD_SAMPLES; ++sample)
+                observations.push_back(DispatchObservation{
+                    device.first, cost, device.second / static_cast<double>(K_MINIMUM_FOLD_SAMPLES)});
         return observations;
+    }
+
+    /** @brief Returns the throughput a fold gives an entry at prior when the samples measure measured. */
+    [[nodiscard]] inline double smoothed_throughput(double prior, double measured)
+    {
+        return prior + K_FOLD_SMOOTHING_WEIGHT * (measured - prior);
     }
 
     /** @brief Adds to session's ledger one step of seconds of the plan in force, with step_dispatches() of devices. */

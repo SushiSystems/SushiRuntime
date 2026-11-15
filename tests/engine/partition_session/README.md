@@ -50,7 +50,7 @@ the next problem.
 Figures come per step: the measured step, each device's dispatch time and the copies into a device by
 path; a copy into a space with no device is left out, and a ledger with no step measures nothing.
 `take_horizon()` gives the dispatches since the last take, once.
-`Medium_PartitionLedger` writes a profile file: a second run reads the throughput the first one folded,
+`Medium_PartitionLedger` writes a profile file: a second run reads the throughput the first one folded, smoothed as the fold gives it,
 and a ledger with nothing unfolded leaves the file alone.
 
 ## test_partition_session.cpp
@@ -80,7 +80,7 @@ journals for two graphs, each holding its own plan.
 ## test_live_plan_source.cpp
 
 The first plan is the scheduler's answer priced by the profiles in memory; a horizon of a throttled device
-replans and folds into the shared profiles; a source plans with what another session folded after it was
+replans and folds a smoothed throughput into the shared profiles; a source plans with what another session folded after it was
 built.
 
 ## test_journal_plan_source.cpp
@@ -92,7 +92,7 @@ from an exhausted journal, is refused.
 ## test_profile_store.cpp
 
 A store over no model holds none; a fold replaces the model every reader sees and leaves the old one
-whole; a fold of nothing keeps the model; two threads folding at once both reach the model.
+whole, with each entry moved the smoothing weight of the way to the measured throughput; a fold of nothing keeps the model; two threads folding at once both reach the model.
 
 ## test_transfer_path_tally.cpp
 
