@@ -9,6 +9,8 @@ sushiruntime_add_module_tests(
         compile_coherence_log_category.cpp
         compile_eviction_policy.cpp
         compile_instance_allocator.cpp
+        compile_partition_problem.cpp
+        compile_partitioner.cpp
         compile_peer_access.cpp
         compile_pinned_host_memory.cpp
         compile_planned_node_factory.cpp
@@ -17,6 +19,7 @@ sushiruntime_add_module_tests(
         compile_space_queues.cpp
         compile_transfer_observer.cpp
         compile_transfer_path.cpp
+        test_assignment_hash.cpp
         test_coherence_planner/test_planned_steps.cpp
         test_coherence_planner/test_randomized_equivalence.cpp
         test_copy_plan.cpp
@@ -25,14 +28,23 @@ sushiruntime_add_module_tests(
         test_device_profile_file.cpp
         test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
+<<<<<<< ours
         test_file_path.cpp
+=======
+        test_fill_plan.cpp
+>>>>>>> theirs
         test_host_staged_path.cpp
+        test_list_scheduling_partitioner.cpp
         test_logical_time_eviction.cpp
+        test_partition_assignment.cpp
+        test_partition_model.cpp
+        test_partition_refusal.cpp
         test_peer_path.cpp
         test_pin_set.cpp
         test_plan_hash.cpp
         test_plan_splice.cpp
         test_planned_host_access.cpp
+        test_pool_occupancy.cpp
         test_profile_measurement.cpp
         test_profile_transfer_cost.cpp
         test_residency_options.cpp

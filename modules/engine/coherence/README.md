@@ -43,6 +43,15 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `profile_transfer_cost.hpp` | `select_transfer_cost()` and `SpaceDeviceResolver` |
 | `profile_probe.hpp` | `ProfileProbe`, the port that times copies and kernels on a device |
 | `profile_measurement.hpp` | `ProfileMeasurement` and `MeasurementPlan`, which build a `DeviceProfile` through the probe |
+| `partition_problem.hpp` | `PartitionProblem`, `PartitionNode`, `PartitionBuffer`, `PartitionEdge` and `PartitionDevice` |
+| `partition_assignment.hpp` | `PartitionAssignment`, the device of each node and the home of each planned buffer |
+| `partition_refusal.hpp` | `PartitionRefusal` and `PoolShortfall`, a refusal with the shortfall per pool |
+| `partitioner.hpp` | `Partitioner`, the port that shares a graph across devices |
+| `list_scheduling_partitioner.hpp` | `ListSchedulingPartitioner`, rank, place, refine and the floor check |
+| `partition_model.hpp` | `PartitionModel`, which prices a placement and counts its bytes per pool |
+| `pool_occupancy.hpp` | `PoolOccupancy`, the bytes a placement holds in each pool |
+| `fill_plan.hpp` | `fill_plan()`, `floor_plan()`, `FillWalk` and `FloorPlan` |
+| `assignment_hash.hpp` | `assignment_hash()`, the FNV-1a hash of an assignment |
 
 ## CoherencePlanner
 
@@ -202,6 +211,35 @@ path with no profile gives no time. A device with a rate of zero that has work t
 
 `select_transfer_cost()` gives the planner its `TransferCost`: the model's seconds when a model is
 loaded, `uniform_transfer_cost()` when none is. A copy the model cannot price costs infinity.
+
+## Partitioner
+
+`Partitioner` takes a `PartitionProblem` (nodes in recording order with their `NodeCost`, buffers
+with their declared size, edges, devices with their pool and copy path) and returns a
+`PartitionAssignment`, or a `PartitionRefusal` before anything is loaded.
+`ListSchedulingPartitioner` is the one implementation; the shape it follows is in
+[PARTITIONING.md](../../../docs/design/GLOBAL_HANDLE/PARTITIONING.md).
+
+- `PartitionModel` keeps the devices that have a profile, in `DeviceKey` order, and numbers the
+  pools in the order their first device appears. A pool's usable bytes are its first device's
+  capacity less its reserve, so a pool that several devices share is counted once. A step runs the
+  nodes in recording order, each device one after another; an edge between two pools waits for the
+  copy over the source device's path, an edge inside one pool does not.
+- `PoolOccupancy` counts each buffer once per pool it has an instance in. A buffer with a stated
+  device holds its home instance from the start. Every instance counts as live for the whole step,
+  which bounds the peak from above.
+- `fill_plan()` orders a device subset by the time each takes alone, walks the nodes in recording
+  order and moves to the next device when a pool is full, never back. `floor_plan()` is the fitting
+  fill plan of least step time over every subset, so the model takes at most sixteen devices.
+- `ListSchedulingPartitioner` ranks the nodes upward, places each on the device that finishes it
+  earliest within capacity, moves a node to a neighbour's device while the step falls, and takes the
+  floor when the floor is faster. Ties go to recording order and to the lower `DeviceKey`.
+- A job that fits in no plan is refused as `AllocationFailed` with one `PoolShortfall` row per
+  pool. When one node needs more than any pool holds, each row holds that node's bytes; otherwise
+  each row holds what the fill plan over every device puts in the pool.
+- `PartitionAssignment::home_of()` gives each `Residency::Planned` buffer the device of its first
+  writer, or of its first reader when nothing writes it. `assignment_hash()` hashes the devices, the
+  homes, the step time and the floor flag, so equal inputs and one profile file give equal hashes.
 
 ## ProfileMeasurement
 

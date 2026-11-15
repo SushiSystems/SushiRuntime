@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — coherence: Added the `Partitioner` port and a list-scheduling partitioner that ranks nodes, places each where it finishes earliest within its pool and holds the plan against the floor of the fill plans (GLOBAL_HANDLE H7).
+- 2026-11-15 — coherence: Added refusal of a job that fits no plan as `AllocationFailed`, with the shortfall of each memory pool (GLOBAL_HANDLE H7).
 - 2026-11-15 — api: Added `Runtime::buffer_from_file<T>(path, offset, count)`, a planned buffer whose valid copy is a file range streamed through the staging ring (GLOBAL_HANDLE H4).
 - 2026-11-15 — memory: Added `FileMemorySpace` and the `FilePath` transfer path that reads it through the staging ring (GLOBAL_HANDLE H4).
 - 2026-11-15 — api: Changed a static `Graph` with nodes on two devices to plan its copies at compile and replay the plan with no planner call while it is steady (GLOBAL_HANDLE H5).

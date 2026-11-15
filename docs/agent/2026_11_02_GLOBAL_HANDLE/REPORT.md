@@ -69,6 +69,7 @@ dispatch: T42 — sonnet low, rung 1, passed
 dispatch: T11 — haiku medium, rung 1, passed (skipped loading the style skills; checkers clean)
 dispatch: T45 — opus low, 91 turns, rung 1, passed
 dispatch: T19 — opus low, 71 turns, rung 1, passed
+dispatch: T25 — opus low, rung 1, passed (skipped loading the style skills; checkers clean)
 ```
 
 ## T05: the residency directory

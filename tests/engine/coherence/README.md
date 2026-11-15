@@ -13,6 +13,11 @@ gigabyte free.
 queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
 `RecordingTransferObserver` keeps each copy it hears.
 
+`partition_problem_builder.hpp` holds the partitioner tests' builders: `speed_model()` makes a
+`CostModel` of `round_profile()` devices, `add_devices()` gives each device a pool of its own and
+the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
+writes buffer `i` and reads buffer `i - 1`.
+
 ## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
@@ -180,6 +185,7 @@ The instance of a space is made on its device and released there with no ERROR, 
 released on the device it was made on, a device space names device USM and the host space host
 USM, and a space past the devices is refused.
 
+<<<<<<< ours
 ## test_file_path.cpp
 
 `Small_FilePath` writes a temporary file and checks that `FilePath` connects an added file space to
@@ -190,3 +196,46 @@ slot, and refuses a space it does not hold or a range past the end of the file.
 working directory, streams it window by window onto the GPU, checks the first and last 4 KiB of each
 window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
 with no CUDA GPU or too little disk, and deletes the file.
+=======
+## compile_partition_problem.cpp and compile_partitioner.cpp
+
+Each file includes one partitioner header alone.
+
+## test_partition_refusal.cpp
+
+A pool's shortfall is the bytes required above the usable ones, and zero when the pool holds them.
+
+## test_partition_assignment.cpp
+
+`home_of()` returns the home of a homed buffer and nothing for another.
+
+## test_assignment_hash.cpp
+
+Equal assignments hash equal; another device or the floor flag changes the hash.
+
+## test_pool_occupancy.cpp
+
+A buffer two nodes touch is counted once per pool, and a buffer with a stated home is held in its
+pool from the start.
+
+## test_partition_model.cpp
+
+Devices that share a pool count it once and copy nothing between them, an edge across two pools adds
+its copy to the step, a backward edge is refused, a node that writes a buffer with a stated device is
+fixed to it, and a node placed on a device with no profile is refused.
+
+## test_fill_plan.cpp
+
+A seven-node chain over three devices whose pools hold three nodes' buffers fills the fastest device,
+then the next, then the slowest, and crosses each device boundary once. When nothing is left, the
+last device takes the rest and the walk reports that it does not fit. The floor is a fitting plan,
+and there is none when no subset fits.
+
+## test_list_scheduling_partitioner.cpp
+
+A node larger than every pool, and a job larger than the pools together, are refused as
+`AllocationFailed` with the bytes and the shortfall of each pool. Two partitioners built from one
+profile set give assignments that hash equal, and so does a second run of one partitioner. A planned
+buffer is homed on its writer's device, the plan is never modelled slower than its floor, and a
+device with no profile receives no node.
+>>>>>>> theirs
