@@ -456,6 +456,7 @@ namespace SushiRuntime
                             sink().captured_kernel(
                                 launch, Detail::captured_access(std::get<Is>(arguments)...),
                                 std::make_tuple(std::get<Is>(arguments).ptr...),
+                                std::vector<GlobalHandle>{std::get<Is>(arguments).key...},
                                 std::forward<F>(std::get<sizeof...(Is)>(arguments)),
                                 options_after<sizeof...(Is)>(arguments));
                     return self();

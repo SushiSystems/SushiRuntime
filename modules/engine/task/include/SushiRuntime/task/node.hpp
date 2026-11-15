@@ -47,6 +47,7 @@
 #include <SushiRuntime/core/node_split.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node_profiling.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
@@ -211,6 +212,13 @@ namespace SushiRuntime
              * @see modules/engine/task/README.md
              */
             std::unique_ptr<OffloadState> offload_state_;
+
+            /**
+             * @brief Holds the pointers the kernel receives, rebound to the node's device at each
+             *        dispatch; null on a node whose kernel takes no captured pointer.
+             * @see modules/engine/task/README.md
+             */
+            std::unique_ptr<KernelPointers> kernel_pointers_;
 
             /**
              * @brief States the device a node that names no owned region runs on.
@@ -389,8 +397,24 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<void> run_on_host();
 
-            /** @brief Executes the task work within a SYCL handler. */
-            void execute(sycl::handler& h) override             { if(work) work(h); }
+            /**
+             * @brief Executes the task work within a SYCL handler, with the kernel's pointers bound
+             *        to the node's device when it has any.
+             * @see modules/engine/task/README.md
+             */
+            void execute(sycl::handler& h) override
+            {
+                if (!work)
+                    return;
+                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                {
+                    work(h);
+                    return;
+                }
+                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
+                const KernelPointerScope scope(*kernel_pointers_);
+                work(h);
+            }
 
             /** @brief Executes the host work with a queue. */
             sycl::event execute_host(sycl::queue& queue,

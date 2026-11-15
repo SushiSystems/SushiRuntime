@@ -60,10 +60,14 @@ TEST_F(Small_EmitCaptured, TheKernelReceivesEachPointer)
     const Detail::NodeDescription description = Detail::captured_node(
         {TestSupport::region_at(in.data())}, {TestSupport::region_at(out.data())}, K_COUNT,
         std::make_tuple(static_cast<const int*>(in.data()), out.data()),
+        std::vector<GlobalHandle>{in.handle(), out.handle()},
         [](std::size_t index, const int* source, int* target) { target[index] = source[index] * 2; });
 
     description.host_form();
 
     EXPECT_EQ(description.width, K_COUNT);
     EXPECT_EQ(TestSupport::contents(out), std::vector<int>(K_COUNT, 10));
+    EXPECT_EQ(description.pointer_handles, (std::vector<GlobalHandle>{in.handle(), out.handle()}));
+    EXPECT_EQ(description.pointer_homes,
+              (std::vector<void*>{static_cast<void*>(in.data()), static_cast<void*>(out.data())}));
 }

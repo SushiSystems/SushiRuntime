@@ -37,6 +37,9 @@
 
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -77,6 +80,13 @@ namespace SushiRuntime
                         add_described_node(target, spec.description, reserved);
                     target.name_last_node(recorder.rule_names_[spec.rule]);
                     apply_stamp(spec.stamp, added);
+                    if (!spec.description.pointer_handles.empty())
+                    {
+                        Internal::Execution::RuntimeContext& context =
+                            Internal::ContextAccess::context(recorder.context_);
+                        attach_kernel_pointers(added, spec.description, context.handles(),
+                                               context.devices().count());
+                    }
                     visit(static_cast<std::size_t>(spec.rule), node);
                 }
             }

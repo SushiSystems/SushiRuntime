@@ -38,10 +38,13 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/bound_pointers.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
+#include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -92,22 +95,38 @@ namespace SushiRuntime
             return access;
         }
 
+        /** @brief Returns the address of each pointer of @p pointers, in order, without const. */
+        template <class Pointers, std::size_t... Is>
+        std::vector<void*> pointer_addresses(const Pointers& pointers, std::index_sequence<Is...>)
+        {
+            return std::vector<void*>{const_cast<void*>(static_cast<const void*>(std::get<Is>(pointers)))...};
+        }
+
         /**
-         * @brief Describes a launch that hands its kernel one pointer per capture.
+         * @brief Describes a launch that hands its kernel one pointer per capture, as bound on
+         *        the node's device at dispatch.
          * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
          * @tparam Pointers A std::tuple of raw pointers, handed to kernel after the index.
+         * @param handles The buffer of each pointer, in the order of @p pointers.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class Pointers, class F>
         NodeDescription captured_node(std::vector<BufferRegion> reads,
                                       std::vector<BufferRegion> writes,
-                                      Launch launch, Pointers pointers, F&& kernel)
+                                      Launch launch, Pointers pointers,
+                                      std::vector<GlobalHandle> handles, F&& kernel)
         {
+            constexpr std::size_t K_POINTERS = std::tuple_size_v<Pointers>;
+            SR_VERIFY(handles.size() == K_POINTERS,
+                      "captured_node: pass one handle per pointer, in the order of the pointers.");
             NodeDescription description;
             description.submit_form = SubmitForm::Fixed;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = launch_count(launch);
+            description.pointer_handles = std::move(handles);
+            description.pointer_homes =
+                pointer_addresses(pointers, std::make_index_sequence<K_POINTERS>{});
             std::decay_t<F> body(std::forward<F>(kernel));
             if constexpr (has_host_form_v<Launch>)
                 description.host_form = [body, launch, pointers]()
@@ -115,7 +134,7 @@ namespace SushiRuntime
                     std::apply([&body, &launch](auto... pointer)
                     {
                         run_launch_on_host(launch, body, pointer...);
-                    }, pointers);
+                    }, bound_pointers(pointers));
                 };
             description.work = CommandGroupWork(
                 [kernel = std::move(body), launch, pointers](sycl::handler& h)
@@ -123,7 +142,7 @@ namespace SushiRuntime
                     std::apply([&h, &kernel, &launch](auto... pointer)
                     {
                         submit_launch(h, launch, kernel, pointer...);
-                    }, pointers);
+                    }, bound_pointers(pointers));
                 });
             return description;
         }

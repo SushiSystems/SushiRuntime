@@ -16,6 +16,7 @@ sushiruntime_add_module_tests(
         test_in_memory_offload_coordinator.cpp
         test_in_memory_offload_sink.cpp
         test_in_memory_placement_memory.cpp
+        test_kernel_pointers.cpp
         test_node.cpp
         test_node_placement.cpp
         test_node_widths.cpp

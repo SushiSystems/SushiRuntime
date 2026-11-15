@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -37,6 +38,7 @@
 #include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -53,6 +55,18 @@ namespace SushiRuntime
         add_described_node(Internal::Graph::TaskGraph& backing_graph,
                            const NodeDescription& description,
                            std::optional<std::uint32_t> registration);
+
+        /**
+         * @brief Gives a capture launch's node the table of its kernel's pointers, which each
+         *        dispatch binds on the node's device; a node with no pointer gets none.
+         * @param handles The directory the pointers resolve through; outlives the node.
+         * @param device_count Devices of the runtime.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        SUSHIRUNTIME_API void attach_kernel_pointers(Internal::Graph::Node& node,
+                                                     const NodeDescription& description,
+                                                     const HandleResolver& handles,
+                                                     std::size_t device_count);
 
         /**
          * @brief Writes on a node what the caller stated and leaves the rest as it is.

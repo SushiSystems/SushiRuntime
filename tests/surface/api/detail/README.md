@@ -29,6 +29,17 @@ whose promises are shown by the graph tests (`graph/test_plan_view.cpp` for the 
 `vocabulary/test_dynamic.cpp` for a window past the capacity, `data/test_state.cpp` for a State that
 moves).
 
+## test_bound_pointers.cpp
+
+The file tests `bound_pointers()` through a captured description's host form, run inside a
+`KernelPointerScope` the way `Node::execute()` opens one.
+
+| Test | What it proves |
+| --- | --- |
+| `WithNoBoundTableTheRecordedPointersAreKept` | With no scope open, the recorded pointers are handed on. |
+| `ANodeOnDeviceOneReadsTheCopiedInstance` | A node bound on device 1 reads the copy there, not the stale home instance on device 0. |
+| `ANodeOnTheHomeDeviceReadsTheHomeInstances` | A node bound on the home device reads the home instances and counts a home bind only. |
+
 ## test_assertion_logging.cpp
 
 The file tests `install_fatal_logging()`. Each test runs a failing `SR_VERIFY` in a child process
@@ -116,7 +127,7 @@ The file tests `captured_node()`: the kernel receives one pointer per capture.
 
 | Test | What it proves |
 | --- | --- |
-| `TheKernelReceivesEachPointer` | The kernel reads one capture and writes the other at each index, and the description states the width. |
+| `TheKernelReceivesEachPointer` | The kernel reads one capture and writes the other at each index, and the description states the width, the handles and the home addresses. |
 
 ## test_emit_device_sized.cpp
 

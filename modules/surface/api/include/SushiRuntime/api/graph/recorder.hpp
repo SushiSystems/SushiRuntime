@@ -281,17 +281,21 @@ namespace SushiRuntime
             /**
              * @brief Records a launch whose kernel gets one raw pointer per capture.
              * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
-             * @param pointers A std::tuple of pointers, passed to kernel_body after the index.
+             * @param pointers A std::tuple of pointers, passed to kernel_body after the index;
+             *        each is its buffer's home instance.
+             * @param handles The buffer of each pointer, in the order of @p pointers. At dispatch
+             *        the kernel receives each buffer's instance on the node's device.
              */
             template <class Launch, class Pointers, class F>
             std::size_t captured_kernel(Launch launch, Access access, Pointers pointers,
-                                        F&& kernel_body,
+                                        std::vector<GlobalHandle> handles, F&& kernel_body,
                                         NodeOptions options = {})
             {
                 return record(
                     Detail::captured_node(
                         std::move(access.reads), std::move(access.writes), launch,
-                        std::move(pointers), std::forward<F>(kernel_body)),
+                        std::move(pointers), std::move(handles),
+                        std::forward<F>(kernel_body)),
                     access.lives, options);
             }
 

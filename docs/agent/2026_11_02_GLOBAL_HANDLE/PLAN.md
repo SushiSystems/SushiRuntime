@@ -53,7 +53,8 @@ when its own context would not hold their reading; it still reviews and commits 
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | done |
-| T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | running |
+| T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | done |
+| T44 | `engine/task`, `surface/api`: nodes whose pointers cannot be rebound stay home; a missing instance is an error; `DeviceSlot` on the table | T39, T37 | todo |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | done |
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
@@ -128,6 +129,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T40 | `sonnet` `medium` | `engine/task/source/node_placement.cpp` | T13 | A node stated on a device in another SYCL context than its anchor's owner is placed, with the copy planned, instead of refused |
 | T41 | `sonnet` `medium` | `platform/memory` `ResidencyView` port; `engine/coherence` planner and node factory | T13 | The planner and the node factory depend on the port, not on `ResidencyDirectory` |
 | T43 | `sonnet` `medium` | `engine/execution` runtime context and `RuntimeConfig`, `surface/api/source/region_coherence.cpp`, a device `ProfileProbe` | T24, T18 | A runtime given a profile file prices copies through `CostModel`, a runtime without one keeps the uniform cost, and `ProfileMeasurement` runs on a device through the real probe; a caller installs a `TransferObserver` through `AdvancedControls`, and T20 asserts the path of each copy through it |
+| T44 | `opus` `low` | `engine/task` `kernel_pointers`, node placement metadata, `surface/api` recorder `DeviceSlot` path | T39, T37 | A node whose kernel captures raw addresses is marked fixed to its home device and refused elsewhere with `InvalidGraph`; a bind with no instance on the node's device fails its verify; the dynamic `DeviceSlot` path binds through `KernelPointers` |
 | T42 | `sonnet` `low` | `engine/execution/source/runtime_memory_spaces.cpp`, `platform/device` | T13 | An integrated GPU reports the host pool as its shared pool, and `usable_pool_bytes` counts it once |
 
 ### H4: transfer paths and files

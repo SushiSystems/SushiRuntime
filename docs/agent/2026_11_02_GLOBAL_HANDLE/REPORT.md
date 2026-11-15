@@ -48,6 +48,7 @@ dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
 dispatch: T07 — sonnet low, 46 turns, rung 1, passed
 dispatch: T41 — sonnet medium, rung 1, passed
 dispatch: T29 — opus low, rung 1, passed (skipped loading four style skills; checkers clean)
+dispatch: T39 — opus low, 122 turns, rung 1, passed
 dispatch: T23 — opus low, rung 1, passed
 dispatch: T31 — haiku high, 124 turns, rung 1, passed (SushiEngine e3348900f)
 dispatch: T10 — sonnet medium, 146 turns, rung 1, passed
@@ -64,6 +65,7 @@ dispatch: T09 — opus low, 235 turns, rung 2, passed
 dispatch: T07 — sonnet low, 46 turns, rung 1, passed
 dispatch: T41 — sonnet medium, rung 1, passed
 dispatch: T29 — opus low, rung 1, passed (skipped loading four style skills; checkers clean)
+dispatch: T39 — opus low, 122 turns, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -128,3 +130,11 @@ T14 and T21 remove.
 The staging ring's pinned memory is allocated in the first device's SYCL context. On a device of
 another vendor the same memory is pageable host memory to that context, so a copy is correct and
 slower; T20 measures it on the first machine. Host to device and device to host are one copy.
+
+## T39: the pointers a kernel receives
+
+A node's `KernelPointers` table binds each captured buffer at `Node::execute()`: the home address
+on the home device, the resolved instance elsewhere. Ruling under the owner's delegation: a kernel
+that captures `buffer.data()` in its own closure cannot be rebound, so such a node is fixed to its
+home device and refused elsewhere; a bind that finds no instance is an error, not a silent home
+address. T44 carries both and moves the dynamic `DeviceSlot` path onto the table.

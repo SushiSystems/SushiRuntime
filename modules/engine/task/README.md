@@ -49,6 +49,7 @@ fields it stores behind `OffloadState::payload`.
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of`, `Internal::Graph::anchor_of` and `Internal::Graph::anchor_device` (defined in `modules/engine/task/source/node_placement.cpp`): the one anchor rule, the handle a node is anchored to and its owning device, and the device a node runs on |
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
+| `kernel_pointers.hpp` | `Internal::Graph::KernelPointerSlot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): the pointers a node's kernel receives, bound on the node's device at each dispatch |
 | `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count and the shared contexts |
 | `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from a `HandleResolver` and a `USMAllocator` |
 | `in_memory_placement_memory.hpp` | `Internal::Graph::InMemoryPlacementMemory`, a test double of the port that answers from handles a test records |
@@ -80,6 +81,22 @@ exported, so the library and every program linked to it see one instance; an inl
 would give each DLL its own. The returned event must complete after every handed-over event, since
 the dispatch is timed across the handed-over ones and completes with the returned one. The body
 signature and `execute_host()` are unchanged.
+
+## The pointers a kernel receives
+
+A capture launch records each buffer's home address at `add()`. When the coherence planner runs the
+node on another device, the kernel must read the instance there. `Node::kernel_pointers_` holds one
+`KernelPointerSlot` per pointer: the buffer's handle, the home address and the home device.
+`Node::execute()` calls `KernelPointers::bind()` with the node's device, `cached_queue_index_`, and
+opens a `KernelPointerScope` around the work; the capture launch's command group reads the table
+from the scope while it is built. A node with no table, or not yet placed, runs its work as before.
+
+`bind()` keeps the home address of a slot whose home device is the node's device and reads no
+directory. Any other slot is resolved with `resolve_on_device()`, which is lock-free; a buffer with
+no instance there keeps its home address, which is how host, borrowed and shared memory is reached.
+`home_binds()` and `resolved_binds()` count the two cases. One thread dispatches a node at a time, so
+the table takes no lock. The scope's pointer is a `thread_local` defined once in
+`source/kernel_pointers.cpp` and exported, for the reason given for `DispatchEventScope`.
 
 ## Placement rule order
 

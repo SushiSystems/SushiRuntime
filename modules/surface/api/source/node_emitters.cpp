@@ -33,7 +33,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -42,6 +44,8 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/submit_form.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
@@ -210,6 +214,29 @@ namespace SushiRuntime
             node.host_form = description.host_form;
             node.submit_form = engine_form(description.submit_form);
             return node;
+        }
+
+        void attach_kernel_pointers(Internal::Graph::Node& node, const NodeDescription& description,
+                                    const HandleResolver& handles, std::size_t device_count)
+        {
+            if (description.pointer_handles.empty())
+                return;
+            std::vector<Internal::Graph::KernelPointerSlot> slots;
+            slots.reserve(description.pointer_handles.size());
+            for (std::size_t index = 0; index < description.pointer_handles.size(); ++index)
+            {
+                Internal::Graph::KernelPointerSlot slot;
+                slot.handle = description.pointer_handles[index];
+                slot.home = description.pointer_homes[index];
+                // The home device is the one whose instance is the recorded address.
+                const std::optional<Internal::Graph::HandleLocation> location =
+                    Internal::Graph::locate(handles, slot.handle, device_count);
+                if (location && location->address == slot.home)
+                    slot.home_device = location->device;
+                slots.push_back(slot);
+            }
+            node.kernel_pointers_ =
+                std::make_unique<Internal::Graph::KernelPointers>(std::move(slots), handles);
         }
 
         void apply_stamp(const NodeStamp& stamp, Internal::Graph::Node& node) noexcept

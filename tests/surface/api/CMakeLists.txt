@@ -17,6 +17,7 @@ sushiruntime_add_module_tests(
         detail/compile_plan.cpp
         detail/compile_step_machinery.cpp
         detail/test_assertion_logging.cpp
+        detail/test_bound_pointers.cpp
         detail/test_before_step_hooks.cpp
         detail/test_callable_checks.cpp
         detail/test_callable_traits.cpp
@@ -90,6 +91,7 @@ sushiruntime_add_module_tests(
     DEVICE_SOURCES
         data/test_buffer.cpp
         data/test_state.cpp
+        detail/test_bound_pointers.cpp
         detail/test_emit_captured.cpp
         detail/test_emit_device_sized.cpp
         detail/test_emit_dynamic.cpp

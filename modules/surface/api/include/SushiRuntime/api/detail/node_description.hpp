@@ -41,6 +41,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/late_controls.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 
@@ -154,6 +155,15 @@ namespace SushiRuntime
 
             /** @brief State and DynamicState: the live fields of a rule that names an operation. */
             LiveFields live;
+
+            /**
+             * @brief Kernel of a capture launch: the buffer of each pointer the kernel receives,
+             *        in argument order; empty for every other node.
+             */
+            std::vector<GlobalHandle> pointer_handles;
+
+            /** @brief The home address of each pointer in pointer_handles, recorded at add(). */
+            std::vector<void*> pointer_homes;
         };
     } // namespace Detail
 } // namespace SushiRuntime

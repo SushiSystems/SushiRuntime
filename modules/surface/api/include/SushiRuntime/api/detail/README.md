@@ -361,6 +361,16 @@ captured_access() turns a list of In, Out and InOut captures into the Access the
 by. It lives with the captured builder so that the builder surface's capture overload only splits
 its argument pack.
 
+### captured_node and bound_pointers
+
+captured_node() takes the handle of each pointer, in pointer order, and keeps the handles and the
+recorded addresses in `pointer_handles` and `pointer_homes`. Its command group and its host form
+pass the pointers through bound_pointers() (`bound_pointers.hpp`), which returns the table the
+dispatching node bound on its device (`modules/engine/task/README.md`, "The pointers a kernel
+receives"), cast to the type of each pointer, or the recorded pointers when no node bound one. The
+table is read through `dispatch_pointer_table()`, defined in `source/bound_pointers.cpp`, so no
+public header names an engine type.
+
 ### late_count_resolver_node
 
 late_count_resolver_node() describes the one task that resolves K late counts. A host count is
@@ -387,7 +397,7 @@ closed struct. The fields a kind does not use stay at their defaults.
 
 | Kind | Added with | Fields beyond regions, work and width |
 | --- | --- | --- |
-| Kernel | `add_node(work, reads, writes)` | none |
+| Kernel | `add_node(work, reads, writes)` | `pointer_handles`, `pointer_homes` for a captured launch |
 | Untracked | `add_node(work)`, then `place_on(device)` | `device` |
 | Task | `add_task(reads, writes, queue work)` | none |
 | Host | `add_native(reads, writes, worker work)` | none |
@@ -431,6 +441,13 @@ add_described_node() adds one described node to the engine's graph. A table hold
 per NodeKind, in enumerator order, and the call indexes it; a `static_assert` ties the table's
 length to the last enumerator. A new kind is one enumerator, one function and one table entry,
 and no header template of another kind changes.
+
+### attach_kernel_pointers
+
+attach_kernel_pointers() gives a captured launch's node its `KernelPointers`, after
+RecorderReplay adds it. A pointer's home device is the device whose instance, found by `locate()`,
+is the recorded address; a buffer with no device instance there, such as a planned buffer, has
+none and is resolved at every dispatch.
 
 ### apply_stamp
 

@@ -80,6 +80,18 @@ share one.
 | --- | --- |
 | `TwoDevicesInTwoContextsDoNotShareOne` | Two devices in two contexts do not share one. |
 
+## test_kernel_pointers.cpp
+
+The file tests `KernelPointers` and `KernelPointerScope` over a residency directory with instances on
+two devices.
+
+| Test | What it proves |
+| --- | --- |
+| `ANodeOnAnotherDeviceReceivesTheInstanceThere` | A bind on device 1 gives the instance on device 1 and counts one resolved bind. |
+| `ANodeOnTheHomeDeviceTakesTheFastPath` | A bind on the home device keeps the home address and counts only home binds. |
+| `ABufferWithNoInstanceThereKeepsItsHomeAddress` | A buffer with no instance on the node's device keeps its home address. |
+| `AScopeOpensItsTableAndRestoresThePreviousOne` | Scopes nest, and each restores the table that was open before it. |
+
 ## test_node.cpp
 
 The file tests Node: successors inline and spilled, readiness on completion, placement and offload
