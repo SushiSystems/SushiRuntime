@@ -280,3 +280,14 @@ touches no thread, so every test is small.
 | --- | --- |
 | `Small_RefusingOffloadSink.ResubmitThrowsARuntimeError` | `resubmit()` throws `std::runtime_error`. |
 | `Small_RefusingOffloadSink.CountsEachRefusal` | `refusals()` is 0 at first and 2 after two refused nodes. |
+
+## benchmark_residency_resolve.cpp
+
+The benchmark is built with `BENCHMARK_SOURCES`: `sr bench` runs it and CTest does not register it. It mints
+4096 handles of a `ResidencyDirectory`, each with an instance on device 0, and resolves them from eight
+threads with `resolve()` and then with `resolve_on_device()`. Each thread prints nanoseconds per resolve and
+the total prints resolves per second. Every resolve must return the minted address.
+
+| Test | What it proves |
+| --- | --- |
+| `Benchmark_ResidencyResolve.EightThreadsResolveEveryMintedAddress` | Eight threads resolve every handle to its minted address in both phases, with no mismatch. The timed passes make no call that takes `writer_mutex_`; the `resolve_passes()` comment lists the lock-free calls. |

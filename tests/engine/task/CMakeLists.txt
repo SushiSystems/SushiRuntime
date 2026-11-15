@@ -32,5 +32,7 @@ sushiruntime_add_module_tests(
         test_task_submission.cpp
         test_task_types.cpp
         test_usm_placement_memory.cpp
+    BENCHMARK_SOURCES
+        benchmark_residency_resolve.cpp
     DEVICE_SOURCES
         test_task_submission.cpp)

@@ -49,7 +49,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | done |
 | T10 | `extension/buffer_exchange` | T06 | done |
-| T11 | resolve benchmark | T09 | todo |
+| T11 | resolve benchmark | T09 | done |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | done |
