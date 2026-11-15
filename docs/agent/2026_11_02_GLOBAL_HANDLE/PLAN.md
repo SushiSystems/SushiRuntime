@@ -207,6 +207,7 @@ task; the dispatch names the task, its files and its acceptance criterion.
 - Doxygen comments in plain, short English. Line separator comments (`// ===`, `// ---`) are
   forbidden. Load `cpp-code-style`, `source-comments`, `sushisystems-licence`, `testing` and, for a
   README or a page, `documentation`.
+- A module that includes another module lists it in `DEPENDS`, and an edge between two modules of one tier is added to `SUSHIRUNTIME_SAME_TIER_EDGES` in `cmake/SushiRuntimeTiers.cmake` (`tools/layering/check_layering.py`).
 - Every test suite name opens with `Small_`, `Medium_` or `Large_` (`tools/testing/check_test_sizes.py`).
 - Every header and source file gets its mirror test under `tests/` (the commit hook runs
   `tools/testing/check_test_mirror.py`). Register each test file in its tests `CMakeLists.txt`.
@@ -214,7 +215,7 @@ task; the dispatch names the task, its files and its acceptance criterion.
 
 ### Before reporting
 
-Run and paste: `python tools/testing/check_test_mirror.py .`,
+Run and paste: `python tools/layering/check_layering.py .`, `python tools/testing/check_test_sizes.py .`, `python tools/testing/check_test_mirror.py .`,
 `python tools/documentation/check_source_comments.py .`,
 `python tools/documentation/check_docs_truth.py .`, and each syntax check. `git add -A` your
 changes in your worktree. Do not commit.
