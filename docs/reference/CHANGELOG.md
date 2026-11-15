@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-15 — handle: Added `GlobalHandle`, `DeviceKey`, `HandleSpace` and `HandleResolver` in the new `foundation/handle` module (GLOBAL_HANDLE H0).
+- 2026-11-15 — api: Added `Runtime::device_key()` and `Runtime::device_index(DeviceKey)`, and placement rules that name a `DeviceKey` (GLOBAL_HANDLE H0).
+- 2026-11-15 — region: Changed `BufferRegion::base` from an address to a `GlobalHandle` (GLOBAL_HANDLE H1).
+- 2026-11-15 — api: Added `Buffer::handle()` and `Recorder::borrowed_region()` for memory the caller brings (GLOBAL_HANDLE H1).
 - 2026-11-15 — api: Changed `NodeCost` to state operations, read bytes, written bytes and a consumer-named `OperationKind` in place of flops and bytes (GLOBAL_HANDLE H9).
 - 2026-11-15 — api: Added `NodeOptions::split`, a `NodeSplit` a node declares and `PlanNode::splittable` reports (GLOBAL_HANDLE H9).
 - 2026-11-15 — profiling: Added the `read_bytes`, `written_bytes` and `operation_kind` device span attributes (GLOBAL_HANDLE H9).
