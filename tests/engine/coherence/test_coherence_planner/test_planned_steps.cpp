@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_coherence_planner.cpp                                             */
+/* test_planned_steps.cpp                                                 */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,7 +22,7 @@
 /**************************************************************************/
 
 /**
- * @file test_coherence_planner.cpp
+ * @file test_planned_steps.cpp
  * @brief Tests the copies, allocations and frees CoherencePlanner plans, and its choice of source.
  * @see tests/engine/coherence/README.md
  * @author Mustafa Garip
@@ -40,7 +40,7 @@
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
-#include "fake_transfer_path.hpp"
+#include "../fake_transfer_path.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;

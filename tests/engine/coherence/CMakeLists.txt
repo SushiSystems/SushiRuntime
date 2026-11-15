@@ -15,7 +15,8 @@ sushiruntime_add_module_tests(
         compile_space_queues.cpp
         compile_transfer_observer.cpp
         compile_transfer_path.cpp
-        test_coherence_planner.cpp
+        test_coherence_planner/test_planned_steps.cpp
+        test_coherence_planner/test_randomized_equivalence.cpp
         test_copy_plan.cpp
         test_cost_model.cpp
         test_device_profile.cpp

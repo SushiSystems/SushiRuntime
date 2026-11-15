@@ -53,6 +53,7 @@ dispatch: T17 — sonnet medium, rung 1, passed
 dispatch: T24 — sonnet medium, rung 1, passed
 dispatch: T28 — sonnet medium, 108 turns, rung 1, passed
 dispatch: T18 — sonnet medium, rung 1, passed
+dispatch: T15 — sonnet medium, 48 turns, rung 1, passed
 ```
 
 ## T05: the residency directory

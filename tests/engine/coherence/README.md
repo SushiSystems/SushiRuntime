@@ -41,13 +41,33 @@ or from the host is one memcpy with no slot. A copy with no queue on either side
 The ring makes no slot before the first acquire, makes all slots once, hands them out in ring
 order, skips a held slot, frees every slot with the ring and refuses when the memory has no room.
 
-## test_coherence_planner.cpp
+## test_coherence_planner/
+
+`CoherencePlanner` has two test files, so its tests sit in a folder of that name. The helpers of the
+randomized test sit beside it: `graph_case.hpp` holds a generated graph and the `Outcome` of a run,
+`node_operation.hpp` holds `run_node()`, the integer operation of every node (it folds what the node
+reads into a digest and writes bytes from the digest, so a stale read changes later bytes),
+`graph_generator.hpp` builds a graph from a seed with a portable generator,
+`reference_interpreter.hpp` runs it over one host copy of each buffer, and `planned_interpreter.hpp`
+runs it through the planner, `DirectoryPlannedNodeFactory` nodes and `FakeTransferPath`, with each
+device a space of host memory. The operation is test code; the runtime holds no math.
+
+### test_planned_steps.cpp
 
 A node on device 1 reading a buffer written on device 0 gets an allocation and a copy, and its
 write makes a later reader on device 0 copy back. A node on the device that holds the bytes gets no
 step. Of two valid sources at one cost, the first space in the given order is the source, and two
 plans of one input are equal. The cheapest path chooses the source, and a copy no path makes is
 refused as `Unsupported`.
+
+### test_randomized_equivalence.cpp
+
+For each of 32 fixed seeds, `Medium_CoherenceEquivalence` builds a graph of two to four devices, two
+to six buffers and six to twenty-four nodes with partial read and write ranges, and runs it on the
+reference and through the planner. The bytes at the end and the digest of each node's reads are equal,
+and the plan leaves no instance outside device 0. A second case runs each seed twice and compares the
+plans and the bytes. A failure names its seed, which reproduces the graph. The tests skip when SYCL
+offers no queue.
 
 ## test_copy_plan.cpp
 
