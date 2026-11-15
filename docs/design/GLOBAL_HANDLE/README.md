@@ -2,7 +2,7 @@
 
 **Status:** Open — H0 to H10 planned; the specification is in `docs/agent/2026_11_02_GLOBAL_HANDLE/`
 **About:** One identity for every buffer on every device and machine, resolved by the runtime, with the copies between devices planned as graph nodes.
-**Modules:** `modules/foundation/handle`, `modules/platform/memory`, `modules/foundation/region`, `modules/extension/buffer_exchange`
+**Modules:** `modules/foundation/handle`, `modules/platform/memory`, `modules/platform/topology`, `modules/foundation/region`, `modules/extension/buffer_exchange`, `modules/engine/coherence`, `modules/engine/transfer`, `modules/engine/device_profile`, `modules/engine/partitioning`, `modules/engine/partition_session`
 
 ## Problem
 
@@ -41,8 +41,10 @@ reliability and maintainability ruling over cost.
 3. **The identity lives in a new foundation module, `modules/foundation/handle`.** It is header-only,
    with no SYCL dependency, so a consumer's own backend and the wire format can mint and carry
    handles without the runtime. Residency lives in `modules/platform/memory`. Copy planning lives in
-   `modules/engine/coherence`, the copies in `transfer`, the device profiles in `device_profile` and
-   partitioning in `partitioning` and `partition_session`, all in `modules/engine`.
+   `modules/engine/coherence`, the copies in `transfer`, the device profiles in `device_profile`,
+   partitioning in `partitioning`, the plan and journal of each graph in `partition_session` and the
+   dispatch of a cut node in `task`, all in `modules/engine`. `Runtime::partition_report()` is in
+   `modules/surface/api`.
 4. **`Buffer::data()` stays public.** It returns the address of the buffer's instance on its home
    device. `Buffer::handle()` is the identity.
 5. **Determinism is part of the contract.** Handle ids, device keys, placement and copy plans are
@@ -155,10 +157,18 @@ DirectoryEntry
 
 1. For each read interval, find the spaces where it is valid. If the node's device is among them,
    no copy. Otherwise pick a source space and a `TransferPath`, and insert the copy nodes before the
-   node.
+   node. A byte range is copied once per version and pool; a second reader in the pool waits on that
+   copy. A copy waits only on the producer of the version it moves, so two copies from one source
+   run together.
 2. For each write interval, record that after the node completes only the node's space holds the
    new version; the others become invalid.
 3. Allocation of a missing instance is a node; freeing an instance no future node reads is a node.
+
+**Planned state and current state.** The planner writes a planned map and never the directory's
+current map. It plans from a copy of each map taken under the coherence lock, so two commits at once
+plan from whole snapshots. The current map changes as copy and free nodes complete, so mid-run it is
+never ahead of the bytes. Host access and the retirement of a horizon run in a phase the runtime
+enforces.
 
 The source space is the lowest `DeviceKey` among valid spaces whose path is cheapest in the profile
 file. The profile is a frozen input, read once per run, so the choice is a pure function of it.
@@ -183,7 +193,8 @@ refuse peer access, so two GeForce cards in one machine are expected to take the
 path. The host-staged path goes through a fixed ring of pinned staging buffers. It
 keeps its host copy as a valid instance only when the planner can place that instance within host
 capacity and a later reader on another device needs it; otherwise the ring slot is reused. The
-first version always reuses the slot. A copy to or from the host space is one `memcpy` on the
+path always reuses the slot. Each SYCL context stages through its own pinned ring, and a copy
+submits its legs and waits for none, so a worker is not blocked. A copy to or from the host space is one `memcpy` on the
 device's queue, because the host space is itself pinned host memory.
 
 ### One home per byte
@@ -213,8 +224,10 @@ device profile.
   throughput per operation kind, stored per `DeviceKey` in a profile file. `CostModel` turns a
   declared cost and a profile into a time. A device of any age or speed enters through its
   profile, and a device with none receives no work until it is measured.
-- **Assignment.** Nodes are placed by earliest finish time, and a cut between devices is charged
-  for the bytes that cross it over its transfer path. Independent nodes spread in proportion to
+- **Assignment.** Nodes are placed by earliest finish time, counting the earliest idle gap of a
+  device, and a cut between devices is charged for the bytes the destination pool lacks, once per
+  byte range and pool, over the transfer path. The order of the nodes decides the step time.
+  Refinement and the floor search are bounded. Independent nodes spread in proportion to
   device speed; a chain gives the fastest device as much as shortens the step.
   The capacity of a job is the sum of every pool less its measured reserve; an integrated GPU
   that carves its memory from RAM adds a device, not capacity. A job that does not fit is refused
@@ -222,10 +235,15 @@ device profile.
 - **The floor.** A plan slower than the floor is discarded, so a device may receive no node.
 - **Splittable nodes.** A node may also declare a split: an axis, the slice kernel each part runs,
   and the combine node that joins the parts in slice order. The runtime decides how many parts and
-  where each runs; the consumer still owns every kernel, so the runtime stays free of math.
-- **Rebalancing.** At each horizon the partitioner reads a smoothed step time per device and moves
-  nodes when the saving exceeds the copy cost by a margin. Each move is written to the placement
-  journal, and a replay of the journal gives the same placement.
+  where each runs; the consumer still owns every kernel, so the runtime stays free of math. The
+  consumer's split also returns the byte regions each part reads and writes, so the partitioner
+  prices a part by the bytes its pool lacks and the runtime holds no layout rule. The parts of a
+  cut node run at once, and the node waits only on its parts' events.
+- **Rebalancing.** At each horizon the partitioner compares each device's measured time with its
+  modelled time. A device slower than its model by more than the margin, 10%, replans; a plan
+  measured slower than the floor's modelled time by more than the margin tries the floor once per
+  pair. The margin is a field of the session's parts with no consumer setting. Each plan change is
+  written to the journal of its graph, and a replay of the journal gives the same placement.
 
 ### Replay and horizons
 
@@ -256,7 +274,9 @@ deterministic.
 | `TransferPath` strategies | `engine/transfer` | the `MemorySpace` interface |
 | `Partitioner` | `engine/partitioning` | `NodeCost`, `CostModel` |
 | `CostModel`, `DeviceProfile` | `engine/device_profile` | `NodeCost`, the `MemorySpace` interface |
-| `PartitionSession`, ledger, journal | `engine/partition_session` | `Partitioner`, `CostModel` |
+| `PartitionSession`, ledger, journal; one session and one journal file per graph | `engine/partition_session` | `Partitioner`, `CostModel` |
+| Dispatch of a cut node's parts | `engine/task` | the split declaration |
+| `Runtime::partition_report()` | `surface/api` | `PartitionSession` |
 | Anchor rule, one copy | `engine/task` | `HandleResolver` |
 
 ### Public API

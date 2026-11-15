@@ -158,7 +158,7 @@ namespace SushiRuntime
             {
                 if (!nodes[node].planned)
                     continue;
-                // Parts run at once, so every part reads the bytes as they were before any part wrote.
+                // Parts run at once (dispatch_split), so every part reads the bytes as they were before any part wrote.
                 const std::vector<AccessPiece> pieces = pieces_of(nodes[node]);
                 for (const AccessPiece& piece : pieces)
                 {

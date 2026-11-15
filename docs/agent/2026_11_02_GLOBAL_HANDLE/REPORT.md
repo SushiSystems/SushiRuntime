@@ -102,6 +102,7 @@ dispatch: R05 — opus low, rung 1, passed after one return (map ahead of bytes,
 dispatch: R11 — sonnet low, rung 1, passed after one return (skills not loaded, refusal not acted on; create() failure tested at admit_paths only)
 dispatch: R13 — opus low, rung 1, passed after one rebase (point 5 ruled unnecessary: predecessors complete before a cut node)
 dispatch: R10 — sonnet medium, rung 1, passed after one rebase (task headers finished by ruling)
+dispatch: R14 — sonnet low, rung 1, passed
 dispatch: T55 — opus low, 56 turns, rung 1, passed in part (recording by handle moved to T56 and T57)
 dispatch: T54 — opus low, 98 turns, rung 1, passed after one return (horizon in the journal)
 dispatch: T56 — opus low, 85 turns, rung 1, passed

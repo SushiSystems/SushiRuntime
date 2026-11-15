@@ -132,7 +132,8 @@ a time by the formula above.
   with no entry of its own takes the base throughput.
 - **Every run.** The profiling ledger holds the device time of each dispatch. At a horizon the
   runtime divides that time by the operations the node declared and folds the result into the
-  entry of its kind. The file a run reads is frozen for that run; what the run measured is written
+  entry of its kind. A fold needs 8 samples of a device and kind, and moves the entry 0.25 of the
+  way to their lower median, so one noisy horizon does not move a plan. The file a run reads is frozen for that run; what the run measured is written
   when it ends, and is a new input to the next one.
 - **A device with no profile receives no node.** It is measured first. StarPU falls back to an
   eager policy for an unmodelled task; that fallback is set aside here because it breaks the floor.
@@ -144,14 +145,16 @@ The CPU is the first slow device the acceptance runs on, since every machine has
 ## Splitting
 
 A node that declares a split (an axis, a slice kernel and a combine node) may be cut into parts,
-at most one per device, sized by device speed. The partitioner splits when the modelled step is
+at most one per device, sized by device speed. The consumer's split returns the byte regions each
+part reads and writes, and the step prices a part by the bytes its pool lacks. The parts run at
+once and the node waits on their events. The partitioner splits when the modelled step is
 shorter with the parts and their copies than with the node whole, or when the node fits no pool
 whole. The floor of a plan with splits is the floor of the same graph with its nodes whole.
 
 ## Rebalancing
 
 At each horizon the partitioner reads the median step time of the horizon and the median time per
-device. The margin is one setting, 10% unless the consumer states another.
+device. The margin is 10%, a field of the session's parts that no consumer setting changes.
 
 - **A slower device.** When a device's measured time is above its modelled time by more than the
   margin, its profile entries are corrected from the ledger and the plan is made again. A device
@@ -166,12 +169,14 @@ is the one step that runs planner code, and GRAPH_REPLAY records the new plan. E
 entry of the placement journal. A switch depends on measured times, so two live runs may switch
 differently; a replay of the journal takes the same switches and gives the same bytes.
 
-The journal is kept in memory by the session and, when the runtime has a profile file, appended to
-that file's path with `.journal` added, so it needs no setting of its own. An entry holds the problem
+Each graph owns its session. The journal is kept in memory by the session and, when the runtime has
+a profile file, appended to `<profile file>.<hash>.journal`, with `-<occurrence>` before the suffix
+for a later graph of the same first problem hash; the hash is 16 lower-case hexadecimal digits. Two
+graphs on one runtime keep their own plans, ledgers and journals. An entry holds the problem
 hash, the assignment hash, the numbers the horizon judged and the whole profile set that priced the
 answer, which is what a replay reads. A runtime starts the file again with its first entry. A device
 that is slower is judged before the floor check, so a throttled device moves its nodes without first
-trying the floor. The margin is fixed at 10% until the consumer has a setting for it.
+trying the floor.
 
 ## The partition report
 

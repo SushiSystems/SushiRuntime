@@ -284,7 +284,7 @@ job builds on them.
 | R11 | unneeded state removed | R01 | done |
 | R12 | model agrees with plan; insertion EFT; bounded search | R04 | done |
 | R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | done |
-| R14 | design and page truth | R12, R13 | todo |
+| R14 | design and page truth | R12, R13 | done |
 | R15 | profile fold with smoothing and minimum samples | R04 | done |
 
 | Job | Route | Work | Waits on | Acceptance |
