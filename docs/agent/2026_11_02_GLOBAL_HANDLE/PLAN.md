@@ -93,8 +93,8 @@ when its own context would not hold their reading; it still reviews and commits 
 | T54 | journal replay into a live runtime, static `Graph` rebalancing | T27 | done |
 | T55 | SushiBLAS tensors over planned and file-backed buffers | T52 | done |
 | T56 | `Recorder::task` binds its operands' handles | T39 | done |
-| T57 | SushiBLAS records operations by handle | T55, T56 | running |
-| T33 | SushiBLAS file-backed large test | T19, T27, T30, T57 | todo |
+| T57 | SushiBLAS records operations by handle | T55, T56 | done |
+| T33 | SushiBLAS file-backed large test | T19, T27, T30, T57 | running |
 
 ## Tasks
 
