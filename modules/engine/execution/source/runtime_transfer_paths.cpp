@@ -31,17 +31,20 @@
 #include "runtime_transfer_paths.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/transfer/host_staged_path.hpp>
 #include <SushiRuntime/transfer/peer_access.hpp>
 #include <SushiRuntime/transfer/peer_path.hpp>
 #include <SushiRuntime/transfer/pinned_host_memory.hpp>
+#include <SushiRuntime/transfer/queue_copy_submitter.hpp>
 #include <SushiRuntime/transfer/same_context_path.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
-#include <SushiRuntime/transfer/staging_ring.hpp>
+#include <SushiRuntime/transfer/staging_rings.hpp>
 
 namespace SushiRuntime
 {
@@ -120,22 +123,20 @@ namespace SushiRuntime
                     Device::DeviceQueueSet* devices_;
             };
 
-            /** @brief Makes pinned host memory in the context of the first device of a set. */
-            class DevicePinnedHostMemory final : public Coherence::PinnedHostMemory
+            /** @brief Makes pinned host memory in the context of one queue. */
+            class QueuePinnedHostMemory final : public Coherence::PinnedHostMemory
             {
                 public:
-                    explicit DevicePinnedHostMemory(Device::DeviceQueueSet& devices) noexcept : devices_(&devices)
+                    explicit QueuePinnedHostMemory(const sycl::queue& queue) : queue_(queue)
                     {
 
                     }
 
                     [[nodiscard]] void* allocate(std::size_t bytes) override
                     {
-                        if (devices_->count() == 0)
-                            return nullptr;
                         try
                         {
-                            return sycl::malloc_host(bytes, devices_->queue(0));
+                            return sycl::malloc_host(bytes, queue_);
                         }
                         catch (const sycl::exception&)
                         {
@@ -145,28 +146,36 @@ namespace SushiRuntime
 
                     void release(void* address) noexcept override
                     {
-                        sycl::free(address, devices_->queue(0));
+                        sycl::free(address, queue_);
                     }
 
                 private:
-                    /// @brief The devices whose first context holds the memory.
-                    Device::DeviceQueueSet* devices_;
+                    /// @brief The queue whose context holds the memory.
+                    sycl::queue queue_;
             };
         } // namespace
 
         /** @brief Holds the queues and the access the paths of a RuntimeTransferPaths refer to. */
         struct RuntimeTransferPaths::Support
         {
-            explicit Support(Device::DeviceQueueSet& devices)
-                : queues(devices), access(devices), pinned(devices), ring(pinned)
+            /** @brief Builds one staging ring per context of the devices, in device order. */
+            explicit Support(Device::DeviceQueueSet& devices) : queues(devices), access(devices)
             {
-
+                for (std::size_t device = 0; device < devices.count(); ++device)
+                {
+                    const sycl::queue& queue = devices.queue(device);
+                    if (rings.ring_of(queue.get_context()) != nullptr)
+                        continue;
+                    pinned.push_back(std::make_unique<QueuePinnedHostMemory>(queue));
+                    rings.add(queue.get_context(), *pinned.back());
+                }
             }
 
-            DeviceSpaceQueues queues;         /**< Names the queue of each space. */
-            DevicePeerAccess access;          /**< Grants peer access between devices. */
-            DevicePinnedHostMemory pinned;    /**< Makes the staging slots. */
-            Coherence::StagingRing ring;      /**< Holds the staging slots; sized by the default shape. */
+            DeviceSpaceQueues queues;                                  /**< Names the queue of each space. */
+            DevicePeerAccess access;                                   /**< Grants peer access between devices. */
+            std::vector<std::unique_ptr<QueuePinnedHostMemory>> pinned; /**< Makes the slots of each context's ring. */
+            Coherence::StagingRings rings;                             /**< One ring per context; freed before pinned. */
+            Coherence::QueueCopySubmitter submitter;                   /**< Submits each leg of a staged copy. */
         };
 
         RuntimeTransferPaths::RuntimeTransferPaths() = default;
@@ -179,7 +188,7 @@ namespace SushiRuntime
         {
             RuntimeTransferPaths paths;
             paths.support = std::make_unique<RuntimeTransferPaths::Support>(devices);
-            auto file = std::make_unique<Coherence::FilePath>(paths.support->queues, paths.support->ring, observer);
+            auto file = std::make_unique<Coherence::FilePath>(paths.support->queues, paths.support->rings, observer);
             Coherence::FilePath* const file_path = file.get();
 
             std::vector<std::unique_ptr<Coherence::TransferPath>> built;
@@ -187,7 +196,8 @@ namespace SushiRuntime
             built.push_back(
                 std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
             built.push_back(
-                std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->ring, observer));
+                std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->rings,
+                                                           paths.support->submitter, observer));
             built.push_back(std::move(file));
 
             std::vector<Coherence::TransferPath*> candidates;

@@ -104,7 +104,7 @@ namespace SushiRuntime
                 return sycl::event{};
             }
 
-            /** @brief Copies the bytes step names, waits for the copy, then records it on the map. */
+            /** @brief Starts the copy step names and returns its event; the map is recorded by the copy's record node. */
             [[nodiscard]] Result<sycl::event> copy_instance(Memory::ResidencyView& directory,
                                                             TransferPath& path, const PlannedStep& step,
                                                             const std::vector<sycl::event>& dependencies)
@@ -117,13 +117,16 @@ namespace SushiRuntime
                                             "coherence.copy: an instance the plan copies between is missing."});
                 const TransferRequest request{step.source, step.space, from + step.begin, to + step.begin,
                                               step.end - step.begin};
-                Result<sycl::event> copied = path.copy(request, dependencies);
-                if (!copied)
-                    return copied;
-                // The map is never ahead of the bytes: the copy is recorded once it has completed.
-                const Result<void> finished = wait_for({copied.value()});
-                if (!finished)
-                    return make_error(Error{finished.error()});
+                return path.copy(request, dependencies);
+            }
+
+            /** @brief Records the copy step names on the map of its buffer. */
+            [[nodiscard]] Result<sycl::event> record_copy(Memory::ResidencyView& directory, const PlannedStep& step,
+                                                          const std::vector<sycl::event>& dependencies)
+            {
+                const Result<void> waited = wait_for(dependencies);
+                if (!waited)
+                    return make_error(Error{waited.error()});
                 if (Memory::LockedCoherence map = directory.coherence(step.handle))
                     map->record_copy(step.begin, step.end, step.space);
                 return sycl::event{};
@@ -246,6 +249,27 @@ namespace SushiRuntime
                     };
                     break;
             }
+            return node;
+        }
+
+        Result<sushi_ptr<Graph::Node>> DirectoryPlannedNodeFactory::make_copy_record(const PlannedStep& step)
+        {
+            if (step.kind != PlannedStepKind::Copy)
+                return make_error(Error{ErrorCode::InvalidArgument,
+                                        "only a planned copy has a record node."});
+
+            sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+            node->metadata.name = "coherence.copied";
+            node->mode = Graph::Node::ExecutionMode::Host;
+            // The map is host state; the node runs beside its copy and is not placed again.
+            node->cached_queue_index_ = static_cast<int>(device_of_step(step));
+            node->locality_checked_ = true;
+
+            Memory::ResidencyView* const directory = directory_;
+            node->checked_host_work = [directory, step](sycl::queue&, const std::vector<sycl::event>& dependencies)
+            {
+                return record_copy(*directory, step, dependencies);
+            };
             return node;
         }
 

@@ -52,6 +52,14 @@ namespace SushiRuntime
             /** @brief Names one instance: a buffer on a space. */
             using InstanceKey = std::pair<GlobalHandle, std::uint32_t>;
 
+            /** @brief Holds the planned nodes that ordered one instance so far, by what they did to it. */
+            struct InstanceOrder
+            {
+                std::vector<Node*> writers; /**< Steps and effects that made, wrote or freed the instance. */
+                std::vector<Node*> readers; /**< Copies that read the instance as their source. */
+                std::vector<Node*> records; /**< Nodes that record a copy into the instance on the map. */
+            };
+
             /** @brief Adds the edges of a plan to a graph, each once. */
             class EdgeWriter final
             {
@@ -91,6 +99,14 @@ namespace SushiRuntime
                 if (step.kind == PlannedStepKind::Copy)
                     keys.push_back({step.handle, step.source.value()});
                 return keys;
+            }
+
+            /** @brief Links every node that ordered an instance to to. */
+            void link_order(EdgeWriter& edges, const InstanceOrder& order, Node* to)
+            {
+                edges.link_all(order.writers, to);
+                edges.link_all(order.readers, to);
+                edges.link_all(order.records, to);
             }
 
             /** @brief Returns the parts of split as the planner reads them, each on its device's space. */
@@ -148,6 +164,17 @@ namespace SushiRuntime
                     return make_error(std::move(node.error()));
                 made_effects.push_back(std::move(node.value()));
             }
+            // A copy's record node; null for every other step.
+            std::vector<sushi_ptr<Node>> made_records(steps.size());
+            for (std::size_t step = 0; step < steps.size(); ++step)
+            {
+                if (steps[step].kind != PlannedStepKind::Copy)
+                    continue;
+                Result<sushi_ptr<Node>> node = factory.make_copy_record(steps[step]);
+                if (!node)
+                    return make_error(std::move(node.error()));
+                made_records[step] = std::move(node.value());
+            }
 
             std::unordered_map<const Node*, std::vector<Node*>> predecessors;
             for (const sushi_ptr<Node>& node : nodes)
@@ -157,7 +184,7 @@ namespace SushiRuntime
                 });
 
             EdgeWriter edges;
-            std::map<InstanceKey, std::vector<Node*>> touching;
+            std::map<InstanceKey, InstanceOrder> touching;
             std::map<InstanceKey, std::vector<Node*>> users;
             std::map<std::uint32_t, std::vector<Node*>> evicted;
             // The last Hold or Write of each buffer; every later step, effect and use of it waits for it.
@@ -168,7 +195,7 @@ namespace SushiRuntime
             {
                 for (auto key = touching.lower_bound({handle, 0}); key != touching.end() && key->first.first == handle;
                      ++key)
-                    edges.link_all(key->second, to);
+                    link_order(edges, key->second, to);
                 const auto held = barrier.find(handle);
                 if (held != barrier.end())
                     edges.link(held->second, to);
@@ -191,6 +218,33 @@ namespace SushiRuntime
                 else if (step.kind == PlannedStepKind::Free && step.evicts)
                     evicted[step.space.value()].push_back(step_node);
             };
+            // A copy follows only the writers of its source, so two copies of one source run together.
+            const auto place_step = [&](std::size_t index, Node* step_node)
+            {
+                const PlannedStep& step = steps[index];
+                link_barrier(step.handle, step_node);
+                order_by_capacity(step, step_node);
+                const InstanceKey written{step.handle, step.space.value()};
+                link_order(edges, touching[written], step_node);
+                // An eviction may reach instances no edge ties to the node it precedes.
+                if (step.evicts)
+                    for (const InstanceKey& key : instances_of(step))
+                        edges.link_all(users[key], step_node);
+                if (step.kind != PlannedStepKind::Copy)
+                {
+                    touching[written].writers.push_back(step_node);
+                    return;
+                }
+                const InstanceKey read{step.handle, step.source.value()};
+                edges.link_all(touching[read].writers, step_node);
+                // No node may still read the bytes the copy overwrites.
+                edges.link_all(users[written], step_node);
+                Node* const record = made_records[index].get();
+                edges.link(step_node, record);
+                touching[read].readers.push_back(step_node);
+                touching[written].writers.push_back(step_node);
+                touching[written].records.push_back(record);
+            };
             std::size_t next = 0;
             for (std::size_t index = 0; index < nodes.size(); ++index)
             {
@@ -198,42 +252,37 @@ namespace SushiRuntime
                 for (; next < steps.size() && steps[next].node == index; ++next)
                 {
                     Node* const step_node = made[next].get();
-                    edges.link_all(predecessors[target], step_node);
-                    link_barrier(steps[next].handle, step_node);
-                    for (const InstanceKey& key : instances_of(steps[next]))
-                    {
-                        edges.link_all(touching[key], step_node);
-                        // An eviction may reach instances no edge ties to the node it precedes.
-                        if (steps[next].evicts)
-                            edges.link_all(users[key], step_node);
-                    }
-                    order_by_capacity(steps[next], step_node);
+                    if (steps[next].kind != PlannedStepKind::Copy)
+                        edges.link_all(predecessors[target], step_node);
+                    place_step(next, step_node);
                     edges.link(step_node, target);
-                    for (const InstanceKey& key : instances_of(steps[next]))
-                        touching[key].push_back(step_node);
                 }
 
                 if (!accesses[index].planned)
                     continue;
+                // A read waits for the instance's writers; a write also for the copies that read it.
                 const auto use = [&edges, &touching, &users, &link_barrier, target](
-                                     std::uint32_t space, const std::vector<BufferRegion>& regions)
+                                     std::uint32_t space, const std::vector<BufferRegion>& regions, bool writes)
                 {
                     for (const BufferRegion& region : regions)
                     {
                         link_barrier(region.base, target);
-                        edges.link_all(touching[{region.base, space}], target);
+                        const InstanceOrder& order = touching[{region.base, space}];
+                        edges.link_all(order.writers, target);
+                        if (writes)
+                            edges.link_all(order.readers, target);
                         users[{region.base, space}].push_back(target);
                     }
                 };
                 if (accesses[index].parts.empty())
                 {
-                    use(accesses[index].space.value(), accesses[index].reads);
-                    use(accesses[index].space.value(), accesses[index].writes);
+                    use(accesses[index].space.value(), accesses[index].reads, false);
+                    use(accesses[index].space.value(), accesses[index].writes, true);
                 }
                 for (const NodeAccessPart& part : accesses[index].parts)
                 {
-                    use(part.space.value(), part.reads);
-                    use(part.space.value(), part.writes);
+                    use(part.space.value(), part.reads, false);
+                    use(part.space.value(), part.writes, true);
                 }
 
                 // A node's writes are recorded once it has completed; every later step and use of the buffer waits for that.
@@ -244,7 +293,7 @@ namespace SushiRuntime
                     after_handle(effect.handle, effect_node);
                     edges.link(target, effect_node);
                     barrier[effect.handle] = effect_node;
-                    touching[{effect.handle, effect.space.value()}].push_back(effect_node);
+                    touching[{effect.handle, effect.space.value()}].writers.push_back(effect_node);
                 }
             }
 
@@ -253,8 +302,12 @@ namespace SushiRuntime
                 if (is_leaf(*node))
                     leaves.push_back(node.get());
             for (std::size_t step = 0; step < next; ++step)
+            {
                 if (is_leaf(*made[step]))
                     leaves.push_back(made[step].get());
+                if (made_records[step] && is_leaf(*made_records[step]))
+                    leaves.push_back(made_records[step].get());
+            }
             for (std::size_t effect = 0; effect < next_effect; ++effect)
                 if (is_leaf(*made_effects[effect]))
                     leaves.push_back(made_effects[effect].get());
@@ -263,13 +316,7 @@ namespace SushiRuntime
             {
                 Node* const step_node = made[next].get();
                 edges.link_all(leaves, step_node);
-                order_by_capacity(steps[next], step_node);
-                link_barrier(steps[next].handle, step_node);
-                for (const InstanceKey& key : instances_of(steps[next]))
-                {
-                    edges.link_all(touching[key], step_node);
-                    touching[key].push_back(step_node);
-                }
+                place_step(next, step_node);
             }
 
             // A Leave runs after every node and every step, so the run holds the buffer to its end.
@@ -282,6 +329,9 @@ namespace SushiRuntime
 
             nodes.insert(nodes.end(), made.begin(), made.end());
             nodes.insert(nodes.end(), made_effects.begin(), made_effects.end());
+            for (sushi_ptr<Node>& record : made_records)
+                if (record)
+                    nodes.push_back(std::move(record));
             return std::move(planned.value());
         }
     } // namespace Internal::Coherence

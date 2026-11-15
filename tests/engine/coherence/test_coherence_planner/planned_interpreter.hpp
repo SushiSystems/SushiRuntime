@@ -140,6 +140,15 @@ namespace SushiRuntime
                 if (!ran)
                     throw std::runtime_error("a planned step failed: " + ran.error().message);
                 ran.value().wait();
+                if (step.kind != PlannedStepKind::Copy)
+                    return;
+                // A copy is recorded on the map by its own node, once the copy has completed.
+                const Result<sushi_ptr<Graph::Node>> record = factory.make_copy_record(step);
+                if (!record)
+                    throw std::runtime_error("the factory refused a copy's record: " + record.error().message);
+                Result<sycl::event> recorded = record.value()->execute_host_checked(queue, {});
+                if (!recorded)
+                    throw std::runtime_error("a copy's record failed: " + recorded.error().message);
             }
         } // namespace Detail
 

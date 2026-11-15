@@ -136,6 +136,11 @@ a whole queue, so other work on a part's queue does not hold the node; that wait
 event model such as AdaptiveCpp's. The combine, when the split has one, then receives the parts in
 slice order. The queue of a device comes from the caller, so neither function reads a device set.
 
+Every part gets the node's input events, not only those of the producers of the regions it reads.
+That costs nothing: the scheduler dispatches a cut node only after every predecessor, planned copies
+included, has completed, so no producer event is still pending when the parts are submitted. The
+node's input events are the manual `sycl_deps`, which name no region.
+
 `Node::placed_split` holds the parts `apply_partition()` gave a node, null for a node that runs
 whole. `PlacedSplit::parts` is contiguous so the step driver hands it to `dispatch_split()` as is, with
 `Node::kernel_pointers()`, the narrow accessor of the node's table. `PlacedSplit::access` holds the

@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <tuple>
 #include <vector>
 
@@ -190,5 +191,30 @@ namespace CopyPlanReplayTests
 
         EXPECT_EQ(world.coherence_plan_count(), steady + 1);
         EXPECT_EQ(TestSupport::contents(result), values_with(8u));
+    }
+
+    /**
+     * @brief Tests that a run the scheduler aborts, after its planned copy ran, holds no buffer:
+     *        host access to the planned buffer works at once after the failed run.
+     */
+    TEST_F(Medium_CopyPlanReplay, ARunAbortedAfterAPlannedCopyLeavesNoBufferHeld)
+    {
+        const Runtime& rt = runtime();
+        auto input = rt.buffer<std::uint32_t>(K_COUNT, Residency::Planned).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        ASSERT_TRUE(input.write_range({0, K_COUNT}, values_with(0u)));
+        auto world = rt.dynamic_graph();
+        world.region(0).add(K_COUNT, In(input), Out(result),
+                            [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                            { target[index] = source[index] + 1u; });
+        world.region(0).add_host(Reads(result), Writes{}, []() { throw std::runtime_error("boom"); });
+
+        const auto failed = world.run();
+
+        ASSERT_FALSE(failed);
+        EXPECT_TRUE(input.write_range({0, K_COUNT}, values_with(3u)));
+        const Result<std::vector<std::uint32_t>> read = input.read_range({0, K_COUNT});
+        ASSERT_TRUE(read);
+        EXPECT_EQ(read.value(), values_with(3u));
     }
 } // namespace CopyPlanReplayTests

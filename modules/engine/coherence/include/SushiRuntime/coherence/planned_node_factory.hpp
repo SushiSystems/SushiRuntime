@@ -56,6 +56,15 @@ namespace SushiRuntime
                  * @return The node, or the error that keeps the effect from being built.
                  */
                 [[nodiscard]] virtual Result<sushi_ptr<Graph::Node>> make_effect(const PlannedEffect& effect) = 0;
+
+                /**
+                 * @brief Returns a node, with no edge yet, that records a copy step on the map when it runs.
+                 *
+                 * The splice places it after the copy's node, which the scheduler completes only once
+                 * the copy's event has, so the map is never ahead of the bytes.
+                 * @return The node, or InvalidArgument for a step that is not a copy.
+                 */
+                [[nodiscard]] virtual Result<sushi_ptr<Graph::Node>> make_copy_record(const PlannedStep& step) = 0;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

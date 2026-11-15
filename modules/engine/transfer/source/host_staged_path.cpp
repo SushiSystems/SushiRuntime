@@ -40,9 +40,9 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        HostStagedPath::HostStagedPath(const SpaceQueues& queues, StagingRing& ring,
-                                       TransferObserver* observer) noexcept
-            : queues_(&queues), ring_(&ring), observer_(observer)
+        HostStagedPath::HostStagedPath(const SpaceQueues& queues, const StagingRings& rings,
+                                       CopySubmitter& submitter, TransferObserver* observer) noexcept
+            : queues_(&queues), rings_(&rings), observer_(observer), submitter_(&submitter)
         {
 
         }
@@ -84,35 +84,44 @@ namespace SushiRuntime
                 sycl::queue* const device_queue = to_queue != nullptr ? to_queue : from_queue;
                 const Result<void> submitted = Internal::SYCL::translate_exceptions([&]()
                 {
-                    done = device_queue->memcpy(request.to, request.from, request.bytes, dependencies);
+                    done = submitter_->submit(*device_queue, request.to, request.from, request.bytes, dependencies);
                 });
                 if (!submitted)
                     return make_error(Error{submitted.error()});
             }
             else
             {
-                const std::size_t slot_bytes = ring_->shape().slot_bytes;
+                StagingRing* const ring = rings_->ring_of(from_queue->get_context());
+                if (ring == nullptr)
+                    return make_error(Error{ErrorCode::InvalidArgument,
+                                            "host staged: the source's context has no staging ring."});
+                const std::size_t slot_bytes = ring->shape().slot_bytes;
                 const auto* const from = static_cast<const std::byte*>(request.from);
                 auto* const to = static_cast<std::byte*>(request.to);
                 std::vector<sycl::event> after_previous_chunk;
                 for (std::size_t offset = 0; offset < request.bytes; offset += slot_bytes)
                 {
                     const std::size_t chunk = std::min(slot_bytes, request.bytes - offset);
-                    const Result<StagingSlot> acquired = ring_->acquire();
+                    const Result<StagingSlot> acquired = ring->acquire();
                     if (!acquired)
                         return make_error(Error{acquired.error()});
                     const StagingSlot slot = acquired.value();
+                    // The slot is written after its last reader; the destination leg may cross contexts.
+                    std::vector<sycl::event> into_slot = dependencies;
+                    into_slot.push_back(slot.previous_use);
+                    sycl::event last_use = slot.previous_use;
                     const Result<void> staged = Internal::SYCL::translate_exceptions([&]()
                     {
-                        from_queue->memcpy(slot.data, from + offset, chunk, dependencies).wait();
-                        done = to_queue->memcpy(to + offset, slot.data, chunk, after_previous_chunk);
+                        last_use = submitter_->submit(*from_queue, slot.data, from + offset, chunk, into_slot);
+                        after_previous_chunk.push_back(last_use);
+                        done = submitter_->submit(*to_queue, to + offset, slot.data, chunk, after_previous_chunk);
                     });
                     if (!staged)
                     {
-                        ring_->retire(slot, sycl::event{});
+                        ring->retire(slot, last_use);
                         return make_error(Error{staged.error()});
                     }
-                    ring_->retire(slot, done);
+                    ring->retire(slot, done);
                     after_previous_chunk.assign(1, done);
                 }
             }

@@ -83,9 +83,28 @@ namespace
                 return node;
             }
 
+            [[nodiscard]] Result<sushi_ptr<Node>> make_copy_record(const PlannedStep& step) override
+            {
+                records.push_back(step);
+                sushi_ptr<Node> node = make_sushi<Node>();
+                node->metadata.name = "copied";
+                return node;
+            }
+
             std::vector<PlannedStep> steps;     /**< Steps built, in order. */
             std::vector<PlannedEffect> effects; /**< Effects built, in order. */
+            std::vector<PlannedStep> records;   /**< Copies whose record node was built, in order. */
     };
+
+    /** @brief Returns the nodes named name, in the order nodes holds them. */
+    std::vector<Node*> nodes_named(const std::vector<sushi_ptr<Node>>& nodes, const std::string& name)
+    {
+        std::vector<Node*> named;
+        for (const sushi_ptr<Node>& node : nodes)
+            if (name == node->metadata.name)
+                named.push_back(node.get());
+        return named;
+    }
 
     /** @brief Reports a pool of K_BYTES bytes, all of it free. */
     class OneBufferProbe final : public MemoryProbe
@@ -166,14 +185,13 @@ namespace
 
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
-        // Allocate, copy, copy back and free; then the hold, the two writes and the leave.
-        ASSERT_EQ(nodes_.size(), 10U);
+        // Allocate, copy, copy back and free; the hold, the two writes and the leave; a record per copy.
+        ASSERT_EQ(nodes_.size(), 12U);
         Node* const allocate = nodes_[2].get();
         Node* const copy = nodes_[3].get();
         Node* const copy_back = nodes_[4].get();
         Node* const free = nodes_[5].get();
         EXPECT_STREQ(copy->metadata.name, "copy");
-        EXPECT_TRUE(precedes(*writer_, copy));
         EXPECT_TRUE(precedes(*allocate, copy));
         EXPECT_TRUE(precedes(*copy, reader_.get()));
         EXPECT_EQ(reader_->in_degree.load(), 4);
@@ -196,6 +214,81 @@ namespace
         EXPECT_TRUE(precedes(*free, leave));
         EXPECT_EQ(factory.steps[1].source, K_DEVICE_0);
         EXPECT_EQ(factory.steps[1].space, K_DEVICE_1);
+    }
+
+    TEST_F(Small_PlanSplice, ACopysRecordFollowsTheCopyAndTheReaderWaitsForTheCopyNotTheRecord)
+    {
+        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+                                 uniform_transfer_cost());
+        RecordingFactory factory;
+
+        ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
+
+        ASSERT_EQ(factory.records.size(), 2U);
+        Node* const copy = nodes_[3].get();
+        Node* const copy_back = nodes_[4].get();
+        Node* const free = nodes_[5].get();
+        Node* const leave = nodes_[9].get();
+        Node* const record = nodes_[10].get();
+        Node* const record_back = nodes_[11].get();
+        EXPECT_STREQ(record->metadata.name, "copied");
+        EXPECT_TRUE(precedes(*copy, record));
+        EXPECT_FALSE(precedes(*record, reader_.get()));
+        EXPECT_TRUE(precedes(*copy_back, record_back));
+        // The free and the leave wait for the records, so no copy is recorded after them.
+        EXPECT_TRUE(precedes(*record, free));
+        EXPECT_TRUE(precedes(*record, leave));
+        EXPECT_TRUE(precedes(*record_back, leave));
+    }
+
+    TEST_F(Small_PlanSplice, ACopyWaitsForTheWriteOfItsSourceAndNotForAnUnrelatedPredecessorOfItsReader)
+    {
+        sushi_ptr<Node> unrelated = make_sushi<Node>();
+        link(*unrelated, *reader_);
+        nodes_ = {writer_, unrelated, reader_};
+        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+                                 uniform_transfer_cost());
+        RecordingFactory factory;
+
+        ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
+
+        const std::vector<Node*> copies = nodes_named(nodes_, "copy");
+        const std::vector<Node*> writes = nodes_named(nodes_, "write");
+        ASSERT_EQ(copies.size(), 2U);
+        ASSERT_EQ(writes.size(), 2U);
+        EXPECT_FALSE(precedes(*unrelated, copies[0]));
+        EXPECT_FALSE(precedes(*writer_, copies[0]));
+        EXPECT_TRUE(precedes(*writes[0], copies[0]));
+        EXPECT_TRUE(precedes(*copies[0], reader_.get()));
+    }
+
+    TEST_F(Small_PlanSplice, TwoCopiesOfOneSourceToTwoDevicesDoNotWaitForEachOther)
+    {
+        const MemorySpaceID device_2(3);
+        owned_.push_back(std::make_unique<DeviceMemorySpace>(
+            DeviceMemorySpaceDescription{device_2, device_2.value(), {}}, probe_));
+        sushi_ptr<Node> first = make_sushi<Node>();
+        sushi_ptr<Node> second = make_sushi<Node>();
+        first->io_reads_.emplace_back(buffer_);
+        second->io_reads_.emplace_back(buffer_);
+        link(*writer_, *first);
+        link(*writer_, *second);
+        nodes_ = {writer_, first, second};
+        spaces_[first.get()] = K_DEVICE_1;
+        spaces_[second.get()] = device_2;
+        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get(), owned_[2].get()}, {&path_},
+                                 uniform_transfer_cost());
+        RecordingFactory factory;
+
+        ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
+
+        const std::vector<Node*> copies = nodes_named(nodes_, "copy");
+        ASSERT_EQ(copies.size(), 2U);
+        EXPECT_EQ(factory.steps[1].source, K_DEVICE_0);
+        EXPECT_EQ(factory.steps[3].source, K_DEVICE_0);
+        EXPECT_FALSE(precedes(*copies[0], copies[1]));
+        EXPECT_FALSE(precedes(*copies[0], second.get()));
+        EXPECT_TRUE(precedes(*copies[1], second.get()));
     }
 
     TEST_F(Small_PlanSplice, NodesOnOneDeviceGetNoStepAndOnlyTheMapEffectsOfTheBuffer)
@@ -242,7 +335,7 @@ namespace
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
         // The reader's sole copy on device 1 is written back and freed first; six effects follow the seven steps.
-        ASSERT_EQ(nodes_.size(), 15U);
+        ASSERT_EQ(nodes_.size(), 15U + factory.records.size());
         Node* const write_back = nodes_[5].get();
         Node* const free = nodes_[6].get();
         Node* const allocate_other = nodes_[7].get();

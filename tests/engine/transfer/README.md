@@ -20,14 +20,28 @@ copy nodes move the bytes, and the observer records which path each copy took.
 The path connects any two devices and the host with a device, never two host spaces. A copy
 between two spaces with no direct path matches bytes for sizes below, at and several times one ring
 slot, makes the ring once and reuses it, and the report names `host_staged` once per copy. A copy to
-or from the host is one memcpy with no slot. A copy with no queue on either side returns
-`InvalidArgument`.
+or from the host is one memcpy with no slot. A copy with no queue on either side, or from a context
+with no ring, returns `InvalidArgument`. With a `CopySubmitter` that records and runs nothing, a
+three-chunk copy submits all six legs in one call, chunk k + 1 before chunk k has run, each slot leg
+after its slot's last use and each destination leg after its slot leg and the leg before it. Two
+devices in two SYCL contexts stage through the ring of the source's context only.
 
 ## test_staging_ring.cpp
 
 The ring makes no slot before the first acquire, makes all slots once, hands them out in ring
-order, skips a held slot, frees every slot with the ring, and returns `AllocationFailed` when the
-memory has no room, after it released the slots it had made.
+order, hands the next holder the last use its previous holder retired the slot with, skips a held
+slot, frees every slot with the ring, and returns `AllocationFailed` when the memory has no room,
+after it released the slots it had made.
+
+## test_staging_rings.cpp
+
+`Medium_StagingRings` makes two contexts on the SYCL CPU device. Each gets its own ring, whose slots
+come from its own memory; a context added twice keeps its first ring, and a context never added has
+none.
+
+## test_queue_copy_submitter.cpp
+
+A copy submitted after an earlier one it depends on carries that copy's bytes.
 
 ## test_transfer_observer_slot.cpp
 
@@ -57,6 +71,6 @@ working directory, streams it window by window onto the GPU, checks the first an
 window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
 with no CUDA GPU or too little disk, and deletes the file.
 
-## compile_peer_access.cpp, compile_space_queues.cpp, compile_transfer_log_category.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
+## compile_copy_submitter.cpp, compile_peer_access.cpp, compile_space_queues.cpp, compile_transfer_log_category.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one header alone.

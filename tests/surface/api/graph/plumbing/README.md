@@ -162,7 +162,9 @@ runtime with fewer than two devices. The first plan is not steady and is planned
 run; once steady, four runs call no planner and compose nothing; a replayed step leaves the bytes of
 a freshly planned one. `AHostWriteAfterASteadyPlanIsPlannedAgainBeforeTheNextRun` is the static
 test's row for the composer: a `write_range()` after a steady plan rebuilds the region once and the
-node reads the written bytes.
+node reads the written bytes. `ARunAbortedAfterAPlannedCopyLeavesNoBufferHeld` fails a run through a
+spliced plan with a host node that throws after the planned copy, and then writes and reads the
+planned buffer: the scheduler's abort ran the Leave, so no hold is left.
 
 ## test_region_composer/test_graph_partition.cpp
 

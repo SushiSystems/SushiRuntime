@@ -71,14 +71,17 @@ Two steps compare equal only when every field is equal.
 ## test_directory_planned_node_factory.cpp
 
 A node runs on the device of its space and declares its byte range. A copy naming an unknown path
-is refused. Allocate, copy and free run through `checked_host_work` and move the bytes; the test skips when
-SYCL offers no queue. An allocator that returns null gives `AllocationFailed`, a copy between a
+is refused. Allocate, copy and free run through `checked_host_work` and move the bytes; the copy
+leaves the map alone and its record node records it; the test skips when SYCL offers no queue. Only
+a copy has a record node. An allocator that returns null gives `AllocationFailed`, a copy between a
 missing instance gives `InvalidState`, and a failing path's error is passed on.
 
 ## test_plan_splice.cpp
 
-The copy runs after the writer and before the reader on the other device, and the copy back and
-the free follow the reader. Nodes on one device are left as they are, and a refused plan leaves the
+The copy runs after the writer's Write and before the reader on the other device, and the copy back
+and the free follow the reader. A copy's record node follows it, the reader does not wait for it,
+and the free and the leave do. A copy does not wait for an unrelated predecessor of its reader, and
+two copies of one source to two devices do not wait for each other. Nodes on one device are left as they are, and a refused plan leaves the
 nodes unchanged. An eviction runs after the node that wrote the instance and before the
 allocation it makes room for.
 

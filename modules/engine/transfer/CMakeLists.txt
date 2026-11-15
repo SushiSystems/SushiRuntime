@@ -10,8 +10,10 @@ sushiruntime_add_module(
         file_path.cpp
         host_staged_path.cpp
         peer_path.cpp
+        queue_copy_submitter.cpp
         same_context_path.cpp
         staging_ring.cpp
+        staging_rings.cpp
         transfer_observer_slot.cpp
         transfer_path_list.cpp
     DEPENDS

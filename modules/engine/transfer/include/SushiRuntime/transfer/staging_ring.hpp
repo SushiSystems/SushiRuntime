@@ -62,6 +62,7 @@ namespace SushiRuntime
         {
             std::size_t index = 0;   /**< Position of the slot in the ring. */
             void* data = nullptr;    /**< First byte of the slot, pinned host memory. */
+            sycl::event previous_use; /**< Last use of the slot by its previous holder; a write into it depends on it. */
         };
 
         /**
@@ -69,8 +70,8 @@ namespace SushiRuntime
          *
          * The slots are made once, on the first acquire(), and freed with the ring, so a staged
          * copy never allocates. A slot has one holder at a time. When the holder retires it with
-         * the event of its last read, the next holder waits for that event before it writes.
-         * The ring locks only to hand a slot out or take it back, never while bytes move.
+         * the event of its last read, the next holder gets that event and orders its write after
+         * it. The ring locks only to hand a slot out or take it back, never while bytes move.
          */
         class StagingRing
         {
@@ -91,11 +92,10 @@ namespace SushiRuntime
                 [[nodiscard]] StagingRingShape shape() const noexcept;
 
                 /**
-                 * @brief Takes the next free slot, in ring order, and waits until its last use ended.
+                 * @brief Takes the next free slot, in ring order, with the event of its last use.
                  *
-                 * Blocks while every slot is held.
-                 * @return The slot; AllocationFailed when the pinned memory has no room for the slots;
-                 *         the error of a failed last use of the slot.
+                 * Never waits for a device; blocks only while every slot is held by a caller.
+                 * @return The slot; AllocationFailed when the pinned memory has no room for the slots.
                  */
                 [[nodiscard]] Result<StagingSlot> acquire();
 

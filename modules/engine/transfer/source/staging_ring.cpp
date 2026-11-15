@@ -32,7 +32,6 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/transfer/transfer_log_category.hpp>
 
 #include <algorithm>
@@ -95,45 +94,32 @@ namespace SushiRuntime
 
         Result<StagingSlot> StagingRing::acquire()
         {
-            std::size_t index = 0;
-            sycl::event previous;
-            void* data = nullptr;
+            std::unique_lock<std::mutex> lock(mutex_);
+            if (slots_.empty())
             {
-                std::unique_lock<std::mutex> lock(mutex_);
-                if (slots_.empty())
+                Result<void> made = allocate_slots();
+                if (!made)
+                    return make_error(std::move(made.error()));
+            }
+            const auto free_slot = [this]
+            {
+                for (std::size_t step = 0; step < shape_.slot_count; ++step)
                 {
-                    Result<void> made = allocate_slots();
-                    if (!made)
-                        return make_error(std::move(made.error()));
+                    const std::size_t candidate = (cursor_ + step) % shape_.slot_count;
+                    if (!held_[candidate])
+                        return candidate;
                 }
-                const auto free_slot = [this]
-                {
-                    for (std::size_t step = 0; step < shape_.slot_count; ++step)
-                    {
-                        const std::size_t candidate = (cursor_ + step) % shape_.slot_count;
-                        if (!held_[candidate])
-                            return candidate;
-                    }
-                    return shape_.slot_count;
-                };
+                return shape_.slot_count;
+            };
+            std::size_t index = free_slot();
+            while (index == shape_.slot_count)
+            {
+                freed_.wait(lock);
                 index = free_slot();
-                while (index == shape_.slot_count)
-                {
-                    freed_.wait(lock);
-                    index = free_slot();
-                }
-                held_[index] = true;
-                cursor_ = (index + 1) % shape_.slot_count;
-                previous = last_use_[index];
-                data = slots_[index];
             }
-            Result<void> waited = Internal::SYCL::translate_exceptions([&previous]() { previous.wait(); });
-            if (!waited)
-            {
-                retire(StagingSlot{index, data}, sycl::event{});
-                return make_error(std::move(waited.error()));
-            }
-            return StagingSlot{index, data};
+            held_[index] = true;
+            cursor_ = (index + 1) % shape_.slot_count;
+            return StagingSlot{index, slots_[index], last_use_[index]};
         }
 
         void StagingRing::retire(const StagingSlot& slot, const sycl::event& last_use)

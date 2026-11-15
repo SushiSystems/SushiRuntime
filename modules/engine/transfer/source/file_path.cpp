@@ -57,8 +57,8 @@ namespace SushiRuntime
             }
         } // namespace
 
-        FilePath::FilePath(const SpaceQueues& queues, StagingRing& ring, TransferObserver* observer) noexcept
-            : queues_(&queues), ring_(&ring), observer_(observer)
+        FilePath::FilePath(const SpaceQueues& queues, const StagingRings& rings, TransferObserver* observer) noexcept
+            : queues_(&queues), rings_(&rings), observer_(observer)
         {
 
         }
@@ -118,7 +118,7 @@ namespace SushiRuntime
                 return make_error(Error{ErrorCode::InvalidState, "file path: cannot seek in " + path + "."});
 
             auto* const to = static_cast<std::byte*>(request.to);
-            const std::size_t slot_bytes = ring_->shape().slot_bytes;
+            const std::size_t slot_bytes = rings_->shape().slot_bytes;
             sycl::queue* const to_queue = queues_->queue_of(request.destination);
             sycl::event done;
             if (to_queue == nullptr)
@@ -139,15 +139,26 @@ namespace SushiRuntime
             }
             else
             {
+                StagingRing* const ring = rings_->ring_of(to_queue->get_context());
+                if (ring == nullptr)
+                    return make_error(Error{ErrorCode::InvalidArgument,
+                                            "file path: the destination's context has no staging ring."});
                 std::vector<sycl::event> after_previous_chunk = dependencies;
                 for (std::size_t offset = 0; offset < request.bytes; offset += slot_bytes)
                 {
                     const std::size_t chunk = std::min(slot_bytes, request.bytes - offset);
-                    const Result<StagingSlot> acquired = ring_->acquire();
+                    const Result<StagingSlot> acquired = ring->acquire();
                     if (!acquired)
                         return make_error(Error{acquired.error()});
                     const StagingSlot slot = acquired.value();
-                    Result<void> staged = read_exactly(file, slot.data, chunk, path);
+                    // The host writes the slot, so it waits here for the slot's last reader.
+                    Result<void> staged = Internal::SYCL::translate_exceptions([&slot]()
+                    {
+                        sycl::event previous = slot.previous_use;
+                        previous.wait();
+                    });
+                    if (staged)
+                        staged = read_exactly(file, slot.data, chunk, path);
                     if (staged)
                     {
                         staged = Internal::SYCL::translate_exceptions([&]()
@@ -157,10 +168,10 @@ namespace SushiRuntime
                     }
                     if (!staged)
                     {
-                        ring_->retire(slot, sycl::event{});
+                        ring->retire(slot, slot.previous_use);
                         return make_error(Error{staged.error()});
                     }
-                    ring_->retire(slot, done);
+                    ring->retire(slot, done);
                     after_previous_chunk.assign(1, done);
                 }
             }

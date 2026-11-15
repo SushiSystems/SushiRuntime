@@ -19,6 +19,9 @@ It depends on `handle`, `log` and `memory`.
 | `host_staged_path.hpp` | `HostStagedPath`, the copy through pinned host staging buffers |
 | `file_path.hpp` | `FilePath`, the read of a file space into a host or device space through the staging ring |
 | `staging_ring.hpp` | `StagingRing`, `StagingRingShape` and `StagingSlot`, the fixed ring of pinned slots |
+| `staging_rings.hpp` | `StagingRings`, one staging ring per SYCL context, pinned in that context |
+| `copy_submitter.hpp` | `CopySubmitter`, the port that submits one copy on a queue and returns its event |
+| `queue_copy_submitter.hpp` | `QueueCopySubmitter`, the submitter that calls the queue's `memcpy` |
 | `pinned_host_memory.hpp` | `PinnedHostMemory`, the port that makes and frees pinned host memory |
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
@@ -63,7 +66,8 @@ would share a count.
 
 `TransferPath::copy()` returns a `Result<sycl::event>`; no path throws. A path with no queue for its
 destination returns `InvalidArgument`. A file that cannot be opened, cannot be sought or ends before
-its range returns `InvalidState`. A ring that cannot make its slots returns `AllocationFailed`.
+its range returns `InvalidState`. A ring that cannot make its slots returns `AllocationFailed`, and
+a context with no staging ring returns `InvalidArgument`.
 What a SYCL call throws is caught inside the path and returned as the error of
 `Internal::SYCL::translate_exceptions()`. A path that fails after it took a ring slot retires the
 slot before it returns.
@@ -74,21 +78,37 @@ slot before it returns.
 has one. A copy between two devices is cut into chunks of one ring slot. A chunk goes from the
 source into a slot on the source's queue, and from the slot to the destination on the destination's
 queue; the copy out of the slot for chunk k runs while chunk k + 1 is copied into the next slot, so
-the two legs overlap. The path waits on the host for each source-to-slot leg, because the two
-queues may belong to two contexts and an event does not cross a context. It returns the event of
-the last slot-to-destination leg; each such leg waits for the one before it.
+the two legs overlap. `copy()` submits every leg of every chunk and waits for none: a slot leg
+depends on the copy's dependencies and on the slot's last use, which the ring hands over with the
+slot; a destination leg depends on its slot leg and on the destination leg before it. A destination
+leg therefore depends on an event of the source's context. SYCL 2020 lets a command depend on an
+event of another context and the runtime keeps that order; DPC++ and AdaptiveCpp both do. The path
+returns the event of the last destination leg. Each leg goes through a `CopySubmitter`, which the
+builder of the paths passes; the runtime passes a `QueueCopySubmitter`, and a test passes one that records
+the order legs are submitted in.
+
+The slots come from the ring of the source's SYCL context, so the slot leg reads into memory pinned
+for the source's device. The destination leg reads memory pinned in another context, which that
+context sees as plain host memory; pinning one slot in two contexts is not possible.
 
 The host space is pinned host memory, so a copy to or from it is one `memcpy` on the device's
 queue, with no slot. A space `SpaceQueues` gives no queue is read as host memory in `copy()`.
 
 `StagingRing` holds `slot_count` pinned buffers of `slot_bytes` each. The defaults,
 `K_DEFAULT_STAGING_SLOT_BYTES` (4 MiB) and `K_DEFAULT_STAGING_SLOT_COUNT` (4), are in
-`staging_ring.hpp` and nowhere else; the runtime builds the ring with them. The slots are made
+`staging_ring.hpp` and nowhere else; the runtime builds its rings with them. The slots are made
 through `PinnedHostMemory` on the first `acquire()`, never again, and freed with the ring. `acquire()`
 returns `Result<StagingSlot>`: `AllocationFailed` when the memory has no room for every slot, after
 it released the slots it had made. A slot
-has one holder; the holder retires it with the event of its last read, and the next holder waits
-for that event. The ring locks only to hand a slot out or take it back.
+has one holder; the holder retires it with the event of its last read, and the next holder gets
+that event as `StagingSlot::previous_use` and orders its write after it. `acquire()` never waits
+for a device; it blocks only while every slot is held, and a holder holds a slot only while it
+submits. The ring locks only to hand a slot out or take it back.
+
+`StagingRings` holds one `StagingRing` per SYCL context, each made through a `PinnedHostMemory` that
+pins in that context. The runtime adds one ring per context of its devices, in device order, when
+it builds the paths, so a device of a second vendor stages through memory pinned for it rather than
+through pageable memory. `ring_of()` only reads after that and takes no lock.
 
 The path does not keep the host bytes as a valid instance: the slot is reused, and the directory
 never hears of it. Keeping a host instance when a later reader needs it is a planner refinement,
@@ -100,7 +120,8 @@ not part of this path.
 source is a `FileMemorySpace` added to it with `add()`; the runtime adds each file space when a
 buffer is made from a file range, between runs, and `remove()` lets go of it when the buffer is
 dropped, so its id can name the next file space. A copy to a space with a queue cuts the range into
-chunks of one ring slot, in file order: the path reads a chunk from the file into a slot and copies
+chunks of one slot of the ring of the destination's context, in file order. The host writes the
+slot, so the path waits on the host for the slot's `previous_use` before it reads into it. It reads a chunk from the file into a slot and copies
 the slot to the destination on the destination's queue, and the read of the next chunk runs while
 that copy does. The host memory a copy holds is therefore the ring, `slot_bytes * slot_count`, and
 the file stream's own buffer, far under the 512 MB the design allows for read buffering. A copy to

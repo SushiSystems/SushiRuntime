@@ -63,6 +63,9 @@ namespace SushiRuntime
                 /** @brief Returns a host node that applies effect to the buffer's map under its lock. */
                 [[nodiscard]] Result<sushi_ptr<Graph::Node>> make_effect(const PlannedEffect& effect) override;
 
+                /** @brief Returns a host node that records a completed copy on the buffer's map under its lock. */
+                [[nodiscard]] Result<sushi_ptr<Graph::Node>> make_copy_record(const PlannedStep& step) override;
+
             private:
                 /// @brief Directory the nodes resolve and record instances in.
                 Memory::ResidencyView* directory_;

@@ -22,7 +22,7 @@ It depends on `core`, `handle`, `log`, `memory`, `region`, `task` and `transfer`
 | `plan_hash.hpp` | `plan_hash()`, the FNV-1a hash of a plan |
 | `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance and names its kind of USM |
 | `usm_instance_allocator.hpp` | `USMInstanceAllocator`, the port over a `USMAllocator` |
-| `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step or an effect into a node |
+| `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step, an effect or a copy's record into a node |
 | `directory_planned_node_factory.hpp` | `DirectoryPlannedNodeFactory`, nodes that resolve through the directory |
 | `plan_splice.hpp` | `splice_plan()` and `SpaceOfNode` |
 | `planned_host_access.hpp` | `PlannedHostAccess`, which mints a planned buffer and moves its bytes to and from the host |
@@ -112,8 +112,13 @@ has (its bytes on its home space). It copies each map once, under the coherence 
 that copy, so two commits at once on graphs that share a buffer each plan from a whole snapshot.
 
 The current map changes only as steps complete, so mid-run it is never ahead of the bytes. A copy
-node waits for its transfer to complete and then records `record_copy()`; a free node records
-`drop_space()` once the instance is dropped. `CopyPlan::effects`
+node starts its transfer and returns the transfer's event without waiting for it. The scheduler polls
+that event like any device event and releases the copy's successors once it completes; one of them
+is the copy's record node, from `PlannedNodeFactory::make_copy_record()`, which then records
+`record_copy()`. Under a lazy event model such as AdaptiveCpp's, the poller's stall drive (a
+`wait()` on the oldest pending event, `modules/engine/scheduler/README.md`) is what moves the copy
+forward; no planned node waits on it. A free node records `drop_space()` once the instance is
+dropped. `CopyPlan::effects`
 carries what no step carries, each built into a host node by `PlannedNodeFactory::make_effect()`:
 
 | Effect | Placed | Records |
@@ -133,19 +138,27 @@ of a node that never ran is not recorded.
 
 Each effect node takes the buffer's coherence lock once. These are host nodes, not kernel dispatches,
 and the lock is uncontended unless host access or a horizon hits the same buffer at that moment. A
-copy node now waits for its transfer on the worker that runs it. Both costs will be measured in the
-closing build and test run of the GLOBAL_HANDLE plan.
+copy's record node does the same. The cost will be measured in the closing build and test run of the
+GLOBAL_HANDLE plan.
 
 ## splice_plan
 
 `splice_plan()` plans the nodes, builds every planned node through the factory before it changes the
 graph, and returns the `CopyPlan` it spliced, so the caller can keep it beside the graph it built. A
-refused step leaves the nodes as they were. A step before a node takes the node's predecessors and
-precedes it. A step precedes every later step and node that uses one of its instances. A step at
-the graph end follows every leaf. A Hold precedes every step, effect and node of its buffer. A Write
-follows its node and every earlier step of its buffer on any space, and precedes every later step,
-effect and node of the buffer. A Leave follows every leaf and every step of its buffer. Each edge raises the target's
-in-degree; the step nodes are appended in plan order, then the effect nodes in plan order.
+refused step leaves the nodes as they were. A step before a node precedes it; an allocation or a
+free before a node also takes the node's predecessors, a copy does not. The splice keeps, for each
+instance, the nodes that wrote it (allocations, copies into it, frees, Writes), the copies that read
+it and the record nodes of the copies into it. A copy follows only the writers of its source, so it
+waits for the producer of the version it moves and two copies of one source run together; it
+follows every writer, reader, record and node user of its destination, so it never overwrites bytes
+still read. A node reads after the writers of an instance, and writes after its writers and the
+copies that read it. A step follows the writers, readers and records of the instance it makes or
+frees. A copy precedes its record node, and nothing waits for a record but later steps and effects
+of the buffer. A step at the graph end follows every leaf. A Hold precedes every step, effect and
+node of its buffer. A Write follows its node and every earlier step and record of its buffer on any
+space, and precedes every later step, effect and node of the buffer. A Leave follows every leaf and
+every step and record of its buffer. Each edge raises the target's in-degree; the step nodes are
+appended in plan order, then the effect nodes in plan order, then the record nodes in plan order.
 
 `splice_plan()` given a `SpaceOfDevice` plans a cut node as its parts: `NodeAccess::parts` holds each
 part's space, reads and writes, the regions the consumer's `NodeSplit::regions` gave that part,
@@ -161,7 +174,8 @@ use it; it works over any `ResidencyView`.
 
 Each node is a host node pinned to the device of the space it makes, writes or frees. An allocate
 node makes the instance only when the directory has none; a copy node resolves both instances when
-it runs, hands them to its `TransferPath` and records the copy on the map; a free node drops the
+it runs, hands them to its `TransferPath` and returns the path's event; a copy's record node, on the
+same device, records the copy on the map under the coherence lock; a free node drops the
 instance, releases it and drops the space from the map. An effect node is a host node on device 0
 that applies its effect to the map under the coherence lock. The
 nodes share the allocator; the directory and the paths must outlive them.

@@ -35,7 +35,7 @@
 
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
-#include <SushiRuntime/transfer/staging_ring.hpp>
+#include <SushiRuntime/transfer/staging_rings.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
@@ -46,19 +46,19 @@ namespace SushiRuntime
         /**
          * @brief Copies bytes out of a file space into any space that is not a file.
          *
-         * A copy to a device reads the file one ring slot at a time, in file order, and copies
-         * each slot on the device's queue, so the host memory it holds is the ring. A copy to the
-         * host reads the file straight into the destination.
+         * A copy to a device reads the file one slot of the ring of the device's context at a
+         * time, in file order, and copies each slot on the device's queue, so the host memory it
+         * holds is the ring. A copy to the host reads the file straight into the destination.
          */
         class FilePath final : public TransferPath
         {
             public:
                 /**
                  * @param queues Names the queue of a space; a space with none is read as host memory; must outlive the path.
-                 * @param ring Holds the staging slots; must outlive the path.
+                 * @param rings Holds the staging ring of each context; must outlive the path.
                  * @param observer Hears each copy; null for none; must outlive the path.
                  */
-                FilePath(const SpaceQueues& queues, StagingRing& ring, TransferObserver* observer = nullptr) noexcept;
+                FilePath(const SpaceQueues& queues, const StagingRings& rings, TransferObserver* observer = nullptr) noexcept;
 
                 /**
                  * @brief Makes the bytes of space readable by copy().
@@ -103,8 +103,8 @@ namespace SushiRuntime
                 /// @brief Names the queue of a space.
                 const SpaceQueues* queues_;
 
-                /// @brief Holds the staging slots.
-                StagingRing* ring_;
+                /// @brief Holds the staging ring of each context.
+                const StagingRings* rings_;
 
                 /// @brief Hears each copy; null for none.
                 TransferObserver* observer_;

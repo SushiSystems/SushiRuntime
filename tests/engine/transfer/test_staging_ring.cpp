@@ -158,6 +158,19 @@ namespace
         ring.retire(again, sycl::event{});
     }
 
+    TEST(Small_StagingRing, HandsTheNextHolderTheLastUseItsPreviousHolderRetiredTheSlotWith)
+    {
+        HeapPinnedHostMemory memory;
+        StagingRing ring(memory, StagingRingShape{16, 1});
+        const sycl::event last_read;
+
+        ring.retire(take(ring), last_read);
+        const StagingSlot next = take(ring);
+
+        EXPECT_TRUE(next.previous_use == last_read);
+        ring.retire(next, sycl::event{});
+    }
+
     TEST(Small_StagingRing, SkipsASlotThatIsStillHeld)
     {
         HeapPinnedHostMemory memory;

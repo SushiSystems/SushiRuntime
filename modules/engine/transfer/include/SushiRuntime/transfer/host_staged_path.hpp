@@ -33,8 +33,9 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/transfer/copy_submitter.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
-#include <SushiRuntime/transfer/staging_ring.hpp>
+#include <SushiRuntime/transfer/staging_rings.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
@@ -45,20 +46,20 @@ namespace SushiRuntime
         /**
          * @brief Copies between two spaces that have no direct or peer path.
          *
-         * A device-to-device copy moves one ring slot of bytes at a time, source to slot on the
-         * source's queue, then slot to destination on the destination's queue, the two legs of
-         * neighbouring chunks overlapping. A copy to or from the host space is one memcpy.
-         * copy() blocks until each chunk has reached its slot.
+         * A device-to-device copy moves one slot of the source context's ring at a time, source
+         * to slot on the source's queue, then slot to destination on the destination's queue;
+         * copy() submits every leg and waits for none. A host copy is one memcpy.
          */
         class HostStagedPath final : public TransferPath
         {
             public:
                 /**
                  * @param queues Names the queue of a space; a space with none is read as host memory; must outlive the path.
-                 * @param ring Holds the staging slots; must outlive the path.
+                 * @param rings Holds the staging ring of each context; must outlive the path.
+                 * @param submitter Submits each leg; must outlive the path.
                  * @param observer Hears each copy; null for none; must outlive the path.
                  */
-                HostStagedPath(const SpaceQueues& queues, StagingRing& ring,
+                HostStagedPath(const SpaceQueues& queues, const StagingRings& rings, CopySubmitter& submitter,
                                TransferObserver* observer = nullptr) noexcept;
 
                 /// @brief Name of the path, for logs and the profile file.
@@ -87,11 +88,14 @@ namespace SushiRuntime
                 /// @brief Names the queue of a space.
                 const SpaceQueues* queues_;
 
-                /// @brief Holds the staging slots.
-                StagingRing* ring_;
+                /// @brief Holds the staging ring of each context.
+                const StagingRings* rings_;
 
                 /// @brief Hears each copy; null for none.
                 TransferObserver* observer_;
+
+                /// @brief Submits each leg.
+                CopySubmitter* submitter_;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

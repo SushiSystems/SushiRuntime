@@ -144,6 +144,8 @@ namespace
                 out.close();
                 file_.emplace(K_FILE, FileRange{path_, K_RANGE_OFFSET, K_RANGE_BYTES});
                 subject_.add(*file_);
+                if (cpu_queues_.available())
+                    rings_.add(cpu_queues_.queue_of(K_DEVICE)->get_context(), memory_);
             }
 
             void TearDown() override
@@ -175,9 +177,9 @@ namespace
             CPUSpaceQueues cpu_queues_;
             QueuesWithoutSpace queues_{cpu_queues_, K_HOST};
             CountingPinnedHostMemory memory_;
-            StagingRing ring_{memory_, StagingRingShape{K_SLOT_BYTES, K_SLOT_COUNT}};
+            StagingRings rings_{StagingRingShape{K_SLOT_BYTES, K_SLOT_COUNT}};
             RecordingTransferObserver observer_;
-            FilePath subject_{queues_, ring_, &observer_};
+            FilePath subject_{queues_, rings_, &observer_};
     };
 
     TEST_F(Small_FilePath, ConnectsAnAddedFileToAnySpaceThatIsNotAFile)
@@ -356,8 +358,9 @@ namespace
             const MemorySpaceID file_space(2);
             const OneDeviceQueues queues(queue, device_space);
             QueuePinnedHostMemory pinned(queue);
-            StagingRing ring(pinned);
-            FilePath subject(queues, ring);
+            StagingRings rings;
+            rings.add(queue.get_context(), pinned);
+            FilePath subject(queues, rings);
             const FileMemorySpace file(file_space, FileRange{path, 0, static_cast<std::size_t>(file_bytes)});
             subject.add(file);
             auto* const window = sycl::malloc_device<std::uint8_t>(K_WINDOW_BYTES, queue);
@@ -381,7 +384,7 @@ namespace
                 }
             }
             sycl::free(window, queue);
-            const StagingRingShape shape = ring.shape();
+            const StagingRingShape shape = rings.shape();
             EXPECT_LE(pinned.peak(), shape.slot_bytes * shape.slot_count);
             EXPECT_LT(pinned.peak(), shape.slot_bytes * shape.slot_count + K_READ_BUFFER_LIMIT);
         }

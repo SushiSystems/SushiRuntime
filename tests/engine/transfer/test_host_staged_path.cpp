@@ -40,6 +40,7 @@
 #include <SushiRuntime/memory/host_memory_space.hpp>
 #include <SushiRuntime/transfer/file_path.hpp>
 #include <SushiRuntime/transfer/host_staged_path.hpp>
+#include <SushiRuntime/transfer/queue_copy_submitter.hpp>
 
 #include "support/fake_transfer_path.hpp"
 #include "support/transfer_path_doubles.hpp"
@@ -67,6 +68,7 @@ namespace
             {
                 if (!cpu_queues_.available())
                     GTEST_SKIP() << "SYCL offers no CPU device.";
+                rings_.add(cpu_queues_.queue_of(K_DEVICE_0)->get_context(), memory_);
             }
 
             /** @brief Returns bytes that differ from one position to the next. */
@@ -84,10 +86,114 @@ namespace
             CPUSpaceQueues cpu_queues_;
             QueuesWithoutSpace queues_{cpu_queues_, K_HOST};
             HeapPinnedHostMemory memory_;
-            StagingRing ring_{memory_, StagingRingShape{K_SLOT_BYTES, K_SLOT_COUNT}};
+            StagingRings rings_{StagingRingShape{K_SLOT_BYTES, K_SLOT_COUNT}};
+            QueueCopySubmitter submitter_;
             RecordingTransferObserver observer_;
-            HostStagedPath subject_{queues_, ring_, &observer_};
+            HostStagedPath subject_{queues_, rings_, submitter_, &observer_};
     };
+
+    /** @brief Records each copy it is handed and runs none, so no event it returns stands for finished work. */
+    class RecordingCopySubmitter final : public CopySubmitter
+    {
+        public:
+            /** @brief One submitted copy. */
+            struct Submitted
+            {
+                const void* from = nullptr;   /**< First byte read. */
+                void* to = nullptr;           /**< First byte written. */
+                std::size_t bytes = 0;        /**< Bytes copied. */
+                std::size_t dependencies = 0; /**< Events the copy was ordered after. */
+            };
+
+            [[nodiscard]] sycl::event submit(sycl::queue&, void* to, const void* from, std::size_t bytes,
+                                             const std::vector<sycl::event>& dependencies) override
+            {
+                submitted.push_back(Submitted{from, to, bytes, dependencies.size()});
+                return sycl::event{};
+            }
+
+            std::vector<Submitted> submitted; /**< Copies in the order they were submitted. */
+    };
+
+    /** @brief Names a queue of its own SYCL context for each of two devices, and none for the host. */
+    class TwoContextQueues final : public SpaceQueues
+    {
+        public:
+            /** @brief Builds both queues on device, each in a new context. */
+            explicit TwoContextQueues(const sycl::device& device)
+                : first_(sycl::context(device), device), second_(sycl::context(device), device)
+            {
+
+            }
+
+            [[nodiscard]] sycl::queue* queue_of(MemorySpaceID space) const override
+            {
+                if (space == K_DEVICE_0)
+                    return const_cast<sycl::queue*>(&first_);
+                return space == K_DEVICE_1 ? const_cast<sycl::queue*>(&second_) : nullptr;
+            }
+
+        private:
+            /// @brief The queue of K_DEVICE_0.
+            sycl::queue first_;
+
+            /// @brief The queue of K_DEVICE_1, in another context.
+            sycl::queue second_;
+    };
+
+    TEST_F(Medium_HostStagedPath, SubmitsEveryChunkBeforeAnyCompletesAndChainsTheDestinationLegs)
+    {
+        RecordingCopySubmitter submitter;
+        HostStagedPath path(queues_, rings_, submitter);
+        const std::vector<std::uint8_t> from = pattern(K_SLOT_BYTES * 3);
+        std::vector<std::uint8_t> to(from.size(), 0);
+
+        ASSERT_TRUE(path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}));
+
+        // Two legs per chunk, all submitted in this call, while the submitter has run none of them.
+        ASSERT_EQ(submitter.submitted.size(), 6U);
+        EXPECT_EQ(submitter.submitted[0].from, from.data());
+        EXPECT_EQ(submitter.submitted[1].to, to.data());
+        EXPECT_EQ(submitter.submitted[2].from, from.data() + K_SLOT_BYTES);
+        EXPECT_EQ(submitter.submitted[3].to, to.data() + K_SLOT_BYTES);
+        EXPECT_EQ(submitter.submitted[4].from, from.data() + 2 * K_SLOT_BYTES);
+        // A chunk's slot leg follows its slot's last reader; its destination leg its slot leg and the chunk before.
+        EXPECT_EQ(submitter.submitted[0].dependencies, 1U);
+        EXPECT_EQ(submitter.submitted[1].dependencies, 1U);
+        EXPECT_EQ(submitter.submitted[3].dependencies, 2U);
+        EXPECT_EQ(submitter.submitted[5].dependencies, 2U);
+    }
+
+    TEST_F(Medium_HostStagedPath, EachContextStagesThroughItsOwnRing)
+    {
+        const TwoContextQueues queues(cpu_queues_.queue_of(K_DEVICE_0)->get_device());
+        HeapPinnedHostMemory first_memory;
+        HeapPinnedHostMemory second_memory;
+        StagingRings rings(StagingRingShape{K_SLOT_BYTES, K_SLOT_COUNT});
+        rings.add(queues.queue_of(K_DEVICE_0)->get_context(), first_memory);
+        rings.add(queues.queue_of(K_DEVICE_1)->get_context(), second_memory);
+        HostStagedPath path(queues, rings, submitter_);
+        const std::vector<std::uint8_t> from = pattern(K_SLOT_BYTES * 3);
+        std::vector<std::uint8_t> to(from.size(), 0);
+
+        path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}).value().wait();
+
+        EXPECT_EQ(to, from);
+        EXPECT_EQ(first_memory.allocated(), static_cast<int>(K_SLOT_COUNT));
+        EXPECT_EQ(second_memory.allocated(), 0);
+    }
+
+    TEST_F(Medium_HostStagedPath, RefusesAStagedCopyFromAContextWithNoRing)
+    {
+        const StagingRings none;
+        HostStagedPath path(queues_, none, submitter_);
+        std::uint8_t byte = 0;
+
+        const Result<sycl::event> refused = path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, &byte, &byte, 1}, {});
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    }
 
     TEST_F(Medium_HostStagedPath, ConnectsAnyTwoDevicesAndTheHostWithADevice)
     {
@@ -161,7 +267,7 @@ namespace
     {
         const QueuesWithoutSpace none(queues_, K_DEVICE_0);
         const QueuesWithoutSpace neither(none, K_DEVICE_1);
-        HostStagedPath path(neither, ring_);
+        HostStagedPath path(neither, rings_, submitter_);
         std::uint8_t byte = 0;
 
         const Result<sycl::event> refused = path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, &byte, &byte, 1}, {});

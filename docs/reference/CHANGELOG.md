@@ -6,6 +6,8 @@
 - 2026-11-16 — memory: Removed `ResidencyDirectory::entry_address()` from the public header; chunk stability is tested through `resolve()` across growth (GLOBAL_HANDLE R11).
 - 2026-11-16 — memory: Moved host-write tracking out of `ResidencyDirectory` into `HostWriteTable`, owned by `RuntimeHandleParts`; `ports()` takes the log (GLOBAL_HANDLE R11).
 - 2026-11-16 — runtime: Added `admit_paths()`; two transfer paths with one `TransferPathID` are logged and `RuntimeContext::create()` returns InvalidState (GLOBAL_HANDLE R11).
+- 2026-11-16 — runtime: Changed a planned copy to wait only on the writers of its source, so copies of one source run together, and to return its event; a record node marks the map once it completes (GLOBAL_HANDLE R13).
+- 2026-11-16 — runtime: Changed the host-staged path to submit every chunk without a host wait, slots reused through events, each SYCL context staging through its own pinned ring (GLOBAL_HANDLE R13).
 - 2026-11-16 — runtime: Changed the partition model to copy a byte range once per pool, price split parts by the bytes they lack and time steps in schedule order with insertion EFT (GLOBAL_HANDLE R12).
 - 2026-11-16 — runtime: Bounded the partitioner: 8 refine passes, D+D(D-1)/2 floor subsets, O(k log n) pool counts; problem_hash folds split regions (GLOBAL_HANDLE R12).
 - 2026-11-16 — runtime: Changed the coherence map to change only as copies, frees and node writes complete, under one lock per buffer; host access is refused while a run holds the buffer, and a failed run releases it (GLOBAL_HANDLE R05).

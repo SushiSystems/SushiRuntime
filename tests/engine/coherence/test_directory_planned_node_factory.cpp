@@ -156,6 +156,13 @@ namespace
         EXPECT_EQ(copy.value()->io_writes_[0].length, K_BYTES);
     }
 
+    TEST_F(Small_DirectoryPlannedNodeFactory, OnlyACopyHasARecordNode)
+    {
+        const Result<sushi_ptr<Node>> record = factory_.make_copy_record(step(PlannedStepKind::Free));
+        ASSERT_FALSE(record);
+        EXPECT_EQ(record.error().code, ErrorCode::InvalidArgument);
+    }
+
     TEST_F(Small_DirectoryPlannedNodeFactory, ACopyNamingAPathTheFactoryLacksIsRefused)
     {
         PlannedStep unknown = step(PlannedStepKind::Copy);
@@ -174,8 +181,9 @@ namespace
         directory_.coherence(buffer_)->reset(K_BYTES, K_DEVICE_0);
         const Result<sushi_ptr<Node>> allocate = factory_.make(step(PlannedStepKind::Allocate));
         const Result<sushi_ptr<Node>> copy = factory_.make(step(PlannedStepKind::Copy));
+        const Result<sushi_ptr<Node>> record = factory_.make_copy_record(step(PlannedStepKind::Copy));
         const Result<sushi_ptr<Node>> free = factory_.make(step(PlannedStepKind::Free));
-        ASSERT_TRUE(allocate && copy && free);
+        ASSERT_TRUE(allocate && copy && record && free);
         const std::uint64_t both = (std::uint64_t{1} << K_DEVICE_0.value()) | (std::uint64_t{1} << K_DEVICE_1.value());
 
         ASSERT_TRUE(allocate.value()->execute_host_checked(*queue, {}));
@@ -185,7 +193,9 @@ namespace
         ASSERT_TRUE(copy.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(path_.copies(), 1);
         EXPECT_EQ(static_cast<unsigned char*>(made.address)[7], 8);
-        // Each step records its effect on the map when it runs, not when it was planned.
+        // The copy node only starts the copy; its record node records it once the copy completed.
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), std::uint64_t{1} << K_DEVICE_0.value());
+        ASSERT_TRUE(record.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), both);
 
         ASSERT_TRUE(free.value()->execute_host_checked(*queue, {}));
