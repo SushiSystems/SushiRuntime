@@ -37,6 +37,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/handle/local_handle_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 using namespace SushiRuntime;
@@ -203,6 +204,19 @@ namespace
         EXPECT_EQ(directory.resolve(foreign, MemorySpaceID(0)).status,
                   HandleStatus::ForeignUniverse);
         EXPECT_EQ(directory.retire(foreign), HandleStatus::ForeignUniverse);
+    }
+
+    TEST(Small_ResidencyDirectory, AHandleOfTheLocalUniverseIsRefused)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        LocalHandleSpace local(K_UNIVERSE);
+        const GlobalHandle handle = local.mint(HandleKind::Buffer).handle;
+
+        const ResolveOutcome outcome = directory.resolve(handle, MemorySpaceID(0));
+
+        EXPECT_EQ(outcome.status, HandleStatus::ForeignUniverse);
+        EXPECT_EQ(outcome.address, nullptr);
+        EXPECT_EQ(directory.retire(handle), HandleStatus::ForeignUniverse);
     }
 
     TEST(Small_ResidencyDirectory, AFreedSlotIsReusedLowestFirstUnderTheNextGeneration)

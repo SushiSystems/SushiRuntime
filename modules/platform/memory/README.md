@@ -148,6 +148,9 @@ every run. Retire raises the generation at once, so every copy of the old handle
 `StaleHandle`. A slot whose generation wraps to 0 is not reused; generation 0 is the null handle.
 `live_count()` counts the handles minted and not retired, Borrowed ones included.
 
+The constructor refuses the universe `K_LOCAL_HANDLE_UNIVERSE` through `SR_VERIFY`. That universe
+belongs to `LocalHandleSpace`, so a handle it minted resolves and retires to `ForeignUniverse`.
+
 ### retire: the observer
 
 `set_retire_observer()` installs one `RetireObserver`. A successful `retire()` calls its

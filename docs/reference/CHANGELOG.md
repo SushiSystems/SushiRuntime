@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — handle: Added `LocalHandleSpace`, a lock-free minter of handles for host-only memory that needs no runtime, in the reserved universe `K_LOCAL_HANDLE_UNIVERSE` (GLOBAL_HANDLE H2).
+- 2026-11-15 — memory: Changed `ResidencyDirectory` to refuse the local universe, so a runtime answers `ForeignUniverse` for a local handle (GLOBAL_HANDLE H2).
 - 2026-11-15 — runtime: Changed `NodeSplit::slice` to receive the part's `sycl::queue` and the pointers bound on its device (GLOBAL_HANDLE H8).
 - 2026-11-15 — runtime: Moved `NodeSplit` and `SplitPart` from `SushiRuntime/core/node_split.hpp` to `SushiRuntime/machine/node_split.hpp` (GLOBAL_HANDLE H8).
 - 2026-11-15 — coherence: Added splitting of a declared-splittable node into parts sized by device speed, at most one per device (GLOBAL_HANDLE H8).

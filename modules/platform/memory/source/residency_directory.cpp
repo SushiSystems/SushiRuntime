@@ -32,6 +32,9 @@
 
 #include <thread>
 
+#include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/handle/local_handle_space.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Memory
@@ -56,6 +59,8 @@ namespace SushiRuntime
         ResidencyDirectory::ResidencyDirectory(std::uint32_t universe)
             : universe_(universe), chunks_(new std::atomic<Chunk*>[K_MAX_CHUNKS])
         {
+            SR_VERIFY(universe != K_LOCAL_HANDLE_UNIVERSE,
+                      "a ResidencyDirectory was given the universe reserved for LocalHandleSpace.");
             for (std::uint32_t i = 0; i < K_MAX_CHUNKS; ++i)
                 chunks_[i].store(nullptr, std::memory_order_relaxed);
         }

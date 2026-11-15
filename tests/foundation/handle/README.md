@@ -54,6 +54,15 @@ A fake space mints from a fixed number of slots, lowest free slot first.
 | --- | --- |
 | `EveryValueIsDistinctAndOkIsZero` | The six statuses have six distinct values, and `Ok` is 0 and the default. |
 
+## test_local_handle_space.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `MintsInSlotOrderInTheLocalUniverseWithHostOnlyBorrowedFlags` | Three mints give slots 0, 1, 2, generation 1, the reserved universe, the space id in the machine field and the flags `HostOnly` and `Borrowed`. |
+| `TheSameSequenceOfMintsGivesTheSameHandles` | Two spaces built with one id give equal handles for the same mints. |
+| `SpacesWithDifferentIDsMintDistinctHandles` | Two ids give different first handles. |
+| `ConcurrentMintsGiveEveryHandleOnce` | Four threads of 1000 mints give 4000 distinct handles over slots 0 to 3999. |
+
 ## test_memory_space_id.cpp
 
 | Test | What it proves |

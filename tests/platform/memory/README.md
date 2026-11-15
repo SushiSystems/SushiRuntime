@@ -137,6 +137,7 @@ queue.
 | `MintResolveAndRetire` | A minted handle starts at slot 0, generation 1, resolves to the address set on a space, reports its description, and is stale once retired. |
 | `AStaleHandleReturnsStaleHandle` | A retired handle resolves to `StaleHandle`, retires again to `StaleHandle`, and `to_result` reports `ErrorCode::StaleHandle`. |
 | `NullAndForeignHandlesAreRefused` | The null handle gives `NullHandle`; a handle of another universe gives `ForeignUniverse`. |
+| `AHandleOfTheLocalUniverseIsRefused` | A handle a `LocalHandleSpace` minted gives `ForeignUniverse` and a null address from `resolve()`, and `retire()` gives `ForeignUniverse`. |
 | `AFreedSlotIsReusedLowestFirstUnderTheNextGeneration` | With slots 3 and 5 of 0..5 retired, the next mints get 3 at the next generation, then 5, then 6. |
 | `GrowingPastOneChunkKeepsEarlierEntriesInPlace` | Minting past one chunk makes the second chunk and leaves the first entry at its address. |
 | `AnInstanceKeepsItsKindUntilItIsDroppedOrRetired` | An instance set with a kind reports it through `instance_kind()` and `EntryView::home_kind`; one set without a kind, a dropped one and one on a retired or reused slot report none. |

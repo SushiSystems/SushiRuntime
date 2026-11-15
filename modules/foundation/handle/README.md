@@ -17,6 +17,7 @@ The design is in `docs/design/GLOBAL_HANDLE/README.md`.
 | `handle_status.hpp` | `HandleStatus` |
 | `handle_space.hpp` | `HandleSpace` and `MintOutcome` |
 | `handle_resolver.hpp` | `HandleResolver` and `ResolveOutcome` |
+| `local_handle_space.hpp` | `LocalHandleSpace` and `K_LOCAL_HANDLE_UNIVERSE` |
 
 Every name is declared in `SushiRuntime`.
 
@@ -74,6 +75,21 @@ interfaces with no data. The runtime's residency directory will implement both.
 They return `MintOutcome` and `ResolveOutcome`, a value with a `HandleStatus`, and not the
 repository's `Result`. `Result` lives in `foundation/core`, and this module takes no dependency on
 another module.
+
+## local_handle_space.hpp
+
+`LocalHandleSpace` mints handles with no runtime, for host memory that only its owner uses, such as
+the host-only buffers of a BLAS library. `mint(kind)` takes no lock: one atomic counter gives the
+slots, from 0 in mint order, so the same sequence of mints gives the same handles.
+
+Every handle carries `K_LOCAL_HANDLE_UNIVERSE` (`0xFFFFFFFF`), generation 1, and the flags
+`HostOnly` and `Borrowed`. The space's id, given by the caller at construction, sits in the machine
+field; an owner with several spaces gives each a different id, or their handles collide. A handle is
+never retired. After 2^32 mints `mint()` returns `SpaceExhausted`.
+
+No runtime uses the reserved universe: `ResidencyDirectory` refuses to be built in it. A runtime
+therefore answers a local handle with `ForeignUniverse` and never resolves it. The space is not a
+`HandleSpace`, because it has nothing to retire.
 
 ## Tests
 

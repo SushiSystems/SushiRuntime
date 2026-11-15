@@ -11,4 +11,5 @@ sushiruntime_add_module_tests(
         test_handle_resolver.cpp
         test_handle_space.cpp
         test_handle_status.cpp
+        test_local_handle_space.cpp
         test_memory_space_id.cpp)
