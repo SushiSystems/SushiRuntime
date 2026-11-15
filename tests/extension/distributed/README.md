@@ -447,8 +447,8 @@ The file tests Cluster without a worker: attach, shared buffers, versions and th
 | --- | --- |
 | `AMasterWithNoWorkerReportsNone` | An attached master with no worker reports none and offloads nothing. |
 | `ADetachedMasterReportsNoWorker` | A detached master reports no worker. |
-| `ASharedAddressGetsAHandle` | A shared address gets a valid handle whose version bump_buffer() raises by one. |
-| `AnUnsharedAddressHasNoHandle` | An address nobody shared has no handle. |
+| `ASharedBufferGetsAHandle` | A shared buffer gets a valid wire handle whose version bump_buffer() raises by one. |
+| `AnUnsharedBufferHasNoHandle` | A buffer nobody shared has no wire handle. |
 | `ALivenessTimeoutBelowTheMinimumIsRefused` | A liveness timeout under one millisecond is refused. |
 | `ALivenessTimeoutOfTheMinimumIsAccepted` | A liveness timeout of exactly the minimum is accepted. |
 

@@ -46,7 +46,9 @@
 #include <SushiRuntime/wire/wire_messages.hpp>
 
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
+
+#include "support/shared_buffer_rig.hpp"
 
 using namespace SushiRuntime;
 
@@ -248,10 +250,10 @@ namespace BufferExchangeTests
         const std::size_t size = GetParam();
         Bytes source = guarded_pattern(size, 7);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle pulled = registry.register_buffer(source.data(), size);
-        const BufferHandle written = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle pulled = rig.share(source.data(), size);
+        const BufferHandle written = rig.share(destination.data(), size);
 
         const std::vector<SentFrame> frames = pull_all(exchange, pulled);
         ASSERT_EQ(frames.size(), expected_frame_count(size));
@@ -275,9 +277,9 @@ namespace BufferExchangeTests
     {
         const std::size_t size = GetParam();
         Bytes source = guarded_pattern(size, 11);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(source.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(source.data(), size);
 
         const std::vector<SentFrame> frames = pull_all(exchange, handle);
 
@@ -288,9 +290,9 @@ namespace BufferExchangeTests
     {
         const std::size_t size = GetParam();
         Bytes source = guarded_pattern(size, 11);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(source.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(source.data(), size);
         OutboundFrame frame;
         const std::unique_ptr<FrameSource> stream = exchange.serve_pull(handle.id, handle.version);
         drain(*stream, frame);
@@ -334,9 +336,9 @@ namespace BufferExchangeTests
         const Bytes untouched = guarded_pattern(size, 23);
         const Bytes payload = guarded_pattern(size, 59);
         Bytes destination = untouched;
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        BufferHandle forged = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        BufferHandle forged = rig.share(destination.data(), size);
         forged.version = static_cast<std::uint32_t>(forged.version + GetParam().added);
 
         EXPECT_EQ(apply_piece(exchange, forged, payload, 0), ChunkStatus::Stale);
@@ -354,13 +356,13 @@ namespace BufferExchangeTests
         const Bytes untouched = guarded_pattern(size, 23);
         const Bytes payload = guarded_pattern(size, 59);
         Bytes destination = untouched;
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        BufferHandle dispatched = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        BufferHandle dispatched = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, dispatched, payload, 0), ChunkStatus::Applied);
         // A reaper bumps a task's outputs before it resubmits; the chunk in flight is then late.
         BufferHandle bumped = dispatched;
-        registry.bump({&bumped, 1});
+        rig.buffers().bump({&bumped, 1});
 
         EXPECT_EQ(apply_piece(exchange, dispatched, payload, 1), ChunkStatus::Stale);
 
@@ -376,9 +378,9 @@ namespace BufferExchangeTests
         const std::size_t size = 3 * K_CHUNK_BYTES + 7;
         const Bytes payload = guarded_pattern(size, 5);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
 
         EXPECT_EQ(apply_piece(exchange, handle, payload, 2), ChunkStatus::Gap);
@@ -393,9 +395,9 @@ namespace BufferExchangeTests
         const std::size_t size = 3 * K_CHUNK_BYTES + 7;
         const Bytes payload = guarded_pattern(size, 5);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 2), ChunkStatus::Gap);
 
@@ -413,9 +415,9 @@ namespace BufferExchangeTests
         const std::size_t size = 3 * K_CHUNK_BYTES;
         const Bytes payload = guarded_pattern(size, 3);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 1), ChunkStatus::Applied);
 
@@ -431,15 +433,15 @@ namespace BufferExchangeTests
         const std::size_t size = 3 * K_CHUNK_BYTES;
         std::unique_ptr<std::byte[]> storage = std::make_unique<std::byte[]>(size);
         std::fill(storage.get(), storage.get() + size, std::byte{0x5A});
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(storage.get(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(storage.get(), size);
         OutboundFrame frame;
         const std::unique_ptr<FrameSource> stream = exchange.serve_pull(handle.id, handle.version);
         ASSERT_EQ(stream->next(frame), FrameSourceStatus::Frame);
         ASSERT_EQ(frame.type, MessageType::BufferChunk);
         // The allocation is freed for real, so a read of it after this line fails under ASan.
-        ASSERT_EQ(registry.unregister_buffer(storage.get()), handle.id);
+        ASSERT_EQ(rig.unshare(storage.get()), handle.id);
         storage.reset();
 
         const std::vector<SentFrame> rest = drain(*stream, frame);
@@ -453,8 +455,8 @@ namespace BufferExchangeTests
 
     TEST(Small_BufferExchangeTest, APullOfAnUnknownBufferIsRefusedWithGone)
     {
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
         BufferHandle unknown;
         unknown.id.value = 999;
         unknown.version = 1;
@@ -470,14 +472,14 @@ namespace BufferExchangeTests
     {
         const std::size_t size = 3 * K_CHUNK_BYTES;
         Bytes source = guarded_pattern(size, 13);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(source.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(source.data(), size);
         OutboundFrame frame;
         const std::unique_ptr<FrameSource> stream = exchange.serve_pull(handle.id, handle.version);
         ASSERT_EQ(stream->next(frame), FrameSourceStatus::Frame);
         void* const address = source.data();
-        registry.bump_addresses({&address, 1});
+        rig.bump_address(address);
 
         const std::vector<SentFrame> rest = drain(*stream, frame);
 
@@ -491,11 +493,11 @@ namespace BufferExchangeTests
     {
         const std::size_t size = 3 * K_CHUNK_BYTES;
         Bytes source = guarded_pattern(size, 13);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(source.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(source.data(), size);
         void* const address = source.data();
-        registry.bump_addresses({&address, 1});
+        rig.bump_address(address);
 
         const std::vector<SentFrame> only = pull_all(exchange, handle);
 
@@ -571,9 +573,9 @@ namespace BufferExchangeTests
         const Bytes untouched = guarded_pattern(size, 17);
         const Bytes payload = guarded_pattern(size, 29);
         Bytes destination = untouched;
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         const Wire::BufferChunkMessage chunk = GetParam().build(handle, payload);
 
         EXPECT_EQ(exchange.apply_output_chunk(K_WORKER, chunk, GetParam().last),
@@ -591,9 +593,9 @@ namespace BufferExchangeTests
         const std::size_t size = 2 * K_CHUNK_BYTES;
         const Bytes payload = guarded_pattern(size, 31);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
 
         exchange.forget_task(K_TASK_ID);
@@ -607,9 +609,9 @@ namespace BufferExchangeTests
         const std::size_t size = 2 * K_CHUNK_BYTES;
         const Bytes payload = guarded_pattern(size, 31);
         Bytes destination(size + 1, K_GUARD);
-        BufferRegistry registry;
-        BufferExchange exchange(registry, K_CHUNK_BYTES);
-        const BufferHandle handle = registry.register_buffer(destination.data(), size);
+        TestSupport::SharedBufferRig rig;
+        BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
+        const BufferHandle handle = rig.share(destination.data(), size);
         ASSERT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
         const Wire::BufferChunkMessage foreign = output_chunk(handle, payload, 1);
 

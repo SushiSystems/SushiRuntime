@@ -48,13 +48,13 @@ namespace SushiRuntime
     namespace Distributed
     {
         ClusterMonitor::ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
-                                       HeldNodes& held, BufferRegistry& registry,
+                                       HeldNodes& held, SharedBuffers& buffers,
                                        BufferExchange& exchange, Transport& transport,
                                        const ClusterMonitorOptions& options, const Clock& clock)
             : directory_(directory),
               pending_(pending),
               held_(held),
-              registry_(registry),
+              buffers_(buffers),
               exchange_(exchange),
               transport_(transport),
               clock_(clock),
@@ -272,7 +272,7 @@ namespace SushiRuntime
             const std::size_t taken = tasks_.size();
             redispatched_.fetch_add(taken, std::memory_order_relaxed);
             const std::size_t resubmitted = resubmit_tasks(
-                SushiRuntime::span<PendingTask>(tasks_.data(), tasks_.size()), registry_,
+                SushiRuntime::span<PendingTask>(tasks_.data(), tasks_.size()), buffers_,
                 exchange_, directory_, sink);
             redispatched_.fetch_sub(taken - resubmitted, std::memory_order_relaxed);
             tasks_.clear();

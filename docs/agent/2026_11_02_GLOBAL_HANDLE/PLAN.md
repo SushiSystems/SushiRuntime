@@ -48,7 +48,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T07 | `surface/api` region composer | T06 | todo |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | todo |
-| T10 | `extension/buffer_exchange` | T06 | running |
+| T10 | `extension/buffer_exchange` | T06 | done |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | running |
@@ -73,7 +73,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T28 | wire version 5 | T10 | todo |
 | T29 | owner per handle and recovery | T28 | todo |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
-| T31 | SushiEngine runtime adapter, SushiAI build | T06 | running |
+| T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T32 | SushiBLAS conformance kernels | T30 | todo |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
 

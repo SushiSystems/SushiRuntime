@@ -135,6 +135,18 @@ namespace SushiRuntime
             [[nodiscard]] T* next() const noexcept { return next_.data(); }
 
             /**
+             * @brief Returns the handle of the current field.
+             * @return The handle of the field a step reads, or the null handle for an empty state.
+             */
+            [[nodiscard]] GlobalHandle current_handle() const noexcept { return current_.handle(); }
+
+            /**
+             * @brief Returns the handle of the next field.
+             * @return The handle of the field a step writes, or the null handle for an empty state.
+             */
+            [[nodiscard]] GlobalHandle next_handle() const noexcept { return next_.handle(); }
+
+            /**
              * @brief Reports the capacity of the pair.
              * @return Number of elements in each field; both are the same size.
              */

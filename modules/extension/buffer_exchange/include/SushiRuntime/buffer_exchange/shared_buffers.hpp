@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* buffer_registry.hpp                                                    */
+/* shared_buffers.hpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,8 +22,8 @@
 /**************************************************************************/
 
 /**
- * @file buffer_registry.hpp
- * @brief Declares BufferRegistry, the master's map of shared buffers and their versions.
+ * @file shared_buffers.hpp
+ * @brief Declares SharedBuffers, the versions of the buffers the master shares, by GlobalHandle.
  * @author Mustafa Garip
  * @see modules/extension/buffer_exchange/README.md
  */
@@ -39,6 +39,8 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 
 namespace SushiRuntime
@@ -52,73 +54,83 @@ namespace SushiRuntime
         {
             Ok,         /**< The bytes were copied. */
             Stale,      /**< The buffer's version is not the one named; nothing was copied. */
-            Gone,       /**< The id names no shared buffer; nothing was copied. */
+            Gone,       /**< The id names no shared buffer or no live instance; nothing was copied. */
             OutOfRange, /**< Offset plus length passes the buffer's size; nothing was copied. */
         };
 
         /**
-         * @brief Gives each shared allocation an id and a version, and copies its bytes.
+         * @brief Gives each shared buffer a version and copies its bytes; a buffer is a GlobalHandle.
          *
-         * The registry owns one mutex, held only inside its members, and calls nothing while
-         * it holds it. No address leaves the registry: read() and write() are the only code
-         * that touches a shared buffer's memory for a worker, and they copy under the mutex,
-         * so a buffer cannot be unregistered and freed in the middle of a copy.
+         * The wire id of a buffer is wire_id_of() of its handle. The set keeps no address: a
+         * copy asks the HandleResolver where the instance is. One mutex, held only inside the
+         * members, covers each copy, so a buffer cannot be unshared in the middle of one.
          */
-        class SUSHIRUNTIME_API BufferRegistry final
+        class SUSHIRUNTIME_API SharedBuffers final
         {
             public:
-                /** @brief Builds an empty registry whose first id is 1. */
-                BufferRegistry();
+                /**
+                 * @brief Builds an empty set that finds instances through a resolver.
+                 * @param resolver Outlives the set.
+                 * @param device_count Devices whose memory space may hold an instance.
+                 */
+                SharedBuffers(const HandleResolver& resolver, std::size_t device_count) noexcept;
 
-                /** @brief Destroys the registry; the allocations are not its own. */
-                ~BufferRegistry();
+                /** @brief Destroys the set; the buffers are not its own. */
+                ~SharedBuffers();
 
-                BufferRegistry(const BufferRegistry&) = delete;
-                BufferRegistry& operator=(const BufferRegistry&) = delete;
-                BufferRegistry(BufferRegistry&&) = delete;
-                BufferRegistry& operator=(BufferRegistry&&) = delete;
+                SharedBuffers(const SharedBuffers&) = delete;
+                SharedBuffers& operator=(const SharedBuffers&) = delete;
+                SharedBuffers(SharedBuffers&&) = delete;
+                SharedBuffers& operator=(SharedBuffers&&) = delete;
 
                 /**
-                 * @brief Shares an allocation; an address already shared keeps its handle.
-                 * @param address Base of a live, host-readable USM allocation of @p size_bytes.
+                 * @brief Shares a buffer; one already shared keeps its version.
+                 * @param handle A live handle whose instance the host can read.
+                 * @return The buffer's wire handle; an invalid id for the null handle.
                  */
-                BufferHandle register_buffer(void* address, std::uint64_t size_bytes);
+                BufferHandle share(GlobalHandle handle, std::uint64_t size_bytes);
 
                 /**
-                 * @brief Stops sharing an address, under the mutex, so no copy is in progress
-                 *        when this returns.
-                 * @return The id the address had, or an invalid id when it was not shared.
+                 * @brief Stops sharing a buffer, under the mutex, so no copy is in progress when
+                 *        this returns.
+                 * @return The id the buffer had, or an invalid id when it was not shared.
                  */
-                GlobalBufferID unregister_buffer(void* address) noexcept;
+                GlobalBufferID unshare(GlobalHandle handle) noexcept;
 
-                /** @brief Returns the current handle of an address, or nothing. */
-                [[nodiscard]] std::optional<BufferHandle> lookup(void* address) const;
+                /**
+                 * @brief Stops sharing every buffer whose handle was retired.
+                 * @return The ids of the buffers dropped.
+                 */
+                std::vector<GlobalBufferID> unshare_retired();
 
-                /** @brief Returns the current handle of an id, or nothing. */
+                /** @brief Returns the current wire handle of a buffer, or nothing. */
+                [[nodiscard]] std::optional<BufferHandle> lookup(GlobalHandle handle) const;
+
+                /** @brief Returns the current wire handle of an id, or nothing. */
                 [[nodiscard]] std::optional<BufferHandle> lookup_by_id(GlobalBufferID id) const;
 
                 /**
-                 * @brief Writes the current handle of each address into @p out, under one lock.
+                 * @brief Writes the current wire handle of each buffer into @p out, under one lock.
                  * @param out Cleared first; its capacity is reused.
-                 * @return False when an address is not shared; @p out is then unspecified.
+                 * @return False when a handle is not shared; @p out is then unspecified.
                  */
-                [[nodiscard]] bool resolve(SushiRuntime::span<void* const> addresses,
+                [[nodiscard]] bool resolve(SushiRuntime::span<const GlobalHandle> handles,
                                            std::vector<BufferHandle>& out) const;
 
                 /**
-                 * @brief Rewrites each handle to its buffer's current version, under one lock.
+                 * @brief Rewrites each wire handle to its buffer's current version, under one lock.
                  * @return False when an id is gone; the handles are then unspecified.
                  */
                 [[nodiscard]] bool refresh(SushiRuntime::span<BufferHandle> handles) const;
 
                 /**
-                 * @brief Raises the version of each buffer by one and writes it into the handle,
-                 *        under one lock; an id that is gone is skipped.
+                 * @brief Raises the version of each buffer by one and writes it into the wire
+                 *        handle, under one lock; an id that is gone is skipped.
                  */
                 void bump(SushiRuntime::span<BufferHandle> handles) noexcept;
 
-                /** @brief Raises the version of the buffer shared at each address, if any. */
-                void bump_addresses(SushiRuntime::span<void* const> addresses) noexcept;
+                /** @brief Raises the version of each buffer in @p handles that is shared. */
+                void bump_handles(SushiRuntime::span<const GlobalHandle> handles) noexcept;
 
                 /**
                  * @brief Copies bytes out of a buffer while it is at exactly @p version.
@@ -137,27 +149,33 @@ namespace SushiRuntime
                                                        SushiRuntime::span<const std::byte> in);
 
             private:
-                /** @brief Holds where a shared buffer lives and its current handle. */
+                /** @brief Holds which buffer an entry is and its current wire handle. */
                 struct Entry
                 {
-                    /** @brief Base address of the allocation. */
-                    void* address = nullptr;
+                    /** @brief The handle that names the buffer. */
+                    GlobalHandle handle;
 
                     /** @brief Id, current version and size. */
-                    BufferHandle handle;
+                    BufferHandle wire;
                 };
+
+                /**
+                 * @brief Returns the host address of an entry's instance, or null for none.
+                 * @pre The mutex is held.
+                 */
+                [[nodiscard]] void* address_of(const Entry& entry) const noexcept;
+
+                /// @brief Finds where an instance lives; outlives the set.
+                const HandleResolver& resolver_;
+
+                /// @brief Devices the resolver may hold an instance on.
+                std::size_t device_count_;
 
                 /// @brief Guards every member below; held across each copy.
                 mutable std::mutex mutex_;
 
-                /// @brief Entries by the value of their id.
+                /// @brief Entries by the value of their wire id.
                 std::unordered_map<std::uint64_t, Entry> by_id_;
-
-                /// @brief Id values by address.
-                std::unordered_map<void*, std::uint64_t> id_by_address_;
-
-                /// @brief The id the next new address takes; 0 names no buffer.
-                std::uint64_t next_id_ = 1;
         };
 
     } // namespace Distributed

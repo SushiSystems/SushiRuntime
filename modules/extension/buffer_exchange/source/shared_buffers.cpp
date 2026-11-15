@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* buffer_registry.cpp                                                    */
+/* shared_buffers.cpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,16 +22,19 @@
 /**************************************************************************/
 
 /**
- * @file buffer_registry.cpp
- * @brief Keeps the ids and versions of shared buffers and copies their bytes under one lock.
+ * @file shared_buffers.cpp
+ * @brief Implements SharedBuffers.
  * @author Mustafa Garip
  * @see modules/extension/buffer_exchange/README.md
  */
 
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
+#include <algorithm>
 #include <cstring>
-#include <new>
+
+#include <SushiRuntime/buffer_exchange/buffer_wire_id.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
 {
@@ -57,74 +60,84 @@ namespace SushiRuntime
             }
         } // namespace
 
-        BufferRegistry::BufferRegistry() = default;
-
-        BufferRegistry::~BufferRegistry() = default;
-
-        BufferHandle BufferRegistry::register_buffer(void* address, std::uint64_t size_bytes)
+        SharedBuffers::SharedBuffers(const HandleResolver& resolver, std::size_t device_count) noexcept
+            : resolver_(resolver), device_count_(device_count)
         {
-            std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto known = id_by_address_.find(address);
-            if (known != id_by_address_.end())
-                return by_id_.find(known->second)->second.handle;
-
-            Entry entry;
-            entry.address = address;
-            entry.handle.id.value = next_id_;
-            entry.handle.version = 1;
-            entry.handle.size_bytes = size_bytes;
-
-            // Every address in id_by_address_ has its entry in by_id_; a half insert is undone.
-            by_id_.emplace(next_id_, entry);
-
-            /** @brief Erases the entry of an id unless the address was recorded too. */
-            struct HalfInsert
-            {
-                std::unordered_map<std::uint64_t, Entry>& entries; /**< The map to undo in. */
-                std::uint64_t id;                                  /**< The entry's id. */
-                bool is_complete = false;                          /**< Set once both maps hold it. */
-
-                /** @brief Erases the entry when the second insert did not finish. */
-                ~HalfInsert()
-                {
-                    if (!is_complete)
-                        entries.erase(id);
-                }
-            } half_insert{by_id_, next_id_};
-
-            id_by_address_.emplace(address, next_id_);
-            half_insert.is_complete = true;
-            ++next_id_;
-            return entry.handle;
         }
 
-        GlobalBufferID BufferRegistry::unregister_buffer(void* address) noexcept
+        SharedBuffers::~SharedBuffers() = default;
+
+        void* SharedBuffers::address_of(const Entry& entry) const noexcept
+        {
+            const std::optional<Internal::Graph::HandleLocation> location =
+                Internal::Graph::locate(resolver_, entry.handle, device_count_);
+            return location ? location->address : nullptr;
+        }
+
+        BufferHandle SharedBuffers::share(GlobalHandle handle, std::uint64_t size_bytes)
+        {
+            if (handle.is_null())
+                return BufferHandle{};
+
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            const GlobalBufferID id = wire_id_of(handle);
+            const auto known = by_id_.find(id.value);
+            if (known != by_id_.end())
+                return known->second.wire;
+
+            Entry entry;
+            entry.handle = handle;
+            entry.wire.id = id;
+            entry.wire.version = 1;
+            entry.wire.size_bytes = size_bytes;
+            by_id_.emplace(id.value, entry);
+            return entry.wire;
+        }
+
+        GlobalBufferID SharedBuffers::unshare(GlobalHandle handle) noexcept
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto known = id_by_address_.find(address);
-            if (known == id_by_address_.end())
+            const auto known = by_id_.find(wire_id_of(handle).value);
+            if (known == by_id_.end() || !(known->second.handle == handle))
                 return GlobalBufferID{};
 
-            const GlobalBufferID id{known->second};
-            by_id_.erase(known->second);
-            id_by_address_.erase(known);
+            const GlobalBufferID id = known->second.wire.id;
+            by_id_.erase(known);
             return id;
         }
 
-        std::optional<BufferHandle> BufferRegistry::lookup(void* address) const
+        std::vector<GlobalBufferID> SharedBuffers::unshare_retired()
+        {
+            std::vector<GlobalBufferID> dropped;
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& [value, entry] : by_id_)
+                if (resolver_.is_stale(entry.handle))
+                    dropped.push_back(entry.wire.id);
+
+            // The map's order is not defined; the ids go out in value order.
+            std::sort(dropped.begin(), dropped.end(),
+                      [](GlobalBufferID left, GlobalBufferID right) { return left.value < right.value; });
+            for (const GlobalBufferID id : dropped)
+                by_id_.erase(id.value);
+            return dropped;
+        }
+
+        std::optional<BufferHandle> SharedBuffers::lookup(GlobalHandle handle) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto known = id_by_address_.find(address);
-            if (known == id_by_address_.end())
+            const auto known = by_id_.find(wire_id_of(handle).value);
+            if (known == by_id_.end() || !(known->second.handle == handle))
                 return std::nullopt;
 
-            return by_id_.find(known->second)->second.handle;
+            return known->second.wire;
         }
 
-        std::optional<BufferHandle> BufferRegistry::lookup_by_id(GlobalBufferID id) const
+        std::optional<BufferHandle> SharedBuffers::lookup_by_id(GlobalBufferID id) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
@@ -132,28 +145,28 @@ namespace SushiRuntime
             if (entry == by_id_.end())
                 return std::nullopt;
 
-            return entry->second.handle;
+            return entry->second.wire;
         }
 
-        bool BufferRegistry::resolve(SushiRuntime::span<void* const> addresses,
-                                     std::vector<BufferHandle>& out) const
+        bool SharedBuffers::resolve(SushiRuntime::span<const GlobalHandle> handles,
+                                    std::vector<BufferHandle>& out) const
         {
             out.clear();
-            out.reserve(addresses.size());
+            out.reserve(handles.size());
 
             std::lock_guard<std::mutex> lock(mutex_);
-            for (void* address : addresses)
+            for (const GlobalHandle handle : handles)
             {
-                const auto known = id_by_address_.find(address);
-                if (known == id_by_address_.end())
+                const auto known = by_id_.find(wire_id_of(handle).value);
+                if (known == by_id_.end() || !(known->second.handle == handle))
                     return false;
 
-                out.push_back(by_id_.find(known->second)->second.handle);
+                out.push_back(known->second.wire);
             }
             return true;
         }
 
-        bool BufferRegistry::refresh(SushiRuntime::span<BufferHandle> handles) const
+        bool SharedBuffers::refresh(SushiRuntime::span<BufferHandle> handles) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (BufferHandle& handle : handles)
@@ -162,12 +175,12 @@ namespace SushiRuntime
                 if (entry == by_id_.end())
                     return false;
 
-                handle.version = entry->second.handle.version;
+                handle.version = entry->second.wire.version;
             }
             return true;
         }
 
-        void BufferRegistry::bump(SushiRuntime::span<BufferHandle> handles) noexcept
+        void SharedBuffers::bump(SushiRuntime::span<BufferHandle> handles) noexcept
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (BufferHandle& handle : handles)
@@ -176,26 +189,26 @@ namespace SushiRuntime
                 if (entry == by_id_.end())
                     continue;
 
-                handle.version = ++entry->second.handle.version;
+                handle.version = ++entry->second.wire.version;
             }
         }
 
-        void BufferRegistry::bump_addresses(SushiRuntime::span<void* const> addresses) noexcept
+        void SharedBuffers::bump_handles(SushiRuntime::span<const GlobalHandle> handles) noexcept
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for (void* address : addresses)
+            for (const GlobalHandle handle : handles)
             {
-                const auto known = id_by_address_.find(address);
-                if (known == id_by_address_.end())
+                const auto known = by_id_.find(wire_id_of(handle).value);
+                if (known == by_id_.end() || !(known->second.handle == handle))
                     continue;
 
-                ++by_id_.find(known->second)->second.handle.version;
+                ++known->second.wire.version;
             }
         }
 
-        BufferAccessStatus BufferRegistry::read(GlobalBufferID id, std::uint32_t version,
-                                                std::uint64_t offset,
-                                                SushiRuntime::span<std::byte> out) const
+        BufferAccessStatus SharedBuffers::read(GlobalBufferID id, std::uint32_t version,
+                                               std::uint64_t offset,
+                                               SushiRuntime::span<std::byte> out) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
@@ -204,18 +217,21 @@ namespace SushiRuntime
                 return BufferAccessStatus::Gone;
 
             const BufferAccessStatus status =
-                admit_access(entry->second.handle, version, offset, out.size());
+                admit_access(entry->second.wire, version, offset, out.size());
             if (status != BufferAccessStatus::Ok || out.empty())
                 return status;
 
-            const auto* base = static_cast<const std::byte*>(entry->second.address);
+            const auto* base = static_cast<const std::byte*>(address_of(entry->second));
+            if (base == nullptr)
+                return BufferAccessStatus::Gone;
+
             std::memcpy(out.data(), base + offset, out.size());
             return BufferAccessStatus::Ok;
         }
 
-        BufferAccessStatus BufferRegistry::write(GlobalBufferID id, std::uint32_t version,
-                                                 std::uint64_t offset,
-                                                 SushiRuntime::span<const std::byte> in)
+        BufferAccessStatus SharedBuffers::write(GlobalBufferID id, std::uint32_t version,
+                                                std::uint64_t offset,
+                                                SushiRuntime::span<const std::byte> in)
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
@@ -224,11 +240,14 @@ namespace SushiRuntime
                 return BufferAccessStatus::Gone;
 
             const BufferAccessStatus status =
-                admit_access(entry->second.handle, version, offset, in.size());
+                admit_access(entry->second.wire, version, offset, in.size());
             if (status != BufferAccessStatus::Ok || in.empty())
                 return status;
 
-            auto* base = static_cast<std::byte*>(entry->second.address);
+            auto* base = static_cast<std::byte*>(address_of(entry->second));
+            if (base == nullptr)
+                return BufferAccessStatus::Gone;
+
             std::memcpy(base + offset, in.data(), in.size());
             return BufferAccessStatus::Ok;
         }

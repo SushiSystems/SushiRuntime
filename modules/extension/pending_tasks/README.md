@@ -23,10 +23,10 @@ the node leaves through exactly one of `take()`, `take_for_worker()`, `take_over
 `complete_remote()` after a result, `resubmit()` otherwise. The entry carries the worker and the
 output handles as dispatched, so nothing reads the node's lists after dispatch.
 
-Before a resubmit the owner bumps the task's outputs in the registry. `take()` has already made
+Before a resubmit the owner bumps the task's outputs in the shared buffers. `take()` has already made
 `expects_output()` false for the task, and a chunk that passed that check a moment earlier either
 wrote before the bump, and is overwritten by the local run, or meets the bumped version in
-`BufferRegistry::write()` and is refused. `resubmit_tasks()` is the one place this sequence lives.
+`SharedBuffers::write()` and is refused. `resubmit_tasks()` is the one place this sequence lives.
 
 ### A send that fails after insert
 

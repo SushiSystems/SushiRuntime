@@ -100,6 +100,20 @@ class HandleTable
             return minted.handle;
         }
 
+        /**
+         * @brief Retires the handle place() gave @p address and forgets the address.
+         * @return Ok, or the status the retire failed with; NullHandle when the address was never placed.
+         */
+        [[nodiscard]] SushiRuntime::HandleStatus retire(const void* address)
+        {
+            const auto found = placed_.find(address);
+            if (found == placed_.end())
+                return SushiRuntime::HandleStatus::NullHandle;
+            const SushiRuntime::HandleStatus status = directory_.retire(found->second);
+            placed_.erase(found);
+            return status;
+        }
+
         /** @brief Returns the whole region of the handle place() gives @p address. */
         [[nodiscard]] SushiRuntime::BufferRegion region(const void* address, std::size_t device = 0)
         {

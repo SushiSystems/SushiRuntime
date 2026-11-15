@@ -10,7 +10,7 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_offload_dispatcher.cpp
 
 The file tests `OffloadDispatcher`
-over a real `BufferRegistry`, `WorkerDirectory` and `PendingTasks`. The transport is the master
+over a real `SharedBuffers` on a `HandleTable`, `WorkerDirectory` and `PendingTasks`. The transport is the master
 threadless endpoint of an `InProcessFabric`, with a threadless worker endpoint whose `RecordingTransportEvents` keep each
 dispatch the master sent. Both endpoints post their pump rounds to one `SeededExecutor` and read a
 `ManualClock`; a test steps the executor, then reads the dispatches after a `PING` queued behind them

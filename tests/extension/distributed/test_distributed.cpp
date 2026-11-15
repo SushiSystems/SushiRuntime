@@ -102,6 +102,7 @@
 #include <SushiRuntime/network_socket/socket.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 
+#include "support/borrowed_allocation.hpp"
 #include "support/runtime_environment.hpp"
 #include "tcp_fault_proxy.hpp"
 
@@ -157,7 +158,8 @@ namespace EndToEndTests
                  * @throws std::runtime_error When the device gives no memory.
                  */
                 USMFloats(sycl::queue& queue, std::size_t count, float value)
-                    : queue_(queue), data_(sycl::malloc_shared<float>(count, queue)), count_(count)
+                    : queue_(queue), data_(sycl::malloc_shared<float>(count, queue)), count_(count),
+                      borrow_(TestSupport::RuntimeEnvironment::runtime(), data_, count * sizeof(float))
                 {
                     if (data_ == nullptr)
                         throw std::runtime_error("sycl::malloc_shared returned null for a test buffer");
@@ -194,6 +196,12 @@ namespace EndToEndTests
                     return data_;
                 }
 
+                /** @brief Returns the handle the runtime names the allocation by. */
+                [[nodiscard]] GlobalHandle handle() const noexcept
+                {
+                    return borrow_.handle();
+                }
+
                 /** @brief Returns the number of elements. */
                 [[nodiscard]] std::size_t count() const noexcept
                 {
@@ -221,6 +229,9 @@ namespace EndToEndTests
 
                 /// @brief The number of elements.
                 std::size_t count_;
+
+                /// @brief Holds the borrow that gives the allocation its handle.
+                TestSupport::BorrowedAllocation borrow_;
         };
 
         /**
@@ -313,7 +324,7 @@ namespace EndToEndTests
         /** @brief Shares a buffer with the workers of a cluster. */
         void share(Cluster& cluster, const USMFloats& buffer)
         {
-            cluster.share(buffer.data(), buffer.size_bytes());
+            cluster.share(buffer.handle(), buffer.size_bytes());
         }
 
         /**
@@ -741,7 +752,7 @@ namespace EndToEndTests
         ASSERT_EQ(worker_runs.load(), 1);
         const std::uint64_t pull_chunks = cluster.statistics().chunks_sent;
         ASSERT_GT(pull_chunks, 0u) << "the worker did not pull the first version";
-        const std::optional<BufferHandle> held = cluster.buffer_handle(x.data());
+        const std::optional<BufferHandle> held = cluster.buffer_handle(x.handle());
         ASSERT_TRUE(held.has_value());
 
         auto second = master_runtime.graph();
@@ -750,7 +761,7 @@ namespace EndToEndTests
         add_vec_add(second, "second_read", x, x, y);
         second.run().value();
 
-        const std::optional<BufferHandle> current = cluster.buffer_handle(x.data());
+        const std::optional<BufferHandle> current = cluster.buffer_handle(x.handle());
         ASSERT_TRUE(current.has_value());
         EXPECT_EQ(current->version, held->version + static_cast<std::uint64_t>(writes))
             << "each local write raises the version";
@@ -1939,8 +1950,8 @@ namespace EndToEndTests
             field.next()[index] = static_cast<int>(index);
         }
 
-        void* front = field.current();
-        void* back = field.next();
+        const GlobalHandle front = field.current_handle();
+        const GlobalHandle back = field.next_handle();
         const std::optional<BufferHandle> front_before = cluster.buffer_handle(front);
         const std::optional<BufferHandle> back_before = cluster.buffer_handle(back);
         ASSERT_TRUE(front_before.has_value());
@@ -2353,9 +2364,9 @@ namespace EndToEndTests
         EXPECT_EQ(&cluster.share(buffer), &buffer);
         EXPECT_EQ(&cluster.share(field), &field);
 
-        EXPECT_TRUE(cluster.buffer_handle(buffer.data()).has_value());
-        EXPECT_TRUE(cluster.buffer_handle(field.current()).has_value());
-        EXPECT_TRUE(cluster.buffer_handle(field.next()).has_value());
+        EXPECT_TRUE(cluster.buffer_handle(buffer.handle()).has_value());
+        EXPECT_TRUE(cluster.buffer_handle(field.current_handle()).has_value());
+        EXPECT_TRUE(cluster.buffer_handle(field.next_handle()).has_value());
         cluster.detach();
     }
 
@@ -2371,7 +2382,7 @@ namespace EndToEndTests
 
         cluster.share(moved_from);
 
-        EXPECT_FALSE(cluster.buffer_handle(taken.data()).has_value())
+        EXPECT_FALSE(cluster.buffer_handle(taken.handle()).has_value())
             << "a buffer nobody shared has a handle";
         cluster.detach();
     }
@@ -2385,7 +2396,7 @@ namespace EndToEndTests
 
         auto pinned = cluster.share(runtime.buffer<float>(8, DeviceIndex{0}, Residency::Host).value());
 
-        EXPECT_TRUE(cluster.buffer_handle(pinned.data()).has_value());
+        EXPECT_TRUE(cluster.buffer_handle(pinned.handle()).has_value());
         cluster.detach();
     }
 
@@ -2460,7 +2471,8 @@ namespace FaultInjectionTests
                  * @throws std::runtime_error When the device gives no memory.
                  */
                 USMFloats(sycl::queue& queue, float value)
-                    : queue_(queue), data_(sycl::malloc_shared<float>(K_COUNT, queue))
+                    : queue_(queue), data_(sycl::malloc_shared<float>(K_COUNT, queue)),
+                      borrow_(TestSupport::RuntimeEnvironment::runtime(), data_, K_COUNT * sizeof(float))
                 {
                     if (data_ == nullptr)
                         throw std::runtime_error("sycl::malloc_shared returned null for a test buffer");
@@ -2484,12 +2496,21 @@ namespace FaultInjectionTests
                     return data_;
                 }
 
+                /** @brief Returns the handle the runtime names the allocation by. */
+                [[nodiscard]] GlobalHandle handle() const noexcept
+                {
+                    return borrow_.handle();
+                }
+
             private:
                 /// @brief The queue the allocation belongs to.
                 sycl::queue& queue_;
 
                 /// @brief The base address.
                 float* data_;
+
+                /// @brief Holds the borrow that gives the allocation its handle.
+                TestSupport::BorrowedAllocation borrow_;
         };
 
         /** @brief Returns an input buffer whose element i holds input_value(i). */
@@ -2845,11 +2866,11 @@ namespace FaultInjectionTests
                 return "the cluster did not assemble";
 
             OffloadCoordinator* master = master_context.offload();
-            cluster.share(input->data(), K_COUNT * sizeof(float));
+            cluster.share(input->handle(), K_COUNT * sizeof(float));
             auto graph = master_runtime.graph();
             for (const std::unique_ptr<USMFloats>& output : outputs)
             {
-                cluster.share(output->data(), K_COUNT * sizeof(float));
+                cluster.share(output->handle(), K_COUNT * sizeof(float));
                 add_vec_double(graph, *input, *output);
             }
             // The plan is built before the first fault, while both workers are known.
@@ -2925,8 +2946,8 @@ namespace FaultInjectionTests
             }
 
             OffloadCoordinator* master = master_context.offload();
-            cluster.share(input->data(), K_COUNT * sizeof(float));
-            cluster.share(output.data(), K_COUNT * sizeof(float));
+            cluster.share(input->handle(), K_COUNT * sizeof(float));
+            cluster.share(output.handle(), K_COUNT * sizeof(float));
             auto graph = master_runtime.graph();
             add_vec_double(graph, *input, output);
             graph.compile().value();
@@ -3288,6 +3309,7 @@ namespace TCPFaultsTests
                     // A detached master has returned its tasks, so a run left over ends here.
                     if (run_.valid())
                         run_.wait();
+                    borrows_.clear();
                     buffers_.clear();
 
                     SushiLog::set_log_sink(nullptr);
@@ -3484,6 +3506,9 @@ namespace TCPFaultsTests
                 /// @brief The buffers of every mask task, released in TearDown().
                 std::vector<std::unique_ptr<SharedBytes>> buffers_;
 
+                /// @brief The borrows that give the buffers their handles; dropped before the buffers.
+                std::vector<std::unique_ptr<TestSupport::BorrowedAllocation>> borrows_;
+
                 /// @brief The master's transport, kept to read the bound port.
                 std::shared_ptr<TCPTransport> master_transport_;
 
@@ -3507,7 +3532,9 @@ namespace TCPFaultsTests
                         SushiRuntime::Internal::ContextAccess::context(*master_runtime_).memory();
                     buffers_.push_back(std::make_unique<SharedBytes>(memory, size));
                     SharedBytes& buffer = *buffers_.back();
-                    cluster_->share(buffer.data(), buffer.size());
+                    borrows_.push_back(std::make_unique<TestSupport::BorrowedAllocation>(
+                        *master_runtime_, buffer.data(), buffer.size()));
+                    cluster_->share(borrows_.back()->handle(), buffer.size());
                     return buffer;
                 }
         };

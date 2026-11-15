@@ -46,6 +46,8 @@ dispatch: T06 — opus low, 270 turns, rung 1, passed
 dispatch: T08 — sonnet low, 18 turns, rung 1, passed
 dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
 dispatch: T23 — opus low, rung 1, passed
+dispatch: T31 — haiku high, 124 turns, rung 1, passed (SushiEngine e3348900f)
+dispatch: T10 — sonnet medium, 146 turns, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -77,3 +79,20 @@ and its kind (host, shared, device); every pointer query becomes a query on the 
 memory a caller brings is reached through `BorrowedIndex` only. An address index for owned
 memory would be the registry under a new name, against "address-to-handle serves borrowed
 memory only". T09 runs again one rung up, after T13, because it touches `runtime_context` too.
+
+## T31: SushiEngine's runtime adapter
+
+Committed in SushiEngine as `e3348900f` on `feature/global_handle`, in the worktree
+`D:/Projects/.worktrees/sushiengine-global_handle`. The adapter maps each buffer's `ResourceID`
+to its `GlobalHandle` through a table one runtime owns. Memory the runtime did not allocate fails
+its verify; the adapter has no borrowed path, because a whole raw interval has no extent to
+borrow. SushiEngine pins a SushiRuntime package older than the handle, so it builds only once the
+closing build moves its pins. SushiAI's build runs in the closing build.
+
+## T10: shared buffers by handle
+
+- `SharedBuffers` keeps each shared buffer's version and size by handle, because the directory
+  holds no versions. `wire_id_of(GlobalHandle)` derives the wire id until T28 folds it away.
+- `Cluster::share(void*, bytes)` is gone; raw memory enters as a borrowed handle.
+- The release path still starts from the address observer in `platform/memory`; T09 replaces it
+  with a retire notification, and the coordinator then unshares from that.

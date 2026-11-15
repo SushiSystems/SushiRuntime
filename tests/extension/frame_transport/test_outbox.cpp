@@ -44,8 +44,10 @@
 #include <SushiRuntime/wire/wire_messages.hpp>
 
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 #include <SushiRuntime/frame_transport/outbox.hpp>
+
+#include "support/shared_buffer_rig.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -74,7 +76,7 @@ namespace
     class PullStreams
     {
         public:
-            PullStreams() : exchange_(registry_, K_CHUNK_BYTES)
+            PullStreams() : exchange_(rig_.buffers(), K_CHUNK_BYTES)
             {
             }
 
@@ -83,14 +85,14 @@ namespace
             {
                 storage_.emplace_back(chunks * K_CHUNK_BYTES);
                 const BufferHandle handle =
-                    registry_.register_buffer(storage_.back().data(), storage_.back().size());
+                    rig_.share(storage_.back().data(), storage_.back().size());
                 return exchange_.serve_pull(handle.id, handle.version);
             }
 
-            /** @brief Returns the id the registry gave to the buffer registered n-th, from 0. */
+            /** @brief Returns the id the shared buffers gave to the buffer registered n-th, from 0. */
             [[nodiscard]] std::uint64_t id_of(std::size_t n)
             {
-                const std::optional<BufferHandle> handle = registry_.lookup(storage_[n].data());
+                const std::optional<BufferHandle> handle = rig_.lookup(storage_[n].data());
                 return handle->id.value;
             }
 
@@ -99,7 +101,7 @@ namespace
             std::vector<std::vector<std::byte>> storage_;
 
             /// @brief Holds the shared buffers.
-            BufferRegistry registry_;
+            TestSupport::SharedBufferRig rig_;
 
             /// @brief Serves the pulls.
             BufferExchange exchange_;

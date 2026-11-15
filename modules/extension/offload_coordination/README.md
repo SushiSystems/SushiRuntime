@@ -60,7 +60,7 @@ is `Picked` with the worker and the device. When every match is at its `max_jobs
 | op-tagged, supported, every buffer shared, two writes name one buffer | false | the handles of the shared buffers it writes |
 | any other node that writes a shared buffer | false | the handles of the shared buffers it writes |
 | any other node | false | none, and no `OffloadState` is created for it |
-| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live handle resolves to a shared address and no two live writes name one buffer | none |
+| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live handle is a shared buffer and no two live writes name one buffer | none |
 
 A dispatch raises the version of each output once. A buffer listed twice among the outputs would
 leave with two versions, and the output fence would refuse the chunks of one of them, so such a
@@ -91,8 +91,8 @@ The steps run in this order, and no lock is held across two of them.
    `attempts` has reached `K_MAXIMUM_OFFLOAD_ATTEMPTS`, goes to
    `RulePlacement::decide_unreachable()`: `FailRun` reaches the sink, `RunLocally` declines. Any
    other node at the cap declines. `offloadable` is not cleared.
-2. Registry lock: a fixed-buffer node refreshes the versions of its stored handles, a
-   double-buffered node resolves the addresses of its live lists. A node whose buffer is not
+2. Shared-buffers lock: a fixed-buffer node refreshes the versions of its stored handles, a
+   double-buffered node resolves the wire handles of its live lists. A node whose buffer is not
    shared any more declines, or, under a rule naming another machine, goes to
    `decide_unreachable()` with `NotShared`.
 3. The decision, a `PlacementDecision`. A node with a winning rule asks `RulePlacement::decide()`;
@@ -102,7 +102,7 @@ The steps run in this order, and no lock is held across two of them.
    true; a hold refused as `Stale` goes back to step 3. `FailRun` hands the node and the error to
    `OffloadSink::fail()` and answers true (see "Fail" below). `RunOnWorker` goes on.
 5. `attempts` rises by one.
-6. Registry lock: `bump()` on the outputs. The dispatch is encoded, with the decision's device in
+6. Shared-buffers lock: `bump()` on the outputs. The dispatch is encoded, with the decision's device in
    `TaskDispatchMessage::device_index`.
 7. Pending lock: `PendingTasks::insert()`, with the rule's `deadline` when the decision carries
    one. From here the dispatcher does not read or write the node.
@@ -123,7 +123,7 @@ A frame header carries `K_PROTOCOL_VERSION`, which is 4. check_protocol_version(
 versions in its message, and that message is the text of the `REJECT` the receiver sends before
 it closes the connection.
 
-The addresses, the handles, the `TaskDispatchMessage` and the encoded payload live in one
+The live handles, the wire handles, the `TaskDispatchMessage` and the encoded payload live in one
 thread-local scratch per pool thread, so the dispatcher's own code allocates nothing once the
 scratch has grown. `PendingTasks::insert()` allocates the entry and its copy of the output handles,
 and `Transport::send()` copies the payload into the peer's queue.
@@ -131,7 +131,7 @@ and `Transport::send()` copies the payload into the peer's queue.
 ### Local completion
 
 `complete_local()` returns after one null check for a node without an `OffloadState`. Otherwise it
-sets `attempts` to 0 and bumps what the node wrote: the addresses in `live_writes` for a
+sets `attempts` to 0 and bumps what the node wrote: the handles in `live_writes` for a
 double-buffered node, the stored output handles for a fixed-buffer one. A fixed-buffer node whose
 payload lists no output takes no lock.
 
@@ -204,7 +204,7 @@ a wait.
 ## task_resubmission.hpp
 
 `resubmit_tasks()` is the one sequence that returns tasks `PendingTasks` handed out to the
-scheduler: per task it bumps the outputs' versions in the `BufferRegistry`, forgets the task's
+scheduler: per task it bumps the outputs' versions in the `SharedBuffers`, forgets the task's
 transfer progress in `BufferExchange`, lowers its worker's inflight count in the
 `WorkerDirectory` and passes the node to `OffloadSink::resubmit()`. `reoffer_nodes()` passes the
 nodes `HeldNodes` handed out to the same sink. Both catch what the sink throws, log it under the

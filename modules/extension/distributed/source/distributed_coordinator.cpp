@@ -184,15 +184,15 @@ namespace SushiRuntime
             };
 
             /** @brief Builds the bricks in the order they are declared and sets the handlers. */
-            Impl(BufferRegistry& shared_buffers, std::shared_ptr<Transport> master_transport,
+            Impl(SharedBuffers& shared_buffers, std::shared_ptr<Transport> master_transport,
                  ClusterOptions cluster_options, std::uint64_t session, NodeFacts master)
                 : options(std::move(cluster_options)),
-                  registry(shared_buffers),
+                  buffers(shared_buffers),
                   transport(require_transport(std::move(master_transport))),
                   directory(options.secret.bytes(), policy_or_default(options.policy)),
-                  exchange(registry, options.chunk_bytes),
-                  dispatcher(registry, directory, pending, *transport, held, std::move(master)),
-                  monitor(directory, pending, held, registry, exchange, *transport,
+                  exchange(buffers, options.chunk_bytes),
+                  dispatcher(buffers, directory, pending, *transport, held, std::move(master)),
+                  monitor(directory, pending, held, buffers, exchange, *transport,
                           monitor_options(options), clock),
                   session_id(session)
             {
@@ -514,7 +514,7 @@ namespace SushiRuntime
                 // The count rises before the scheduler can end the run that reads it.
                 redispatched.fetch_add(tasks.size(), std::memory_order_relaxed);
                 const std::size_t resubmitted =
-                    resubmit_tasks(tasks, registry, exchange, directory, *sink);
+                    resubmit_tasks(tasks, buffers, exchange, directory, *sink);
 
                 // A slot freed or a worker left; a held node is decided again.
                 reoffer_held();
@@ -602,7 +602,7 @@ namespace SushiRuntime
             ClusterOptions options;
 
             /// @brief Names and versions of the shared buffers; owned by Cluster::State.
-            BufferRegistry& registry;
+            SharedBuffers& buffers;
 
             /// @brief Carries every frame; this object is its only event receiver.
             std::shared_ptr<Transport> transport;
@@ -668,12 +668,12 @@ namespace SushiRuntime
             std::atomic<std::uint64_t> completed_remote{0};
         };
 
-        DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
+        DistributedCoordinator::DistributedCoordinator(SharedBuffers& buffers,
                                                        std::shared_ptr<Transport> transport,
                                                        ClusterOptions options,
                                                        std::uint64_t session_id,
                                                        NodeFacts master)
-            : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options),
+            : impl_(std::make_unique<Impl>(buffers, std::move(transport), std::move(options),
                                            session_id, std::move(master)))
         {
 
@@ -688,11 +688,6 @@ namespace SushiRuntime
         {
             impl_->sink = &sink;
             impl_->dispatcher.bind(sink);
-        }
-
-        void DistributedCoordinator::bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept
-        {
-            impl_->dispatcher.bind_handles(handles, device_count);
         }
 
         TransportResult DistributedCoordinator::start()
@@ -817,9 +812,9 @@ namespace SushiRuntime
             impl_->dispatcher.complete_local(node);
         }
 
-        void DistributedCoordinator::share(void* address, std::size_t bytes)
+        void DistributedCoordinator::share(GlobalHandle handle, std::size_t bytes)
         {
-            impl_->registry.register_buffer(address, bytes);
+            impl_->buffers.share(handle, bytes);
         }
 
         CoordinatorStatistics DistributedCoordinator::statistics() const noexcept
@@ -838,34 +833,36 @@ namespace SushiRuntime
             return snapshot;
         }
 
-        void DistributedCoordinator::on_release(void* address) noexcept
+        void DistributedCoordinator::on_release(void* /*address*/) noexcept
         {
             Impl& impl = *impl_;
-            const GlobalBufferID released = impl.registry.unregister_buffer(address);
-            if (!released.valid())
-                return;
 
             try
             {
-                Wire::BufferReleaseMessage release;
-                release.id = released;
+                const std::vector<GlobalBufferID> released = impl.buffers.unshare_retired();
+                if (released.empty())
+                    return;
 
                 std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);
-                for (const PeerID worker : workers)
-                    impl.send_control(worker, release);
+                for (const GlobalBufferID id : released)
+                {
+                    Wire::BufferReleaseMessage release;
+                    release.id = id;
+                    for (const PeerID worker : workers)
+                        impl.send_control(worker, release);
+                }
             }
             catch (const std::exception& error)
             {
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE for buffer {} was not sent: {}; the workers' "
-                             "cache budgets evict it",
-                             released.value, error.what());
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE was not sent: {}; the workers' "
+                             "cache budgets evict the buffers",
+                             error.what());
             }
             catch (...)
             {
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE for buffer {} was not sent: unknown exception; the "
-                             "workers' cache budgets evict it",
-                             released.value);
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE was not sent: unknown exception; the "
+                             "workers' cache budgets evict the buffers");
             }
         }
 

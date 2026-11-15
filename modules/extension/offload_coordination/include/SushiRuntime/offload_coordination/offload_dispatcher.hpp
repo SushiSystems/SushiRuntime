@@ -42,9 +42,8 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/transport/transport.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/cluster_load/placement_decision.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
@@ -83,7 +82,7 @@ namespace SushiRuntime
          * @brief Translates between graph nodes and the bricks: which node may leave, and how.
          *
          * It is the only brick that reads a node's buffer lists and writes its OffloadState.
-         * It owns no mutex and no thread; it calls the registry, the directory, the pending
+         * It owns no mutex and no thread; it calls the shared buffers, the directory, the pending
          * table and the transport one after another, each under that brick's own short lock.
          */
         class SUSHIRUNTIME_API OffloadDispatcher final
@@ -93,7 +92,7 @@ namespace SushiRuntime
                  * @brief Builds a dispatcher over bricks that outlive it.
                  * @param master The facts of the machine the master runs on; copied.
                  */
-                OffloadDispatcher(BufferRegistry& registry, WorkerDirectory& directory,
+                OffloadDispatcher(SharedBuffers& buffers, WorkerDirectory& directory,
                                   PendingTasks& pending, Transport& transport, HeldNodes& held,
                                   NodeFacts master);
 
@@ -127,7 +126,7 @@ namespace SushiRuntime
                  * @brief Bumps the buffers a locally finished node wrote and clears its attempt
                  *        count; the body of OffloadCoordinator::on_local_completion().
                  *
-                 * A node with live lists bumps the addresses in live_writes, not its baked
+                 * A node with live lists bumps the handles in live_writes, not its baked
                  * list. A node without an OffloadState costs one null check.
                  */
                 void complete_local(Internal::Graph::Node& node) noexcept;
@@ -143,15 +142,6 @@ namespace SushiRuntime
                  * @pre No node is offered yet; the sink outlives the dispatcher's calls.
                  */
                 void bind(Internal::Graph::OffloadSink& sink) noexcept;
-
-                /**
-                 * @brief Sets the resolver that turns a node's handles into the addresses the
-                 *        registry shares buffers by.
-                 * @param device_count Devices the resolver's handles may live on.
-                 * @pre No node is offered yet; the resolver outlives the dispatcher's calls. Until
-                 *      it is called no handle resolves, so every node stays local.
-                 */
-                void bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept;
 
                 /** @brief Returns the counters; reads atomics and takes no lock. */
                 [[nodiscard]] OffloadDispatcherStatistics statistics() const noexcept;
@@ -199,21 +189,8 @@ namespace SushiRuntime
                 /** @brief Counts one refused dispatch and returns false. */
                 [[nodiscard]] bool decline() noexcept;
 
-                /** @brief Returns the address the registry knows @p handle by, or null for none. */
-                [[nodiscard]] void* address_of(GlobalHandle handle) const noexcept;
-
-                /** @brief Writes the address of each handle of @p handles to the end of @p addresses. */
-                void append_addresses(const std::vector<GlobalHandle>& handles,
-                                      std::vector<void*>& addresses) const;
-
                 /// @brief Names and versions of the shared buffers.
-                BufferRegistry& registry_;
-
-                /// @brief Resolves a node's handles; null until bind_handles().
-                const HandleResolver* handles_ = nullptr;
-
-                /// @brief Devices handles_ may hold an instance on.
-                std::size_t device_count_ = 0;
+                SharedBuffers& buffers_;
 
                 /// @brief Picks the worker and counts its load.
                 WorkerDirectory& directory_;

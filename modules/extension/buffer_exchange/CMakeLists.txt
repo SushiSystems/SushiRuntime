@@ -7,5 +7,6 @@ sushiruntime_add_module(
     NAME buffer_exchange TIER extension INTERNAL
     SOURCES
         buffer_exchange.cpp
-        buffer_registry.cpp
-    DEPENDS core transport wire)
+        shared_buffers.cpp
+    DEPENDS core handle transport wire
+    PRIVATE_DEPENDS task)

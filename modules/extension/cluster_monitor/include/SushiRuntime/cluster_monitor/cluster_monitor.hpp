@@ -43,7 +43,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
@@ -103,7 +103,7 @@ namespace SushiRuntime
                  * @param clock The clock every pass and sleep reads; outlives the monitor.
                  */
                 ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
-                               HeldNodes& held, BufferRegistry& registry,
+                               HeldNodes& held, SharedBuffers& buffers,
                                BufferExchange& exchange, Transport& transport,
                                const ClusterMonitorOptions& options, const Clock& clock);
 
@@ -197,7 +197,7 @@ namespace SushiRuntime
                 HeldNodes& held_;
 
                 /// @brief Bumped for every task taken back.
-                BufferRegistry& registry_;
+                SharedBuffers& buffers_;
 
                 /// @brief Told to forget every task taken back.
                 BufferExchange& exchange_;

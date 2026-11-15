@@ -71,30 +71,30 @@ TEST_F(Medium_Cluster, ADetachedMasterReportsNoWorker)
     EXPECT_EQ(cluster.alive_workers(), 0u);
 }
 
-/** @brief Tests that a shared address gets a valid handle and bump_buffer() raises its version by one. */
-TEST_F(Medium_Cluster, ASharedAddressGetsAHandle)
+/** @brief Tests that a shared buffer gets a valid handle and bump_buffer() raises its version by one. */
+TEST_F(Medium_Cluster, ASharedBufferGetsAHandle)
 {
     InProcessFabric fabric;
     Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
     auto buffer = runtime().buffer<float>(16).value();
     cluster.share(buffer);
 
-    const std::optional<BufferHandle> handle = cluster.buffer_handle(buffer.data());
+    const std::optional<BufferHandle> handle = cluster.buffer_handle(buffer.handle());
     ASSERT_TRUE(handle.has_value());
     EXPECT_TRUE(handle->id.valid());
     EXPECT_EQ(handle->size_bytes, 16 * sizeof(float));
-    cluster.bump_buffer(buffer.data());
-    EXPECT_EQ(cluster.buffer_handle(buffer.data())->version, handle->version + 1);
+    cluster.bump_buffer(buffer.handle());
+    EXPECT_EQ(cluster.buffer_handle(buffer.handle())->version, handle->version + 1);
     cluster.detach();
 }
 
-/** @brief Tests that an address nobody shared has no handle. */
-TEST_F(Medium_Cluster, AnUnsharedAddressHasNoHandle)
+/** @brief Tests that a buffer nobody shared has no handle. */
+TEST_F(Medium_Cluster, AnUnsharedBufferHasNoHandle)
 {
     InProcessFabric fabric;
     Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
-    int unknown = 0;
-    EXPECT_FALSE(cluster.buffer_handle(&unknown).has_value());
+    auto unshared = runtime().buffer<float>(16).value();
+    EXPECT_FALSE(cluster.buffer_handle(unshared.handle()).has_value());
     cluster.detach();
 }
 

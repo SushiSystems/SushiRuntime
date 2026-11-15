@@ -36,7 +36,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
@@ -54,13 +54,13 @@ namespace SushiRuntime
         /**
          * @brief Returns tasks a removal of PendingTasks handed out to the scheduler.
          *
-         * Per task, in order: bump its outputs in the registry, forget its transfer progress,
+         * Per task, in order: bump its outputs in the shared buffers, forget its transfer progress,
          * lower its worker's inflight count, pass the node to OffloadSink::resubmit(). An
          * exception out of the sink is caught without a rethrow, logged, and the node released.
          * @return The number of tasks handled, for the redispatched counter.
          */
         SUSHIRUNTIME_API std::size_t resubmit_tasks(SushiRuntime::span<PendingTask> tasks,
-                                                    BufferRegistry& registry,
+                                                    SharedBuffers& buffers,
                                                     BufferExchange& exchange,
                                                     WorkerDirectory& directory,
                                                     Internal::Graph::OffloadSink& sink) noexcept;

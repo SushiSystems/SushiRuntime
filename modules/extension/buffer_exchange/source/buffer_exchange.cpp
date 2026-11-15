@@ -192,7 +192,7 @@ namespace SushiRuntime
             /**
              * @brief Produces the frames that answer one BUFFER_REQUEST.
              *
-             * It asks the registry for one chunk per call and keeps no address, so a buffer
+             * It asks the shared buffers for one chunk per call and keeps no address, so a buffer
              * released between two calls ends the stream with BUFFER_ABORT.
              */
             class PullSource final : public FrameSource
@@ -200,13 +200,13 @@ namespace SushiRuntime
                 public:
                     /**
                      * @brief Builds the source of one buffer version.
-                     * @param registry Outlives the source, as do the two counters.
+                     * @param buffers Outlives the source, as do the two counters.
                      * @param wanted The id and version asked for, with the buffer's size.
                      */
-                    PullSource(const BufferRegistry& registry, const BufferHandle& wanted,
+                    PullSource(const SharedBuffers& buffers, const BufferHandle& wanted,
                                std::uint32_t chunk_bytes, std::atomic<std::uint64_t>& chunks_sent,
                                std::atomic<std::uint64_t>& transfers_aborted)
-                        : registry_(registry), wanted_(wanted), chunk_bytes_(chunk_bytes),
+                        : buffers_(buffers), wanted_(wanted), chunk_bytes_(chunk_bytes),
                           chunks_sent_(chunks_sent), transfers_aborted_(transfers_aborted)
                     {
                         prefix_.reserve(Wire::BufferChunkMessage::K_PREFIX_BYTES);
@@ -237,7 +237,7 @@ namespace SushiRuntime
                         frame.payload.resize(prefix_.size() + length);
                         std::copy(prefix_.begin(), prefix_.end(), frame.payload.begin());
 
-                        const BufferAccessStatus status = registry_.read(
+                        const BufferAccessStatus status = buffers_.read(
                             wanted_.id, wanted_.version, offset_,
                             {frame.payload.data() + prefix_.size(), length});
                         if (status == BufferAccessStatus::Stale)
@@ -277,7 +277,7 @@ namespace SushiRuntime
                     }
 
                     /// @brief Copies each chunk; the source holds no address of the buffer.
-                    const BufferRegistry& registry_;
+                    const SharedBuffers& buffers_;
 
                     /// @brief The id and version asked for, and the buffer's size.
                     BufferHandle wanted_;
@@ -304,11 +304,11 @@ namespace SushiRuntime
             /**
              * @brief Returns why an output chunk is refused before any byte moves, or nothing.
              *
-             * A chunk at offset 0 is also compared with the size the registry holds; a later
+             * A chunk at offset 0 is also compared with the size SharedBuffers holds; a later
              * chunk is compared with its transfer's size by OutputTransferTable::advance().
              */
             [[nodiscard]] std::optional<ChunkStatus>
-            refusal_of(const BufferRegistry& registry, const Wire::BufferChunkMessage& chunk,
+            refusal_of(const SharedBuffers& buffers, const Wire::BufferChunkMessage& chunk,
                        bool last_chunk)
             {
                 if (chunk.purpose != Wire::ChunkPurpose::TaskOutput)
@@ -324,7 +324,7 @@ namespace SushiRuntime
                 if (chunk.offset != 0)
                     return std::nullopt;
 
-                const std::optional<BufferHandle> current = registry.lookup_by_id(chunk.handle.id);
+                const std::optional<BufferHandle> current = buffers.lookup_by_id(chunk.handle.id);
                 if (!current)
                     return ChunkStatus::Gone;
 
@@ -334,7 +334,7 @@ namespace SushiRuntime
                 return std::nullopt;
             }
 
-            /** @brief Returns the chunk status that reports a write the registry refused. */
+            /** @brief Returns the chunk status that reports a write SharedBuffers refused. */
             [[nodiscard]] ChunkStatus refused_write(BufferAccessStatus status) noexcept
             {
                 if (status == BufferAccessStatus::Stale)
@@ -345,8 +345,8 @@ namespace SushiRuntime
             }
         } // namespace
 
-        BufferExchange::BufferExchange(BufferRegistry& registry, std::uint32_t chunk_bytes)
-            : registry_(registry), chunk_bytes_(chunk_bytes),
+        BufferExchange::BufferExchange(SharedBuffers& buffers, std::uint32_t chunk_bytes)
+            : buffers_(buffers), chunk_bytes_(chunk_bytes),
               transfers_(std::make_unique<OutputTransferTable>())
         {
         }
@@ -356,7 +356,7 @@ namespace SushiRuntime
         std::unique_ptr<FrameSource> BufferExchange::serve_pull(GlobalBufferID id,
                                                                 std::uint32_t version)
         {
-            const std::optional<BufferHandle> current = registry_.lookup_by_id(id);
+            const std::optional<BufferHandle> current = buffers_.lookup_by_id(id);
 
             // A buffer that is gone has size 0: the first read() reports it and the stream aborts.
             BufferHandle wanted;
@@ -364,7 +364,7 @@ namespace SushiRuntime
             wanted.version = version;
             wanted.size_bytes = current ? current->size_bytes : 0;
 
-            return std::make_unique<PullSource>(registry_, wanted, chunk_bytes_, chunks_sent_,
+            return std::make_unique<PullSource>(buffers_, wanted, chunk_bytes_, chunks_sent_,
                                                 transfers_aborted_);
         }
 
@@ -375,7 +375,7 @@ namespace SushiRuntime
             const std::uint64_t task_id = chunk.task_id;
             const GlobalBufferID id = chunk.handle.id;
 
-            std::optional<ChunkStatus> refusal = refusal_of(registry_, chunk, last_chunk);
+            std::optional<ChunkStatus> refusal = refusal_of(buffers_, chunk, last_chunk);
             if (!refusal)
             {
                 OutputTransferTable::Step step;
@@ -396,7 +396,7 @@ namespace SushiRuntime
                     return progress;
 
                 const BufferAccessStatus written =
-                    registry_.write(id, chunk.handle.version, chunk.offset, chunk.data);
+                    buffers_.write(id, chunk.handle.version, chunk.offset, chunk.data);
                 if (written == BufferAccessStatus::Ok)
                 {
                     chunks_received_.fetch_add(1, std::memory_order_relaxed);

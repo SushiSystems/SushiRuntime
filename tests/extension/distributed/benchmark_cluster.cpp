@@ -62,6 +62,8 @@
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 
+#include "support/borrowed_allocation.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 using namespace SushiRuntime::Literals;
@@ -303,12 +305,14 @@ namespace
                 request.kind = Internal::Memory::USMKind::Shared;
                 request.bytes = bytes();
                 data_ = static_cast<float*>(memory_->allocate(request));
-                cluster.share(data_, bytes());
+                borrow_ = std::make_unique<TestSupport::BorrowedAllocation>(runtime, data_, bytes());
+                cluster.share(borrow_->handle(), bytes());
             }
 
-            /** @brief Releases the memory, which also removes it from the master's registry. */
+            /** @brief Drops the borrow, then releases the memory. */
             ~SharedFloats()
             {
+                borrow_.reset();
                 if (data_ != nullptr)
                     memory_->release(data_);
             }
@@ -319,7 +323,7 @@ namespace
             /** @brief Takes the memory of @p other and leaves it empty. */
             SharedFloats(SharedFloats&& other) noexcept
                 : memory_(other.memory_), count_(other.count_),
-                  data_(std::exchange(other.data_, nullptr))
+                  data_(std::exchange(other.data_, nullptr)), borrow_(std::move(other.borrow_))
             {
 
             }
@@ -330,6 +334,12 @@ namespace
             [[nodiscard]] float* data() const noexcept
             {
                 return data_;
+            }
+
+            /** @brief Returns the handle the runtime names the memory by. */
+            [[nodiscard]] GlobalHandle handle() const noexcept
+            {
+                return borrow_ != nullptr ? borrow_->handle() : GlobalHandle::null();
             }
 
             /** @brief Returns the number of floats. */
@@ -359,6 +369,9 @@ namespace
 
             /// @brief The memory; null once moved from.
             float* data_ = nullptr;
+
+            /// @brief The borrow that gives the memory its handle; null once moved from.
+            std::unique_ptr<TestSupport::BorrowedAllocation> borrow_;
     };
 
     /** @brief Holds the buffers of a set of independent increment tasks, one pair per task. */
@@ -400,7 +413,7 @@ namespace
                         input[index] = base + static_cast<float>(index % K_PATTERN_PERIOD);
                         output[index] = -1.0f;
                     }
-                    rig_.cluster().bump_buffer(input);
+                    rig_.cluster().bump_buffer(inputs_[task].handle());
                 }
             }
 

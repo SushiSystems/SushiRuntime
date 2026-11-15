@@ -42,7 +42,7 @@
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
 namespace SushiRuntime
 {
@@ -57,7 +57,7 @@ namespace SushiRuntime
         {
             Applied,   /**< The bytes are in the buffer; more chunks are expected. */
             Completed, /**< The bytes are in the buffer and the transfer is whole. */
-            Stale,     /**< The registry is not at the chunk's version; nothing was written. */
+            Stale,     /**< The shared buffer is not at the chunk's version; nothing was written. */
             Gone,      /**< The buffer is not shared any more; nothing was written. */
             Gap,       /**< The offset is neither 0 nor the next expected; transfer discarded. */
             Malformed, /**< Wrong purpose, a size that differs from the buffer's, or overflow. */
@@ -75,22 +75,22 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Moves buffer bytes between the registry and frames, one chunk at a time.
+         * @brief Moves buffer bytes between the shared buffers and frames, one chunk at a time.
          *
          * Every transfer ends with a chunk that carries the last-chunk flag; a buffer of 0
          * bytes is one such chunk with no data. The exchange owns one mutex, over the progress
-         * of incoming transfers, and does not hold it while it calls the registry. It calls no
-         * transport. It outlives the sources it made, which read its registry and counters.
+         * of incoming transfers, and does not hold it while it calls SharedBuffers. It calls no
+         * transport. It outlives the sources it made, which read its shared buffers and counters.
          */
         class SUSHIRUNTIME_API BufferExchange final
         {
             public:
                 /**
-                 * @brief Builds an exchange over a registry.
-                 * @param registry Outlives the exchange and every source it made.
+                 * @brief Builds an exchange over the shared buffers.
+                 * @param buffers Outlives the exchange and every source it made.
                  * @param chunk_bytes Data bytes per chunk, within the limits of cluster.hpp.
                  */
-                BufferExchange(BufferRegistry& registry, std::uint32_t chunk_bytes);
+                BufferExchange(SharedBuffers& buffers, std::uint32_t chunk_bytes);
 
                 /** @brief Destroys the exchange. */
                 ~BufferExchange();
@@ -103,7 +103,7 @@ namespace SushiRuntime
                 /**
                  * @brief Makes the source that answers one BUFFER_REQUEST, for send_stream().
                  *
-                 * Each next() writes the 37-byte chunk prefix, then lets BufferRegistry::read()
+                 * Each next() writes the 37-byte chunk prefix, then lets SharedBuffers::read()
                  * copy one chunk straight behind it. When read() reports Stale or Gone the
                  * source's final frame is BUFFER_ABORT with that reason.
                  * @return Never null.
@@ -112,7 +112,7 @@ namespace SushiRuntime
                                                                       std::uint32_t version);
 
                 /**
-                 * @brief Writes one task-output chunk in place through BufferRegistry::write().
+                 * @brief Writes one task-output chunk in place through SharedBuffers::write().
                  *
                  * Accepts offset 0 or the next expected offset of that task and buffer; a gap
                  * or a repeat discards the transfer's progress.
@@ -138,11 +138,11 @@ namespace SushiRuntime
                 [[nodiscard]] BufferExchangeStatistics statistics() const noexcept;
 
             private:
-                /// @brief Guards the progress of incoming transfers; free during a registry call.
+                /// @brief Guards the progress of incoming transfers; free during a SharedBuffers call.
                 mutable std::mutex mutex_;
 
                 /// @brief Source and destination of every copy.
-                BufferRegistry& registry_;
+                SharedBuffers& buffers_;
 
                 /// @brief Data bytes per chunk.
                 std::uint32_t chunk_bytes_;

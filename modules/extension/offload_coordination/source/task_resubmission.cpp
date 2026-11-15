@@ -100,13 +100,13 @@ namespace SushiRuntime
         } // namespace
 
         std::size_t resubmit_tasks(SushiRuntime::span<PendingTask> tasks,
-                                   BufferRegistry& registry, BufferExchange& exchange,
+                                   SharedBuffers& buffers, BufferExchange& exchange,
                                    WorkerDirectory& directory, Internal::Graph::OffloadSink& sink) noexcept
         {
             for (PendingTask& task : tasks)
             {
                 // Chunks of the task still in flight meet the bumped version and are refused.
-                registry.bump(
+                buffers.bump(
                     SushiRuntime::span<BufferHandle>(task.outputs.data(), task.outputs.size()));
                 exchange.forget_task(task.task_id);
                 directory.release_inflight(task.worker);

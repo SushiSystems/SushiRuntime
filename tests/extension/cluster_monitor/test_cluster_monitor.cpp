@@ -46,6 +46,7 @@
 #include <SushiRuntime/task/refusing_offload_sink.hpp>
 
 #include "support/executor_fabric.hpp"
+#include "support/shared_buffer_rig.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -72,9 +73,9 @@ namespace
             /** @brief Builds the bricks with the default timings: liveness 5 s, handshake 5 s. */
             Small_ClusterMonitor()
                 : directory_(SushiRuntime::span<const std::uint8_t>(), std::make_shared<LeastLoadedOffloadPolicy>()),
-                  exchange_(registry_, 1024),
+                  exchange_(rig_.buffers(), 1024),
                   clock_(K_START_NS),
-                  monitor_(directory_, pending_, held_, registry_, exchange_, *fabric_.master(),
+                  monitor_(directory_, pending_, held_, rig_.buffers(), exchange_, *fabric_.master(),
                            ClusterMonitorOptions{}, clock_)
             {
                 fabric_.start_master();
@@ -112,7 +113,7 @@ namespace
             WorkerDirectory directory_;           /**< Holds the sessions and handshake limits. */
             PendingTasks pending_;                /**< Holds the tasks out on a worker. */
             HeldNodes held_;                      /**< Holds the nodes a rule keeps back. */
-            BufferRegistry registry_;             /**< Holds the shared buffers' versions. */
+            TestSupport::SharedBufferRig rig_;    /**< Holds the shared buffers' versions. */
             BufferExchange exchange_;             /**< Forgets the tasks taken back. */
             TestSupport::ExecutorFabric fabric_;  /**< Joins the monitor to a worker end that records. */
             RefusingOffloadSink sink_;            /**< Counts the nodes handed back. */
@@ -194,8 +195,8 @@ TEST(Medium_ClusterMonitorThread, TheThreadClosesAPeerPastTheHandshakeLimitAndSt
     WorkerDirectory directory(SushiRuntime::span<const std::uint8_t>(), std::make_shared<LeastLoadedOffloadPolicy>());
     PendingTasks pending;
     HeldNodes held;
-    BufferRegistry registry;
-    BufferExchange exchange(registry, 1024);
+    TestSupport::SharedBufferRig rig;
+    BufferExchange exchange(rig.buffers(), 1024);
     InProcessFabric fabric;
     RecordingTransportEvents master_events;
     RecordingTransportEvents worker_events;
@@ -209,7 +210,7 @@ TEST(Medium_ClusterMonitorThread, TheThreadClosesAPeerPastTheHandshakeLimitAndSt
     ClusterMonitorOptions options;
     options.period = milliseconds(1);
     options.handshake_timeout = milliseconds(5);
-    ClusterMonitor monitor(directory, pending, held, registry, exchange, *master, options, clock);
+    ClusterMonitor monitor(directory, pending, held, rig.buffers(), exchange, *master, options, clock);
     directory.add_peer(master_events.connected()[0], "peer", std::chrono::steady_clock::now());
 
     monitor.start(sink);

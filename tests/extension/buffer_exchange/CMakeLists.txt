@@ -7,4 +7,5 @@ sushiruntime_add_module_tests(
     MODULE buffer_exchange
     SOURCES
         test_buffer_exchange.cpp
-        test_buffer_registry.cpp)
+        test_shared_buffers.cpp
+        test_buffer_wire_id.cpp)

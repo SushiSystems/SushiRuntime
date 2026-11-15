@@ -149,19 +149,20 @@ counters keep their totals.
 
 ### bump_buffer and buffer_handle
 
-Both read the master's buffer registry by USM address. Offload bumps versions itself at dispatch and
+Both name a buffer by its `GlobalHandle` and read the master's shared buffers. Offload bumps versions itself at dispatch and
 at completion; bump_buffer() is for a write the runtime did not see, and for tests that need a
 stale version.
 
 ### share
 
-A buffer enters the registry through Cluster::share(). It is opt-in: only a shared buffer can
+A buffer enters the shared buffers through Cluster::share(). It is opt-in: only a shared buffer can
 cross to a worker, and the master stays authoritative for it. share(buffer) registers the
 allocation of a `Buffer` and share(state) both fields of a `State`; the two fields keep their
 handles for the State's lifetime, and the dispatcher follows which one is read at each step from
 the live lists of the rule's node. An empty handle is skipped. A handle that owns memory and is
 device-resident stops the process, because the master reads the allocation on the host, so the
-handle must be Shared or Host. share(address, bytes) registers USM the caller owns.
+handle must be Shared or Host. share(handle, bytes) shares a buffer by a handle the caller holds,
+such as a borrowed one.
 
 Each handle form has two overloads to make chaining safe. The lvalue overload returns its
 argument. The rvalue overload moves a temporary into the caller, so the allocation survives the
@@ -249,7 +250,7 @@ lifetime.
 
 | Header | Class | Owns | Runs on |
 | --- | --- | --- | --- |
-| `buffer_exchange/buffer_registry.hpp` | `BufferRegistry` | ids, versions, the only copies of master buffer bytes | caller's thread; `read()` on a peer writer, `write()` on a peer reader |
+| `buffer_exchange/shared_buffers.hpp` | `SharedBuffers` | versions of the shared buffers by handle; the only copies of master buffer bytes | caller's thread; `read()` on a peer writer, `write()` on a peer reader |
 | `offload_coordination/worker_directory.hpp` | `WorkerDirectory` | one session per peer: handshake state, kernels, liveness, inflight count, alive count | caller's thread |
 | `pending_tasks/pending_tasks.hpp` | `PendingTasks` | the task table and every offloaded node reference | caller's thread |
 | `buffer_exchange/buffer_exchange.hpp` | `BufferExchange` | the pull sources it makes, progress of incoming output transfers | reader thread; its sources on a writer thread |
@@ -364,7 +365,7 @@ to that peer fails in `send()` and is undone by `try_offload()`.
 `statistics()` reads atomics only. `offloaded` is the dispatcher's count of dispatches whose
 `TASK_DISPATCH` frame a worker's queue took. `redispatched` is the monitor's count plus the tasks
 the handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
-registry refused plus the chunks `expects_output()` refused. `cluster_statistics()` also asks the
+shared buffers refused plus the chunks `expects_output()` refused. `cluster_statistics()` also asks the
 transport for its byte counts, and `TCPTransport::statistics()` takes the peer table's mutex for
 that.
 

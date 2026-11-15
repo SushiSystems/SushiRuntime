@@ -9,8 +9,8 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_buffer_exchange.cpp
 
-The tests drive `BufferExchange` over a `BufferRegistry` with no socket and no thread, so every test is
-small. Buffers are host vectors registered by pointer, each followed by one guard byte that a write past
+The tests drive `BufferExchange` over a `SharedBuffers` with no socket and no thread, so every test is
+small. Buffers are host vectors a `SharedBufferRig` places by address, each followed by one guard byte that a write past
 the end would change. A pull is read the way a peer's writer reads it: one `OutboundFrame`, reused for
 every `next()`. Every exchange uses the smallest chunk, 4 KiB.
 
@@ -31,7 +31,7 @@ Pins the second half of the output fence (finding DIST-03).
 | Test | What it proves |
 | --- | --- |
 | `Small_BufferExchangeForgedVersion.ChunkIsStaleAndWritesNothing` | A chunk one version above the buffer's, and one a version below, are each `Stale` and change no byte. |
-| `ABumpWhileAChunkIsInFlightMakesItStale` | After an honest first chunk the registry's version is raised, as a reaper does before it resubmits, and the task's second chunk is `Stale`. |
+| `ABumpWhileAChunkIsInFlightMakesItStale` | After an honest first chunk the shared buffer's version is raised, as a reaper does before it resubmits, and the task's second chunk is `Stale`. |
 | `Small_BufferExchangeMalformedChunk.IsRefusedBeforeAnyWrite` | A chunk with the pull-reply purpose, one that declares a size other than the buffer's, one that runs past the end, and one flagged last before the end are each `Malformed`. The buffer keeps its bytes. |
 
 ### Transfer progress
@@ -48,34 +48,46 @@ Pins the second half of the output fence (finding DIST-03).
 
 | Test | What it proves |
 | --- | --- |
-| `ReleasingABufferDuringAStreamAbortsItWithGone` | Finding N1. The buffer is unregistered and its allocation freed between two `next()` calls. The stream's next frame is `BUFFER_ABORT` with reason `Gone`, and it is the last. The registry copied nothing for it, so an ASan run reports no read of the freed allocation; without ASan the test only proves the abort. |
+| `ReleasingABufferDuringAStreamAbortsItWithGone` | Finding N1. The buffer is unshared and its allocation freed between two `next()` calls. The stream's next frame is `BUFFER_ABORT` with reason `Gone`, and it is the last. `SharedBuffers` copied nothing for it, so an ASan run reports no read of the freed allocation; without ASan the test only proves the abort. |
 | `APullOfAnUnknownBufferIsRefusedWithGone` | A pull of an id that was never shared is one `BUFFER_ABORT` frame. |
 | `ABumpDuringAStreamAbortsItWithStale` | The buffer's version is raised between two `next()` calls: the stream ends with `BUFFER_ABORT`, reason `Stale`. |
 | `APullNamingAVersionAlreadyLeftGetsTheAbortAlone` | A request that names a version the buffer has already left gets that frame alone. |
 
-## test_buffer_registry.cpp
+## test_shared_buffers.cpp
 
-The tests cover `BufferRegistry` alone, on host vectors registered by pointer, with one thread, so every
-test is small. No test here proves that `unregister_buffer` waits for a copy in progress: that needs a
-way to stop a thread inside `read()`, which the registry does not offer.
+The tests cover `SharedBuffers` alone, on host vectors that a `SharedBufferRig` places in a handle table
+by address, with one thread, so every test is small. No test here proves that `unshare` waits for a copy
+in progress: that needs a way to stop a thread inside `read()`, which `SharedBuffers` does not offer.
 
 | Test | What it proves |
 | --- | --- |
-| `RegisteringASharedAddressAgainKeepsItsHandle` | Registering the same address again returns the same id and the same version. |
-| `DistinctAddressesGetDistinctIDs` | A second address gets an id of its own and its own size. |
-| `BumpRaisesTheVersionOfALiveHandleAndLeavesAGoneOne` | `bump` writes the raised version into each live handle and leaves a handle whose id is gone as it was. |
-| `BumpAddressesRaisesTheVersionOfASharedAddress` | `bump_addresses` raises the version of a shared address and ignores an address that is not shared. |
-| `ResolveMapsAddressesToHandlesInTheirOrder` | `resolve` returns handles in the order of the addresses. |
-| `ResolveRefusesAnAddressThatIsNotShared` | `resolve` returns false when one address is not shared. |
-| `RefreshRewritesEachHandleToTheCurrentVersion` | `refresh` rewrites each handle's version. |
-| `RefreshRefusesAHandleWhoseIDWasUnregistered` | `refresh` returns false once an id has been unregistered. |
+| `SharingAHandleAgainKeepsItsHandle` | Sharing the same handle again returns the same id and the same version. |
+| `DistinctHandlesGetDistinctIDs` | A second handle gets an id of its own and its own size. |
+| `BumpRaisesTheVersionOfALiveHandleAndLeavesAGoneOne` | `bump` writes the raised version into each live wire handle and leaves one whose id is gone as it was. |
+| `BumpHandlesRaisesTheVersionOfASharedHandle` | `bump_handles` raises the version of a shared handle and ignores one that is not shared. |
+| `ResolveMapsHandlesToWireHandlesInTheirOrder` | `resolve` returns wire handles in the order of the handles. |
+| `ResolveRefusesAHandleThatIsNotShared` | `resolve` returns false when one handle is not shared. |
+| `RefreshRewritesEachHandleToTheCurrentVersion` | `refresh` rewrites each wire handle's version. |
+| `RefreshRefusesAHandleWhoseIDWasUnregistered` | `refresh` returns false once an id has been unshared. |
 | `ReadCopiesExactlyTheRequestedChunk` | A 16-byte read at offset 10 lands in the middle of a guarded destination; the guard bytes on both sides stay. |
 | `ReadEndingOnTheLastByteSucceeds` | A read that ends on the buffer's last byte succeeds. |
 | `ReadOfNothingAtTheEndOnlyChecks` | A 0-byte read at the end succeeds. |
-| `Small_BufferRegistryRefusedRead.ReturnsItsStatusAndCopiesNothing` | One byte past the end, an offset beyond the size, and an offset of 2^64 - 1 are `OutOfRange`; another version is `Stale`; an unknown id is `Gone`. The destination keeps its guard bytes. |
-| `Small_BufferRegistryRefusedWrite.ReturnsItsStatusAndWritesNothing` | After `bump`, a write at the version the task was dispatched with is `Stale`, as is one at a version the buffer has not reached; a write past the end is `OutOfRange`. None changes a byte. |
+| `Small_SharedBuffersRefusedRead.ReturnsItsStatusAndCopiesNothing` | One byte past the end, an offset beyond the size, and an offset of 2^64 - 1 are `OutOfRange`; another version is `Stale`; an unknown id is `Gone`. The destination keeps its guard bytes. |
+| `Small_SharedBuffersRefusedWrite.ReturnsItsStatusAndWritesNothing` | After `bump`, a write at the version the task was dispatched with is `Stale`, as is one at a version the buffer has not reached; a write past the end is `OutOfRange`. None changes a byte. |
 | `WriteAtTheCurrentVersionLandsAtItsOffsetOnly` | A write at the current version lands at its offset and leaves the bytes around it. |
 | `WriteLeavesTheVersionAsItWas` | A landed write does not raise the buffer's version. |
-| `UnregisterReturnsTheIDOfASharedAddressOnce` | `unregister_buffer` returns the id of a shared address, and an invalid id for an address that was never shared or was already released. |
-| `AnUnregisteredBufferIsGone` | Lookups by address and by id find nothing, and `read` and `write` report `Gone`. |
-| `AnAddressSharedAgainAfterReleaseIsANewBuffer` | The same address registered again gets a new id and starts at version 1. |
+| `UnshareReturnsTheIDOfASharedHandleOnce` | `unshare` returns the id of a shared handle, and an invalid id for one that was never shared or was already released. |
+| `AnUnregisteredBufferIsGone` | Lookups by handle and by id find nothing, and `read` and `write` report `Gone`. |
+| `AHandleSharedAgainAfterUnshareStartsAtVersionOne` | A handle shared again after `unshare` starts at version 1. |
+| `TheNullHandleIsNeverShared` | Sharing the null handle gives an invalid id and a lookup finds nothing. |
+| `UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRetired` | `unshare_retired` drops the buffer of a retired handle, returns its id and keeps the others. |
+| `ABufferWhoseInstanceIsGoneIsGoneToAReader` | A buffer whose handle was retired reads as `Gone` and copies nothing. |
+
+## test_buffer_wire_id.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `TheSameHandleGivesTheSameID` | `wire_id_of` is a pure function of the handle. |
+| `ASlotMintedAgainGivesANewID` | The same slot at a new generation gets a new id. |
+| `TwoSlotsGiveTwoIDs` | Two slots of one generation get two ids. |
+| `ALiveHandleGivesAValidIDAndTheNullHandleDoesNot` | A live handle gets a valid id; the null handle gets the invalid one. |

@@ -47,6 +47,7 @@
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 
@@ -209,7 +210,7 @@ namespace SushiRuntime
                 template <typename T>
                 Buffer<T>& share(Buffer<T>& buffer)
                 {
-                    share_handle("Cluster::share(buffer)", buffer.data(),
+                    share_handle("Cluster::share(buffer)", buffer.handle(),
                                  buffer.size() * sizeof(T), buffer.residency(),
                                  buffer.is_host_accessible());
                     return buffer;
@@ -239,9 +240,9 @@ namespace SushiRuntime
                 State<T>& share(State<T>& state)
                 {
                     const std::size_t bytes = state.size() * sizeof(T);
-                    share_handle("Cluster::share(state)", state.current(), bytes,
+                    share_handle("Cluster::share(state)", state.current_handle(), bytes,
                                  state.residency(), state.is_host_accessible());
-                    share_handle("Cluster::share(state)", state.next(), bytes,
+                    share_handle("Cluster::share(state)", state.next_handle(), bytes,
                                  state.residency(), state.is_host_accessible());
                     return state;
                 }
@@ -259,37 +260,37 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Makes a USM allocation known to the workers; an address shared again
-                 *        stays one allocation to them.
-                 * @param address Base of a live allocation of at least @p bytes that the host
-                 *        can address.
+                 * @brief Makes a buffer known to the workers by its handle; a handle shared
+                 *        again stays one buffer to them.
+                 * @param handle A live handle whose instance is at least @p bytes long and
+                 *        which the host can address.
                  */
-                void share(void* address, std::size_t bytes);
+                void share(GlobalHandle handle, std::size_t bytes);
 
-                /** @brief Advances the version of the buffer shared at an address, if any. */
-                void bump_buffer(void* address);
+                /** @brief Advances the version of the shared buffer a handle names, if any. */
+                void bump_buffer(GlobalHandle handle);
 
                 /**
-                 * @brief Returns the current handle of the buffer shared at an address.
-                 * @return Nothing when the address was never shared or has been released.
+                 * @brief Returns the current wire handle of the shared buffer a handle names.
+                 * @return Nothing when the handle was never shared or has been released.
                  */
-                [[nodiscard]] std::optional<BufferHandle> buffer_handle(void* address) const;
+                [[nodiscard]] std::optional<BufferHandle> buffer_handle(GlobalHandle handle) const;
 
             private:
                 struct State;
 
                 /**
                  * @brief Shares the allocation of a handle after checking the host can
-                 *        address it; does nothing for a null address.
+                 *        address it; does nothing for a null handle.
                  * @param call Names the public call in the message of a failed check.
                  */
-                void share_handle(const char* call, void* address, std::size_t bytes,
+                void share_handle(const char* call, GlobalHandle handle, std::size_t bytes,
                                   Residency residency, bool is_host_accessible);
 
                 /** @brief Wraps the state attach() built. */
                 explicit Cluster(std::shared_ptr<State> state) noexcept;
 
-                /** @brief The registry and the master; shared by every copy of the handle. */
+                /** @brief The shared buffers and the master; shared by every copy of the handle. */
                 std::shared_ptr<State> state_;
         };
 

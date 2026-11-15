@@ -171,7 +171,7 @@ namespace OffloadDispatcherTests
         }
 
         /**
-         * @brief Builds a dispatcher over a registry, a directory with one worker, a pending
+         * @brief Builds a dispatcher over the shared buffers, a directory with one worker, a pending
          *        table and the master endpoint of an in-process fabric, and restores the
          *        logger a test changed.
          *
@@ -209,9 +209,8 @@ namespace OffloadDispatcherTests
                     ASSERT_TRUE(master_events_.wait_for_connections(1, K_NO_WAIT));
                     worker_peer_ = master_events_.connected().front();
                     register_worker(worker_peer_, K_WORKER_NAME);
-                    registry_.register_buffer(first_.data(), sizeof(Storage));
-                    registry_.register_buffer(second_.data(), sizeof(Storage));
-                    dispatcher_.bind_handles(handles_.resolver(), 1);
+                    buffers_.share(handles_.place(first_.data()), sizeof(Storage));
+                    buffers_.share(handles_.place(second_.data()), sizeof(Storage));
                 }
 
                 /** @brief Puts the default sink and the saved level back, and stops the endpoints. */
@@ -370,10 +369,11 @@ namespace OffloadDispatcherTests
                         }));
                 }
 
-                /** @brief Returns the version the registry holds for an address. */
-                std::uint32_t version_of(void* address) const
+                /** @brief Returns the version the shared buffers hold for the buffer at an address. */
+                std::uint32_t version_of(void* address)
                 {
-                    const std::optional<BufferHandle> handle = registry_.lookup(address);
+                    const std::optional<BufferHandle> handle =
+                        buffers_.lookup(handles_.place(address));
                     EXPECT_TRUE(handle.has_value());
                     return handle.has_value() ? handle->version : 0;
                 }
@@ -451,11 +451,11 @@ namespace OffloadDispatcherTests
                 /// @brief The master's name for the second worker's connection.
                 PeerID second_peer_;
 
-                /// @brief The registry the dispatcher reads handles from.
-                BufferRegistry registry_;
-
                 /// @brief Gives each buffer a handle that resolves to its address on device 0.
                 TestSupport::HandleTable handles_;
+
+                /// @brief The shared buffers the dispatcher reads handles from.
+                SharedBuffers buffers_{handles_.resolver(), 1};
 
                 /// @brief The policy the directory asks.
                 std::shared_ptr<InMemoryOffloadPolicy> policy_ =
@@ -472,7 +472,7 @@ namespace OffloadDispatcherTests
 
                 /// @brief The dispatcher under test, on a master named after no rule.
                 OffloadDispatcher dispatcher_{
-                    registry_, directory_, pending_,
+                    buffers_, directory_, pending_,
                     *master_,  held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
 
                 /// @brief The WARNs capture_warnings() collected.
@@ -558,7 +558,7 @@ namespace OffloadDispatcherTests
         EXPECT_EQ(counters.declined, 1u);
         EXPECT_EQ(counters.send_queue_full, 1u);
 
-        // The dispatch frame named the bumped version, so the registry keeps it.
+        // The dispatch frame named the bumped version, so the shared buffers keep it.
         EXPECT_EQ(version_of(second_.data()), output_version + 1);
         EXPECT_EQ(node->offload_state()->attempts.load(), 1u);
     }
@@ -598,8 +598,8 @@ namespace OffloadDispatcherTests
         ASSERT_TRUE(state.offloadable);
         EXPECT_EQ(state.payload, nullptr);
 
-        const GlobalBufferID first_id = registry_.lookup(first_.data())->id;
-        const GlobalBufferID second_id = registry_.lookup(second_.data())->id;
+        const GlobalBufferID first_id = buffers_.lookup(handles_.place(first_.data()))->id;
+        const GlobalBufferID second_id = buffers_.lookup(handles_.place(second_.data()))->id;
 
         ASSERT_TRUE(dispatcher_.try_offload(*node));
         ASSERT_EQ(offered().size(), 1u);

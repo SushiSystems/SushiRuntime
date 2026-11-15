@@ -45,7 +45,7 @@
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/transport/transport.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
 
 namespace SushiRuntime
@@ -78,13 +78,13 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Builds the bricks; nothing runs until start().
-                 * @param registry Outlives the coordinator; Cluster::State owns both.
+                 * @param buffers Outlives the coordinator; Cluster::State owns both.
                  * @param transport A master-side transport that was never started; not null.
                  * @param options Moved in; the secret stays here for the directory to read.
                  * @param session_id Names this master to its workers; drawn at random.
                  * @param master This machine's facts; copied.
                  */
-                DistributedCoordinator(BufferRegistry& registry,
+                DistributedCoordinator(SharedBuffers& buffers,
                                        std::shared_ptr<Transport> transport,
                                        ClusterOptions options, std::uint64_t session_id,
                                        NodeFacts master);
@@ -102,13 +102,6 @@ namespace SushiRuntime
                  * @pre start() has not been called.
                  */
                 void bind(Internal::Graph::OffloadSink& sink) override;
-
-                /**
-                 * @brief Sets the resolver that turns node handles into shared addresses.
-                 * @param device_count Devices the resolver's handles may live on.
-                 * @pre start() has not been called; the resolver outlives the coordinator's calls.
-                 */
-                void bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept;
 
                 /**
                  * @brief Starts the transport, then the monitor.
@@ -140,8 +133,8 @@ namespace SushiRuntime
                 /** @brief Forwards to OffloadDispatcher::complete_local(). */
                 void on_local_completion(Internal::Graph::Node& node) noexcept override;
 
-                /** @brief Shares an allocation through BufferRegistry::register_buffer(). */
-                void share(void* address, std::size_t bytes);
+                /** @brief Shares a buffer through SharedBuffers::share(). */
+                void share(GlobalHandle handle, std::size_t bytes);
 
                 /**
                  * @brief Returns the four counters and the alive worker count.
@@ -151,9 +144,11 @@ namespace SushiRuntime
                 [[nodiscard]] CoordinatorStatistics statistics() const noexcept;
 
                 /**
-                 * @brief Unshares a released address and tells each worker to drop the buffer.
+                 * @brief Unshares each buffer whose handle was retired and tells each worker
+                 *        to drop it.
                  *
-                 * BUFFER_RELEASE goes out as a control frame per alive worker; a failure to
+                 * The address is only the signal that memory was released; the buffers are named
+                 * by their handles. BUFFER_RELEASE goes out as a control frame per alive worker; a failure to
                  * queue one is swallowed, since the worker's budget evicts the buffer later.
                  */
                 void on_release(void* address) noexcept override;

@@ -53,7 +53,7 @@
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
-#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
 #include "distributed_coordinator.hpp"
 
@@ -152,17 +152,19 @@ namespace SushiRuntime
         } // namespace
 
         /**
-         * @brief Holds one master: its buffer registry, its coordinator and where it is installed.
+         * @brief Holds one master: its shared buffers, its coordinator and where it is installed.
          * @see modules/extension/distributed/README.md
          */
         struct Cluster::State
         {
             class Attachment;
 
-            /** @brief Builds the registry, then the coordinator that reads it. */
-            State(std::shared_ptr<Transport> transport, ClusterOptions options,
+            /** @brief Builds the shared buffers, then the coordinator that reads them. */
+            State(const HandleResolver& resolver, std::size_t device_count,
+                  std::shared_ptr<Transport> transport, ClusterOptions options,
                   std::uint64_t session_id, NodeFacts master)
-                : coordinator(buffers, std::move(transport), std::move(options), session_id,
+                : buffers(resolver, device_count),
+                  coordinator(buffers, std::move(transport), std::move(options), session_id,
                               std::move(master))
             {
 
@@ -173,8 +175,8 @@ namespace SushiRuntime
             State(State&&) = delete;
             State& operator=(State&&) = delete;
 
-            /** @brief Master-side buffer ids and versions; declared first, destroyed last. */
-            BufferRegistry buffers;
+            /** @brief Master-side buffer versions; declared first, destroyed last. */
+            SharedBuffers buffers;
 
             /** @brief The master; it reads buffers until its destructor returns. */
             DistributedCoordinator coordinator;
@@ -240,12 +242,12 @@ namespace SushiRuntime
             if (!session_id)
                 return make_error(std::move(session_id.error()));
 
-            auto state = std::make_shared<State>(std::move(transport), std::move(options),
+            auto state = std::make_shared<State>(context.handles(), context.devices().count(),
+                                                 std::move(transport), std::move(options),
                                                  *session_id, runtime.topology());
 
             // The new master starts before the installed one is touched, so a failure costs nothing.
             state->coordinator.bind(context.offload_sink());
-            state->coordinator.bind_handles(context.handles(), context.devices().count());
             const TransportResult started = state->coordinator.start();
             if (!started.is_ok())
             {
@@ -342,33 +344,32 @@ namespace SushiRuntime
             return state_->coordinator.supports(op);
         }
 
-        void Cluster::share(void* address, std::size_t bytes)
+        void Cluster::share(GlobalHandle handle, std::size_t bytes)
         {
-            state_->coordinator.share(address, bytes);
+            state_->coordinator.share(handle, bytes);
         }
 
-        void Cluster::share_handle(const char* call, void* address, std::size_t bytes,
+        void Cluster::share_handle(const char* call, GlobalHandle handle, std::size_t bytes,
                                    Residency residency, bool is_host_accessible)
         {
-            if (address == nullptr)
+            if (handle.is_null())
                 return;
             SR_VERIFY(is_host_accessible,
                       (std::string(call) + ": the handle has " + residency_name(residency) +
                        " residency, and the host cannot address it; allocate the handle with a "
                        "host-accessible residency, Residency::Shared or Residency::Host.")
                           .c_str());
-            share(address, bytes);
+            share(handle, bytes);
         }
 
-        void Cluster::bump_buffer(void* address)
+        void Cluster::bump_buffer(GlobalHandle handle)
         {
-            void* const addresses[] = {address};
-            state_->buffers.bump_addresses(SushiRuntime::span<void* const>(addresses, 1));
+            state_->buffers.bump_handles(SushiRuntime::span<const GlobalHandle>(&handle, 1));
         }
 
-        std::optional<BufferHandle> Cluster::buffer_handle(void* address) const
+        std::optional<BufferHandle> Cluster::buffer_handle(GlobalHandle handle) const
         {
-            return state_->buffers.lookup(address);
+            return state_->buffers.lookup(handle);
         }
 
     } // namespace Distributed
