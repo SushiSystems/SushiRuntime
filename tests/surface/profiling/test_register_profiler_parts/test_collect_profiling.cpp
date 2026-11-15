@@ -145,13 +145,13 @@ TEST_F(Small_CollectProfiling, TheTableCarriesTheOperationAndTheCostTheCallerSta
     ASSERT_NE(load, nullptr);
     EXPECT_EQ(load->operation.value, ("pipeline.load"_op).value);
     ASSERT_TRUE(load->cost.has_value());
-    EXPECT_EQ(load->cost->flops, ObservedPipeline::K_ELEMENTS);
+    EXPECT_EQ(load->cost->operations, ObservedPipeline::K_ELEMENTS);
     EXPECT_EQ(load->cost->dtype, NodeDType::F32);
     const NodeTableRow* scale = observation.table->find(ObserverTests::K_SCALE);
     ASSERT_NE(scale, nullptr);
-    ASSERT_TRUE(scale->cost.has_value()) << "a data-movement node states zero flops and real bytes";
-    EXPECT_EQ(scale->cost->flops, 0u);
-    EXPECT_GT(scale->cost->bytes, 0u);
+    ASSERT_TRUE(scale->cost.has_value()) << "a data-movement node states zero operations and real bytes";
+    EXPECT_EQ(scale->cost->operations, 0u);
+    EXPECT_GT(scale->cost->moved_bytes(), 0u);
     const NodeTableRow* store = observation.table->find(ObserverTests::K_STORE);
     ASSERT_NE(store, nullptr);
     EXPECT_FALSE(store->cost.has_value());

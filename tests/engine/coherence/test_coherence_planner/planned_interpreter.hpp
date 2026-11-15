@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -77,6 +78,12 @@ namespace SushiRuntime
                 {
                     --held_;
                     std::free(address);
+                }
+
+                /** @brief Names every instance device memory, so the planner frees what it allocated. */
+                [[nodiscard]] std::optional<Memory::USMKind> kind_of(MemorySpaceID) const noexcept override
+                {
+                    return Memory::USMKind::Device;
                 }
 
                 /** @brief Returns the allocations not yet released. */

@@ -43,8 +43,28 @@ namespace SushiRuntime
             /** @brief Returns value * index / extent rounded down, without overflow. */
             [[nodiscard]] std::uint64_t scaled(std::uint64_t value, std::uint64_t index, std::uint64_t extent)
             {
-                const unsigned __int128 product = static_cast<unsigned __int128>(value) * index;
-                return static_cast<std::uint64_t>(product / extent);
+                const std::uint64_t whole = value / extent;
+                std::uint64_t rest = value % extent;
+                std::uint64_t quotient = 0;
+                std::uint64_t remainder = 0;
+                for (std::uint64_t bit = std::uint64_t{1} << 63; bit != 0; bit >>= 1)
+                {
+                    quotient = (quotient << 1) | (remainder >= extent - remainder ? 1u : 0u);
+                    remainder = remainder >= extent - remainder ? remainder - (extent - remainder) : remainder * 2;
+                    if ((index & bit) != 0)
+                    {
+                        if (rest >= extent - remainder)
+                        {
+                            quotient += 1;
+                            remainder -= extent - rest;
+                        }
+                        else
+                        {
+                            remainder += rest;
+                        }
+                    }
+                }
+                return whole * index + quotient;
             }
 
             /** @brief Returns the share of value that part covers; the shares of one cut sum to value. */

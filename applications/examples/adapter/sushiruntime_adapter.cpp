@@ -79,6 +79,7 @@ namespace HostProgram
                 case ErrorCode::InvalidAccess:
                 case ErrorCode::InvalidState:
                 case ErrorCode::InvalidArgument:
+                case ErrorCode::StaleHandle:
                     return Status{StatusCode::InvalidRequest, error.message};
                 case ErrorCode::Unsupported:
                     return Status{StatusCode::Unsupported, error.message};

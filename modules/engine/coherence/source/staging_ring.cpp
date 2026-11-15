@@ -31,6 +31,7 @@
 #include <SushiRuntime/coherence/staging_ring.hpp>
 
 #include <SushiRuntime/coherence/coherence_log_category.hpp>
+#include <SushiRuntime/log/logger.hpp>
 
 #include <algorithm>
 #include <stdexcept>

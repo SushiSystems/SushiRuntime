@@ -40,9 +40,9 @@ set(SUSHIRUNTIME_MODULE_TIERS
     work_stealing   engine
     scheduler       engine
     graph           engine
+    coherence       engine
     execution       engine
     region_boundary engine
-    coherence       engine
     probe_tasks     engine
     runtime_assembly engine
     engine_handles  surface
@@ -80,6 +80,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     placement       machine
     placement       handle
     machine         handle
+    region          handle
     machine         core
     test_runner     log
     test_runner     report
