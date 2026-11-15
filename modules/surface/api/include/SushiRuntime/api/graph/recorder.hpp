@@ -1006,12 +1006,17 @@ namespace SushiRuntime
              * @param call  Names the call the user wrote in the message.
              * @param lives Gains the placement's observer when it watches an allocation.
              * @return Index of the device the node is placed on, or none when the placement
-             *         names a scope whose rules refuse; the refusal is kept for the next run.
+             *         is refused: a scope whose rules refuse, or a handle with no device.
              * @pre A placement that names a device names a device of this runtime.
              */
             std::optional<std::size_t> placed_device(const char* call, const On& placement,
                                                      std::vector<LivenessObserver>& lives)
             {
+                if (placement.refusal)
+                {
+                    admit(std::optional<Error>(*placement.refusal));
+                    return std::nullopt;
+                }
                 if (placement.scope)
                 {
                     Result<DeviceIndex> resolved = placement.scope->device();

@@ -33,14 +33,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/data/buffer_storage.hpp>
+#include <SushiRuntime/api/data/planned_storage.hpp>
 #include <SushiRuntime/api/data/request_checks.hpp>
 #include <SushiRuntime/api/data/residency.hpp>
+#include <SushiRuntime/api/data/stated_storage.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/allocation.hpp>
@@ -58,13 +62,6 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Which device queue an allocation is pinned to.
-     *
-     * Its constructor is explicit, so a bare integer does not pass as a device index.
-     */
-    using DeviceIndex = StrongID<struct DeviceIndexTag>;
-
-    /**
      * @brief A half-open element range [offset, offset + count) into a handle.
      *
      * Names a window of a Buffer or State for the transfer and sub-region calls.
@@ -78,16 +75,6 @@ namespace SushiRuntime
 
     namespace Detail
     {
-        /**
-         * @brief Holds the one allocation a Buffer views, with nothing of how it was made.
-         *        Move-only.
-         * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-         */
-        struct MemoryBlock
-        {
-            Allocation allocation; /**< The memory; owns no release for borrowed memory. */
-        };
-
         /** @brief Returns how many devices a runtime drives. */
         [[nodiscard]] SUSHIRUNTIME_API std::size_t device_count(const ContextHandle& context);
 
@@ -335,16 +322,12 @@ namespace SushiRuntime
              */
             Buffer(Buffer&& other) noexcept
                 : context_(std::move(other.context_)),
-                  block_(std::move(other.block_)),
+                  storage_(std::move(other.storage_)),
                   size_(other.size_),
-                  device_index_(other.device_index_),
-                  residency_(other.residency_),
                   liveness_(std::move(other.liveness_)),
-                  borrowed_life_(std::move(other.borrowed_life_)),
                   handle_(other.handle_)
             {
                 other.size_ = 0;
-                other.borrowed_life_.reset();
                 other.handle_ = GlobalHandle::null();
             }
 
@@ -359,17 +342,13 @@ namespace SushiRuntime
                 {
                     reset();
                     context_ = std::move(other.context_);
-                    block_ = std::move(other.block_);
+                    storage_ = std::move(other.storage_);
                     size_ = other.size_;
-                    device_index_ = other.device_index_;
-                    residency_ = other.residency_;
                     liveness_ = std::move(other.liveness_);
-                    borrowed_life_ = std::move(other.borrowed_life_);
                     handle_ = other.handle_;
                     other.handle_ = GlobalHandle::null();
                     other.size_ = 0;
                     other.liveness_.reset();
-                    other.borrowed_life_.reset();
                 }
                 return *this;
             }
@@ -382,7 +361,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] T* data() const noexcept
             {
-                return static_cast<T*>(block_.allocation.address());
+                return static_cast<T*>(storage_address());
             }
 
             /**
@@ -404,15 +383,20 @@ namespace SushiRuntime
              */
             [[nodiscard]] bool empty() const noexcept
             {
-                return block_.allocation.empty() && handle_.is_null();
+                return storage_address() == nullptr && handle_.is_null();
             }
 
             /**
              * @brief Reports which device queue the allocation is pinned to.
-             * @return The device index the buffer was allocated on; 0 for a Residency::Planned
-             *         buffer, which states no device.
+             * @return The device index the buffer was allocated on; empty for a
+             *         Residency::Planned buffer, which states no device, and for an empty one.
              */
-            [[nodiscard]] DeviceIndex device_index() const noexcept { return device_index_; }
+            [[nodiscard]] std::optional<DeviceIndex> device_index() const noexcept
+            {
+                if (!storage_)
+                    return std::nullopt;
+                return storage_->device_index();
+            }
 
             /**
              * @brief Reports where the allocation lives.
@@ -420,7 +404,12 @@ namespace SushiRuntime
              *         device-resident memory, Residency::Host for pinned host USM,
              *         Residency::Planned for memory the runtime places.
              */
-            [[nodiscard]] Residency residency() const noexcept { return residency_; }
+            [[nodiscard]] Residency residency() const noexcept
+            {
+                if (!storage_)
+                    return Residency::Shared;
+                return storage_->residency();
+            }
 
             /**
              * @brief Tells whether the host may index this buffer directly.
@@ -429,7 +418,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] bool is_host_accessible() const noexcept
             {
-                return Detail::is_host_addressable(residency_);
+                return !storage_ || storage_->host_addressable();
             }
 
             /**
@@ -629,6 +618,33 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Views memory another owner keeps alive; Interop::borrow() is its one
+             *        caller.
+             * @param owner_life Expires when the owner releases the memory.
+             * @param handle The Borrowed handle, or null; a failure drops one borrow of it.
+             * @return The buffer, or an AllocationFailed error when its storage cannot be made.
+             * @pre block holds at least count elements and its allocation has no owner.
+             */
+            [[nodiscard]] static Result<Buffer> view(
+                const ContextHandle& context, Detail::MemoryBlock block, std::size_t count,
+                DeviceIndex device_index, Residency residency, LivenessObserver owner_life,
+                GlobalHandle handle) noexcept
+            {
+                std::optional<Buffer> made;
+                Result<void> built = Detail::translate_exceptions([&]()
+                {
+                    made.emplace(Buffer(context, std::move(block), count, device_index,
+                                        residency, std::move(owner_life), handle));
+                });
+                if (!built)
+                {
+                    Detail::release_handle(context, handle);
+                    return make_error(std::move(built.error()));
+                }
+                return std::move(*made);
+            }
+
+            /**
              * @brief Takes memory another component allocated and the handle minted for it;
              *        adopt() is its one caller.
              * @param handle Released by this buffer when it has a context.
@@ -637,21 +653,20 @@ namespace SushiRuntime
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
                    DeviceIndex device_index, Residency residency, GlobalHandle handle)
                 : context_(std::move(context)),
-                  block_(std::move(block)),
                   size_(count),
-                  device_index_(device_index),
-                  residency_(residency),
                   liveness_(make_liveness()),
                   handle_(handle)
             {
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
-                SR_VERIFY(block_.allocation.bytes() >= bytes,
+                SR_VERIFY(block.allocation.bytes() >= bytes,
                           ("Buffer adoption: an allocation of " +
-                           std::to_string(block_.allocation.bytes()) + " bytes cannot hold " +
+                           std::to_string(block.allocation.bytes()) + " bytes cannot hold " +
                            Detail::describe_request(count, sizeof(T), device_index, residency) +
                            ".")
                               .c_str());
+                storage_ = std::make_unique<Detail::StatedStorage>(std::move(block), device_index,
+                                                                   residency);
             }
 
             /**
@@ -662,8 +677,8 @@ namespace SushiRuntime
              */
             Buffer(ContextHandle context, std::size_t count, GlobalHandle handle)
                 : context_(std::move(context)),
+                  storage_(std::make_unique<Detail::PlannedStorage>()),
                   size_(count),
-                  residency_(Residency::Planned),
                   liveness_(make_liveness()),
                   handle_(handle)
             {
@@ -680,13 +695,11 @@ namespace SushiRuntime
              */
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
                    DeviceIndex device_index, Residency residency,
-                   LivenessObserver owner_life, GlobalHandle handle) noexcept
+                   LivenessObserver owner_life, GlobalHandle handle)
                 : context_(std::move(context)),
-                  block_(std::move(block)),
+                  storage_(std::make_unique<Detail::StatedStorage>(
+                      std::move(block), device_index, residency, std::move(owner_life))),
                   size_(count),
-                  device_index_(device_index),
-                  residency_(residency),
-                  borrowed_life_(std::move(owner_life)),
                   handle_(handle)
             {
 
@@ -701,7 +714,9 @@ namespace SushiRuntime
             {
                 if (liveness_)
                     return liveness_;
-                return borrowed_life_;
+                if (storage_)
+                    return storage_->owner_life();
+                return LivenessObserver();
             }
 
             /**
@@ -720,13 +735,9 @@ namespace SushiRuntime
                     out.resize(range.count);
                 });
                 // A non-zero size_ implies a runtime, and a non-null address or a planned handle.
-                if (copied && range.count != 0 && residency_ == Residency::Planned)
-                    copied = Detail::read_planned(context_, handle_, range.offset * sizeof(T),
-                                                  out.data(), range.count * sizeof(T));
-                else if (copied && range.count != 0)
-                    copied = Detail::copy_to_host(context_, device_index_, data() + range.offset,
-                                                  out.data(),
-                                                  range.count * sizeof(T));
+                if (copied && range.count != 0)
+                    copied = storage_->read(context_, handle_, range.offset * sizeof(T),
+                                            out.data(), range.count * sizeof(T));
                 if (!copied)
                     return make_error(std::move(copied.error()));
                 return std::move(out);
@@ -754,12 +765,8 @@ namespace SushiRuntime
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
                 // A non-zero size_ implies a runtime, and a non-null address or a planned handle.
-                if (residency_ == Residency::Planned)
-                    return Detail::write_planned(context_, handle_, range.offset * sizeof(T),
-                                                 source.data(), range.count * sizeof(T));
-                return Detail::copy_to_device(context_, device_index_, data() + range.offset,
-                                              source.data(),
-                                              range.count * sizeof(T));
+                return storage_->write(context_, handle_, range.offset * sizeof(T), source.data(),
+                                       range.count * sizeof(T));
             }
 
             /**
@@ -781,9 +788,7 @@ namespace SushiRuntime
             {
                 SR_VERIFY(is_host_accessible(),
                           (std::string(where) +
-                           (residency_ == Residency::Planned
-                                ? ": a planned buffer has no address the host may hold; "
-                                : ": a device-resident buffer is not host-addressable; ") +
+                           ": " + storage_->host_refusal() +
                            "use read_range() and write_range().")
                               .c_str());
             }
@@ -791,31 +796,29 @@ namespace SushiRuntime
             /** @brief Frees the owned allocation, releases its handle and clears the buffer. */
             void reset() noexcept
             {
-                if (context_ && !handle_.is_null() && residency_ == Residency::Planned)
-                    Detail::release_planned_handle(context_, handle_);
-                else if (context_ && !handle_.is_null())
-                    Detail::release_handle(context_, handle_);
+                if (storage_ && context_ && !handle_.is_null())
+                    storage_->release(context_, handle_);
                 handle_ = GlobalHandle::null();
-                block_.allocation.reset();
+                storage_.reset();
                 size_ = 0;
                 // Resetting the token expires every graph's observer of this allocation.
                 liveness_.reset();
-                borrowed_life_.reset();
+            }
+
+            /** @brief Returns the address of the storage's memory, or null for none. */
+            [[nodiscard]] void* storage_address() const noexcept
+            {
+                return storage_ ? storage_->address() : nullptr;
             }
 
             /** @brief The runtime the memory came from; empty for an empty handle. */
             ContextHandle context_;
 
-            /** @brief The allocation, held in place; it releases the memory it owns. */
-            Detail::MemoryBlock block_;
+            /** @brief The memory and the way to reach it; null for an empty handle. */
+            std::unique_ptr<Detail::BufferStorage> storage_;
 
             std::size_t size_ = 0;
-            DeviceIndex device_index_ = DeviceIndex{0};
-            Residency residency_ = Residency::Shared;
             LivenessToken liveness_;
-
-            /** @brief Observer of the owner of borrowed memory; empty for an owned handle. */
-            LivenessObserver borrowed_life_;
 
             /** @brief Identity of the buffer; null for an empty buffer. */
             GlobalHandle handle_;

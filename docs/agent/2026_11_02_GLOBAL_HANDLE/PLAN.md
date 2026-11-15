@@ -277,7 +277,7 @@ job builds on them.
 | R04 | one partition session per graph, ledger keyed by problem | R01 | done |
 | R05 | coherence map: planned state apart from current state, enforced phases | R01 | running |
 | R06 | `RuntimeContext` narrowed to ports | R01 | done |
-| R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | running |
+| R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | done |
 | R08 | space and path kinds typed, not strings | R01 | done |
 | R09 | statuses, not exceptions, on worker threads | R01 | done |
 | R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |

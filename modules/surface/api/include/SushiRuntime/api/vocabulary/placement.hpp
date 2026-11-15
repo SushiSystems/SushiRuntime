@@ -31,21 +31,52 @@
 #pragma once
 
 #include <optional>
+#include <string>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/runtime/placement_scope.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
+    namespace Detail
+    {
+        /**
+         * @brief Returns the device a handle states, or a refusal when it states none.
+         * @param what Names the handle in the message: "buffer" or "state".
+         * @param device The handle's device_index().
+         * @param refusal Receives the InvalidArgument error when device is empty.
+         * @return The device, or device 0 as a placeholder that the refusal overrides.
+         */
+        inline DeviceIndex stated_device(const char* what, std::optional<DeviceIndex> device,
+                                         std::optional<Error>& refusal)
+        {
+            if (device)
+                return *device;
+            refusal = Error{ErrorCode::InvalidArgument,
+                            std::string("On(") + what + "): the " + what + " states no device, "
+                            "because it is planned or empty; place the kernel with "
+                            "On(DeviceIndex) or On(placement_scope)."};
+            return DeviceIndex{0};
+        }
+    } // namespace Detail
+
     /**
      * @brief States the device a kernel that names no region runs on.
      * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
      */
     struct On
     {
+        /**
+         * @brief Why the placement is refused when a node uses it, or empty.
+         *
+         * Declared first, so a handle's constructor writes it before it is built over.
+         */
+        std::optional<Error> refusal;
+
         DeviceIndex device;          /**< Device the kernel runs on. */
         LivenessObserver life; /**< Observer of the handle named, or empty. */
 
@@ -78,10 +109,13 @@ namespace SushiRuntime
          * @brief Places the kernel on the device that owns a buffer, and watches the buffer.
          * @param buffer Handle whose device is taken. Alive when the graph runs;
          *          free to move after add().
+         * @note A planned or empty buffer states no device; the recorder refuses the node with
+         *       InvalidArgument.
          */
         template <typename T>
-        explicit On(const Buffer<T>& buffer) noexcept
-            : device(buffer.device_index()), life(Detail::HandleAccess::liveness(buffer))
+        explicit On(const Buffer<T>& buffer)
+            : device(Detail::stated_device("buffer", buffer.device_index(), refusal)),
+              life(Detail::HandleAccess::liveness(buffer))
         {
 
         }
@@ -90,10 +124,13 @@ namespace SushiRuntime
          * @brief Places the kernel on the device that owns a State, and watches the State.
          * @param state Handle whose device is taken. Alive when the graph runs;
          *          free to move after add().
+         * @note A planned or empty state states no device; the recorder refuses the node with
+         *       InvalidArgument.
          */
         template <typename T>
-        explicit On(const State<T>& state) noexcept
-            : device(state.device_index()), life(Detail::HandleAccess::liveness(state))
+        explicit On(const State<T>& state)
+            : device(Detail::stated_device("state", state.device_index(), refusal)),
+              life(Detail::HandleAccess::liveness(state))
         {
 
         }

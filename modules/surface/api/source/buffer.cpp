@@ -203,6 +203,27 @@ namespace SushiRuntime
             return block;
         }
 
+        Result<void> StatedStorage::read(const ContextHandle& context, GlobalHandle,
+                                         std::size_t begin, void* destination,
+                                         std::size_t bytes) const noexcept
+        {
+            return copy_to_host(context, device_, static_cast<const char*>(address()) + begin,
+                                destination, bytes);
+        }
+
+        Result<void> StatedStorage::write(const ContextHandle& context, GlobalHandle,
+                                          std::size_t begin, const void* source,
+                                          std::size_t bytes) const noexcept
+        {
+            return copy_to_device(context, device_, static_cast<char*>(address()) + begin,
+                                  source, bytes);
+        }
+
+        void StatedStorage::release(const ContextHandle& context, GlobalHandle handle) noexcept
+        {
+            release_handle(context, handle);
+        }
+
         Result<void> copy_to_host(const ContextHandle& context, DeviceIndex device,
                                   const void* source, void* destination,
                                   std::size_t bytes) noexcept

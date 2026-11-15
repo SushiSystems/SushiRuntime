@@ -8,6 +8,9 @@
 - 2026-11-15 — runtime: Changed partitioning to one session per graph; a run counts only toward its own graph's plan, and each graph writes its own journal, `<profile>.<first problem hash>.journal` (GLOBAL_HANDLE R04).
 - 2026-11-15 — api: Added `Graph::partition_report()` and `DynamicGraph::partition_report()`; `Runtime::partition_report()` reports the graph that partitioned last, and `replay_placements()` replays one graph (GLOBAL_HANDLE R04).
 - 2026-11-15 — machine: Added `NodeSplit::regions`, the bytes each part reads and writes; the planner and pricing use exactly those ranges, and a split without regions is refused (GLOBAL_HANDLE R02).
+- 2026-11-15 — api: Changed `Buffer::device_index()` and `State::device_index()` to return `std::optional<DeviceIndex>`, empty for a planned handle in place of device 0 (GLOBAL_HANDLE R07).
+- 2026-11-15 — api: Changed `On(buffer)` and `On(state)` of a planned or empty handle to carry a refusal; the recorder returns `InvalidArgument` and records no node (GLOBAL_HANDLE R07).
+- 2026-11-15 — api: Moved a Buffer's memory behind one storage interface with a stated and a planned strategy, so `Buffer` holds no residency switch (GLOBAL_HANDLE R07).
 - 2026-11-15 — handle: Added `TransferPathID`, the stable identity of a transfer path (GLOBAL_HANDLE R08).
 - 2026-11-15 — memory: Added `MemorySpace::is_host_memory()` and `is_file_backed()`; no code compares a space's kind name (GLOBAL_HANDLE R08).
 - 2026-11-15 — runtime: Changed transfer paths to carry a `TransferPathID`; selection, pricing, measurement and the partition problem key on it, and the profile file keeps path names as its keys, mapped once at load (GLOBAL_HANDLE R08).

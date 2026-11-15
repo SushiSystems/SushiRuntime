@@ -31,6 +31,42 @@ The rule `operator[]` of a Buffer and a State checks, run small and without a st
 | `SharedAndHostMemoryAreHostAddressable`, `DeviceMemoryIsNotHostAddressable` | The rule holds for Shared and Host and fails for Device. |
 | `PlannedMemoryIsNotHostAddressableAndIsNamedPlanned` | The rule fails for Planned, and `residency_name()` spells it `Planned`. |
 
+## test_buffer_storage.cpp
+
+`Small_BufferStorageContract`, one typed suite over `Detail::StatedStorage` and `Detail::PlannedStorage`,
+run small and with no runtime. It holds the queries every strategy answers.
+
+| Test | What it proves |
+| --- | --- |
+| `AStorageStatesADeviceExactlyWhenItIsNotPlanned` | `device_index()` holds a value for each residency but `Planned`, and holds none for it. |
+| `HostAddressabilityFollowsTheResidencyRule` | `host_addressable()` equals `Detail::is_host_addressable()` of the storage's residency. |
+| `TheHostRefusalReadsAsTheOpeningOfAMessage` | `host_refusal()` ends in a semicolon and a space, so a caller can append the next sentence. |
+| `AStorageThatBorrowsNothingHasNoOwnerToObserve` | `owner_life()` of an owning storage is expired. |
+
+## test_stated_storage.cpp
+
+The queries of `Detail::StatedStorage` over a block at a made-up address, run small. The copy calls
+need a device; `test_buffer.cpp` keeps them through a Buffer.
+
+| Test | What it proves |
+| --- | --- |
+| `StatesTheDeviceItWasGiven` | `device_index()` is the device the storage was built with. |
+| `ReportsTheAddressOfItsBlockAndTheResidencyItWasGiven` | `address()` and `residency()` come from the block and the arguments. |
+| `DeviceResidentMemoryIsNotHostAddressable`, `SharedMemoryIsHostAddressable` | `host_addressable()` follows the residency. |
+| `TheHostRefusalNamesADeviceResidentBuffer` | The refusal text a device-resident buffer's call writes. |
+| `BorrowedMemoryObservesItsOwnerUntilTheOwnerExpires` | `owner_life()` is alive while the owner's token is and expires with it. |
+
+## test_planned_storage.cpp
+
+The queries of `Detail::PlannedStorage`, run small. The directory calls need a runtime;
+`test_buffer.cpp` keeps them through a planned Buffer.
+
+| Test | What it proves |
+| --- | --- |
+| `StatesNoDeviceNotEvenDeviceZero` | `device_index()` is empty, where device 0 is a real device. |
+| `HoldsNoAddressAndIsPlanned` | `address()` is null and `residency()` is `Planned`. |
+| `IsNotHostAddressableAndSaysWhy` | `host_addressable()` fails and the refusal names a planned buffer. |
+
 ## test_buffer.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
@@ -99,6 +135,11 @@ and so does `buffer()` with `Residency::Device` and no device.
 A planned buffer is not empty, has a handle, its size and the residency `Planned`, and `data()` is
 null. A planned Buffer and a planned State read back through `read_range()` what `write_range()`
 wrote on the host runtime, with no node in between.
+
+### `APlannedBufferAndStateStateNoDevice`, `AStatedBufferAndStateStateTheirDevice`, `AnEmptyBufferStatesNoDevice`
+
+`device_index()` of a planned Buffer, a planned State and an empty Buffer holds no value. A Buffer and
+a State allocated on device 0 report device 0.
 
 ### `Medium_DataHandlesFiles.DroppingAFileBackedBufferFreesItsSpaceForTheNext`
 

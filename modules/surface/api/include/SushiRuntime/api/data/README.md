@@ -47,22 +47,42 @@ the message states what was asked for (element count, element size, bytes, resid
 device) and gives no cause, since the allocator reports
 none.
 
+### BufferStorage
+
+A Buffer keeps its memory behind one `Detail::BufferStorage` (`buffer_storage.hpp`) and holds no flag
+for which kind it is. The interface answers `address()`, `device_index()`, `residency()`,
+`host_addressable()`, `host_refusal()`, `owner_life()`, `read()`, `write()` and `release()`, and a
+Buffer calls nothing else on its memory. Two strategies implement it, one header each:
+
+| Strategy | Header | Keeps | `device_index()` |
+| --- | --- | --- | --- |
+| `Detail::StatedStorage` | `stated_storage.hpp` | One `Detail::MemoryBlock` on one stated device, owned or borrowed; copies on that device's queue | The stated device |
+| `Detail::PlannedStorage` | `planned_storage.hpp` | No memory; the residency directory holds the instances and the host reaches the bytes through it | Empty |
+
+A third kind of storage adds one header and one source file and edits neither strategy nor Buffer.
+`device_index()` of a Buffer and of a State is a `std::optional<DeviceIndex>`: empty for a planned
+one, which states no device, and for an empty one. A caller that needs a device takes `value()` of a
+handle it knows states one.
+
 ### MemoryBlock
 
-A Buffer holds its memory as a `Detail::MemoryBlock`, which holds one `Detail::Allocation` from
-the `core` module by value: the base address, the byte count and the `Detail::AllocationOwner`
-that releases the memory. Both are move-only, so the Buffer is the one owner and no shared count
+A StatedStorage holds its memory as a `Detail::MemoryBlock` (`buffer_storage.hpp`), which holds one
+`Detail::Allocation` from the `core` module by value: the base address, the byte count and the
+`Detail::AllocationOwner` that releases the memory. Both are move-only, so the storage is the one owner and no shared count
 exists. The header names nothing of how the memory was made. `Detail::allocate_block()` of
 `source/buffer.cpp` allocates USM through the runtime with a `USMAllocationOwner`; Interop moves
 the `Allocation` the engine returns for memory it exported or imported into the block. data(),
-operator[] and host() read the allocation's address and the size and call nothing.
+operator[] and host() read the storage's address and the size and call nothing.
 
-A window copy is the other call into the library: `Detail::copy_to_host()` and
-`Detail::copy_to_device()` copy on the queue of the buffer's device, wait and count the
-bytes, and return a `Result<void>`. The vector a read fills is sized in the header, where the
+A window copy is the other call into the library: `StatedStorage::read()` and `write()` call
+`Detail::copy_to_host()` and `Detail::copy_to_device()`, which copy on the queue of the buffer's
+device, wait and count the bytes, and return a `Result<void>`. `PlannedStorage::read()` and
+`write()` go through the directory instead. The vector a read fills is sized in the header, where the
 element type is known.
 
-Buffer::adopt() is the one place a Buffer is built over a block. It takes the block by value, so
+Buffer::adopt() is the one place a Buffer is built over an owned block, and Buffer::view() the one
+place over a borrowed block; each runs its constructor inside `Detail::translate_exceptions()`,
+because the constructor allocates the storage. It takes the block by value, so
 the caller moves its allocation in and a refused adoption releases it. It runs the constructor inside
 `Detail::translate_exceptions()`, because the constructor allocates the liveness token, and
 returns `AllocationFailed` when that allocation fails. Buffer::allocate() and the two Interop
@@ -106,7 +126,7 @@ coherence planner on its own space, and the partitioner later gives the buffer a
 
 A planned buffer states no device. Passing a `DeviceIndex` with `Residency::Planned`, to `Runtime` or
 to `PlacementScope`, returns `InvalidArgument`; so does passing another residency without a device.
-`device_index()` reports 0. Every other residency keeps its stated device, address and behaviour.
+`device_index()` is empty. Every other residency keeps its stated device, address and behaviour.
 
 `data()` returns null for a planned buffer: its instances may move between spaces, and an address the
 runtime may move is one the host cannot hold. `operator[]` and `host()` refuse it as they refuse device

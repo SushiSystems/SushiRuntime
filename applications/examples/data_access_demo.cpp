@@ -95,7 +95,7 @@ namespace
 
         // Work the caller submits on the queue is outside every graph, so the caller waits for it.
         float* cells = resident.data();
-        sycl::queue& queue = runtime.advanced().queue(resident.device_index());
+        sycl::queue& queue = runtime.advanced().queue(resident.device_index().value());
         queue.parallel_for(sycl::range<1>(K_COUNT), [cells](sycl::id<1> i) { cells[i] += 1.0f; });
         const Result<void> idle = runtime.wait();
         if (!idle)

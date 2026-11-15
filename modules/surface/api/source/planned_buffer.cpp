@@ -129,6 +129,25 @@ namespace SushiRuntime
             return built ? std::move(outcome) : std::move(built);
         }
 
+        Result<void> PlannedStorage::read(const ContextHandle& context, GlobalHandle handle,
+                                          std::size_t begin, void* destination,
+                                          std::size_t bytes) const noexcept
+        {
+            return read_planned(context, handle, begin, destination, bytes);
+        }
+
+        Result<void> PlannedStorage::write(const ContextHandle& context, GlobalHandle handle,
+                                           std::size_t begin, const void* source,
+                                           std::size_t bytes) const noexcept
+        {
+            return write_planned(context, handle, begin, source, bytes);
+        }
+
+        void PlannedStorage::release(const ContextHandle& context, GlobalHandle handle) noexcept
+        {
+            release_planned_handle(context, handle);
+        }
+
         void release_planned_handle(const ContextHandle& context, GlobalHandle handle) noexcept
         {
             if (handle.is_null() || !context)

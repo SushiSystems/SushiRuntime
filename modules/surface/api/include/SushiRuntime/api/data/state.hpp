@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -160,9 +161,10 @@ namespace SushiRuntime
 
             /**
              * @brief Reports which device queue both fields are pinned to.
-             * @return The device index the State was allocated on.
+             * @return The device index the State was allocated on; empty for a
+             *         Residency::Planned State, which states no device, and for an empty one.
              */
-            [[nodiscard]] DeviceIndex device_index() const noexcept
+            [[nodiscard]] std::optional<DeviceIndex> device_index() const noexcept
             {
                 return current_.device_index();
             }

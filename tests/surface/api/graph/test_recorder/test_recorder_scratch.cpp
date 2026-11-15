@@ -64,7 +64,7 @@ namespace RecorderScratchTests
                                 const Buffer<std::uint32_t>& out)
         {
             std::uint32_t* stage =
-                recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency()).value();
+                recorder.scratch<std::uint32_t>(K_COUNT, in.device_index().value(), in.residency()).value();
             const BufferRegion stage_region = recorder.borrowed_region(stage, K_COUNT * sizeof(std::uint32_t)).value();
             const std::uint32_t* source = in.data();
             std::uint32_t* target = out.data();

@@ -67,12 +67,12 @@ namespace
                              const LateCount& width, const LateCount& salt)
     {
         std::uint32_t* live =
-            recorder.scratch<std::uint32_t>(2, marks.device_index(), marks.residency()).value();
+            recorder.scratch<std::uint32_t>(2, marks.device_index().value(), marks.residency()).value();
         const BufferRegion live_region = recorder.borrowed_region(live, 2 * sizeof(std::uint32_t)).value();
         std::uint32_t* words = marks.data();
 
         auto rule = recorder.rule();
-        recorder.resolve(std::array<LateCount, 2>{width, salt}, marks.device_index(),
+        recorder.resolve(std::array<LateCount, 2>{width, salt}, marks.device_index().value(),
                          Access(Reads(), Writes(live_region)),
                          [live](const std::array<std::size_t, 2>& values)
                          {
@@ -304,11 +304,11 @@ TEST_F(Small_DeviceSizedLaunch, TheKernelArityPicksTheLiveWords)
     auto g = runtime().graph();
     Recorder& recorder = g.recorder();
     std::uint32_t* word =
-        recorder.scratch<std::uint32_t>(1, worded.device_index(), worded.residency()).value();
+        recorder.scratch<std::uint32_t>(1, worded.device_index().value(), worded.residency()).value();
     const BufferRegion word_region = recorder.borrowed_region(word, sizeof(std::uint32_t)).value();
     std::uint32_t* w = worded.data();
 
-    recorder.resolve(std::array<LateCount, 1>{count}, worded.device_index(),
+    recorder.resolve(std::array<LateCount, 1>{count}, worded.device_index().value(),
                      Access(Reads(), Writes(word_region)),
                      [word](const std::array<std::size_t, 1>& live)
                      {

@@ -275,7 +275,7 @@ namespace PlacementScopeDeviceRecordingTests
 
         auto data = scope.buffer<std::uint32_t>(K_COUNT).value();
 
-        EXPECT_EQ(data.device_index().value(), 0u);
+        EXPECT_EQ(data.device_index(), DeviceIndex{0});
     }
 
     /** @brief Tests that a Fail rule leaves a refusal naming the rule and the device, and records no node. */
@@ -335,6 +335,20 @@ namespace PlacementScopeDeviceRecordingTests
         EXPECT_NE(recorder.refusal(), nullptr) << "the new set refuses";
     }
 
+    /** @brief Tests that On(buffer) of a planned buffer is refused with InvalidArgument when the node is recorded. */
+    TEST_F(Small_RecorderPlacementScopeDevice, APlannedBufferNamedByOnRefusesTheNode)
+    {
+        const Runtime& rt = runtime();
+        auto planned = rt.buffer<int>(K_COUNT, Residency::Planned).value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+
+        recorder.untracked_kernel(K_COUNT, [](std::size_t) {}, On(planned));
+
+        ASSERT_NE(recorder.refusal(), nullptr);
+        EXPECT_EQ(recorder.refusal()->code, ErrorCode::InvalidArgument);
+    }
+
     /** @brief Tests that a cleared rule set leaves nothing to refuse. */
     TEST_F(Small_RecorderPlacementScopeDevice, AClearedSetLeavesNothingToRefuse)
     {
@@ -372,7 +386,7 @@ namespace PlacementScopeDeviceRecordingTests
                 in_scope.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
             });
 
-        EXPECT_EQ(data.device_index().value(), 1u);
+        EXPECT_EQ(data.device_index(), DeviceIndex{1});
         EXPECT_EQ(graph.recorder().refusal(), nullptr);
         ASSERT_TRUE(graph.run());
         for (std::size_t i = 0; i < K_COUNT; ++i)

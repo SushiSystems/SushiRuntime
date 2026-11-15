@@ -8,8 +8,11 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_api_log_category.cpp
         data/test_buffer.cpp
+        data/test_buffer_storage.cpp
+        data/test_planned_storage.cpp
         data/test_request_checks.cpp
         data/test_residency.cpp
+        data/test_stated_storage.cpp
         data/test_state.cpp
         detail/compile_late_controls.cpp
         detail/compile_node_description.cpp

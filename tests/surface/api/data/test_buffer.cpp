@@ -417,6 +417,34 @@ namespace DataHandlesTests
         EXPECT_FALSE(buffer.is_host_accessible());
     }
 
+    /** @brief Tests that a planned buffer and state state no device, where device 0 is a real one. */
+    TEST_F(Small_DataHandles, APlannedBufferAndStateStateNoDevice)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, Residency::Planned).value();
+        const auto field = runtime().state<int>(K_SIZE, Residency::Planned).value();
+
+        EXPECT_FALSE(buffer.device_index().has_value());
+        EXPECT_FALSE(field.device_index().has_value());
+    }
+
+    /** @brief Tests that a buffer and state with a stated residency state the device they were given. */
+    TEST_F(Small_DataHandles, AStatedBufferAndStateStateTheirDevice)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
+
+        EXPECT_EQ(buffer.device_index(), DeviceIndex{0});
+        EXPECT_EQ(field.device_index(), DeviceIndex{0});
+    }
+
+    /** @brief Tests that a buffer with no memory states no device. */
+    TEST_F(Small_DataHandles, AnEmptyBufferStatesNoDevice)
+    {
+        const Buffer<int> buffer;
+
+        EXPECT_FALSE(buffer.device_index().has_value());
+    }
+
     /** @brief Tests that a planned buffer and state read back what write_range() wrote. */
     TEST_F(Small_DataHandles, APlannedBufferRoundTripsThroughTheHost)
     {

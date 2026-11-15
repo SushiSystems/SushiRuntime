@@ -380,7 +380,7 @@ TEST_F(Small_PlacementScopeDevice, LocalPlacesTheBufferOnDeviceZero)
     const Result<Buffer<int>> buffer = runtime().placement_scope(K_CLASS).buffer<int>(16);
 
     ASSERT_TRUE(buffer);
-    EXPECT_EQ(buffer->device_index().value(), 0u);
+    EXPECT_EQ(buffer->device_index(), DeviceIndex{0});
     EXPECT_EQ(buffer->size(), 16u);
 }
 
@@ -417,7 +417,7 @@ TEST(Small_PlacementScopeSecondDevice, ABufferLandsOnTheDeviceTheRuleNames)
     const Result<Buffer<int>> buffer = runtime.placement_scope(K_CLASS).buffer<int>(16);
 
     ASSERT_TRUE(buffer);
-    EXPECT_EQ(buffer->device_index().value(), 1u);
+    EXPECT_EQ(buffer->device_index(), DeviceIndex{1});
 }
 
 /** @brief Tests that a rule naming a device key places on the device that holds the key. */

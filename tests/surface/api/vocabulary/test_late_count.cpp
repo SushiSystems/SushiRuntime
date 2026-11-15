@@ -128,7 +128,7 @@ namespace
                                 const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* target = out.data();
-        recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),
+        recorder.resolve(std::array<LateCount, 1>{count}, out.device_index().value(),
                          Access(Reads(), Writes(out)),
                          [target](const std::array<std::size_t, 1>& live)
                          {

@@ -100,14 +100,14 @@ namespace RegistrationIndexTests
                                     const LateCount& count)
         {
             std::uint32_t* live = recorder.scratch<std::uint32_t>(
-                1, stages.first.device_index(), stages.first.residency()).value();
+                1, stages.first.device_index().value(), stages.first.residency()).value();
             const BufferRegion live_region = recorder.borrowed_region(live, sizeof(std::uint32_t)).value();
             std::uint32_t* a = stages.first.data();
             std::uint32_t* b = stages.second.data();
             std::uint32_t* c = stages.third.data();
 
             auto rule = recorder.rule();
-            recorder.resolve(std::array<LateCount, 1>{count}, stages.first.device_index(),
+            recorder.resolve(std::array<LateCount, 1>{count}, stages.first.device_index().value(),
                              Access(Reads(), Writes(live_region)),
                              [live](const std::array<std::size_t, 1>& value)
                              {

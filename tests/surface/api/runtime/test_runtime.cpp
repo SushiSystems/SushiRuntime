@@ -217,7 +217,7 @@ TEST_F(Small_RuntimeEntry, ABufferLandsOnTheFirstDevice)
 {
     auto landed = runtime().buffer<int>(16).value();
 
-    EXPECT_EQ(landed.device_index().value(), runtime().advanced().devices().front().index);
+    EXPECT_EQ(landed.device_index().value().value(), runtime().advanced().devices().front().index);
 }
 
 /** @brief Tests that topology() names the machine as the config does. */
@@ -747,7 +747,7 @@ TEST_F(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
     constexpr std::size_t K_WORDS = 256;
     const Buffer<std::uint32_t> values = runtime().buffer<std::uint32_t>(K_WORDS).value();
     std::uint32_t* words = values.data();
-    sycl::queue& queue = runtime().advanced().queue(values.device_index());
+    sycl::queue& queue = runtime().advanced().queue(values.device_index().value());
     queue.parallel_for(sycl::range<1>(K_WORDS), [words](sycl::id<1> i)
     {
         TestSupport::store_ordinal(words, i[0]);

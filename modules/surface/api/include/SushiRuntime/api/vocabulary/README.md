@@ -41,7 +41,9 @@ nothing to read does not compile.
 A kernel added with add_untracked() names no region, so the runtime cannot read its device from
 its data. On states it. On(buffer) and On(state) take the device of the handle and keep its
 liveness observer, so a graph whose handle was destroyed is refused with `DanglingResource`
-like any other. On(DeviceIndex) names the device outright and watches nothing. On(scope) takes
+like any other. A planned or empty handle states no device, so On(buffer) and On(state) built from it
+carry a refusal: the recorder keeps an `InvalidArgument` error, as it does for a scope whose
+rules fail, and records no node. On(DeviceIndex) or On(scope) places that kernel. On(DeviceIndex) names the device outright and watches nothing. On(scope) takes
 the device a `PlacementScope` resolves to when the kernel is recorded, through the placement
 rules in force; a scope whose rule fails leaves a refusal on the recorder and records no node
 (`api/runtime/README.md`).

@@ -52,7 +52,7 @@ namespace ScaleLibrary
         // The scratch belongs to the recorder, which frees it with the nodes that use it.
         const std::size_t count = in.size();
         std::uint32_t* stage =
-            recorder.scratch<std::uint32_t>(count, in.device_index(), in.residency()).value();
+            recorder.scratch<std::uint32_t>(count, in.device_index().value(), in.residency()).value();
         const BufferRegion staged =
             recorder.borrowed_region(stage, count * sizeof(std::uint32_t)).value();
         const std::uint32_t* source = in.data();

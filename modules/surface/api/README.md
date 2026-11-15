@@ -94,7 +94,7 @@ word. `graph/README.md` gives the contract of each.
 void record_scaled_copy(Recorder& recorder, const Buffer<float>& in,
                         const Buffer<float>& out, std::size_t count, float factor)
 {
-    float* stage = recorder.scratch<float>(count, in.device_index(), in.residency()).value();
+    float* stage = recorder.scratch<float>(count, in.device_index().value(), in.residency()).value();
     const BufferRegion staged = recorder.borrowed_region(stage, count * sizeof(float)).value();
     const float* source = in.data();
     float* target = out.data();
