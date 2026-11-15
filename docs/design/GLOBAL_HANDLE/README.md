@@ -181,7 +181,9 @@ A path is a strategy behind `TransferPath`; a new interconnect adds a file. GeFo
 refuse peer access, so two GeForce cards in one machine are expected to take the host-staged
 path. The host-staged path goes through a fixed ring of pinned staging buffers. It
 keeps its host copy as a valid instance only when the planner can place that instance within host
-capacity and a later reader on another device needs it; otherwise the ring slot is reused.
+capacity and a later reader on another device needs it; otherwise the ring slot is reused. The
+first version always reuses the slot. A copy to or from the host space is one `memcpy` on the
+device's queue, because the host space is itself pinned host memory.
 
 ### One home per byte
 

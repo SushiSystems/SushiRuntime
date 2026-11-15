@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -39,6 +40,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/coherence/peer_access.hpp>
+#include <SushiRuntime/coherence/pinned_host_memory.hpp>
 #include <SushiRuntime/coherence/space_queues.hpp>
 #include <SushiRuntime/coherence/transfer_observer.hpp>
 
@@ -77,6 +79,69 @@ namespace SushiRuntime
             private:
                 /// @brief The queue every space copies on.
                 std::optional<sycl::queue> queue_;
+        };
+
+        /** @brief Answers the queue of another SpaceQueues for every space but one, which has no queue. */
+        class QueuesWithoutSpace final : public SpaceQueues
+        {
+            public:
+                /**
+                 * @param inner Answers for every other space; must outlive this object.
+                 * @param without The space that gets no queue.
+                 */
+                QueuesWithoutSpace(const SpaceQueues& inner, MemorySpaceID without) noexcept
+                    : inner_(&inner), without_(without)
+                {
+
+                }
+
+                [[nodiscard]] sycl::queue* queue_of(MemorySpaceID space) const override
+                {
+                    return space == without_ ? nullptr : inner_->queue_of(space);
+                }
+
+            private:
+                /// @brief Answers for every other space.
+                const SpaceQueues* inner_;
+
+                /// @brief The space with no queue.
+                MemorySpaceID without_;
+        };
+
+        /** @brief Makes pinned host memory from the heap and counts the calls. */
+        class HeapPinnedHostMemory final : public PinnedHostMemory
+        {
+            public:
+                [[nodiscard]] void* allocate(std::size_t bytes) override
+                {
+                    ++allocated_;
+                    return std::malloc(bytes);
+                }
+
+                void release(void* address) noexcept override
+                {
+                    ++released_;
+                    std::free(address);
+                }
+
+                /** @brief Returns the allocations made so far. */
+                [[nodiscard]] int allocated() const noexcept
+                {
+                    return allocated_;
+                }
+
+                /** @brief Returns the releases made so far. */
+                [[nodiscard]] int released() const noexcept
+                {
+                    return released_;
+                }
+
+            private:
+                /// @brief Allocations so far.
+                int allocated_ = 0;
+
+                /// @brief Releases so far.
+                int released_ = 0;
         };
 
         /** @brief Answers one fixed reply to every request and counts the requests. */

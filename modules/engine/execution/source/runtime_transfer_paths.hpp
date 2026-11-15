@@ -44,7 +44,7 @@ namespace SushiRuntime
         /**
          * @brief Owns the transfer paths of one runtime and the objects they stand on.
          *
-         * A path lists first the cheapest way: the copy inside one context, then the peer copy.
+         * A path lists first the cheapest way: the copy inside one context, then the peer copy, then the copy staged through pinned host memory.
          */
         struct RuntimeTransferPaths
         {

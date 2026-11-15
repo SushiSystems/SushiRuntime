@@ -13,7 +13,7 @@ gigabyte free.
 queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
 `RecordingTransferObserver` keeps each copy it hears.
 
-## compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
+## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
 
@@ -28,6 +28,18 @@ The path connects two contexts only when access is granted and leaves one contex
 `SameContextPath`. It copies the bytes and names itself `peer`. A plan over both paths takes
 `same_context` for the copy inside a context and `peer` for the copy across contexts; the planned
 copy nodes move the bytes, and the observer records which path each copy took.
+
+## test_host_staged_path.cpp
+
+The path connects any two devices and the host with a device, never two host spaces. A copy
+between two spaces with no direct path matches bytes for sizes below, at and several times one ring
+slot, makes the ring once and reuses it, and the report names `host_staged` once per copy. A copy to
+or from the host is one memcpy with no slot. A copy with no queue on either side is refused.
+
+## test_staging_ring.cpp
+
+The ring makes no slot before the first acquire, makes all slots once, hands them out in ring
+order, skips a held slot, frees every slot with the ring and refuses when the memory has no room.
 
 ## test_coherence_planner.cpp
 

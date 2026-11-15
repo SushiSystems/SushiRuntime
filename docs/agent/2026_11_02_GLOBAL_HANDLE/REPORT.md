@@ -52,6 +52,7 @@ dispatch: T13 — opus low, 145 turns, rung 1, passed
 dispatch: T17 — sonnet medium, rung 1, passed
 dispatch: T24 — sonnet medium, rung 1, passed
 dispatch: T28 — sonnet medium, 108 turns, rung 1, passed
+dispatch: T18 — sonnet medium, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -110,3 +111,9 @@ missing, each now a task: kernels still read the home address captured at `add()
 (T17). The planner takes the concrete directory (T41), every device gets a pool of its own (T42),
 and planned buffers are allocated and freed every step and copied back home at graph end, which
 T14 and T21 remove.
+
+## T18: the host-staged path
+
+The staging ring's pinned memory is allocated in the first device's SYCL context. On a device of
+another vendor the same memory is pageable host memory to that context, so a copy is correct and
+slower; T20 measures it on the first machine. Host to device and device to host are one copy.

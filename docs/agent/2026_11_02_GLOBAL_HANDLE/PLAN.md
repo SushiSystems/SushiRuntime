@@ -57,10 +57,10 @@ when its own context would not hold their reading; it still reviews and commits 
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
-| T15 | reference interpreter test | T13 | todo |
+| T15 | reference interpreter test | T13 | running |
 | T16 | determinism suite | T13 | todo |
 | T17 | `engine/coherence` same-context and peer paths | T13 | done |
-| T18 | `engine/coherence` host-staged path | T17 | running |
+| T18 | `engine/coherence` host-staged path | T17 | done |
 | T19 | file space and file path | T18 | todo |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |
 | T21 | copy plan replay | T13 | todo |

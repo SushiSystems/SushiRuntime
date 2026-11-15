@@ -34,10 +34,13 @@
 #include <optional>
 #include <utility>
 
+#include <SushiRuntime/coherence/host_staged_path.hpp>
 #include <SushiRuntime/coherence/peer_access.hpp>
 #include <SushiRuntime/coherence/peer_path.hpp>
+#include <SushiRuntime/coherence/pinned_host_memory.hpp>
 #include <SushiRuntime/coherence/same_context_path.hpp>
 #include <SushiRuntime/coherence/space_queues.hpp>
+#include <SushiRuntime/coherence/staging_ring.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
@@ -116,18 +119,54 @@ namespace SushiRuntime
                     /// @brief The devices whose peers are asked.
                     Device::DeviceQueueSet* devices_;
             };
+
+            /** @brief Makes pinned host memory in the context of the first device of a set. */
+            class DevicePinnedHostMemory final : public Coherence::PinnedHostMemory
+            {
+                public:
+                    explicit DevicePinnedHostMemory(Device::DeviceQueueSet& devices) noexcept : devices_(&devices)
+                    {
+
+                    }
+
+                    [[nodiscard]] void* allocate(std::size_t bytes) override
+                    {
+                        if (devices_->count() == 0)
+                            return nullptr;
+                        try
+                        {
+                            return sycl::malloc_host(bytes, devices_->queue(0));
+                        }
+                        catch (const sycl::exception&)
+                        {
+                            return nullptr;
+                        }
+                    }
+
+                    void release(void* address) noexcept override
+                    {
+                        sycl::free(address, devices_->queue(0));
+                    }
+
+                private:
+                    /// @brief The devices whose first context holds the memory.
+                    Device::DeviceQueueSet* devices_;
+            };
         } // namespace
 
         /** @brief Holds the queues and the access the paths of a RuntimeTransferPaths refer to. */
         struct RuntimeTransferPaths::Support
         {
-            explicit Support(Device::DeviceQueueSet& devices) : queues(devices), access(devices)
+            explicit Support(Device::DeviceQueueSet& devices)
+                : queues(devices), access(devices), pinned(devices), ring(pinned)
             {
 
             }
 
-            DeviceSpaceQueues queues; /**< Names the queue of each space. */
-            DevicePeerAccess access;  /**< Grants peer access between devices. */
+            DeviceSpaceQueues queues;         /**< Names the queue of each space. */
+            DevicePeerAccess access;          /**< Grants peer access between devices. */
+            DevicePinnedHostMemory pinned;    /**< Makes the staging slots. */
+            Coherence::StagingRing ring;      /**< Holds the staging slots; sized by the default shape. */
         };
 
         RuntimeTransferPaths::RuntimeTransferPaths() = default;
@@ -144,6 +183,8 @@ namespace SushiRuntime
                 std::make_unique<Coherence::SameContextPath>(paths.support->queues, observer));
             paths.owned.push_back(
                 std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
+            paths.owned.push_back(
+                std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->ring, observer));
             for (const auto& path : paths.owned)
                 paths.views.push_back(path.get());
             return paths;

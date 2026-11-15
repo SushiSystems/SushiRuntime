@@ -18,6 +18,9 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `transfer_cost.hpp` | `TransferCost` and `uniform_transfer_cost()` |
 | `same_context_path.hpp` | `SameContextPath`, one memcpy between two devices of one SYCL context |
 | `peer_path.hpp` | `PeerPath`, one peer copy between two contexts of one backend |
+| `host_staged_path.hpp` | `HostStagedPath`, the copy through pinned host staging buffers |
+| `staging_ring.hpp` | `StagingRing`, `StagingRingShape` and `StagingSlot`, the fixed ring of pinned slots |
+| `pinned_host_memory.hpp` | `PinnedHostMemory`, the port that makes and frees pinned host memory |
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
 | `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
@@ -58,8 +61,34 @@ asks the SYCL peer-access extension on DPC++ and refuses everywhere else, so und
 path connects nothing. Each path tells its optional `TransferObserver` the path name, the two spaces
 and the byte count of every copy it starts; the runtime registers no observer.
 
-The runtime builds both paths once, in `engine/execution`'s `build_transfer_paths()`, and the
-context hands them out as `RuntimeContext::transfer_paths()`, `SameContextPath` first.
+The runtime builds the paths once, in `engine/execution`'s `build_transfer_paths()`, and the
+context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`, `PeerPath`, then
+`HostStagedPath`. The planner takes the first path that connects, so each later path serves only
+what the earlier ones refuse.
+
+## HostStagedPath and StagingRing
+
+`HostStagedPath` connects any two spaces that have a queue, and the host space with any space that
+has one. A copy between two devices is cut into chunks of one ring slot. A chunk goes from the
+source into a slot on the source's queue, and from the slot to the destination on the destination's
+queue; the copy out of the slot for chunk k runs while chunk k + 1 is copied into the next slot, so
+the two legs overlap. The path waits on the host for each source-to-slot leg, because the two
+queues may belong to two contexts and an event does not cross a context. It returns the event of
+the last slot-to-destination leg; each such leg waits for the one before it.
+
+The host space is pinned host memory, so a copy to or from it is one `memcpy` on the device's
+queue, with no slot. A space `SpaceQueues` gives no queue is read as host memory in `copy()`.
+
+`StagingRing` holds `slot_count` pinned buffers of `slot_bytes` each. The defaults,
+`K_DEFAULT_STAGING_SLOT_BYTES` (4 MiB) and `K_DEFAULT_STAGING_SLOT_COUNT` (4), are in
+`staging_ring.hpp` and nowhere else; the runtime builds the ring with them. The slots are made
+through `PinnedHostMemory` on the first `acquire()`, never again, and freed with the ring. A slot
+has one holder; the holder retires it with the event of its last read, and the next holder waits
+for that event. The ring locks only to hand a slot out or take it back.
+
+The path does not keep the host bytes as a valid instance: the slot is reused, and the directory
+never hears of it. Keeping a host instance when a later reader needs it is a planner refinement,
+not part of this path.
 
 ## splice_plan
 
