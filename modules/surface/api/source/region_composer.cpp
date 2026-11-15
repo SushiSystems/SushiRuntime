@@ -37,12 +37,14 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -96,6 +98,10 @@ namespace SushiRuntime
                     if (everything)
                         for (const auto& kv : states_)
                             rebuilt.insert(kv.first);
+                    // A copy plan that is not steady left the directory where it cannot run again.
+                    for (const auto& kv : states_)
+                        if (kv.second.copy_plan && !kv.second.copy_plan->steady)
+                            rebuilt.insert(kv.first);
 
                     auto placement = runtime.placement();
                     const RuleStamp stamp(placement->rules.get(), runtime.machine_facts(),
@@ -114,9 +120,13 @@ namespace SushiRuntime
                                 return make_error(std::move(stamped.error()));
                         }
                         // The planned copies join the region before its degrees and boundary are read.
-                        Result<void> coherent = plan_region_coherence(state.nodes, runtime);
+                        Result<std::optional<Internal::Coherence::CopyPlan>> coherent =
+                            plan_region_coherence(state.nodes, runtime);
                         if (!coherent)
                             return make_error(std::move(coherent.error()));
+                        if (coherent.value())
+                            ++coherence_plans_;
+                        state.copy_plan = std::move(coherent.value());
                         finish_region(state);
                         built.emplace(k, std::move(state));
                     }
@@ -171,6 +181,18 @@ namespace SushiRuntime
 
                 /** @brief Returns how many times the plan has been composed. */
                 [[nodiscard]] std::size_t compose_count() const noexcept { return compiles_; }
+
+                /** @brief Returns how many times a commit ran the coherence planner. */
+                [[nodiscard]] std::size_t coherence_plan_count() const noexcept { return coherence_plans_; }
+
+                /** @brief Returns whether a region holds a copy plan that must be planned again before a run. */
+                [[nodiscard]] bool coherence_replan_due() const noexcept
+                {
+                    for (const auto& kv : states_)
+                        if (kv.second.copy_plan && !kv.second.copy_plan->steady)
+                            return true;
+                    return false;
+                }
 
                 /** @brief Returns whether the last commit classified the plan for the in-order chain. */
                 [[nodiscard]] bool chain_classified() const noexcept { return chain_classified_; }
@@ -241,6 +263,8 @@ namespace SushiRuntime
                     std::map<Base, BaseAccess>   access;
                     std::vector<const Node*>     rule_nodes;     /**< Last node of each rule. */
                     std::uint64_t                generation = 0; /**< Recorder generation built. */
+                    /** @brief Copy plan spliced into nodes; nothing when the planner did not run. */
+                    std::optional<Internal::Coherence::CopyPlan> copy_plan;
                 };
 
                 /**
@@ -717,6 +741,8 @@ namespace SushiRuntime
                 sushi_ptr<Node> sentinel_;
 
                 std::size_t compiles_ = 0;
+                /// @brief Commits of a region that ran the coherence planner.
+                std::size_t coherence_plans_ = 0;
                 std::size_t plan_index_counter_ = 0;
                 bool committed_once_ = false;
 
@@ -797,6 +823,16 @@ namespace SushiRuntime
         std::size_t RegionComposer::compose_count() const noexcept
         {
             return state_ != nullptr ? state_->compose_count() : 0;
+        }
+
+        std::size_t RegionComposer::coherence_plan_count() const noexcept
+        {
+            return state_ != nullptr ? state_->coherence_plan_count() : 0;
+        }
+
+        bool RegionComposer::coherence_replan_due() const noexcept
+        {
+            return state_ != nullptr && state_->coherence_replan_due();
         }
 
         bool RegionComposer::composed() const noexcept

@@ -46,6 +46,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_plan_cache.cpp
         graph/plumbing/test_region_composer/test_region_composer.cpp
         graph/plumbing/test_region_composer/test_cross_vendor_copy.cpp
+        graph/plumbing/test_region_composer/test_copy_plan_replay.cpp
         graph/plumbing/test_step_driver/test_step_driver.cpp
         graph/test_access.cpp
         graph/test_device_sized.cpp
@@ -107,6 +108,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_builder_surface.cpp
         graph/plumbing/test_plan_cache.cpp
         graph/plumbing/test_region_composer/test_cross_vendor_copy.cpp
+        graph/plumbing/test_region_composer/test_copy_plan_replay.cpp
         graph/plumbing/test_step_driver/test_step_driver.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp

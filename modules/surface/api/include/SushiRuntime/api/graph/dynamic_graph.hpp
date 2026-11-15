@@ -230,6 +230,14 @@ namespace SushiRuntime
              * only read the regions.
              */
             using RegionComposer::compose_count;
+
+            /**
+             * @brief Returns how many times a composition ran the coherence planner over a region.
+             *
+             * A run that replays the composed plan leaves it unchanged; a copy plan that is not
+             * steady is planned again at the next run.
+             */
+            using RegionComposer::coherence_plan_count;
             using RegionComposer::id;
 
             /**
@@ -383,13 +391,14 @@ namespace SushiRuntime
             [[nodiscard]] bool may_chain() const noexcept { return chain_allowed(); }
 
             /**
-             * @brief Returns whether a structural change, a new recording or a chain not yet
-             *        classified requires a recompose.
+             * @brief Returns whether a structural change, a new recording, a chain not yet
+             *        classified or a copy plan that is not steady requires a recompose.
              */
             [[nodiscard]] bool needs_commit() const
             {
                 return !composed() || rebuild_every_region_ || !dirty_regions_.empty() ||
-                       !dropped_.empty() || (chain_allowed() && chain_unclassified());
+                       !dropped_.empty() || (chain_allowed() && chain_unclassified()) ||
+                       coherence_replan_due();
             }
 
             /** @brief Marks dirty each region written to whose recording really changed. */

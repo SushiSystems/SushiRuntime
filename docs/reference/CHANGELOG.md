@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Changed a dynamic graph to keep each region's copy plan with its compiled sub-graph and replay it without running the planner; a plan that is not steady is planned again (GLOBAL_HANDLE H5).
+- 2026-11-15 — api: Added `coherence_plan_count()` to `RegionComposer` and `DynamicGraph` (GLOBAL_HANDLE H5).
 - 2026-11-15 — api: Changed a kernel recorded with `In`, `Out` or `InOut` captures to receive each buffer's instance on its node's device, resolved at dispatch (GLOBAL_HANDLE H3).
 - 2026-11-15 — api: Changed `Recorder::captured_kernel()` to take the handle of each pointer as a fourth argument (GLOBAL_HANDLE H3).
 - 2026-11-15 — distributed: Added one owner per handle, the machine that minted it; the master shares only the handles it owns (GLOBAL_HANDLE H6).

@@ -30,8 +30,10 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
+#include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -44,12 +46,13 @@ namespace SushiRuntime
         /**
          * @brief Adds the allocate, copy and free nodes a region's nodes need on runtime's devices.
          *
-         * A runtime with one device is left alone. Each node runs where placement_of() puts it;
-         * a node it cannot place is left to the dispatch to refuse.
+         * A runtime with one device is left alone. Instances stay resident across steps, and
+         * every buffer with a host-visible home is copied back to it at the graph end.
          * @param nodes A built, stamped region; gains the planned nodes.
-         * @return Nothing, or the error the planner gave; nodes is then unchanged.
+         * @return The spliced plan, nothing when no planner ran, or its error; nodes then stays.
          */
-        [[nodiscard]] Result<void> plan_region_coherence(std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
-                                                         Internal::Execution::RuntimeContext& runtime);
+        [[nodiscard]] Result<std::optional<Internal::Coherence::CopyPlan>>
+        plan_region_coherence(std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                              Internal::Execution::RuntimeContext& runtime);
     } // namespace Detail
 } // namespace SushiRuntime

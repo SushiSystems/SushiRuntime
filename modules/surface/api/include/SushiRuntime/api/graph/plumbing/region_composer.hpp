@@ -95,6 +95,19 @@ namespace SushiRuntime
                 [[nodiscard]] SUSHIRUNTIME_API std::size_t compose_count() const noexcept;
 
                 /**
+                 * @brief Returns how many times a commit ran the coherence planner over a region.
+                 *
+                 * A step that replays the composed plan runs no planner and leaves it unchanged.
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API std::size_t coherence_plan_count() const noexcept;
+
+                /**
+                 * @brief Returns whether a region's copy plan is not steady, so the next run must
+                 *        commit and plan it again instead of replaying it.
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API bool coherence_replan_due() const noexcept;
+
+                /**
                  * @brief Returns whether a composed plan stands.
                  * @return False before the first commit and after a commit that threw midway.
                  */

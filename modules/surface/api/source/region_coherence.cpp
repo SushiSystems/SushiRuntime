@@ -32,14 +32,18 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
+#include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
 #include <SushiRuntime/coherence/transfer_cost.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
@@ -48,11 +52,48 @@ namespace SushiRuntime
 {
     namespace Detail
     {
-        Result<void> plan_region_coherence(std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
-                                           Internal::Execution::RuntimeContext& runtime)
+        namespace
+        {
+            /** @brief Returns whether the host reads the home instance of a buffer without a copy. */
+            bool home_is_host_visible(const Internal::Memory::EntryView& entry) noexcept
+            {
+                if (entry.home == Internal::Graph::host_memory_space())
+                    return true;
+                return entry.home_kind == Internal::Memory::USMKind::Host ||
+                       entry.home_kind == Internal::Memory::USMKind::Shared;
+            }
+
+            /**
+             * @brief Returns the buffers nodes touch whose home the host can read.
+             *
+             * The API does not track which buffers the host reads between two steps, so every
+             * buffer with a host-visible home counts; one the host never reads costs a copy back.
+             */
+            std::set<GlobalHandle> host_read_buffers(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                                                     const Internal::Memory::ResidencyView& directory)
+            {
+                std::set<GlobalHandle> touched;
+                for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
+                {
+                    for (const BufferRegion& region : node->io_reads_)
+                        touched.insert(region.base);
+                    for (const BufferRegion& region : node->io_writes_)
+                        touched.insert(region.base);
+                }
+                std::set<GlobalHandle> read;
+                for (GlobalHandle handle : touched)
+                    if (home_is_host_visible(directory.inspect(handle)))
+                        read.insert(handle);
+                return read;
+            }
+        } // namespace
+
+        Result<std::optional<Internal::Coherence::CopyPlan>>
+        plan_region_coherence(std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                              Internal::Execution::RuntimeContext& runtime)
         {
             if (runtime.devices().count() < 2)
-                return {};
+                return std::optional<Internal::Coherence::CopyPlan>();
 
             const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handles());
             const Internal::Coherence::SpaceOfNode space_of =
@@ -70,10 +111,21 @@ namespace SushiRuntime
                 runtime.handles(), runtime.memory_spaces(),
                 std::vector<const Internal::Coherence::TransferPath*>(paths.begin(), paths.end()),
                 Internal::Coherence::uniform_transfer_cost());
+            // Planned instances stay resident; the policy and the options live as long as the planner.
+            const Internal::Coherence::LogicalTimeEviction eviction;
+            Internal::Coherence::ResidencyOptions residency;
+            residency.policy = &eviction;
+            residency.host = Internal::Graph::host_memory_space();
+            residency.host_read = host_read_buffers(nodes, runtime.handles());
+            planner.set_residency(std::move(residency));
             Internal::Coherence::DirectoryPlannedNodeFactory factory(
                 runtime.handles(),
                 std::make_shared<Internal::Coherence::USMInstanceAllocator>(runtime.shared_memory()), paths);
-            return Internal::Coherence::splice_plan(nodes, space_of, planner, factory);
+            Result<Internal::Coherence::CopyPlan> spliced =
+                Internal::Coherence::splice_plan(nodes, space_of, planner, factory);
+            if (!spliced)
+                return make_error(std::move(spliced.error()));
+            return std::optional<Internal::Coherence::CopyPlan>(std::move(spliced.value()));
         }
     } // namespace Detail
 } // namespace SushiRuntime

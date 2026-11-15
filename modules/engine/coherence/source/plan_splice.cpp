@@ -90,7 +90,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        Result<void> splice_plan(std::vector<sushi_ptr<Node>>& nodes, const SpaceOfNode& space_of,
+        Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Node>>& nodes, const SpaceOfNode& space_of,
                                  CoherencePlanner& planner, PlannedNodeFactory& factory)
         {
             std::vector<NodeAccess> accesses(nodes.size());
@@ -107,7 +107,7 @@ namespace SushiRuntime
                 return make_error(std::move(planned.error()));
             const std::vector<PlannedStep>& steps = planned.value().steps;
             if (steps.empty())
-                return {};
+                return std::move(planned.value());
 
             // Every node is built before the graph changes, so a refused step leaves it whole.
             std::vector<sushi_ptr<Node>> made;
@@ -197,7 +197,7 @@ namespace SushiRuntime
             }
 
             nodes.insert(nodes.end(), made.begin(), made.end());
-            return {};
+            return std::move(planned.value());
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

@@ -54,9 +54,9 @@ namespace SushiRuntime
          * A step takes its node's predecessors and precedes it and every later user of its
          * instances; a step at the graph end follows every leaf. The README lists the edges.
          * @param nodes Nodes whose edges are baked; gains the planned nodes.
-         * @return Nothing, or the error the planner or the factory gave; nodes is then unchanged.
+         * @return The spliced plan, or the error the planner or the factory gave; nodes is then unchanged.
          */
-        [[nodiscard]] Result<void> splice_plan(std::vector<sushi_ptr<Graph::Node>>& nodes,
+        [[nodiscard]] Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Graph::Node>>& nodes,
                                                const SpaceOfNode& space_of, CoherencePlanner& planner,
                                                PlannedNodeFactory& factory);
     } // namespace Internal::Coherence
