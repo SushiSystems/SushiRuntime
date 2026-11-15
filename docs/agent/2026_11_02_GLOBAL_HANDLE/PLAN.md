@@ -171,3 +171,49 @@ The directory is built before the identity switches to it, so H1 has a minter to
 The work closes when T33 passes, every phase is moved with `sr design phase-state`, and
 `REPORT.md` holds one `dispatch:` line per dispatch and the probe table of T03. Merging to `main`
 waits for the owner; the release tag is the owner's.
+
+## Worker rules
+
+The orchestrator hands each worker one task of this plan. These rules come with every
+task; the dispatch names the task, its files and its acceptance criterion.
+
+### Start
+
+1. Your worktree starts on an old commit. Run `git reset --hard feature/global_handle` in it before
+   reading anything, and confirm `git log --oneline -1` shows the branch head.
+2. Read `SPEC.md`, your task's row in `PLAN.md`, `docs/design/GLOBAL_HANDLE/README.md` and, for
+   partitioning tasks, `docs/design/GLOBAL_HANDLE/PARTITIONING.md`.
+3. Run `sr design owner <path>` for each module you change, and paste the output.
+
+### While working
+
+- No build, no test run, no `sr build`, `sr test`, cmake, ninja or ctest. The owner ordered one build
+  and one test run per repository after the whole plan.
+- Syntax-check C++ with one `clang++ -fsyntax-only` process at a time, on few files, never in
+  parallel. Take flags from `build/compile_commands.json` (`-std=gnu++17`, the include paths of the
+  module and its dependencies). The compiler is
+  `D:/Projects/sushistack/dependencies/toolchains/llvm-sycl/bin/clang++.exe`; add `-fsycl` for files
+  that include SYCL.
+- The code is C++17 and must also compile on AdaptiveCpp: no Intel-only extension, no
+  `sycl::ext::oneapi` without an existing seam that hides it.
+- SushiRuntime knows no math. It orchestrates; kernels and numerics belong to consumers.
+- One responsibility per unit; a new memory space, transfer path, device-key source or eviction
+  policy adds a file and edits no sibling. Depend on interfaces, never on another module's concrete
+  class. The hot path takes no lock.
+- Determinism: handles, keys, plans and orders are pure functions of their inputs. No clock, no
+  address order and no hash-table iteration order decides an outcome.
+- Names are not abbreviated (`Statistics`, `Execution`); acronyms stay in capitals inside names
+  (`API`, `UUID`, `PCI`, `ID`).
+- Doxygen comments in plain, short English. Line separator comments (`// ===`, `// ---`) are
+  forbidden. Load `cpp-code-style`, `source-comments`, `sushisystems-licence`, `testing` and, for a
+  README or a page, `documentation`.
+- Every header and source file gets its mirror test under `tests/` (the commit hook runs
+  `tools/testing/check_test_mirror.py`). Register each test file in its tests `CMakeLists.txt`.
+- Write licence blocks by copying one from a sibling file of the same language.
+
+### Before reporting
+
+Run and paste: `python tools/testing/check_test_mirror.py .`,
+`python tools/documentation/check_source_comments.py .`,
+`python tools/documentation/check_docs_truth.py .`, and each syntax check. `git add -A` your
+changes in your worktree. Do not commit.
