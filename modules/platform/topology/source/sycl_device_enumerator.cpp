@@ -30,7 +30,10 @@
 
 #include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 
+#include <algorithm>
+#include <cstdint>
 #include <exception>
+#include <optional>
 #include <regex>
 #include <string>
 
@@ -97,6 +100,80 @@ namespace SushiRuntime
                     return {};
                 }
             }
+            /** @brief Returns the backend that reports a device; the host backend for any other. */
+            DeviceBackend backend_of(const sycl::device& device)
+            {
+                switch (device.get_backend())
+                {
+#if defined(SYCL_IMPLEMENTATION_ACPP)
+                    case sycl::backend::ocl:
+                        return DeviceBackend::OpenCL;
+                    case sycl::backend::level_zero:
+                        return DeviceBackend::LevelZero;
+                    case sycl::backend::cuda:
+                        return DeviceBackend::CUDA;
+                    case sycl::backend::hip:
+                        return DeviceBackend::HIP;
+#else
+                    case sycl::backend::opencl:
+                        return DeviceBackend::OpenCL;
+                    case sycl::backend::ext_oneapi_level_zero:
+                        return DeviceBackend::LevelZero;
+                    case sycl::backend::ext_oneapi_cuda:
+                        return DeviceBackend::CUDA;
+                    case sycl::backend::ext_oneapi_hip:
+                        return DeviceBackend::HIP;
+#endif
+                    default:
+                        return DeviceBackend::Host;
+                }
+            }
+
+            /** @brief Returns the vendor string of a device, or an empty text when it cannot be read. */
+            std::string vendor_of(const sycl::device& device)
+            {
+                try
+                {
+                    return device.get_info<sycl::info::device::vendor>();
+                }
+                catch (...)
+                {
+                    return {};
+                }
+            }
+
+            /**
+             * @brief Returns the UUID a device reports, or nothing.
+             *
+             * The Intel device-info extension carries it for Level Zero, CUDA and HIP devices.
+             * Where the extension is absent, as under AdaptiveCpp, no UUID is reported and the
+             * device is named by its PCI address or its ordinal. An all-zero UUID counts as none.
+             */
+            std::optional<HardwareID> uuid_of(const sycl::device& device)
+            {
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 2
+                try
+                {
+                    if (device.has(sycl::aspect::ext_intel_device_info_uuid))
+                    {
+                        const auto raw = device.get_info<sycl::ext::intel::info::device::uuid>();
+                        HardwareID uuid{};
+                        std::copy(raw.begin(), raw.end(), uuid.begin());
+                        if (std::any_of(uuid.begin(), uuid.end(),
+                                        [](std::uint8_t byte) { return byte != 0; }))
+                            return uuid;
+                    }
+                }
+                catch (...)
+                {
+                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "reading the UUID of a device threw; "
+                                 "it is named by its PCI address or its ordinal instead");
+                }
+#else
+                static_cast<void>(device);
+#endif
+                return std::nullopt;
+            }
         } // namespace
 
         std::vector<sycl::device> sycl_devices()
@@ -118,6 +195,9 @@ namespace SushiRuntime
                     entry.fp64 = device.has(sycl::aspect::fp64);
                     entry.global_mem_size = device.get_info<sycl::info::device::global_mem_size>();
                     entry.max_compute_units = device.get_info<sycl::info::device::max_compute_units>();
+                    entry.backend = backend_of(device);
+                    entry.vendor = vendor_of(device);
+                    entry.uuid = uuid_of(device);
                     if (entry.kind == DeviceKind::GPU || entry.kind == DeviceKind::Accelerator)
                         entry.pci_text = pci_text_of(device, entry.name);
                     listed.push_back(std::move(entry));

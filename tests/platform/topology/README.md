@@ -58,6 +58,14 @@ PCI address is dropped; a GPU whose driver names no address takes the one the re
 device without fp64 is dropped when the filter requires it; and a failed enumeration is
 `ErrorCode::Unsupported` naming the runtime's text.
 
+### The card and key tests
+
+`OneCardUnderTwoBackendsWithOneUUIDIsListedOnce` and `OneCardUnderTwoBackendsAtOnePCIAddressIsListedOnce`
+list one card twice and expect one node, on the native backend. `AMachineWithDuplicateCardsListsEachCardOnce`
+adds a CPU and two cards with no id. `NodesAreSortedByKeyAndNumberedFromZero` checks the order, and
+`KeysAreEqualOverTenStartsWithTheSelectorReordered` probes the same machine ten times with the
+device list rotated and reversed and expects the same names, keys and order.
+
 ### `NoTwoNodesShareAPCIAddress` and `EveryDeviceIsNamed`
 
 Medium, over the SYCL enumerator and the hwloc reader of the machine. The first asserts that no
@@ -151,3 +159,12 @@ The file tests the TopologyProvider and NUMADistanceModel contracts over the in-
 | --- | --- |
 | `AProviderAnswersThroughTheInterface` | A provider is called through the interface, and the core map defaults empty. |
 | `ADistanceModelAnswersThroughTheInterface` | A distance model answers through the interface: local is the cheapest. |
+
+## The device key tests
+
+`compile_device_key_source.cpp` compiles the `DeviceKeySource` port alone. `test_uuid_device_key_source.cpp`,
+`test_pci_device_key_source.cpp` and `test_ordinal_device_key_source.cpp` run each source on plain
+`DeviceIdentity` values. `test_device_key_assigner.cpp` covers the order of the sources, the ordinals
+and, over every permutation of four devices, that no key depends on the input order.
+`test_physical_card_selector.cpp` covers the merge by UUID, by PCI address and through a chain, and
+the choice of the native device.

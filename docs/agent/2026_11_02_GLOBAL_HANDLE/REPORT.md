@@ -39,6 +39,7 @@ The AdaptiveCpp route was not needed. T38 puts this route into `sr build`.
 dispatch: T38 — sonnet medium, 62 turns, passed, rung 1
 dispatch: T01 — opus low, 37 turns, passed, rung 1
 dispatch: T05 — opus low, rung 1, passed
+dispatch: T02 — sonnet medium, rung 1, passed
 ```
 
 ## T05: the residency directory

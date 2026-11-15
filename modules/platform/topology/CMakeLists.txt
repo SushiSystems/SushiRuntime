@@ -8,6 +8,7 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         affinity.cpp
+        device_key_assigner.cpp
         host_topology.cpp
         host_identity_posix.cpp
         host_identity_windows.cpp
@@ -15,9 +16,13 @@ sushiruntime_add_module(
         hwloc_numa_reader.cpp
         hwloc_topology_provider.cpp
         numa_mapper.cpp
+        ordinal_device_key_source.cpp
+        pci_device_key_source.cpp
+        physical_card_selector.cpp
         remapping_topology_provider.cpp
         sycl_device_enumerator.cpp
         topology_view.cpp
-    DEPENDS core log machine
+        uuid_device_key_source.cpp
+    DEPENDS core handle log machine
     PRIVATE_DEPENDS numa_lookup
     EXTERNAL PkgConfig::HWLOC)

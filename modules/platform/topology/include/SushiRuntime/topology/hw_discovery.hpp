@@ -36,6 +36,7 @@
 #include <vector>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/topology/device_enumerator.hpp>
@@ -84,14 +85,17 @@ namespace SushiRuntime
 
             std::size_t global_mem_size = 0;     /**< Total global memory size in bytes. */
             std::uint32_t max_compute_units = 0; /**< Total number of compute units. */
+
+            /** @brief Names the physical device across runs; set by discovery. */
+            DeviceKey key{};
         };
 
         /**
          * @brief Filters the devices an enumerator lists and maps each to its NUMA node.
          *
-         * Used once at RuntimeContext construction to build the device list. At most one
-         * CPU is kept per NUMA node, and at most one GPU or accelerator per resolved PCI
-         * address, the first enumerated; a device with no PCI address is always kept.
+         * Used once at RuntimeContext construction. Keeps one CPU per NUMA node and one
+         * GPU or accelerator per physical card, and sorts the list by DeviceKey, so the
+         * logical ids do not depend on the order the enumerator lists the devices in.
          */
         class SUSHIRUNTIME_API HardwareDiscovery
         {
@@ -106,7 +110,7 @@ namespace SushiRuntime
                 /**
                  * @brief Lists the devices and returns those the filter admits as hardware nodes.
                  * @param config Device-class filter; defaults to including all classes.
-                 * @return The devices kept, with logical IDs and NUMA assignments, or
+                 * @return The devices kept, sorted by key, with logical IDs, keys and NUMA assignments, or
                  *         Unsupported when the enumerator could not list the devices.
                  */
                 [[nodiscard]] Result<std::vector<HardwareNode>>

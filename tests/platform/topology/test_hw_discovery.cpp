@@ -28,8 +28,10 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -47,7 +49,11 @@
 #include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
+using SushiRuntime::DeviceBackend;
 using SushiRuntime::DeviceFilter;
+using SushiRuntime::DeviceKey;
+using SushiRuntime::HardwareID;
+using SushiRuntime::HardwareIDKind;
 using SushiRuntime::DeviceKind;
 
 namespace
@@ -309,4 +315,109 @@ TEST(Small_HardwareDiscovery, AFailedEnumerationIsUnsupported)
     ASSERT_FALSE(probed.has_value());
     EXPECT_EQ(probed.error().code, SushiRuntime::ErrorCode::Unsupported);
     EXPECT_NE(probed.error().message.find("no platform"), std::string::npos);
+}
+
+namespace
+{
+    /** @brief Returns one enumerated GPU on a backend, with an optional UUID and PCI text. */
+    DeviceDescriptor gpu_on(DeviceBackend backend, const char* name, std::optional<std::uint8_t> uuid,
+                            std::string pci_text = {})
+    {
+        DeviceDescriptor device = listed(name, DeviceKind::GPU, std::move(pci_text));
+        device.backend = backend;
+        if (uuid.has_value())
+            device.uuid = HardwareID{*uuid};
+        return device;
+    }
+
+    /** @brief Returns a machine with a CPU, two cards that each appear twice, and two cards with no id. */
+    std::vector<DeviceDescriptor> machine_with_duplicates()
+    {
+        DeviceDescriptor cpu = listed("cpu", DeviceKind::CPU);
+        cpu.backend = DeviceBackend::OpenCL;
+        return {cpu,
+                gpu_on(DeviceBackend::OpenCL, "card one", 1, "0000:01:00.0"),
+                gpu_on(DeviceBackend::CUDA, "card one", 1),
+                gpu_on(DeviceBackend::OpenCL, "card two", std::nullopt, "0000:02:00.0"),
+                gpu_on(DeviceBackend::HIP, "card two", std::nullopt, "0000:02:00.0"),
+                gpu_on(DeviceBackend::OpenCL, "card b", std::nullopt),
+                gpu_on(DeviceBackend::OpenCL, "card a", std::nullopt)};
+    }
+
+    /** @brief Gives each device the position it has in the list as its enumeration id. */
+    void number_in_order(std::vector<DeviceDescriptor>& devices)
+    {
+        for (std::size_t position = 0; position < devices.size(); ++position)
+            devices[position].id = position;
+    }
+
+    /** @brief Returns the name and key text of every node, in order. */
+    std::vector<std::string> keyed_names_of(const std::vector<HardwareNode>& nodes)
+    {
+        std::vector<std::string> names;
+        for (const HardwareNode& node : nodes)
+            names.push_back(node.name + " " + SushiRuntime::to_text(node.key));
+        return names;
+    }
+} // namespace
+
+/** @brief Tests that one card that two backends report with one UUID is listed once, natively. */
+TEST(Small_HardwareDiscovery, OneCardUnderTwoBackendsWithOneUUIDIsListedOnce)
+{
+    const std::vector<HardwareNode> nodes =
+        probe({gpu_on(DeviceBackend::OpenCL, "card", 4), gpu_on(DeviceBackend::CUDA, "card", 4)});
+
+    ASSERT_EQ(nodes.size(), 1u);
+    EXPECT_EQ(nodes[0].key.backend, DeviceBackend::CUDA);
+    EXPECT_EQ(nodes[0].key.id_kind, HardwareIDKind::UUID);
+}
+
+/** @brief Tests that one card that two backends report at one PCI address is listed once, natively. */
+TEST(Small_HardwareDiscovery, OneCardUnderTwoBackendsAtOnePCIAddressIsListedOnce)
+{
+    const std::vector<HardwareNode> nodes =
+        probe({gpu_on(DeviceBackend::OpenCL, "card", std::nullopt, "0000:03:00.0"),
+               gpu_on(DeviceBackend::HIP, "card", std::nullopt, "0000:03:00.0")});
+
+    ASSERT_EQ(nodes.size(), 1u);
+    EXPECT_EQ(nodes[0].key.backend, DeviceBackend::HIP);
+}
+
+/** @brief Tests that a machine whose cards appear twice lists each card once. */
+TEST(Small_HardwareDiscovery, AMachineWithDuplicateCardsListsEachCardOnce)
+{
+    const std::vector<HardwareNode> nodes = probe(machine_with_duplicates());
+
+    EXPECT_EQ(nodes.size(), 5u);
+}
+
+/** @brief Tests that the nodes come out sorted by key, numbered from zero. */
+TEST(Small_HardwareDiscovery, NodesAreSortedByKeyAndNumberedFromZero)
+{
+    const std::vector<HardwareNode> nodes = probe(machine_with_duplicates());
+
+    EXPECT_TRUE(std::is_sorted(nodes.begin(), nodes.end(),
+                               [](const HardwareNode& left, const HardwareNode& right)
+                               { return left.key < right.key; }));
+    EXPECT_EQ(first_unsequential_id(nodes), "");
+}
+
+/** @brief Tests that the keys and the order are equal over ten starts with the device order changed. */
+TEST(Small_HardwareDiscovery, KeysAreEqualOverTenStartsWithTheSelectorReordered)
+{
+    std::vector<DeviceDescriptor> devices = machine_with_duplicates();
+    number_in_order(devices);
+    const std::vector<std::string> first = keyed_names_of(probe(devices));
+    ASSERT_EQ(first.size(), 5u);
+
+    for (std::size_t start = 1; start < 10; ++start)
+    {
+        std::rotate(devices.begin(), devices.begin() + static_cast<std::ptrdiff_t>(start % devices.size()),
+                    devices.end());
+        if (start % 2 == 0)
+            std::reverse(devices.begin(), devices.end());
+        number_in_order(devices);
+
+        EXPECT_EQ(keyed_names_of(probe(devices)), first) << "start " << start;
+    }
 }

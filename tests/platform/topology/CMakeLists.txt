@@ -7,9 +7,11 @@ sushiruntime_add_module_tests(
     MODULE topology
     SOURCES
         compile_device_enumerator.cpp
+        compile_device_key_source.cpp
         compile_numa_reader.cpp
         compile_topology_log_category.cpp
         test_affinity.cpp
+        test_device_key_assigner.cpp
         test_host_topology.cpp
         test_host_identity.cpp
         test_hw_discovery.cpp
@@ -20,8 +22,12 @@ sushiruntime_add_module_tests(
         test_in_memory_topology_provider.cpp
         test_matrix_distance_model.cpp
         test_numa_mapper.cpp
+        test_ordinal_device_key_source.cpp
+        test_pci_device_key_source.cpp
+        test_physical_card_selector.cpp
         test_remapping_topology_provider.cpp
         test_sycl_device_enumerator.cpp
         test_topology_provider.cpp
-        test_topology_view.cpp)
+        test_topology_view.cpp
+        test_uuid_device_key_source.cpp)
 

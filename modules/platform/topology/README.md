@@ -68,10 +68,10 @@ every stored node.
 ## device_enumerator.hpp and numa_reader.hpp
 
 `HardwareDiscovery` is built over two ports and holds the decisions alone: the filter, one CPU
-per NUMA node, one GPU or accelerator per PCI address, and the logical ids.
+per NUMA node, one GPU or accelerator per physical card, the keys and the logical ids.
 
 `DeviceEnumerator::enumerate()` lists every device as a `DeviceDescriptor`, a plain value: its
-id in the enumeration, its name, class, fp64 flag, memory, compute units and the PCI address text its driver reports.
+id in the enumeration, its name, class, fp64 flag, memory, compute units, backend, vendor, UUID and the PCI address text its driver reports.
 It returns `ErrorCode::Unsupported` with the device runtime's text when it cannot list them.
 No SYCL type is in it, and a `HardwareNode` carries the id and the class, not a SYCL device.
 `SYCLDeviceEnumerator` (`sycl_device_enumerator.hpp`) lists every SYCL platform, and
@@ -146,13 +146,35 @@ bogus `global_mem_size`. Discovery keeps at most one CPU per NUMA node, so the s
 does not build duplicate queues for one processor. The second CPU seen on a NUMA node is
 logged and dropped, and takes no logical id.
 
-#### One GPU or accelerator per PCI address
+#### One device per physical card
 
 A GPU that two backends expose is enumerated twice, and every entry of the device list gets its
-own queues, so the second entry would give one physical device two queue sets. Discovery keeps
-the first GPU or accelerator enumerated at a resolved PCI address; a later one at the same
-address is logged and dropped, and takes no logical id. A device with no resolved PCI
-address is never dropped, because nothing tells it apart from a second physical device.
+own queues, so the second entry would give one physical device two queue sets.
+`select_physical_cards()` (`physical_card_selector.hpp`) treats two devices as one card when they
+report the same UUID or the same resolved PCI address, and follows a chain of such pairs. It keeps
+one device of each card: a native backend over OpenCL, then the lowest backend value, the lowest
+name and the lowest position. The others are logged and dropped, and take no logical id. A device
+with neither a UUID nor a PCI address is its own card, because nothing tells it apart from a
+second physical device. NVIDIA and AMD devices often report no PCI address, so the UUID is the id
+that joins them.
+
+#### The device key and the order of the list
+
+Each kept device gets a `DeviceKey` (`modules/foundation/handle`), the name that holds across
+runs. `DeviceKeyAssigner` (`device_key_assigner.hpp`) asks one `DeviceKeySource` after another and
+takes the first answer: `CUDAUUIDDeviceKeySource`, `HIPUUIDDeviceKeySource` and
+`LevelZeroUUIDDeviceKeySource` (`uuid_device_key_source.hpp`) name a device of their backend by
+its UUID; `PCIDeviceKeySource` names any device by its PCI address; `OrdinalDeviceKeySource` names
+the rest by backend alone. A source reads a `DeviceIdentity` (`device_key_source.hpp`), a plain
+value, so a fake topology builds one without SYCL. The SYCL enumerator fills the UUID from the Intel
+device-info extension (`SYCL_EXT_INTEL_DEVICE_INFO >= 2`); under AdaptiveCpp it is empty and the
+device is named by its PCI address or its ordinal.
+
+Devices that share a backend, an id kind and an id take the ordinals 0, 1, 2 in the sorted order
+of their vendor, name, memory size and compute units, never in the order the enumerator listed
+them. The input position decides only between devices equal in all four. Discovery then sorts the
+list by key and numbers it from 0, so the logical ids, and the `DeviceIndex` values built from
+them, do not change when the selector lists the devices in another order.
 
 #### fp64 is checked at discovery
 

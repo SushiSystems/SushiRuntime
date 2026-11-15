@@ -39,12 +39,12 @@ when its own context would not hold their reading; it still reviews and commits 
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
 | T01 | `foundation/handle` | | done |
-| T02 | `platform/topology` | T01 | todo |
+| T02 | `platform/topology` | T01 | done |
 | T03 | HIP probe | | done |
 | T38 | `cli`, `cmake/gpu`: the HIP backend on Windows | T03 | done |
 | T04 | `foundation/placement`, `surface/api` | T02 | todo |
 | T05 | `platform/memory` directory | T01 | done |
-| T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | todo |
+| T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | running |
 | T07 | `surface/api` region composer | T06 | todo |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | todo |
 | T09 | `platform/memory` `usm_registry` | T06 | todo |

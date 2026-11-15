@@ -32,10 +32,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 
 namespace SushiRuntime
@@ -57,6 +59,12 @@ namespace SushiRuntime
             std::uint32_t max_compute_units = 0; /**< Total number of compute units. */
             /** @brief The PCI address text the driver reports; empty when it reports none. */
             std::string pci_text{};
+            /** @brief Backend that reports the device. */
+            DeviceBackend backend = DeviceBackend::Host;
+            /** @brief Vendor string of the device; empty when the driver gives none. */
+            std::string vendor{};
+            /** @brief The 16-byte UUID the driver reports; empty when it reports none. */
+            std::optional<HardwareID> uuid = std::nullopt;
         };
 
         /**
