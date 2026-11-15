@@ -59,8 +59,10 @@
 #include <SushiRuntime/wire/wire_messages.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/handle_ownership.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
+#include <SushiRuntime/offload_coordination/producer_table.hpp>
 #include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
@@ -191,7 +193,9 @@ namespace SushiRuntime
                   transport(require_transport(std::move(master_transport))),
                   directory(options.secret.bytes(), policy_or_default(options.policy)),
                   exchange(buffers, options.chunk_bytes),
-                  dispatcher(buffers, directory, pending, *transport, held, std::move(master)),
+                  ownership(K_MASTER_MACHINE),
+                  dispatcher(buffers, directory, pending, *transport, held, producers,
+                             std::move(master)),
                   monitor(directory, pending, held, buffers, exchange, *transport,
                           monitor_options(options), clock),
                   session_id(session)
@@ -392,6 +396,9 @@ namespace SushiRuntime
                     // The count rises before the scheduler can end the run that reads it.
                     completed_remote.fetch_add(1, std::memory_order_relaxed);
                     directory.release_inflight(peer);
+                    producers.settle(task->task_id,
+                                     SushiRuntime::span<const BufferHandle>(task->outputs.data(),
+                                                                            task->outputs.size()));
                     dispatcher.complete_remote(*task->node);
                     sink->complete_remote(*task->node);
 
@@ -539,6 +546,18 @@ namespace SushiRuntime
 
                 std::vector<PendingTask> tasks;
                 pending.take_for_worker(peer, tasks);
+
+                // Each version the worker alone held is rebuilt by its producer, which runs first.
+                std::vector<LostInstance> lost;
+                producers.lose(peer, lost);
+                const std::size_t rebuilt_elsewhere = order_for_rebuild(
+                    SushiRuntime::span<const LostInstance>(lost.data(), lost.size()), tasks);
+                if (!lost.empty())
+                    SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY,
+                                "worker {} held {} current versions; their producers run again, "
+                                "{} of them through another removal",
+                                peer.value, lost.size(), rebuilt_elsewhere);
+
                 retired.tasks_returned =
                     resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
                 return retired;
@@ -618,6 +637,12 @@ namespace SushiRuntime
 
             /// @brief Pull streams and the progress of incoming outputs.
             BufferExchange exchange;
+
+            /// @brief The owner machine of each shared handle; only owned handles are shared.
+            HandleOwnership ownership;
+
+            /// @brief The producer of each handle's current version and who holds it.
+            ProducerTable producers;
 
             /// @brief Marks and dispatches nodes.
             OffloadDispatcher dispatcher;
@@ -814,6 +839,15 @@ namespace SushiRuntime
 
         void DistributedCoordinator::share(GlobalHandle handle, std::size_t bytes)
         {
+            const OwnershipStatus status = impl_->ownership.admit(handle);
+            if (status != OwnershipStatus::Owned)
+            {
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
+                            "a handle of machine {} was not shared: machine {} does not own it; "
+                            "its nodes stay with their owner",
+                            handle.machine(), impl_->ownership.local_machine());
+                return;
+            }
             impl_->buffers.share(handle, bytes);
         }
 
@@ -842,6 +876,9 @@ namespace SushiRuntime
                 const GlobalHandle released = impl.buffers.unshare(handle);
                 if (released.is_null())
                     return;
+
+                impl.producers.forget(released);
+                impl.ownership.forget(released);
 
                 std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);

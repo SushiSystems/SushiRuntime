@@ -142,6 +142,27 @@ The test hands `reoffer_nodes()` a real node that no graph runs and a `RefusingO
 | Test | What it proves |
 | --- | --- |
 | `Small_TaskResubmission.Regression_ARefusedReofferForgetsTheFirstOffer` | A node whose first offer `HeldNodes` recorded is refused by the sink once: `reoffer_nodes()` releases its scheduling reference, and the next `first_offer()` records the new time instead of the old one. |
+| `Small_TaskResubmission.ProducersOfLostInstancesRunFirstInHandleOrder` | `order_for_rebuild()` puts tasks 3 and 4, the producers of lost instances, first in handle order, task 3 once though it produced two; tasks 1 and 2 follow in their order, and the instance whose producer, task 9, is absent is counted. |
+
+## test_handle_ownership.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `AnOwnedHandleIsRecordedWithItsMachine` | A handle minted on the table's machine is admitted as `Owned` and `owner_of()` names that machine. |
+| `AForeignHandleIsRefused` | A handle of another machine is refused as `Foreign` and not recorded. |
+| `TheNullHandleHasNoOwner` | The null handle is refused as `Null`. |
+| `AdmitIsAPureFunctionOfTheHandle` | Two tables of one machine answer the same for the same handle. |
+| `ForgottenHandleHasNoOwner` | `forget()` removes the record. |
+
+## test_producer_table.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `SettlingAWholeResultNamesTheMasterAsHolder` | A remote record names the node, task, version and worker; `settle()` moves the holder to the master and keeps the producer. |
+| `SettleOfAnotherTaskOrVersionChangesNothing` | A settle of another task id or an older version leaves the worker as holder. |
+| `AnOlderVersionDoesNotReplaceANewerRecord` | A remote record of version 3 does not replace a local record of version 4. |
+| `LoseNamesTheWorkersVersionsInHandleOrderOnce` | `lose()` returns only the versions the lost worker alone held, in handle order; a second call returns none, and other workers' records stay. |
+| `ForgottenHandleHasNoProducer` | A forgotten handle has no record and is not reported lost. |
 
 ## compile_offload_coordination_log_category.cpp
 

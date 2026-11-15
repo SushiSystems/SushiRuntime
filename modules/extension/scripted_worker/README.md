@@ -25,6 +25,8 @@ answers `CHALLENGE` with a `PROOF` under the empty secret and `PING` with `PONG`
 counts it alive. `DispatchAnswer` says what it does with a `TASK_DISPATCH`: `Accept` confirms it and
 holds the task until the test answers, `Fail` confirms it and reports that the kernel failed, and
 `FallSilent` sends nothing from the dispatch on, not even `PONG`. Its transport does not reconnect.
+`kill()` stops the transport at once, with no `GOODBYE` and no result, as a worker process that dies
+mid-run.
 `report()` sets the facts of its `HELLO` (without it the name is `scripted-worker` and the rest is
 empty) and `limit_jobs()` the task limit of its `PROOF`, both before `start()`.
 `wait_for_dispatches()` and `dispatch()` read the dispatches that arrived. `send_stream()` hands the

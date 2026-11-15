@@ -23,7 +23,7 @@
 
 /**
  * @file task_resubmission.hpp
- * @brief Declares resubmit_tasks() and reoffer_nodes(), which return nodes to the scheduler.
+ * @brief Declares the functions that return nodes to the scheduler, producers of lost data first.
  * @author Mustafa Garip
  * @see modules/extension/offload_coordination/README.md
  */
@@ -39,6 +39,7 @@
 #include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
+#include <SushiRuntime/offload_coordination/producer_table.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 namespace SushiRuntime
@@ -64,6 +65,17 @@ namespace SushiRuntime
                                                     BufferExchange& exchange,
                                                     WorkerDirectory& directory,
                                                     Internal::Graph::OffloadSink& sink) noexcept;
+
+        /**
+         * @brief Moves the producers of lost instances to the front of @p tasks.
+         *
+         * The producers keep the handle order of @p lost, each once; the other tasks keep
+         * their order after them. A producer missing from @p tasks was taken by another
+         * removal, which returns it to the scheduler itself.
+         * @return The number of lost instances whose producer is not in @p tasks.
+         */
+        SUSHIRUNTIME_API std::size_t order_for_rebuild(SushiRuntime::span<const LostInstance> lost,
+                                                       std::vector<PendingTask>& tasks);
 
         /**
          * @brief Offers nodes HeldNodes handed out to the scheduler again.

@@ -24,12 +24,14 @@
 
 /**
  * @file test_task_resubmission.cpp
- * @brief Tests reoffer_nodes(): a node the sink refuses is released with its first offer gone.
+ * @brief Tests reoffer_nodes() and order_for_rebuild(): refused nodes, producers of lost data.
  * @see tests/extension/offload_coordination/README.md
  * @author Mustafa Garip
  */
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -73,4 +75,43 @@ TEST(Small_TaskResubmission, Regression_ARefusedReofferForgetsTheFirstOffer)
     EXPECT_EQ(node->ref_count(), 1) << "the refused node's scheduling reference was released";
     EXPECT_EQ(held.first_offer(*node, at(milliseconds(50))), at(milliseconds(50)))
         << "the released node kept the first offer of its earlier wait";
+}
+
+namespace
+{
+    /** @brief Returns a pending task with only its id set. */
+    PendingTask task_with_id(std::uint64_t task_id)
+    {
+        PendingTask task;
+        task.task_id = task_id;
+        return task;
+    }
+
+    /** @brief Returns a lost instance of slot @p slot whose producer is task @p task_id. */
+    LostInstance lost_from(std::uint32_t slot, std::uint64_t task_id)
+    {
+        LostInstance instance;
+        instance.handle = GlobalHandle(1, 0, HandleKind::Buffer, HandleFlags::None, 1, slot);
+        instance.producer.task_id = task_id;
+        return instance;
+    }
+} // namespace
+
+/** @brief Tests that producers of lost instances lead in handle order, once; the rest keep order. */
+TEST(Small_TaskResubmission, ProducersOfLostInstancesRunFirstInHandleOrder)
+{
+    std::vector<PendingTask> tasks{task_with_id(1), task_with_id(2), task_with_id(3),
+                                   task_with_id(4)};
+    const std::vector<LostInstance> lost{lost_from(1, 3), lost_from(2, 4), lost_from(3, 3),
+                                         lost_from(4, 9)};
+
+    const std::size_t missing =
+        order_for_rebuild(span<const LostInstance>(lost.data(), lost.size()), tasks);
+
+    EXPECT_EQ(missing, 1u) << "task 9 is not among the worker's tasks";
+    ASSERT_EQ(tasks.size(), 4u);
+    EXPECT_EQ(tasks[0].task_id, 3u);
+    EXPECT_EQ(tasks[1].task_id, 4u);
+    EXPECT_EQ(tasks[2].task_id, 1u);
+    EXPECT_EQ(tasks[3].task_id, 2u);
 }

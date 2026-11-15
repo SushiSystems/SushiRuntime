@@ -20,7 +20,9 @@ It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `clus
 | `offload_handles.hpp` | `OffloadHandles`, `UnreachableCause` |
 | `rule_placement.hpp` | `RulePlacement` |
 | `held_nodes.hpp` | `HeldNodes` |
-| `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` |
+| `task_resubmission.hpp` | `resubmit_tasks()`, `order_for_rebuild()`, `reoffer_nodes()` |
+| `handle_ownership.hpp` | `HandleOwnership`, `OwnershipStatus`, `K_MASTER_MACHINE` |
+| `producer_table.hpp` | `ProducerTable`, `ProducerRecord`, `LostInstance` |
 
 ## worker_directory.hpp
 
@@ -133,7 +135,10 @@ and `Transport::send()` copies the payload into the peer's queue.
 `complete_local()` returns after one null check for a node without an `OffloadState`. Otherwise it
 sets `attempts` to 0 and bumps what the node wrote: the handles in `live_writes` for a
 double-buffered node, the stored output handles for a fixed-buffer one. A fixed-buffer node whose
-payload lists no output takes no lock.
+payload lists no output takes no lock. It then records the node in the `ProducerTable` as the
+producer of each new version, held by the master. `dispatch()` records the dispatched node, its
+task id and its worker as the producer of each output's bumped version before the pending table
+owns the node.
 
 ## rule_placement.hpp
 
@@ -211,4 +216,40 @@ nodes `HeldNodes` handed out to the same sink. Both catch what the sink throws, 
 module's category and release the node; `reoffer_nodes()` first makes `HeldNodes` forget the node's
 first offer, so a plan rearmed later that reuses the address starts a new wait. The cluster monitor,
 the reader thread and `DistributedCoordinator::stop()` call them.
+
+`order_for_rebuild()` moves the tasks that produced lost instances to the front of a lost worker's
+tasks, in the handle order of the lost list and each once; the other tasks keep their order. It
+returns how many lost instances have no producer among the tasks, because another removal took
+that task first and returns it itself.
+
+## handle_ownership.hpp
+
+Each `GlobalHandle` has one owner, the machine that minted it, read from the handle's `machine`
+field. `HandleOwnership::admit()` records a handle whose machine is the table's own and answers
+`Owned`; it refuses a handle of another machine as `Foreign` and the null handle as `Null`, and
+records neither. The answer depends on the handle alone. The master's table runs for
+`K_MASTER_MACHINE` (0, the machine field every handle the residency directory mints carries).
+`DistributedCoordinator::share()` shares only an owned handle; a foreign one is refused with a
+WARN, so no node that reads or writes it is offloaded and it stays with its owner. `forget()` runs
+when the handle retires.
+
+## producer_table.hpp
+
+`ProducerTable` keeps, per handle, the node that wrote its current version, the task id of a remote
+write, the version and the holder: the worker that alone has the version whole, or peer 0 for the
+master. A record of an older version never replaces a newer one.
+
+| Call | Caller | Effect |
+| --- | --- | --- |
+| `record_remote()` | `OffloadDispatcher::dispatch()` | the worker holds the bumped versions of the outputs |
+| `record_local()` | `OffloadDispatcher::complete_local()` | the master holds the versions the node wrote |
+| `settle()` | the coordinator's `TASK_RESULT` handler, on a whole result | the master holds the outputs of that task and version |
+| `lose()` | the coordinator, when it retires a worker | returns each version that worker alone held, in handle order, and names the master as holder |
+| `forget()` | the coordinator, when a handle retires | the handle has no record |
+
+When a worker dies mid-run, the coordinator takes its pending tasks and its lost instances, puts
+the producers of the lost instances first with `order_for_rebuild()` and returns the tasks through
+`resubmit_tasks()`. Each producer runs again, on another worker or on the master, and writes its
+output at a newer version, so the bytes equal a run the loss did not touch: the plan is
+deterministic. An output chunk the dead worker wrote before it died is overwritten by the rerun.
 

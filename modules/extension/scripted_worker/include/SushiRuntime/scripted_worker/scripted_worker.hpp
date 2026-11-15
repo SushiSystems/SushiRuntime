@@ -124,6 +124,15 @@ namespace SushiRuntime
                     max_jobs_ = max_jobs;
                 }
 
+                /**
+                 * @brief Stops the transport at once, as a process that dies mid-run would: no
+                 *        GOODBYE, no result; the master sees the connection close.
+                 */
+                void kill() noexcept
+                {
+                    transport_->stop();
+                }
+
                 /** @brief Starts the transport and returns whether it started. */
                 [[nodiscard]] bool start()
                 {

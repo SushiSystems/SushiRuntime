@@ -133,7 +133,12 @@ namespace SushiRuntime
                 /** @brief Forwards to OffloadDispatcher::complete_local(). */
                 void on_local_completion(Internal::Graph::Node& node) noexcept override;
 
-                /** @brief Shares a buffer through SharedBuffers::share(). */
+                /**
+                 * @brief Shares a buffer this machine owns through SharedBuffers::share().
+                 *
+                 * A handle another machine minted is refused with a WARN and not shared, so its
+                 * nodes stay with their owner.
+                 */
                 void share(GlobalHandle handle, std::size_t bytes);
 
                 /**
@@ -144,7 +149,8 @@ namespace SushiRuntime
                 [[nodiscard]] CoordinatorStatistics statistics() const noexcept;
 
                 /**
-                 * @brief Unshares the buffer of a retired handle and tells each worker to drop it.
+                 * @brief Unshares the buffer of a retired handle, forgets its owner and producer,
+                 *        and tells each worker to drop it.
                  *
                  * A handle that was never shared sends nothing. BUFFER_RELEASE goes out as a
                  * control frame per alive worker, in the directory's worker order; a failure to

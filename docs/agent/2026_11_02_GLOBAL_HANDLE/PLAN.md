@@ -63,7 +63,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T18 | `engine/coherence` host-staged path | T17 | done |
 | T19 | file space and file path | T18 | todo |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | done |
-| T21 | copy plan replay | T13 | todo |
+| T21 | copy plan replay | T13 | running |
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | running |
@@ -76,7 +76,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
 | T28 | wire version 5 | T10 | done |
-| T29 | owner per handle and recovery | T28 | running |
+| T29 | owner per handle and recovery | T28 | done |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T32 | SushiBLAS conformance kernels | T30 | todo |

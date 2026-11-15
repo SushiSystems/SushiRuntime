@@ -470,10 +470,13 @@ namespace OffloadDispatcherTests
                 /// @brief The table that holds a node a rule makes wait.
                 HeldNodes held_;
 
+                /// @brief The table that records each producer the dispatcher writes.
+                ProducerTable producers_;
+
                 /// @brief The dispatcher under test, on a master named after no rule.
                 OffloadDispatcher dispatcher_{
-                    buffers_, directory_, pending_,
-                    *master_,  held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
+                    buffers_, directory_, pending_, *master_, held_, producers_,
+                    NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
 
                 /// @brief The WARNs capture_warnings() collected.
                 std::vector<std::string> warnings_;

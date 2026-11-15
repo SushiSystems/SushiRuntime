@@ -52,6 +52,7 @@
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/rule_placement.hpp>
 #include <SushiRuntime/offload_coordination/offload_handles.hpp>
+#include <SushiRuntime/offload_coordination/producer_table.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 namespace SushiRuntime
@@ -90,11 +91,12 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Builds a dispatcher over bricks that outlive it.
+                 * @param producers Records the producer of each version this dispatcher writes.
                  * @param master The facts of the machine the master runs on; copied.
                  */
                 OffloadDispatcher(SharedBuffers& buffers, WorkerDirectory& directory,
                                   PendingTasks& pending, Transport& transport, HeldNodes& held,
-                                  NodeFacts master);
+                                  ProducerTable& producers, NodeFacts master);
 
                 OffloadDispatcher(const OffloadDispatcher&) = delete;
                 OffloadDispatcher& operator=(const OffloadDispatcher&) = delete;
@@ -123,8 +125,9 @@ namespace SushiRuntime
                 [[nodiscard]] bool try_offload(Internal::Graph::Node& node);
 
                 /**
-                 * @brief Bumps the buffers a locally finished node wrote and clears its attempt
-                 *        count; the body of OffloadCoordinator::on_local_completion().
+                 * @brief Bumps the buffers a locally finished node wrote, records the node as
+                 *        their producer and clears its attempt count; the body of
+                 *        OffloadCoordinator::on_local_completion().
                  *
                  * A node with live lists bumps the handles in live_writes, not its baked
                  * list. A node without an OffloadState costs one null check.
@@ -186,6 +189,14 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool refuse(Internal::Graph::Node& node, const FailRun& failure);
 
+                /** @brief Records @p node as the producer of the versions in @p written. */
+                void record_local(Internal::Graph::Node& node,
+                                  SushiRuntime::span<const BufferHandle> written) noexcept;
+
+                /** @brief Records @p node as the producer of the current versions of @p writes. */
+                void record_live_writes(Internal::Graph::Node& node,
+                                        const std::vector<GlobalHandle>& writes) noexcept;
+
                 /** @brief Counts one refused dispatch and returns false. */
                 [[nodiscard]] bool decline() noexcept;
 
@@ -203,6 +214,9 @@ namespace SushiRuntime
 
                 /// @brief Owns the nodes a rule holds for an absent worker.
                 HeldNodes& held_;
+
+                /// @brief Keeps the producer of each version this dispatcher writes.
+                ProducerTable& producers_;
 
                 /// @brief Ends a run for a Fail rule; null until bind().
                 Internal::Graph::OffloadSink* sink_ = nullptr;

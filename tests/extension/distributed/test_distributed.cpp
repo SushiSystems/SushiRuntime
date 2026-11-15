@@ -36,6 +36,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <future>
 #include <memory>
@@ -975,6 +976,90 @@ namespace EndToEndTests
         EXPECT_EQ(statistics.chunks_received, 1u);
         EXPECT_EQ(statistics.redispatched, 0u);
         EXPECT_EQ(worker.refused_sends(), 0);
+    }
+
+    /**
+     * @brief Tests that a worker killed after its output landed but before its result is
+     *        recovered by running the producer again, and the bytes equal an undisturbed run.
+     */
+    TEST(Medium_DistributedReliabilityTest, AWorkerKilledMidRunIsRecoveredWithUndisturbedBytes)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 256;
+        constexpr float K_POISON = 999.0f;
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+
+        std::vector<float> undisturbed;
+        {
+            std::atomic<int> worker_runs{0};
+            USMFloats a(queue, K_COUNT, 0.0f);
+            USMFloats b(queue, K_COUNT, 0.0f);
+            USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+            a.ramp(1.0f);
+            b.ramp(2.0f);
+
+            InProcessFabric fabric;
+            LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+            Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                              eager_options()).value();
+            ASSERT_TRUE(worker.start());
+            ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+            share(cluster, a);
+            share(cluster, b);
+            share(cluster, out);
+
+            auto graph = master_runtime.graph();
+            add_vec_add(graph, "undisturbed", a, b, out);
+            graph.run().value();
+            ASSERT_EQ(worker_runs.load(), 1) << "the undisturbed run did not use its worker";
+            undisturbed.assign(out.data(), out.data() + out.count());
+            worker.stop();
+        }
+
+        USMFloats a(queue, K_COUNT, 0.0f);
+        USMFloats b(queue, K_COUNT, 0.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+        a.ramp(1.0f);
+        b.ramp(2.0f);
+
+        InProcessFabric fabric;
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        ClusterOptions options = eager_options();
+        options.liveness_timeout = std::chrono::milliseconds(300);
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(options)).value();
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "killed", a, b, out);
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(worker.wait_for_dispatches(1));
+
+        // The worker's output lands whole at the current version, then the worker dies.
+        const Wire::TaskDispatchMessage dispatch = worker.dispatch(0);
+        ASSERT_EQ(dispatch.outputs.size(), 1u);
+        const std::vector<float> poison(K_COUNT, K_POISON);
+        ASSERT_EQ(worker.send_stream({output_chunk_frame(dispatch.task_id, dispatch.outputs[0],
+                                                         bytes_of(poison))}),
+                  SendStatus::Queued);
+        ASSERT_TRUE(eventually([&] { return cluster.statistics().chunks_received >= 1; }))
+            << "the output chunk never reached the master";
+        worker.kill();
+
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker died";
+        EXPECT_GE(cluster.redispatched(), 1u) << "the producer did not run again";
+        ASSERT_EQ(out.count(), undisturbed.size());
+        EXPECT_EQ(std::memcmp(out.data(), undisturbed.data(), undisturbed.size() * sizeof(float)), 0)
+            << "the recovered bytes differ from the undisturbed run";
     }
 
     /** @brief Tests that a policy reads a worker's facts, and the new ones after a reconnect. */

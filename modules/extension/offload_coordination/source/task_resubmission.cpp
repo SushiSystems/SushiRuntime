@@ -23,15 +23,17 @@
 
 /**
  * @file task_resubmission.cpp
- * @brief Implements resubmit_tasks() and reoffer_nodes(), which return nodes to the scheduler.
+ * @brief Implements the functions that return nodes to the scheduler, producers of lost data first.
  * @author Mustafa Garip
  * @see modules/extension/offload_coordination/README.md
  */
 
 #include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <exception>
+#include <iterator>
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -116,6 +118,32 @@ namespace SushiRuntime
                     node->release();
             }
             return tasks.size();
+        }
+
+        std::size_t order_for_rebuild(SushiRuntime::span<const LostInstance> lost,
+                                      std::vector<PendingTask>& tasks)
+        {
+            std::size_t missing = 0;
+            auto front = tasks.begin();
+            for (const LostInstance& instance : lost)
+            {
+                const auto is_producer = [&instance](const PendingTask& task)
+                {
+                    return task.task_id == instance.producer.task_id;
+                };
+                if (std::find_if(tasks.begin(), front, is_producer) != front)
+                    continue;
+
+                const auto found = std::find_if(front, tasks.end(), is_producer);
+                if (found == tasks.end())
+                {
+                    ++missing;
+                    continue;
+                }
+                std::rotate(front, found, std::next(found));
+                ++front;
+            }
+            return missing;
         }
 
         std::size_t reoffer_nodes(const std::vector<Internal::Graph::Node*>& nodes,

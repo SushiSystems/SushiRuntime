@@ -6,8 +6,10 @@
 sushiruntime_add_module(
     NAME offload_coordination TIER extension INTERNAL
     SOURCES
+        handle_ownership.cpp
         held_nodes.cpp
         offload_dispatcher.cpp
+        producer_table.cpp
         rule_placement.cpp
         task_resubmission.cpp
         worker_directory.cpp

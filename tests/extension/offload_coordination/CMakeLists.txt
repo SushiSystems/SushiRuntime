@@ -7,9 +7,11 @@ sushiruntime_add_module_tests(
     MODULE offload_coordination
     SOURCES
         compile_offload_coordination_log_category.cpp
+        test_handle_ownership.cpp
         test_held_nodes.cpp
         test_offload_dispatcher.cpp
         test_offload_handles.cpp
+        test_producer_table.cpp
         test_rule_placement.cpp
         test_task_description.cpp
         test_task_resubmission.cpp

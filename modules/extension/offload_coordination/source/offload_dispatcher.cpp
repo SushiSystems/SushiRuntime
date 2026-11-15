@@ -31,6 +31,7 @@
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 
 #include <chrono>
+#include <exception>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -387,12 +388,14 @@ namespace SushiRuntime
 
         OffloadDispatcher::OffloadDispatcher(SharedBuffers& buffers, WorkerDirectory& directory,
                                              PendingTasks& pending, Transport& transport,
-                                             HeldNodes& held, NodeFacts master)
+                                             HeldNodes& held, ProducerTable& producers,
+                                             NodeFacts master)
             : buffers_(buffers),
               directory_(directory),
               pending_(pending),
               transport_(transport),
               held_(held),
+              producers_(producers),
               rule_placement_(directory, held, std::move(master))
         {
 
@@ -572,6 +575,11 @@ namespace SushiRuntime
             scratch.message.inputs.assign(scratch.handles.begin(), first_output);
             scratch.message.outputs.assign(first_output, scratch.handles.end());
 
+            // Recorded before the pending table can settle the task; a local rerun replaces it.
+            producers_.record_remote(
+                SushiRuntime::span<const BufferHandle>(outputs.data(), outputs.size()), &node,
+                task_id, worker);
+
             scratch.payload.clear();
             const bool is_encoded =
                 scratch.message.encode(scratch.payload) == Wire::CodecStatus::Ok;
@@ -662,6 +670,7 @@ namespace SushiRuntime
             {
                 buffers_.bump_handles(SushiRuntime::span<const GlobalHandle>(
                     state->live_writes->data(), state->live_writes->size()));
+                record_live_writes(node, *state->live_writes);
                 return;
             }
 
@@ -670,8 +679,47 @@ namespace SushiRuntime
                 return;
 
             const SushiRuntime::span<BufferHandle> written = baked->outputs();
-            if (!written.empty())
-                buffers_.bump(written);
+            if (written.empty())
+                return;
+
+            buffers_.bump(written);
+            record_local(node, SushiRuntime::span<const BufferHandle>(written.data(), written.size()));
+        }
+
+        void OffloadDispatcher::record_local(Internal::Graph::Node& node,
+                                             SushiRuntime::span<const BufferHandle> written) noexcept
+        {
+            try
+            {
+                producers_.record_local(written, &node);
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                             "the producer of a local write was not recorded: {}; a lost worker "
+                             "cannot rebuild it", error.what());
+            }
+        }
+
+        void OffloadDispatcher::record_live_writes(Internal::Graph::Node& node,
+                                                   const std::vector<GlobalHandle>& writes) noexcept
+        {
+            std::vector<BufferHandle> written;
+            try
+            {
+                written.reserve(writes.size());
+                for (const GlobalHandle handle : writes)
+                    if (const std::optional<BufferHandle> current = buffers_.lookup(handle))
+                        written.push_back(*current);
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                             "the producer of a local write was not recorded: {}; a lost worker "
+                             "cannot rebuild it", error.what());
+                return;
+            }
+            record_local(node, SushiRuntime::span<const BufferHandle>(written.data(), written.size()));
         }
 
         void OffloadDispatcher::complete_remote(Internal::Graph::Node& node) noexcept

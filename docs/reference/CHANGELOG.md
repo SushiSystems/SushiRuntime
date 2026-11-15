@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — distributed: Added one owner per handle, the machine that minted it; the master shares only the handles it owns (GLOBAL_HANDLE H6).
+- 2026-11-15 — distributed: Added recovery by re-running the producer of each current version a dead worker alone held, so the output bytes equal an undisturbed run (GLOBAL_HANDLE H6).
 - 2026-11-15 — runtime: Fixed a region graph submitting its roots in address order; they go out by region and by recording order (KI-23, `ab4206f5`).
 - 2026-11-15 — memory: Removed `USMRegistry`; `USMAllocator` allocates and frees and keeps no address table, and the residency directory records each instance and its kind (GLOBAL_HANDLE H2).
 - 2026-11-15 — memory: Added `ResidencyDirectory::instance_kind()`, `live_count()` and a `RetireObserver` that hears each retired handle (GLOBAL_HANDLE H2).

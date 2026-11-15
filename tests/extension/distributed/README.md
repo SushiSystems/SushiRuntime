@@ -129,6 +129,15 @@ output must still hold 7. It then streams a chunk at the dispatched version, fil
 followed by a succeeded `TASK_RESULT`. The run must return with 42 in the output, one chunk
 received, one refused and nothing resubmitted.
 
+### `AWorkerKilledMidRunIsRecoveredWithUndisturbedBytes`
+
+The test first runs `a + b` on a real worker and keeps the output bytes. It then runs the same
+graph on fresh buffers with an `Accept` worker, which streams the whole output at the dispatched
+version, filled with 999, and is killed with `kill()` once `chunks_received` reaches 1, before any
+result. The master's `ProducerTable` names the dispatched node as the producer of that version,
+the task is returned to the scheduler and runs again locally. The run must return, `redispatched`
+must be at least 1, and the output bytes must equal the undisturbed run byte for byte.
+
 | Test | What it proves |
 | --- | --- |
 | `LostBufferPushIsRedispatchedAndTheRunReturns` | The fault policy drops every `BUFFER_CHUNK` from master to worker, so no input arrives. With a pull idle timeout of 200 ms the worker reports `InputUnavailable`; the master resubmits, and after the attempt cap the task runs locally. The kernel must not have run on the worker. |
