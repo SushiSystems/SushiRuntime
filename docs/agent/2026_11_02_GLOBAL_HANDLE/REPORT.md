@@ -85,6 +85,7 @@ dispatch: T51 — sonnet medium, rung 1, passed
 dispatch: T52 — sonnet medium, rung 1, passed (SushiBLAS)
 dispatch: T47 — opus low, 277 turns, rung 1, passed after one rebase
 dispatch: T53+T50 — opus low, 178 turns, rung 1, passed
+dispatch: T35 (test code) — sonnet medium, rung 1, passed; measured in the closing run
 ```
 
 ## T05: the residency directory
@@ -164,3 +165,11 @@ An integrated device names the host pool and plans within the smaller of its mem
 usable bytes. Integration is read from `host_unified_memory`. Whether the HIP adapter answers it for
 gfx1036 is checked in the closing run on the first machine; if it answers false, the pool is
 counted twice and T43's probe takes the fact from the device instead.
+
+## T35: the H9 hardware test
+
+`Large_PartitionHardware` is written; its numbers come from the closing run. Two readings of H9,
+taken under the owner's delegation: "the 3080 Ti alone" is the same graph with every buffer stated
+on the CUDA device, because a device filter cannot tell the two GPUs apart; and "every device"
+includes the integrated GPU beside the 3080 Ti and the CPU, since running both GPUs together is the
+aim of this work. The tighter bound H9 gives when the CPU holds a node is asserted only then.

@@ -79,7 +79,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T34 | `Runtime::partition_report()` | T25 | done |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | done |
-| T27 | rebalancing and journal | T22, T34, T47 | todo |
+| T27 | rebalancing and journal | T22, T34, T47 | running |
 | T28 | wire version 5 | T10 | done |
 | T29 | owner per handle and recovery | T28 | done |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | done |

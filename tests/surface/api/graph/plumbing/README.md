@@ -174,6 +174,24 @@ kind. The split test also needs a device with memory of its own; it rewrites eac
 pool holds the node whole, and the node then runs as parts, at least two slices, with the bytes of
 the host computation.
 
+## test_region_composer/test_partition_hardware.cpp
+
+Large, on the first machine: a CUDA GPU (the 3080 Ti), a HIP GPU (the integrated GPU) and a CPU in one runtime
+made with a profile file. Each test skips, naming what is missing, on a machine without all three. The tests
+measure the three graphs of the H9 acceptance with the engine's clock, over `world.run(steps)`: the best of seven
+timed runs of 32 steps for the independent and the layered graph, the best of three runs of 6 steps for the
+chain, after untimed warm-up steps. Every number is printed as `[h9] name value unit` and is meant to be pasted
+into `docs/agent/2026_11_02_GLOBAL_HANDLE/REPORT.md`. The three graphs hold a host check of the bytes they leave.
+The runtime has no per-device filter, so "the 3080 Ti alone" is the same graph with every buffer stated
+`Residency::Device` on the CUDA GPU, which fixes each node there. A forced cut is the chain with the buffers of
+its first nodes stated on the CUDA GPU and the rest on the one other device the planned chain used.
+
+| Test | What it proves |
+| --- | --- |
+| `IndependentEqualNodesWithEveryDeviceStepNoLongerThanOnTheCUDAGPUAlone` | 64 equal nodes: the planned step with every device is at most 1.05 times the step on the CUDA GPU alone, and at most that step when the CPU holds a node. |
+| `ALayeredGraphThatFitsWithEveryDeviceStepNoLongerThanOnTheCUDAGPUAlone` | Four layers of 16 nodes that fit on the CUDA GPU: the same two bounds. |
+| `AChainLargerThanTheCUDAGPUStepsNoLongerThanItsBestForcedCut` | 24 nodes whose carried buffers hold 1.6 times the CUDA GPU's memory: the planned step is at most 1.05 times the best of the cuts forced 1, 2 and 4 nodes to either side of the planned cut. A forced cut that does not fit its devices is printed with `fits 0` and left out; at least one must run. |
+
 ## test_step_driver/test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types
