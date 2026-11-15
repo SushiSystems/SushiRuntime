@@ -130,6 +130,11 @@ def build(
     no_cuda: bool = typer.Option(
         False, "--no-cuda",
         help="Build the portable CPU/OpenCL path instead of detecting accelerators."),
+    rocm: bool = typer.Option(
+        False, "--rocm",
+        help="On Windows, also offload to the AMD GPU through the ROCm route under the "
+             "SushiSystems home. Off by default: the package does not yet carry the route to "
+             "a consumer."),
     clean: bool = typer.Option(
         False, "--clean", help="Delete the build tree before configuring."),
     force: bool = typer.Option(
@@ -157,7 +162,7 @@ def build(
     """Configure and build the project."""
     raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
                                        tests=not no_test, jobs=jobs, lean=lean,
-                                       build_dir=build_dir, report=report,
+                                       build_dir=build_dir, report=report, rocm=rocm,
                                        surroundings=_surroundings(ctx)))
 
 

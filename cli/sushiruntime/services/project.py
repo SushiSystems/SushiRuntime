@@ -484,7 +484,7 @@ def _print_report(console, tree: Path, offset: int) -> None:
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
           tests: bool = True, jobs: int | None = None, lean: bool = False,
-          build_dir: str | None = None, report: bool = False,
+          build_dir: str | None = None, report: bool = False, rocm: bool = False,
           surroundings: Surroundings | None = None) -> int:
     """Configure and build the project.
 
@@ -555,8 +555,11 @@ def build(build_type: BuildType, distributed: bool = False,
     library_packages.prepend_run_dirs(cfg, env, run_dirs)
 
     sushi_definitions = tuple(configure_arguments(cfg, root, packages))
-    # The ROCm route is Windows-only and only for a build that may offload; see cli/README.md.
-    rocm_route = RocmRoute.discover() if cfg.is_windows and gpu_backend == "auto" else None
+    # The Windows ROCm route, asked for with --rocm, for a build that may offload.
+    rocm_route = (RocmRoute.discover()
+                  if rocm and cfg.is_windows and gpu_backend == "auto" else None)
+    if rocm and rocm_route is None:
+        console.warn("--rocm: no ROCm route under the SushiSystems home; building without it.")
     if rocm_route is not None:
         console.info(f"ROCm route: {rocm_route.root}")
     stamp_key = _configure_stamp(dist, gpu_backend, tests,

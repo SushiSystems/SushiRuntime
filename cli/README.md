@@ -98,8 +98,8 @@ needs them.
 The ROCm route on Windows is three pieces that are installed apart: the toolkit (`rocm/<version>`
 holding the `hipcc` compiler), device libraries the compiler can read (`rocm/devlibs-*`; the toolkit's
 own bitcode is written by a newer LLVM than the SYCL compiler's) and the Unified Runtime HIP
-adapter (`ur/hip-*`). `RocmRoute.discover` looks for all three under the dependency roots and
-returns nothing unless every one is there, so a machine without the route builds as before.
+adapter (`ur/hip-*`). `sr build --rocm` asks for the route, and `RocmRoute.discover` looks for
+all three under the dependency roots and returns nothing unless every one is there, so a machine without the route builds as before.
 
 CMake is told the paths as `SR_ROCM_PATH` and `SR_ROCM_DEVICE_LIBS`, so no path is written in
 `cmake/gpu`. The vendor strategy stays in `cmake/gpu/Rocm.cmake`; this module only supplies

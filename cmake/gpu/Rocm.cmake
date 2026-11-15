@@ -104,6 +104,10 @@ elseif(SR_ROCM_DEVICE_LIBS)
         # The device libraries carry a 4-byte wchar_t flag, Windows device code a 2-byte one.
         sushiruntime_gpu_add_clang_option(
             "SHELL:-Xsycl-target-frontend=amdgcn-amd-amdhsa -fno-short-wchar")
+        # CMake links with -fuse-ld=lld-link on Windows, a name the AMD device link refuses.
+        # The driver maps lld to lld-link for the host, so lld serves both links.
+        set(CMAKE_CXX_USING_LINKER_DEFAULT "-fuse-ld=lld")
+        set(CMAKE_CXX_USING_LINKER_LLD "-fuse-ld=lld")
     endif()
     sushiruntime_gpu_add_clang_build_option(
         "--rocm-path=${SR_ROCM_TOOLKIT_ROOT}"

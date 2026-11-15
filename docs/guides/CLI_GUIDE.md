@@ -118,7 +118,7 @@ builds into `build/asan-release` with CUDA off, and `tsan` into `build/tsan-relw
 Linux. A configure that would give a tree another type than the one cached in it is refused. `test`, `run`, `package` and `env` take `--type` too and
 default to Debug; `bench` defaults to Release.
 
-On Windows `sr build` also offloads to an AMD GPU when the ROCm route is installed under
+On Windows `sr build --rocm` also offloads to an AMD GPU when the ROCm route is installed under
 `~/.sushisystems`: the toolkit in `rocm/<version>`, readable device libraries in
 `rocm/devlibs-*` and the HIP adapter in `ur/hip-*`. With any of the three missing the build is
 the one it was without them. `SR_AMD_ARCH` states the GPU architecture; without it the build
