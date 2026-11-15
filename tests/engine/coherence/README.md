@@ -3,15 +3,21 @@
 The tests of the `coherence` module, mirroring `modules/engine/coherence/`.
 `tests/engine/coherence/CMakeLists.txt` builds them; `sr test` runs them with the rest.
 
+`fake_profile_probe.hpp` holds `FakeProfileProbe`, which answers every probe from fixed rates and a
+speed per device, with the builders `host_key()` and `round_profile()`.
 `fake_transfer_path.hpp` holds the doubles: `FakeTransferPath` connects every pair of spaces and
 copies with `memcpy`, `ClosedTransferPath` connects none, and `FixedMemoryProbe` reports one
 gigabyte free.
 
+<<<<<<< ours
 `transfer_path_doubles.hpp` holds the doubles of the path tests: `CPUSpaceQueues` answers one SYCL CPU
 queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
 `RecordingTransferObserver` keeps each copy it hears.
 
 ## compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
+=======
+## compile_instance_allocator.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp and compile_transfer_path.cpp
+>>>>>>> theirs
 
 Each file includes one interface header alone.
 
@@ -39,6 +45,30 @@ refused as `Unsupported`.
 
 Two steps compare equal only when every field is equal.
 
+## test_cost_model.cpp
+
+A node's time is its operations over throughput plus its bytes over bandwidth, a kind with no entry
+takes the base throughput, a device with no profile has no time, and a device that cannot do the
+work takes infinite time. A copy's time is the latency plus the bytes over the bandwidth, and an
+unknown path has no time.
+
+## test_device_profile.cpp
+
+A kind with no entry takes the base throughput, and a path is found by name.
+
+## test_device_profile_file.cpp
+
+A profile written once and read back gives equal profiles and the same `CostModel` times, and a
+changed file changes them. The write order does not depend on the insertion order, a device missing
+from the file has no profile, a newer version is refused naming both versions, malformed text is
+refused with its line, a path name with white space is refused on write, and a file on disk reads
+back equal.
+
+## test_device_profile_set.cpp
+
+A device has a profile only after it is set, setting again replaces it, and profiles come in
+`DeviceKey` order.
+
 ## test_directory_planned_node_factory.cpp
 
 A node runs on the device of its space and declares its byte range. A copy naming an unknown path
@@ -50,6 +80,17 @@ SYCL offers no queue.
 The copy runs after the writer and before the reader on the other device, and the copy back and
 the free follow the reader. Nodes on one device are left as they are, and a refused plan leaves the
 nodes unchanged.
+
+## test_profile_measurement.cpp
+
+The profile holds the rates the fake probe reported, a faster device measures faster, only the kinds
+of the plan are measured, and a plan with no generic kind, a large copy no bigger than the small one,
+or a probe that reports no time is refused.
+
+## test_profile_transfer_cost.cpp
+
+With no model the cost is the uniform one, with a model it is the modelled seconds, and a copy the
+model cannot price costs infinity.
 
 ## test_transfer_cost.cpp
 

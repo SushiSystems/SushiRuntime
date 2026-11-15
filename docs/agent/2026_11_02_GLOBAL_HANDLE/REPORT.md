@@ -50,6 +50,7 @@ dispatch: T31 — haiku high, 124 turns, rung 1, passed (SushiEngine e3348900f)
 dispatch: T10 — sonnet medium, 146 turns, rung 1, passed
 dispatch: T13 — opus low, 145 turns, rung 1, passed
 dispatch: T17 — sonnet medium, rung 1, passed
+dispatch: T24 — sonnet medium, rung 1, passed
 ```
 
 ## T05: the residency directory

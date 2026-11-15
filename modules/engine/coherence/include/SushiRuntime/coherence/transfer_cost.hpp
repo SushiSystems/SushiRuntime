@@ -43,8 +43,9 @@ namespace SushiRuntime
         /**
          * @brief Returns the cost of copying bytes from source to destination over path.
          *
-         * The function must be pure: equal arguments give equal costs in every run. Device
-         * profiles supply it later; until then uniform_transfer_cost() stands in.
+         * The function must be pure: equal arguments give equal costs in every run. With a
+         * device profile loaded, select_transfer_cost() supplies it; uniform_transfer_cost() stands in
+         * when none is.
          */
         using TransferCost = std::function<double(const TransferPath& path, MemorySpaceID source,
                                                   MemorySpaceID destination, std::size_t bytes)>;
