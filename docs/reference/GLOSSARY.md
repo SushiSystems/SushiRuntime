@@ -31,7 +31,7 @@ The words this repository's documents use. A term defined in code names the head
 | Node table | `NodeTable`: one row per registration index of a plan, with the node's name, operation, optional cost and host-native flag; the plan builds it once |
 | Graph id, graph label | `Graph::id()` is a process-wide identity, 0 after a move; `Graph::set_label()` names the graph for a profile. A plan copies both into its node table and a `RunObservation` carries the id |
 | Node origin | `NodeOptions::origin`: the caller's own operation a node belongs to, written as the span attribute `origin` |
-| Node cost | `NodeCost`: the floating-point operations, bytes and element type a caller states one dispatch of a node does, in `NodeOptions::cost` |
+| Node cost | `NodeCost`: the operations, bytes read, bytes written, operation kind and element type a caller states one dispatch of a node does, in `NodeOptions::cost` |
 | Device source | The SushiProfiler source `sushiruntime.device`, which reports the runtime's dispatches as spans (`profiling` module) |
 | Zone | A timed scope the runtime writes into a SushiProfiler record, in the group `Runtime`; the names are in `docs/reference/PROFILER_KEYS.md` |
 | Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph dispatches through while the runtime has an observer |

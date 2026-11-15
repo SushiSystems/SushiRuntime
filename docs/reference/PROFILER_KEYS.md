@@ -29,12 +29,15 @@ A span's name is the node's name in the plan's node table, or `node <index>` whe
 | `layer` | name | `scheduler` or `chain`, the path that ran the dispatch | Always |
 | `graph` | name | The label of the graph that owns the plan, set with `Graph::set_label()` | When the graph has a label |
 | `origin` | name | The caller's own operation the node belongs to, from `NodeOptions::origin` | When the node states one |
-| `flops` | integer | Floating-point operations of one dispatch, as the caller counted them | When the node states a cost |
-| `bytes` | integer | Bytes one dispatch reads and writes, as the caller counted them | When the node states a cost |
+| `flops` | integer | Operations of one dispatch, `NodeCost::operations`, counted in the unit of its kind | When the node states a cost |
+| `bytes` | integer | Bytes one dispatch reads and writes together, `NodeCost::moved_bytes()` | When the node states a cost |
+| `read_bytes` | integer | Bytes one dispatch reads, as the caller counted them | When the node states a cost |
+| `written_bytes` | integer | Bytes one dispatch writes, as the caller counted them | When the node states a cost |
+| `operation_kind` | integer | The hash of the node's `OperationKind`; 0 for the generic kind | When the node states a cost |
 | `dtype` | name | `f32`, `f16`, `bf16` or `i8` | When the node's cost names a type |
 
 The keys `node`, `invocation`, `operation`, `launched_width`, `live_width`, `graph`, `origin`, `flops`, `bytes` and `dtype` are
-`SushiProfiler::DeviceSpanKeys`; `layer` is the runtime's own (`profile_keys.hpp`).
+`SushiProfiler::DeviceSpanKeys`; `layer`, `read_bytes`, `written_bytes` and `operation_kind` are the runtime's own (`profile_keys.hpp`).
 
 ## Zones
 

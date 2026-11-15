@@ -226,6 +226,7 @@ namespace SushiRuntime
             if (stamp.determinism != Determinism::Unstated)
                 node.metadata.determinism = stamp.determinism;
             node.metadata.cost = stamp.cost;
+            node.declared_split = stamp.split;
             for (std::size_t i = 0; i < stamp.parameter_count; ++i)
                 node.metadata.set_param<std::uint64_t>(static_cast<int>(i), stamp.parameters[i]);
             if (stamp.width != ::SushiRuntime::K_WIDTH_UNKNOWN)

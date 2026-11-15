@@ -48,7 +48,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T07 | `surface/api` region composer | T06 | todo |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | todo |
-| T10 | `extension/buffer_exchange` | T06 | todo |
+| T10 | `extension/buffer_exchange` | T06 | running |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | running |
@@ -61,7 +61,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |
 | T21 | copy plan replay | T13 | todo |
 | T22 | horizons | T21 | todo |
-| T23 | `foundation/core` `NodeCost` | T06 | running |
+| T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | todo |
 | T24 | device profile and cost model | T04, T23 | todo |
 | T25 | partitioner | T14, T24, T37 | todo |

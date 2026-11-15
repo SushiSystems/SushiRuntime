@@ -306,6 +306,7 @@ three nodes in recording order with predecessor counts 0, 1 and 1, and each node
 | Test | What it proves |
 | --- | --- |
 | `ThePlanCarriesTheOptionsANodeStated` | The second node of the same chain was given a name, an operation, a placement class and key, and a determinism; its entry carries each, and the first node's entry carries none. |
+| `ANodeThatDeclaresASplitRecordsIt` | A node recorded with a `NodeSplit` is `splittable` in the plan; a node recorded without one is not. |
 | `AViewOutlivesItsGraph` | The view is read after the graph that returned it is destroyed. |
 
 ## test_recorder/test_recorder_semantics.cpp

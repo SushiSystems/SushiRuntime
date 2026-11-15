@@ -126,8 +126,10 @@ namespace SushiRuntime
                     std::uint32_t graph = 0;             /**< Interned graph label; 0 for none. */
                     std::uint32_t origin = 0;            /**< Interned origin of the node; 0 for none. */
                     bool has_cost = false;               /**< Whether the node stated a cost. */
-                    std::uint64_t flops = 0;             /**< Stated floating-point operations. */
-                    std::uint64_t bytes = 0;             /**< Stated bytes moved. */
+                    std::uint64_t operations = 0;        /**< Stated operations. */
+                    std::uint64_t read_bytes = 0;        /**< Stated bytes read. */
+                    std::uint64_t written_bytes = 0;     /**< Stated bytes written. */
+                    std::uint32_t operation_kind = 0;    /**< Hash of the stated operation kind; 0 for the generic kind. */
                 };
 
                 /** @brief Moves the queued observations into pending_ as converted spans; counts what it drops in @p sink. */
@@ -191,6 +193,9 @@ namespace SushiRuntime
                     std::uint32_t flops = 0;
                     std::uint32_t bytes = 0;
                     std::uint32_t dtype = 0;
+                    std::uint32_t read_bytes = 0;
+                    std::uint32_t written_bytes = 0;
+                    std::uint32_t operation_kind = 0;
                     std::uint32_t graph = 0;
                     std::uint32_t origin = 0;
                     std::uint32_t layer = 0;

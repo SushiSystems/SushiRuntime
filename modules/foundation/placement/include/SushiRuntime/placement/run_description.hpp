@@ -47,8 +47,8 @@ namespace SushiRuntime
         std::size_t steps = 0;            /**< Steps the run asks for; 1 for run_for() and run_until(). */
         std::uint64_t launched_items = 0; /**< Sum of the known launched widths, as they stand before the first step. */
         std::size_t unsized_nodes = 0;    /**< Nodes whose launched width is unknown. */
-        std::uint64_t declared_flops = 0; /**< Sum of the NodeCost::flops the recorder stated. */
-        std::uint64_t declared_bytes = 0; /**< Sum of the NodeCost::bytes the recorder stated. */
-        std::size_t costed_nodes = 0;     /**< Nodes that carry a NodeCost. */
+        std::uint64_t declared_operations = 0; /**< Sum of the NodeCost::operations the recorder stated. */
+        std::uint64_t declared_bytes = 0;      /**< Sum of the NodeCost::moved_bytes() the recorder stated. */
+        std::size_t costed_nodes = 0;         /**< Nodes that carry a NodeCost. */
     };
 } // namespace SushiRuntime

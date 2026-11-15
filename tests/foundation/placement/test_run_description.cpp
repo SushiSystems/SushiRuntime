@@ -46,7 +46,7 @@ TEST(Small_RunDescription, ADefaultDescriptionCountsNothing)
     EXPECT_EQ(run.steps, 0u);
     EXPECT_EQ(run.launched_items, 0u);
     EXPECT_EQ(run.unsized_nodes, 0u);
-    EXPECT_EQ(run.declared_flops, 0u);
+    EXPECT_EQ(run.declared_operations, 0u);
     EXPECT_EQ(run.declared_bytes, 0u);
     EXPECT_EQ(run.costed_nodes, 0u);
 }
@@ -61,7 +61,7 @@ TEST(Small_RunDescription, ADescriptionIsATriviallyCopyableValue)
     run.steps = 3;
     run.launched_items = std::uint64_t{1} << 40;
     run.unsized_nodes = 1;
-    run.declared_flops = 5;
+    run.declared_operations = 5;
     run.declared_bytes = 7;
     run.costed_nodes = 1;
     const RunDescription copied = run;
@@ -70,7 +70,7 @@ TEST(Small_RunDescription, ADescriptionIsATriviallyCopyableValue)
     EXPECT_EQ(copied.steps, 3u);
     EXPECT_EQ(copied.launched_items, std::uint64_t{1} << 40);
     EXPECT_EQ(copied.unsized_nodes, 1u);
-    EXPECT_EQ(copied.declared_flops, 5u);
+    EXPECT_EQ(copied.declared_operations, 5u);
     EXPECT_EQ(copied.declared_bytes, 7u);
     EXPECT_EQ(copied.costed_nodes, 1u);
 }

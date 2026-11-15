@@ -44,6 +44,7 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/node_split.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
@@ -185,6 +186,9 @@ namespace SushiRuntime
 
             /** @brief Elements this node launches over, or K_WIDTH_UNKNOWN. */
             std::size_t baked_width = K_WIDTH_UNKNOWN;
+
+            /** @brief How the recorder said this node may be cut into parts; null for a node that states none. */
+            std::shared_ptr<const NodeSplit> declared_split;
 
             /**
              * @brief Says what a recorded command graph may keep of this node's submission.

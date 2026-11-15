@@ -16,7 +16,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `recorder.hpp` | Recorder, Recorder::RuleScope and the placement scope Recorder::within() opens |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
-| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, the determinism and the cost of a node |
+| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, the determinism, the cost and the split of a node |
 | `dispatch_events.hpp` | `note_dispatch_event()`, which a host-work body calls for each event it submitted |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
@@ -94,6 +94,7 @@ for (const SushiRuntime::PlanNode& node : plan->nodes)
 | `determinism` | The Determinism contract the node's NodeOptions stated; `Unstated` when it stated none |
 | `origin` | The caller's own operation the node's NodeOptions named; empty when it named none |
 | `cost` | The `NodeCost` the node's NodeOptions stated; absent when it stated none |
+| `splittable` | Whether the node's NodeOptions declared a `NodeSplit` |
 | `placement_rule` | Position, in the set `Runtime::set_placement_rules()` took, of the rule that won for the node when the plan was compiled; none when no set was in force or no rule matched |
 | `predecessor_count` | How many nodes of the plan must finish before this one starts |
 | `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
@@ -391,7 +392,8 @@ nothing.
 | `name` | The `name` of the node's row in the plan's `NodeTable`, and so the name of its spans | The name of the node's rule, or "unnamed_task" |
 | `operation` | The `operation` of the node's row in the `NodeTable`, and the engine's metadata of the node | No operation |
 | `origin` | The `origin` of the node's row in the `NodeTable` and `PlanNode::origin`; the device source writes it as the span attribute `origin` | Empty: the spans carry no `origin` |
-| `cost` | An `std::optional<NodeCost>` in the node's metadata, `PlanNode::cost` and the node's row in the `NodeTable`; the device source writes it as the span attributes `flops`, `bytes` and `dtype` | Absent: the spans carry none of the three. A stated zero is written as zero |
+| `cost` | An `std::optional<NodeCost>` in the node's metadata, `PlanNode::cost` and the node's row in the `NodeTable`; the device source writes it as the span attributes `flops` (the operations), `bytes` (read and written together), `read_bytes`, `written_bytes`, `operation_kind` and `dtype` | Absent: the spans carry none of them. A stated zero is written as zero |
+| `split` | A `std::shared_ptr<const NodeSplit>` the node shares with the caller: the axis, its extent, the slice kernel each part runs and the optional combine. `PlanNode::splittable` reports it. The runtime decides how many parts and where each runs | Null: the node runs whole and carries one null pointer |
 | `parameters` | The engine's metadata of the node | No parameter |
 | `placement_class` | The engine's metadata of the node, and `PlanNode::placement_class` | No class |
 | `placement_key` | The engine's metadata of the node, and `PlanNode::placement_key` | No key; 0 is a key |
@@ -545,7 +547,7 @@ once in the log (`docs/design/GRAPH_REPLAY/README.md`, layer 2).
 take from the step driver, gives the graph a policy and returns the graph; null, the default, removes
 it, and every run goes as it went before. A blocking run asks the policy once, before its first step,
 with a `RunDescription`: the node count, the steps asked for, the launched items, the nodes of
-unknown width, and the flops, bytes and node count of the stated `NodeCost`s. An answer of
+unknown width, and the operations, the read and written bytes and the node count of the stated `NodeCost`s. An answer of
 `RunPlacement::Host` runs every step of that run on the calling thread through each node's host
 form, and `RunReport::layer` names `ExecutionLayer::Host`. A plan with a node that has no host form,
 that names no region, that an offload coordinator prepared or that touches device memory stays on

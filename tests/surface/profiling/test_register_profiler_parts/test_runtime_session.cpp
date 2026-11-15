@@ -163,6 +163,9 @@ namespace
             seen.insert(span_name(record, period, row));
             EXPECT_TRUE(has_attribute(record, period, "flops", row));
             EXPECT_TRUE(has_attribute(record, period, "bytes", row));
+            EXPECT_TRUE(has_attribute(record, period, "read_bytes", row));
+            EXPECT_TRUE(has_attribute(record, period, "written_bytes", row));
+            EXPECT_TRUE(has_attribute(record, period, "operation_kind", row));
         }
         EXPECT_EQ(seen, std::set<std::string>(node_names.begin(), node_names.end()));
     }

@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <type_traits>
 
 #include <gtest/gtest.h>
 
@@ -45,21 +46,45 @@ TEST(Small_NodeCost, NamesItsDtype)
     EXPECT_EQ(dtype_name(NodeDType::Unstated), nullptr);
 }
 
-/** @brief Tests that a default cost states no element type. */
+/** @brief Tests that a default cost states no element type, the generic kind and zeros. */
 TEST(Small_NodeCost, ADefaultCostStatesNoDtype)
 {
     const NodeCost cost;
 
     EXPECT_EQ(cost.dtype, NodeDType::Unstated);
+    EXPECT_EQ(cost.kind, OperationKinds::K_GENERIC);
+    EXPECT_EQ(cost.operations, 0u);
+    EXPECT_EQ(cost.read_bytes, 0u);
+    EXPECT_EQ(cost.written_bytes, 0u);
 }
 
-/** @brief Tests that equality compares every field, the dtype included. */
+/** @brief Tests that read and written bytes are held apart and that moved bytes is their sum. */
+TEST(Small_NodeCost, HoldsReadAndWrittenBytesApart)
+{
+    const NodeCost cost{100, 48, 16, OperationKinds::K_COMPUTE_BOUND, NodeDType::F32};
+
+    EXPECT_EQ(cost.operations, 100u);
+    EXPECT_EQ(cost.read_bytes, 48u);
+    EXPECT_EQ(cost.written_bytes, 16u);
+    EXPECT_EQ(cost.moved_bytes(), 64u);
+    EXPECT_EQ(cost.kind, OperationKinds::K_COMPUTE_BOUND);
+}
+
+/** @brief Tests that a cost is a trivially copyable value. */
+TEST(Small_NodeCost, IsATriviallyCopyableValue)
+{
+    EXPECT_TRUE(std::is_trivially_copyable<NodeCost>::value);
+}
+
+/** @brief Tests that equality compares every field, the kind and the dtype included. */
 TEST(Small_NodeCost, EqualityComparesEveryField)
 {
-    const NodeCost base{10, 20, NodeDType::F16};
+    const NodeCost base{10, 20, 30, OperationKinds::K_MEMORY_BOUND, NodeDType::F16};
 
-    EXPECT_TRUE(base == (NodeCost{10, 20, NodeDType::F16}));
-    EXPECT_TRUE(base != (NodeCost{11, 20, NodeDType::F16}));
-    EXPECT_TRUE(base != (NodeCost{10, 21, NodeDType::F16}));
-    EXPECT_TRUE(base != (NodeCost{10, 20, NodeDType::BF16}));
+    EXPECT_TRUE(base == (NodeCost{10, 20, 30, OperationKinds::K_MEMORY_BOUND, NodeDType::F16}));
+    EXPECT_TRUE(base != (NodeCost{11, 20, 30, OperationKinds::K_MEMORY_BOUND, NodeDType::F16}));
+    EXPECT_TRUE(base != (NodeCost{10, 21, 30, OperationKinds::K_MEMORY_BOUND, NodeDType::F16}));
+    EXPECT_TRUE(base != (NodeCost{10, 20, 31, OperationKinds::K_MEMORY_BOUND, NodeDType::F16}));
+    EXPECT_TRUE(base != (NodeCost{10, 20, 30, OperationKinds::K_GENERIC, NodeDType::F16}));
+    EXPECT_TRUE(base != (NodeCost{10, 20, 30, OperationKinds::K_MEMORY_BOUND, NodeDType::BF16}));
 }

@@ -45,6 +45,7 @@ dispatch: T12 — opus low, rung 1, passed
 dispatch: T06 — opus low, 270 turns, rung 1, passed
 dispatch: T08 — sonnet low, 18 turns, rung 1, passed
 dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
+dispatch: T23 — opus low, rung 1, passed
 ```
 
 ## T05: the residency directory

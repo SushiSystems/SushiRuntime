@@ -63,8 +63,8 @@ namespace SushiRuntime
                 if (node->metadata.cost)
                 {
                     ++run.costed_nodes;
-                    run.declared_flops += node->metadata.cost->flops;
-                    run.declared_bytes += node->metadata.cost->bytes;
+                    run.declared_operations += node->metadata.cost->operations;
+                    run.declared_bytes += node->metadata.cost->moved_bytes();
                 }
             }
             return run;

@@ -31,6 +31,9 @@
 #pragma once
 
 #include <cstdint>
+#include <type_traits>
+
+#include <SushiRuntime/core/operation_kind.hpp>
 
 namespace SushiRuntime
 {
@@ -67,23 +70,32 @@ namespace SushiRuntime
     }
 
     /**
-     * @brief Holds the floating-point operations, the bytes moved and the element type of one dispatch of a node.
+     * @brief Holds the operations, the bytes read, the bytes written, the operation kind and the element type of one dispatch of a node.
      *
      * A caller sets it as an std::optional on NodeOptions; absent means the caller stated no cost, and a
-     * stated cost may hold zeros, since a data-movement node does no floating-point work. The runtime
-     * only carries the figures to whoever observes the run; it computes nothing from them.
+     * stated cost may hold zeros, since a data-movement node does no arithmetic. The runtime carries
+     * the figures to whoever observes the run, and a cost model keys a throughput on the kind.
      * @see modules/foundation/core/README.md
      */
     struct NodeCost
     {
-        std::uint64_t flops = 0;                 /**< Floating-point operations of one dispatch. */
-        std::uint64_t bytes = 0;                 /**< Bytes one dispatch reads and writes. */
-        NodeDType dtype = NodeDType::Unstated;   /**< Element type of the arithmetic, when the caller names it. */
+        std::uint64_t operations = 0;                     /**< Operations of one dispatch, counted in the unit of its kind. */
+        std::uint64_t read_bytes = 0;                     /**< Bytes one dispatch reads. */
+        std::uint64_t written_bytes = 0;                  /**< Bytes one dispatch writes. */
+        OperationKind kind = OperationKinds::K_GENERIC;   /**< Class of work the operations belong to. */
+        NodeDType dtype = NodeDType::Unstated;            /**< Element type of the arithmetic, when the caller names it. */
+
+        /** @brief Returns the bytes one dispatch reads and writes together. */
+        [[nodiscard]] constexpr std::uint64_t moved_bytes() const noexcept
+        {
+            return read_bytes + written_bytes;
+        }
 
         /** @brief Returns whether every field is equal. */
         [[nodiscard]] constexpr bool operator==(const NodeCost& other) const noexcept
         {
-            return flops == other.flops && bytes == other.bytes && dtype == other.dtype;
+            return operations == other.operations && read_bytes == other.read_bytes &&
+                   written_bytes == other.written_bytes && kind == other.kind && dtype == other.dtype;
         }
 
         /** @brief Returns whether a field differs. */
@@ -92,4 +104,6 @@ namespace SushiRuntime
             return !(*this == other);
         }
     };
+
+    static_assert(std::is_trivially_copyable_v<NodeCost>, "NodeCost is copied by value into every node and record.");
 } // namespace SushiRuntime

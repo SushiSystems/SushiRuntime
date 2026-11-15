@@ -109,11 +109,11 @@ namespace ObserverTests
                 NodeOptions load;
                 load.name = "load";
                 load.operation = "pipeline.load"_op;
-                load.cost = NodeCost{K_ELEMENTS, K_ELEMENTS * sizeof(float), NodeDType::F32};
+                load.cost = NodeCost{K_ELEMENTS, 0, K_ELEMENTS * sizeof(float), OperationKinds::K_MEMORY_BOUND, NodeDType::F32};
                 NodeOptions scale;
                 scale.name = "scale";
                 scale.operation = "pipeline.scale"_op;
-                scale.cost = NodeCost{0, 2 * K_ELEMENTS * sizeof(float), NodeDType::F32};
+                scale.cost = NodeCost{0, K_ELEMENTS * sizeof(float), K_ELEMENTS * sizeof(float), OperationKinds::K_MEMORY_BOUND, NodeDType::F32};
                 NodeOptions store;
                 store.name = "store";
                 store.operation = "pipeline.store"_op;
@@ -221,11 +221,11 @@ namespace SessionTests
                 NodeOptions load;
                 load.name = "load";
                 load.operation = "pipeline.load"_op;
-                load.cost = NodeCost{elements, elements * sizeof(float), NodeDType::F32};
+                load.cost = NodeCost{elements, 0, elements * sizeof(float), OperationKinds::K_MEMORY_BOUND, NodeDType::F32};
                 NodeOptions scale;
                 scale.name = "scale";
                 scale.operation = "pipeline.scale"_op;
-                scale.cost = NodeCost{0, 2 * elements * sizeof(float), NodeDType::F32};
+                scale.cost = NodeCost{0, elements * sizeof(float), elements * sizeof(float), OperationKinds::K_MEMORY_BOUND, NodeDType::F32};
                 NodeOptions store;
                 store.name = "store";
                 store.operation = "pipeline.store"_op;
@@ -328,11 +328,11 @@ namespace SessionTests
                     NodeOptions matmul;
                     matmul.name = names_[2 * layer];
                     matmul.operation = "inference.matmul"_op;
-                    matmul.cost = NodeCost{2 * K_WIDTH, 3 * K_WIDTH * sizeof(float), NodeDType::F32};
+                    matmul.cost = NodeCost{2 * K_WIDTH, 2 * K_WIDTH * sizeof(float), K_WIDTH * sizeof(float), OperationKinds::K_COMPUTE_BOUND, NodeDType::F32};
                     NodeOptions relu;
                     relu.name = names_[2 * layer + 1];
                     relu.operation = "inference.relu"_op;
-                    relu.cost = NodeCost{K_WIDTH, 2 * K_WIDTH * sizeof(float), NodeDType::F32};
+                    relu.cost = NodeCost{K_WIDTH, K_WIDTH * sizeof(float), K_WIDTH * sizeof(float), OperationKinds::K_GENERIC, NodeDType::F32};
 
                     graph_.add(K_WIDTH, Reads(activations_[layer], weights_[layer]), Writes(products_[layer]),
                                [in, w, product](std::size_t i) { product[i] = in[i] * w[i] * 2.0f; }, matmul);

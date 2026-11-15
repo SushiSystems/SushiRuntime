@@ -259,11 +259,11 @@ TEST_F(Small_DeviceSource, OmitsAnOperationThatNamesNone)
     EXPECT_FALSE(has(Keys::K_OPERATION, 0));
 }
 
-/** @brief Tests that a node that stated a cost writes flops, bytes and its dtype. */
+/** @brief Tests that a node that stated a cost writes its operations, its read and written bytes, their sum, its kind and its dtype. */
 TEST_F(Small_DeviceSource, WritesTheCostOfANodeThatStatesOne)
 {
     NodeTableRow row = row_of(0, "gemm");
-    row.cost = NodeCost{4096, 512, NodeDType::BF16};
+    row.cost = NodeCost{4096, 384, 128, OperationKind::named("gemm", 4), NodeDType::BF16};
     push(observation_of({device_record(0)}, {row}));
 
     collect(2000, 3000);
@@ -271,6 +271,9 @@ TEST_F(Small_DeviceSource, WritesTheCostOfANodeThatStatesOne)
     ASSERT_EQ(table_.size(), 1u);
     EXPECT_EQ(integer_of(Keys::K_FLOPS, 0), 4096);
     EXPECT_EQ(integer_of(Keys::K_BYTES, 0), 512);
+    EXPECT_EQ(integer_of("read_bytes", 0), 384);
+    EXPECT_EQ(integer_of("written_bytes", 0), 128);
+    EXPECT_EQ(integer_of("operation_kind", 0), static_cast<std::int64_t>(OperationKind::named("gemm", 4).value));
     EXPECT_EQ(integer_of(Keys::K_DTYPE, 0), static_cast<std::int64_t>(names_.intern("bf16")));
 }
 
@@ -278,7 +281,7 @@ TEST_F(Small_DeviceSource, WritesTheCostOfANodeThatStatesOne)
 TEST_F(Small_DeviceSource, WritesAStatedZeroCost)
 {
     NodeTableRow moves = row_of(0, "copy");
-    moves.cost = NodeCost{0, 1024, NodeDType::Unstated};
+    moves.cost = NodeCost{0, 512, 512, OperationKinds::K_GENERIC, NodeDType::Unstated};
     push(observation_of({device_record(0)}, {moves}));
 
     collect(2000, 3000);
@@ -287,6 +290,9 @@ TEST_F(Small_DeviceSource, WritesAStatedZeroCost)
     EXPECT_TRUE(has(Keys::K_FLOPS, 0));
     EXPECT_EQ(integer_of(Keys::K_FLOPS, 0), 0) << "a data-movement node does no floating-point work";
     EXPECT_EQ(integer_of(Keys::K_BYTES, 0), 1024);
+    EXPECT_EQ(integer_of("read_bytes", 0), 512);
+    EXPECT_EQ(integer_of("written_bytes", 0), 512);
+    EXPECT_EQ(integer_of("operation_kind", 0), 0) << "the generic kind is written as zero";
     EXPECT_FALSE(has(Keys::K_DTYPE, 0)) << "no dtype was named";
 }
 
@@ -301,6 +307,9 @@ TEST_F(Small_DeviceSource, OmitsAnAbsentCost)
     EXPECT_FALSE(has(Keys::K_FLOPS, 0));
     EXPECT_FALSE(has(Keys::K_BYTES, 0));
     EXPECT_FALSE(has(Keys::K_DTYPE, 0));
+    EXPECT_FALSE(has("read_bytes", 0));
+    EXPECT_FALSE(has("written_bytes", 0));
+    EXPECT_FALSE(has("operation_kind", 0));
 }
 
 /** @brief Tests that a host node goes on the runtime's host track on the steady clock, with no uncertainty. */

@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -264,4 +265,28 @@ TEST_F(Small_PlanView, AViewOutlivesItsGraph)
     ASSERT_EQ(kept.nodes.size(), 1u);
     EXPECT_EQ(kept.nodes[0].name, std::string("kept"));
     EXPECT_EQ(kept.nodes[0].writes[0].base, target.handle());
+}
+
+/** @brief Tests that a node recorded with a split is splittable in the plan and a node without one is not. */
+TEST_F(Small_PlanView, ANodeThatDeclaresASplitRecordsIt)
+{
+    auto target = zeroed(runtime());
+    Word* words = target.data();
+    auto graph = runtime().graph();
+
+    auto split = std::make_shared<NodeSplit>();
+    split->axis = 0;
+    split->extent = K_WIDTH;
+    split->slice = [](const SplitPart&) {};
+    NodeOptions splittable;
+    splittable.split = split;
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; },
+              splittable);
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 2u; });
+
+    const auto plan = graph.plan();
+    ASSERT_TRUE(plan);
+    ASSERT_EQ(plan->nodes.size(), 2u);
+    EXPECT_TRUE(plan->nodes[0].splittable);
+    EXPECT_FALSE(plan->nodes[1].splittable) << "a node without a split stays whole";
 }

@@ -32,11 +32,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string_view>
 
 #include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
+#include <SushiRuntime/core/node_split.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -83,5 +85,13 @@ namespace SushiRuntime
 
         /** @brief Work one dispatch of the node does, as the caller counts it; absent states none. */
         std::optional<NodeCost> cost = {};
+
+        /**
+         * @brief How the node may be cut into parts the runtime places; null states no split.
+         *
+         * The node shares the declaration with the caller; a node without one carries a null pointer.
+         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         */
+        std::shared_ptr<const NodeSplit> split = {};
     };
 } // namespace SushiRuntime

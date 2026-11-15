@@ -47,5 +47,14 @@ namespace SushiRuntime
 
         /** @brief Names the layer value of a run submitted in order to one queue. */
         inline constexpr std::string_view K_LAYER_CHAIN = "chain";
+
+        /** @brief Names the attribute that holds the bytes one dispatch reads, as its caller counted them. */
+        inline constexpr std::string_view K_KEY_READ_BYTES = "read_bytes";
+
+        /** @brief Names the attribute that holds the bytes one dispatch writes, as its caller counted them. */
+        inline constexpr std::string_view K_KEY_WRITTEN_BYTES = "written_bytes";
+
+        /** @brief Names the attribute that holds the hash of the node's operation kind. */
+        inline constexpr std::string_view K_KEY_OPERATION_KIND = "operation_kind";
     } // namespace Internal::Profile
 } // namespace SushiRuntime

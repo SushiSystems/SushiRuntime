@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Changed `NodeCost` to state operations, read bytes, written bytes and a consumer-named `OperationKind` in place of flops and bytes (GLOBAL_HANDLE H9).
+- 2026-11-15 — api: Added `NodeOptions::split`, a `NodeSplit` a node declares and `PlanNode::splittable` reports (GLOBAL_HANDLE H9).
+- 2026-11-15 — profiling: Added the `read_bytes`, `written_bytes` and `operation_kind` device span attributes (GLOBAL_HANDLE H9).
+- 2026-11-15 — placement: Renamed `RunDescription::declared_flops` to `declared_operations` (GLOBAL_HANDLE H9).
 - 2026-11-15 — correctness: Fixed `placement_of` and the dispatch span check reading two copies of the anchor rule; the rule lives once in `engine/task` (KI-24, `a4c2d3e5`).
 - 2026-11-15 — runtime: Fixed DeviceIndex following enumeration order and one card appearing under two backends; devices are keyed by `DeviceKey` and a placement rule may name one (KI-25, `8d486490`).
 - 2026-11-14 — api: Added `set_run_placement_policy()` to both graph kinds; with no policy a run is unchanged, and a `Host` answer runs it on the calling thread as `ExecutionLayer::Host` (RW-147).

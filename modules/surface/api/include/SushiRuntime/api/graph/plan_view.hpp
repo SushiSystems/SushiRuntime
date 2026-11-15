@@ -74,6 +74,9 @@ namespace SushiRuntime
         /** @brief Work one dispatch of the node does, as the caller counted it; absent states none. */
         std::optional<NodeCost> cost;
 
+        /** @brief Whether the node was recorded with a NodeOptions::split. */
+        bool splittable = false;
+
         /**
          * @brief Position of the rule that won for the node when the plan was compiled.
          *

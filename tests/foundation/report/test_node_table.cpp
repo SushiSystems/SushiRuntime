@@ -87,14 +87,17 @@ TEST(Small_NodeTable, KeepsAnAbsentCostApartFromAStatedZero)
     NodeTableRow zero = row_of(1, "zero");
     zero.cost = NodeCost{};
     NodeTableRow stated = row_of(2, "stated");
-    stated.cost = NodeCost{1024, 64, NodeDType::F32};
+    stated.cost = NodeCost{1024, 48, 16, OperationKinds::K_COMPUTE_BOUND, NodeDType::F32};
     const NodeTable table(std::vector<NodeTableRow>{none, zero, stated});
 
     EXPECT_FALSE(table.find(0)->cost.has_value());
     ASSERT_TRUE(table.find(1)->cost.has_value());
-    EXPECT_EQ(table.find(1)->cost->flops, 0u);
-    EXPECT_EQ(table.find(1)->cost->bytes, 0u);
+    EXPECT_EQ(table.find(1)->cost->operations, 0u);
+    EXPECT_EQ(table.find(1)->cost->moved_bytes(), 0u);
     ASSERT_TRUE(table.find(2)->cost.has_value());
-    EXPECT_EQ(table.find(2)->cost->flops, 1024u);
+    EXPECT_EQ(table.find(2)->cost->operations, 1024u);
+    EXPECT_EQ(table.find(2)->cost->read_bytes, 48u);
+    EXPECT_EQ(table.find(2)->cost->written_bytes, 16u);
+    EXPECT_EQ(table.find(2)->cost->kind, OperationKinds::K_COMPUTE_BOUND);
     EXPECT_EQ(table.find(2)->cost->dtype, NodeDType::F32);
 }

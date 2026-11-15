@@ -33,6 +33,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -40,6 +41,7 @@
 #include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
+#include <SushiRuntime/core/node_split.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
@@ -91,7 +93,7 @@ namespace SushiRuntime
                 : name(owned_name), origin(owned_origin), operation(options.operation),
                   placement_class(options.placement_class),
                   placement_key(options.placement_key), determinism(options.determinism),
-                  cost(options.cost), width(options.width),
+                  cost(options.cost), split(options.split), width(options.width),
                   parameter_count(options.parameters.size())
             {
                 for (std::size_t i = 0; i < parameter_count; ++i)
@@ -118,6 +120,9 @@ namespace SushiRuntime
 
             /** @brief Work per dispatch the caller stated; absent states none. */
             std::optional<NodeCost> cost;
+
+            /** @brief Split the caller declared, shared with it; null for none. */
+            std::shared_ptr<const NodeSplit> split;
 
             /** @brief Launch width the caller stated, or K_WIDTH_UNKNOWN. */
             std::size_t width = K_WIDTH_UNKNOWN;

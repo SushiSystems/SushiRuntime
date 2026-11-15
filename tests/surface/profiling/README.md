@@ -109,8 +109,8 @@ DeviceSource over SushiProfiler's own SourceContext, SpanSink and SpanTable, wit
 | `Small_DeviceSource.ASpanNamesTheLayerThatRanIt` | A span names the layer that ran it: the scheduler by default, the chain when the run took it. |
 | `Small_DeviceSource.OmitsAWidthThatIsUnknown` | A launch width and a live width that are unknown are left out, and a known one is written. |
 | `Small_DeviceSource.OmitsAnOperationThatNamesNone` | An operation of 0 names none and is left out. |
-| `Small_DeviceSource.WritesTheCostOfANodeThatStatesOne` | A node that stated a cost writes flops, bytes and its dtype. |
-| `Small_DeviceSource.WritesAStatedZeroCost` | A stated zero cost is written as zeros, with no dtype when none was named. |
+| `Small_DeviceSource.WritesTheCostOfANodeThatStatesOne` | A node that stated a cost writes its operations, its read and written bytes, their sum, its kind and its dtype. |
+| `Small_DeviceSource.WritesAStatedZeroCost` | A stated zero cost is written as zeros, the generic kind as zero, with no dtype when none was named. |
 | `Small_DeviceSource.OmitsAnAbsentCost` | A node that stated no cost writes no cost attribute. |
 | `Small_DeviceSource.PutsAHostNodeOnTheHostTrack` | A host node goes on the runtime's host track on the steady clock, with no uncertainty. |
 | `Small_DeviceSource.ASpanOfALaterPeriodWaitsForIt` | A span that starts in a later period waits for it. |

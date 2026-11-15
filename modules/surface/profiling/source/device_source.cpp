@@ -97,6 +97,9 @@ namespace SushiRuntime
             keys_.flops = context.intern(Keys::K_FLOPS);
             keys_.bytes = context.intern(Keys::K_BYTES);
             keys_.dtype = context.intern(Keys::K_DTYPE);
+            keys_.read_bytes = context.intern(Profile::K_KEY_READ_BYTES);
+            keys_.written_bytes = context.intern(Profile::K_KEY_WRITTEN_BYTES);
+            keys_.operation_kind = context.intern(Profile::K_KEY_OPERATION_KIND);
             keys_.graph = context.intern(Keys::K_GRAPH);
             keys_.origin = context.intern(Keys::K_ORIGIN);
             keys_.layer = context.intern(Profile::K_KEY_LAYER);
@@ -216,8 +219,10 @@ namespace SushiRuntime
                         if (row->cost.has_value())
                         {
                             span.has_cost = true;
-                            span.flops = row->cost->flops;
-                            span.bytes = row->cost->bytes;
+                            span.operations = row->cost->operations;
+                            span.read_bytes = row->cost->read_bytes;
+                            span.written_bytes = row->cost->written_bytes;
+                            span.operation_kind = row->cost->kind.value;
                             if (const char* dtype = dtype_name(row->cost->dtype))
                                 span.dtype = context_->intern(dtype);
                         }
@@ -261,8 +266,11 @@ namespace SushiRuntime
                 static_cast<void>(sink.set_name(*row, keys_.origin, pending.origin));
             if (pending.has_cost)
             {
-                static_cast<void>(sink.set_integer(*row, keys_.flops, static_cast<std::int64_t>(pending.flops)));
-                static_cast<void>(sink.set_integer(*row, keys_.bytes, static_cast<std::int64_t>(pending.bytes)));
+                static_cast<void>(sink.set_integer(*row, keys_.flops, static_cast<std::int64_t>(pending.operations)));
+                static_cast<void>(sink.set_integer(*row, keys_.bytes, static_cast<std::int64_t>(pending.read_bytes + pending.written_bytes)));
+                static_cast<void>(sink.set_integer(*row, keys_.read_bytes, static_cast<std::int64_t>(pending.read_bytes)));
+                static_cast<void>(sink.set_integer(*row, keys_.written_bytes, static_cast<std::int64_t>(pending.written_bytes)));
+                static_cast<void>(sink.set_integer(*row, keys_.operation_kind, static_cast<std::int64_t>(pending.operation_kind)));
                 if (pending.dtype != 0U)
                     static_cast<void>(sink.set_name(*row, keys_.dtype, pending.dtype));
             }

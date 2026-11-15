@@ -208,6 +208,7 @@ namespace SushiRuntime
                 described.placement_key = node.metadata.placement_key;
                 described.determinism = node.metadata.determinism;
                 described.cost = node.metadata.cost;
+                described.splittable = node.declared_split != nullptr;
                 if (node.metadata.placement_rule)
                     described.placement_rule = *node.metadata.placement_rule;
                 described.predecessor_count =

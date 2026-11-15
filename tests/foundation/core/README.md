@@ -386,5 +386,28 @@ NodeCost and NodeDType, the work a caller states one dispatch of a node does.
 | Test | What it proves |
 | --- | --- |
 | `Small_NodeCost.NamesItsDtype` | Each element type has its name and that an unstated one has none. |
-| `Small_NodeCost.ADefaultCostStatesNoDtype` | A default cost states no element type. |
-| `Small_NodeCost.EqualityComparesEveryField` | Equality compares every field, the dtype included. |
+| `Small_NodeCost.ADefaultCostStatesNoDtype` | A default cost states no element type, the generic kind and zeros. |
+| `Small_NodeCost.HoldsReadAndWrittenBytesApart` | Read and written bytes are held apart and moved bytes is their sum. |
+| `Small_NodeCost.IsATriviallyCopyableValue` | A cost is a trivially copyable value. |
+| `Small_NodeCost.EqualityComparesEveryField` | Equality compares every field, the kind and the dtype included. |
+
+## test_operation_kind.cpp
+
+OperationKind, the consumer-named class of work a node's operations belong to.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_OperationKind.ADefaultKindIsGeneric` | A default kind is the generic kind. |
+| `Small_OperationKind.AKindIsTheHashOfItsName` | A kind is the FNV-1a hash of its name, the literal included. |
+| `Small_OperationKind.DistinctNamesGiveDistinctKinds` | Distinct names give distinct kinds, and kinds order by their hash. |
+| `Small_OperationKind.IsAFourByteValue` | A kind is a four-byte trivially copyable value. |
+
+## test_node_split.cpp
+
+NodeSplit and SplitPart, how a node states that it may run in parts.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_NodeSplit.ADefaultSplitHoldsNoKernel` | A default split names axis zero, no extent and no kernel. |
+| `Small_NodeSplit.RunsTheConsumersKernelsOverTheParts` | The slice runs with the range of each part and the combine sees the parts in slice order. |
+| `Small_SplitPart.EqualityComparesEveryField` | Equality of a part compares every field. |

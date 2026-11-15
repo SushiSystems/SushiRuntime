@@ -96,7 +96,7 @@ Each dispatch is a span on the track `<node>/<device index>/<device name>`, or `
 on a worker thread. A span carries the node's name, the thread that submitted it and its attributes: `node`,
 `invocation`, `operation`, `launched_width`, `live_width` and `layer`, `graph` for a graph that has a label
 (`Graph::set_label()`), `origin` for a node whose caller named its own operation (`NodeOptions::origin`), and
-`flops`, `bytes` and `dtype` for a node whose caller stated a cost. `device_track_name()` returns the track name for a runtime and a device index, so a
+`flops`, `bytes`, `read_bytes`, `written_bytes`, `operation_kind` and `dtype` for a node whose caller stated a cost. `device_track_name()` returns the track name for a runtime and a device index, so a
 library that states a fact keyed by a track builds no string of its own.
 
 A span goes in the period whose span holds its start, and the source asks the session to hold a closed period

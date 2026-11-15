@@ -46,8 +46,8 @@ types, all in `SushiRuntime`:
 | `steps` | Steps the run asks for: the count `run(steps)` passed, 1 for `run_for()` and `run_until()` |
 | `launched_items` | Sum of the launched widths of the nodes whose width is known, as they stand before the run's first step |
 | `unsized_nodes` | Nodes whose width is unknown, such as a host node or a raw command group |
-| `declared_flops` | Sum of the `NodeCost::flops` the recorder stated |
-| `declared_bytes` | Sum of the `NodeCost::bytes` the recorder stated |
+| `declared_operations` | Sum of the `NodeCost::operations` the recorder stated |
+| `declared_bytes` | Sum of the `NodeCost::moved_bytes()`, read and written, the recorder stated |
 | `costed_nodes` | Nodes that carry a `NodeCost` |
 
 A policy reads that struct and nothing else; it never sees a node, a plan or a queue.

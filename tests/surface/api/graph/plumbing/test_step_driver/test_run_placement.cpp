@@ -107,7 +107,7 @@ namespace RunPlacementTests
                     world_.region(K_KEY_SCALE).add(K_N, Reads{}, Writes(acc_),
                         [p](std::size_t i) { p[i] = p[i] * 3u + 1u; }, scale);
                     NodeOptions fold = scale;
-                    fold.cost = NodeCost{11, 13, NodeDType::Unstated};
+                    fold.cost = NodeCost{11, 6, 7, OperationKinds::K_GENERIC, NodeDType::Unstated};
                     world_.region(K_KEY_FOLD).add(K_N, Reads{}, Writes(acc_),
                         [p](std::size_t i) { p[i] = p[i] ^ static_cast<Word>(i * 7u); }, fold);
                     world_.allow_chain(true);
@@ -228,7 +228,7 @@ namespace RunPlacementTests
         EXPECT_EQ(run.launched_items, std::uint64_t{2 * K_N});
         EXPECT_EQ(run.unsized_nodes, 0u);
         EXPECT_EQ(run.costed_nodes, 1u);
-        EXPECT_EQ(run.declared_flops, 11u);
+        EXPECT_EQ(run.declared_operations, 11u);
         EXPECT_EQ(run.declared_bytes, 13u);
     }
 

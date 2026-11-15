@@ -182,19 +182,21 @@ TEST(Small_CompiledGraph, CarriesTheCostOfTheFirstNode)
     plan.all_nodes.push_back(node_of(0, "gemm"));
     plan.all_nodes.push_back(node_of(1, "copy"));
     plan.all_nodes.push_back(node_of(2, "bias"));
-    plan.all_nodes[0]->metadata.cost = NodeCost{2048, 96, NodeDType::BF16};
+    plan.all_nodes[0]->metadata.cost = NodeCost{2048, 64, 32, OperationKinds::K_COMPUTE_BOUND, NodeDType::BF16};
     plan.all_nodes[1]->metadata.cost = NodeCost{};
 
     plan.capture_profiling_state();
 
     const NodeTableRow* gemm = plan.node_table->find(0);
     ASSERT_TRUE(gemm->cost.has_value());
-    EXPECT_EQ(gemm->cost->flops, 2048u);
-    EXPECT_EQ(gemm->cost->bytes, 96u);
+    EXPECT_EQ(gemm->cost->operations, 2048u);
+    EXPECT_EQ(gemm->cost->read_bytes, 64u);
+    EXPECT_EQ(gemm->cost->written_bytes, 32u);
+    EXPECT_EQ(gemm->cost->kind, OperationKinds::K_COMPUTE_BOUND);
     EXPECT_EQ(gemm->cost->dtype, NodeDType::BF16);
     const NodeTableRow* copy = plan.node_table->find(1);
     ASSERT_TRUE(copy->cost.has_value()) << "a stated zero is a cost";
-    EXPECT_EQ(copy->cost->flops, 0u);
+    EXPECT_EQ(copy->cost->operations, 0u);
     EXPECT_FALSE(plan.node_table->find(2)->cost.has_value()) << "a node that stated none has none";
 }
 
