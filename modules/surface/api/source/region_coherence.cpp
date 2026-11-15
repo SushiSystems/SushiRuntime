@@ -32,11 +32,13 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
 #include <SushiRuntime/coherence/transfer_cost.hpp>
+#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -62,12 +64,15 @@ namespace SushiRuntime
                 return Internal::Graph::device_memory_space(placed.value());
             };
 
-            // No transfer path is registered yet; a plan that needs a copy is refused as Unsupported.
-            Internal::Coherence::CoherencePlanner planner(runtime.handles(), runtime.memory_spaces(), {},
-                                                          Internal::Coherence::uniform_transfer_cost());
+            // The context owns the paths its devices support; a copy none of them makes is refused as Unsupported.
+            const std::vector<Internal::Coherence::TransferPath*>& paths = runtime.transfer_paths();
+            Internal::Coherence::CoherencePlanner planner(
+                runtime.handles(), runtime.memory_spaces(),
+                std::vector<const Internal::Coherence::TransferPath*>(paths.begin(), paths.end()),
+                Internal::Coherence::uniform_transfer_cost());
             Internal::Coherence::DirectoryPlannedNodeFactory factory(
                 runtime.handles(),
-                std::make_shared<Internal::Coherence::USMInstanceAllocator>(runtime.shared_memory()), {});
+                std::make_shared<Internal::Coherence::USMInstanceAllocator>(runtime.shared_memory()), paths);
             return Internal::Coherence::splice_plan(nodes, space_of, planner, factory);
         }
     } // namespace Detail

@@ -16,6 +16,11 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `copy_plan.hpp` | `CopyPlan`, `PlannedStep` and `PlannedStepKind` |
 | `transfer_path.hpp` | `TransferPath`, the interface of one way of copying, and `TransferRequest` |
 | `transfer_cost.hpp` | `TransferCost` and `uniform_transfer_cost()` |
+| `same_context_path.hpp` | `SameContextPath`, one memcpy between two devices of one SYCL context |
+| `peer_path.hpp` | `PeerPath`, one peer copy between two contexts of one backend |
+| `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
+| `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
+| `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
 | `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance |
 | `usm_instance_allocator.hpp` | `USMInstanceAllocator`, the port over a `USMAllocator` |
 | `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step into a node |
@@ -35,6 +40,19 @@ made, so a graph run again meets the state it was planned for.
 A plan reads only its inputs: the nodes, the directory's state, the spaces, the paths and the cost.
 A buffer with the `Borrowed` or `HostOnly` flag, or with no instance, is left alone. A copy no path
 makes is refused as `Unsupported`.
+
+## SameContextPath and PeerPath
+
+Both copy with one `memcpy` on the destination's queue, which `SpaceQueues` names. `SameContextPath`
+connects two spaces when the source lists the destination among its direct targets, which is how a
+device space records a shared SYCL context. `PeerPath` connects two spaces the source does not list,
+when `PeerAccess` grants the destination's device the source's memory. The runtime's `PeerAccess`
+asks the SYCL peer-access extension on DPC++ and refuses everywhere else, so under AdaptiveCpp the
+path connects nothing. Each path tells its optional `TransferObserver` the path name, the two spaces
+and the byte count of every copy it starts; the runtime registers no observer.
+
+The runtime builds both paths once, in `engine/execution`'s `build_transfer_paths()`, and the
+context hands them out as `RuntimeContext::transfer_paths()`, `SameContextPath` first.
 
 ## splice_plan
 

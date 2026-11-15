@@ -59,7 +59,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
 | T15 | reference interpreter test | T13 | todo |
 | T16 | determinism suite | T13 | todo |
-| T17 | `engine/coherence` same-context and peer paths | T13 | running |
+| T17 | `engine/coherence` same-context and peer paths | T13 | done |
 | T18 | `engine/coherence` host-staged path | T17 | todo |
 | T19 | file space and file path | T18 | todo |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |

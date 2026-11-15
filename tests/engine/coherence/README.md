@@ -7,9 +7,25 @@ The tests of the `coherence` module, mirroring `modules/engine/coherence/`.
 copies with `memcpy`, `ClosedTransferPath` connects none, and `FixedMemoryProbe` reports one
 gigabyte free.
 
-## compile_instance_allocator.cpp, compile_planned_node_factory.cpp and compile_transfer_path.cpp
+`transfer_path_doubles.hpp` holds the doubles of the path tests: `CPUSpaceQueues` answers one SYCL CPU
+queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
+`RecordingTransferObserver` keeps each copy it hears.
+
+## compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
+
+## test_same_context_path.cpp
+
+The path connects spaces of one context and no others, copies the bytes on the CPU queue, and tells
+its observer the name `same_context`. The tests skip when SYCL offers no CPU device.
+
+## test_peer_path.cpp
+
+The path connects two contexts only when access is granted and leaves one context to
+`SameContextPath`. It copies the bytes and names itself `peer`. A plan over both paths takes
+`same_context` for the copy inside a context and `peer` for the copy across contexts; the planned
+copy nodes move the bytes, and the observer records which path each copy took.
 
 ## test_coherence_planner.cpp
 

@@ -6,6 +6,6 @@
 sushiruntime_add_module(
     NAME coherence TIER engine INTERNAL
     SYCL
-    SOURCES coherence_planner.cpp directory_planned_node_factory.cpp plan_splice.cpp
-            usm_instance_allocator.cpp
+    SOURCES coherence_planner.cpp directory_planned_node_factory.cpp peer_path.cpp plan_splice.cpp
+            same_context_path.cpp usm_instance_allocator.cpp
     DEPENDS core handle region memory task)

@@ -72,6 +72,7 @@
 
 #include "host_execution_engine.hpp"
 #include "runtime_memory_spaces.hpp"
+#include "runtime_transfer_paths.hpp"
 
 namespace SushiRuntime
 {
@@ -280,6 +281,9 @@ namespace SushiRuntime
             /** @brief The host's and each device's memory space, measured once when the context is built. */
             RuntimeMemorySpaces spaces{build_memory_spaces(devices, Internal::Memory::SystemMemoryProbe{})};
 
+            /** @brief The paths that copy between the spaces; they borrow devices and are destroyed first. */
+            RuntimeTransferPaths paths{build_transfer_paths(devices)};
+
             /** @brief Gives the Borrowed handles of caller-owned memory; mints in handles. */
             Internal::Memory::BorrowedIndex borrowed{handles};
 
@@ -457,6 +461,11 @@ namespace SushiRuntime
         const std::vector<const Internal::Memory::MemorySpace*>& RuntimeContext::memory_spaces() const noexcept
         {
             return impl_->spaces.views;
+        }
+
+        const std::vector<Internal::Coherence::TransferPath*>& RuntimeContext::transfer_paths() const noexcept
+        {
+            return impl_->paths.views;
         }
 
         Internal::Memory::BorrowedIndex& RuntimeContext::borrowed_handles() noexcept

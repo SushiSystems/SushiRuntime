@@ -92,6 +92,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     execution       task
     execution       scheduler
     execution       graph
+    execution       coherence
     region_boundary task
     coherence       task
     probe_tasks     task

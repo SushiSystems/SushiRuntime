@@ -63,6 +63,7 @@ namespace SushiRuntime
     struct NodeFacts;
 
     namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
+    namespace Internal::Coherence { class TransferPath; }
 
     namespace Internal::Execution
     {
@@ -162,6 +163,12 @@ namespace SushiRuntime
                  * @see modules/engine/task/include/SushiRuntime/task/handle_location.hpp
                  */
                 [[nodiscard]] const std::vector<const Internal::Memory::MemorySpace*>& memory_spaces() const noexcept;
+
+                /**
+                 * @brief Returns the transfer paths the devices of this context support, in the order
+                 *        they are tried; the context owns them.
+                 */
+                [[nodiscard]] const std::vector<Internal::Coherence::TransferPath*>& transfer_paths() const noexcept;
 
                 /** @brief Returns the index that gives one Borrowed handle per range of caller-owned memory. */
                 [[nodiscard]] Internal::Memory::BorrowedIndex& borrowed_handles() noexcept;

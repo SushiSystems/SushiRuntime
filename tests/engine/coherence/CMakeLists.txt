@@ -7,11 +7,16 @@ sushiruntime_add_module_tests(
     MODULE coherence
     SOURCES
         compile_instance_allocator.cpp
+        compile_peer_access.cpp
         compile_planned_node_factory.cpp
+        compile_space_queues.cpp
+        compile_transfer_observer.cpp
         compile_transfer_path.cpp
         test_coherence_planner.cpp
         test_copy_plan.cpp
         test_directory_planned_node_factory.cpp
+        test_peer_path.cpp
         test_plan_splice.cpp
+        test_same_context_path.cpp
         test_transfer_cost.cpp
         test_usm_instance_allocator.cpp)

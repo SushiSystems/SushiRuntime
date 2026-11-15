@@ -1,0 +1,152 @@
+/**************************************************************************/
+/* runtime_transfer_paths.cpp                                             */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file runtime_transfer_paths.cpp
+ * @brief Implements build_transfer_paths.
+ * @see modules/engine/execution/README.md
+ * @author Mustafa Garip
+ */
+
+#include "runtime_transfer_paths.hpp"
+
+#include <cstddef>
+#include <optional>
+#include <utility>
+
+#include <SushiRuntime/coherence/peer_access.hpp>
+#include <SushiRuntime/coherence/peer_path.hpp>
+#include <SushiRuntime/coherence/same_context_path.hpp>
+#include <SushiRuntime/coherence/space_queues.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
+
+namespace SushiRuntime
+{
+    namespace Internal::Execution
+    {
+        namespace
+        {
+            /** @brief Returns the device a space belongs to when the set holds it. */
+            std::optional<std::size_t> device_in(const Device::DeviceQueueSet& devices, MemorySpaceID space) noexcept
+            {
+                const std::optional<std::size_t> device = Graph::device_of_space(space);
+                if (device && *device < devices.count())
+                    return device;
+                return std::nullopt;
+            }
+
+            /** @brief Names the plain queue of each device of a set by the device's space. */
+            class DeviceSpaceQueues final : public Coherence::SpaceQueues
+            {
+                public:
+                    explicit DeviceSpaceQueues(Device::DeviceQueueSet& devices) noexcept : devices_(&devices)
+                    {
+
+                    }
+
+                    [[nodiscard]] sycl::queue* queue_of(MemorySpaceID space) const override
+                    {
+                        const std::optional<std::size_t> device = device_in(*devices_, space);
+                        return device ? &devices_->queue(*device) : nullptr;
+                    }
+
+                private:
+                    /// @brief The devices whose queues are named.
+                    Device::DeviceQueueSet* devices_;
+            };
+
+            /** @brief Grants peer access through the SYCL peer-access extension where the compiler has it. */
+            class DevicePeerAccess final : public Coherence::PeerAccess
+            {
+                public:
+                    explicit DevicePeerAccess(Device::DeviceQueueSet& devices) noexcept : devices_(&devices)
+                    {
+
+                    }
+
+                    [[nodiscard]] bool grant(MemorySpaceID reader, MemorySpaceID owner) override
+                    {
+#if defined(SYCL_IMPLEMENTATION_INTEL)
+                        const std::optional<std::size_t> reading = device_in(*devices_, reader);
+                        const std::optional<std::size_t> owning = device_in(*devices_, owner);
+                        if (!reading || !owning)
+                            return false;
+                        try
+                        {
+                            sycl::device reading_device = devices_->queue(*reading).get_device();
+                            const sycl::device owning_device = devices_->queue(*owning).get_device();
+                            if (reading_device.get_backend() != owning_device.get_backend() ||
+                                !reading_device.ext_oneapi_can_access_peer(owning_device))
+                                return false;
+                            reading_device.ext_oneapi_enable_peer_access(owning_device);
+                            return true;
+                        }
+                        catch (const sycl::exception&)
+                        {
+                            return false;
+                        }
+#else
+                        static_cast<void>(reader);
+                        static_cast<void>(owner);
+                        return false;
+#endif
+                    }
+
+                private:
+                    /// @brief The devices whose peers are asked.
+                    Device::DeviceQueueSet* devices_;
+            };
+        } // namespace
+
+        /** @brief Holds the queues and the access the paths of a RuntimeTransferPaths refer to. */
+        struct RuntimeTransferPaths::Support
+        {
+            explicit Support(Device::DeviceQueueSet& devices) : queues(devices), access(devices)
+            {
+
+            }
+
+            DeviceSpaceQueues queues; /**< Names the queue of each space. */
+            DevicePeerAccess access;  /**< Grants peer access between devices. */
+        };
+
+        RuntimeTransferPaths::RuntimeTransferPaths() = default;
+        RuntimeTransferPaths::RuntimeTransferPaths(RuntimeTransferPaths&&) noexcept = default;
+        RuntimeTransferPaths& RuntimeTransferPaths::operator=(RuntimeTransferPaths&&) noexcept = default;
+        RuntimeTransferPaths::~RuntimeTransferPaths() = default;
+
+        RuntimeTransferPaths build_transfer_paths(Device::DeviceQueueSet& devices,
+                                                  Coherence::TransferObserver* observer)
+        {
+            RuntimeTransferPaths paths;
+            paths.support = std::make_unique<RuntimeTransferPaths::Support>(devices);
+            paths.owned.push_back(
+                std::make_unique<Coherence::SameContextPath>(paths.support->queues, observer));
+            paths.owned.push_back(
+                std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
+            for (const auto& path : paths.owned)
+                paths.views.push_back(path.get());
+            return paths;
+        }
+    } // namespace Internal::Execution
+} // namespace SushiRuntime
