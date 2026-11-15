@@ -46,6 +46,25 @@ if(NOT DEFINED SR_AMD_ARCH OR SR_AMD_ARCH STREQUAL "")
         list(REMOVE_DUPLICATES _sr_gfx)
     endif()
 
+    # Windows ships no rocm_agent_enumerator. hipInfo, which sits beside hipcc in the toolkit
+    # the CLI passed as SR_ROCM_PATH, lists each agent with its gcnArchName.
+    if(WIN32 AND NOT _sr_gfx AND SR_ROCM_TOOLKIT_ROOT)
+        find_program(_sr_hipinfo hipInfo PATHS "${SR_ROCM_TOOLKIT_ROOT}/bin" NO_DEFAULT_PATH)
+        if(_sr_hipinfo)
+            execute_process(
+                COMMAND ${_sr_hipinfo}
+                OUTPUT_VARIABLE _sr_hip_report
+                ERROR_QUIET
+            )
+            string(REGEX MATCHALL "gcnArchName: *gfx[0-9a-f]+" _sr_hip_lines "${_sr_hip_report}")
+            foreach(_sr_line IN LISTS _sr_hip_lines)
+                string(REGEX REPLACE "^.*(gfx[0-9a-f]+)$" "\\1" _sr_line "${_sr_line}")
+                list(APPEND _sr_gfx "${_sr_line}")
+            endforeach()
+            list(REMOVE_DUPLICATES _sr_gfx)
+        endif()
+    endif()
+
     sushiruntime_gpu_resolve_arch(SR_AMD_ARCH _sr_gfx
         "rocm" "rocm_agent_enumerator" "GPU ISA"
         "-DSR_AMD_ARCH=gfx1030 (RDNA2), gfx1100 (RDNA3), gfx906 (Vega20)")
@@ -66,6 +85,29 @@ if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
     # a duplicate backend.
     string(REPLACE ";" "," _sr_acpp_devices "${SR_AMD_ARCH}")
     sushiruntime_gpu_add_acpp_target("hip:${_sr_acpp_devices}")
+elseif(SR_ROCM_DEVICE_LIBS)
+    # The device libraries come from a separate tree (SR_ROCM_DEVICE_LIBS, passed by the CLI)
+    # because the toolkit's own bitcode is newer than the compiler reads. That route is the
+    # measured one: the bare triple, with the ISA stated to the backend. --offload-arch takes
+    # a single value, so it carries one ISA. The options use -Xsycl-target-frontend and
+    # -backend, which a compiler cache keeps, unlike -Xarch_device.
+    list(LENGTH SR_AMD_ARCH _sr_amd_arch_count)
+    if(_sr_amd_arch_count GREATER 1)
+        message(FATAL_ERROR
+            "SR_AMD_ARCH lists ${_sr_arch_report}, but the device-library route "
+            "(SR_ROCM_DEVICE_LIBS) offloads to one ISA. Pass one: -DSR_AMD_ARCH=<gfx name>.")
+    endif()
+    sushiruntime_gpu_add_clang_triple("amdgcn-amd-amdhsa")
+    sushiruntime_gpu_add_clang_option(
+        "SHELL:-Xsycl-target-backend=amdgcn-amd-amdhsa --offload-arch=${SR_AMD_ARCH}")
+    if(WIN32)
+        # The device libraries carry a 4-byte wchar_t flag, Windows device code a 2-byte one.
+        sushiruntime_gpu_add_clang_option(
+            "SHELL:-Xsycl-target-frontend=amdgcn-amd-amdhsa -fno-short-wchar")
+    endif()
+    sushiruntime_gpu_add_clang_build_option(
+        "--rocm-path=${SR_ROCM_TOOLKIT_ROOT}"
+        "--rocm-device-lib-path=${SR_ROCM_DEVICE_LIBS}")
 else()
     # The clang toolchains take the ISA as a -fsycl-targets alias
     # (amd_gpu_gfx1030) rather than the bare amdgcn-amd-amdhsa triple plus a

@@ -32,3 +32,9 @@ The route differs from the one the specification names, and the differences are 
   its results are correct and a CUDA-only process exits cleanly. KI-33 tracks it.
 
 The AdaptiveCpp route was not needed. T38 puts this route into `sr build`.
+
+## Dispatches
+
+```
+dispatch: T38 — sonnet medium, 62 turns, passed, rung 1
+```

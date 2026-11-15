@@ -30,6 +30,7 @@ from sushicore.testing.program_runner import ProgramRunner
 
 from ..config import PROFILE, Config
 from ..env import load_build_env
+from ..rocm_route import RocmRoute
 from . import discovery, library_packages
 from .install_hint import toolchain_install_command
 from .surroundings import Surroundings
@@ -198,7 +199,8 @@ def _flags_fingerprint() -> str:
 
 def _configure_stamp(dist: str, gpu_backend: str,
                      tests: bool, toolchain: str, cxx: str,
-                     sushi_definitions: tuple[str, ...] = (), lean: bool = False) -> str:
+                     sushi_definitions: tuple[str, ...] = (), lean: bool = False,
+                     rocm_route: str = "") -> str:
     """A stable key of every configure-affecting knob but the build type.
 
     The build type picks the tree, so it is not part of the key. Keying on the full tuple
@@ -218,9 +220,10 @@ def _configure_stamp(dist: str, gpu_backend: str,
     ``sushi_definitions`` are the ``-D<Package>_DIR`` of the library packages and the
     ``-D<NAME>_DIR`` of any pin that is not one: a pin moved to another checkout, or a package
     in another folder, has to reach the cache the same way. ``lean`` leaves out the examples
-    and the benchmarks as well as the tests.
+    and the benchmarks as well as the tests. ``rocm_route`` is the fingerprint of the ROCm route
+    the configure was handed, empty when it was handed none.
     """
-    return (f"{dist}|{gpu_backend}|{'ON' if tests else 'OFF'}"
+    return (f"{dist}|{gpu_backend}|{rocm_route}|{'ON' if tests else 'OFF'}"
             f"|{toolchain}|{cxx}|{'|'.join(sushi_definitions)}|{_flags_fingerprint()}"
             f"{'|lean' if lean else ''}")
 
@@ -402,7 +405,7 @@ def _check_sanitizer_runtime(console, cfg: Config) -> int:
 
 def _configure_args_windows(cmake: str, cfg: Config, build_dir: Path, build_type: str,
                             gpu_backend: str, dist: str, asan: bool,
-                            tests: bool) -> list[str]:
+                            tests: bool, rocm_route: RocmRoute | None = None) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
 
@@ -425,6 +428,8 @@ def _configure_args_windows(cmake: str, cfg: Config, build_dir: Path, build_type
     ]
     if asan:
         args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
+    if rocm_route is not None:
+        args += rocm_route.configure_arguments(os.environ)
     if cfg.rc_exe:
         args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
     # Always passed, so a tree configured with other flags is rewritten to these.
@@ -550,8 +555,13 @@ def build(build_type: BuildType, distributed: bool = False,
     library_packages.prepend_run_dirs(cfg, env, run_dirs)
 
     sushi_definitions = tuple(configure_arguments(cfg, root, packages))
+    # The ROCm route is Windows-only and only for a build that may offload; see cli/README.md.
+    rocm_route = RocmRoute.discover() if cfg.is_windows and gpu_backend == "auto" else None
+    if rocm_route is not None:
+        console.info(f"ROCm route: {rocm_route.root}")
     stamp_key = _configure_stamp(dist, gpu_backend, tests,
-                                 cfg.toolchain, cfg.cxx, sushi_definitions, lean)
+                                 cfg.toolchain, cfg.cxx, sushi_definitions, lean,
+                                 rocm_route.fingerprint(os.environ) if rocm_route else "")
     if driver.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
@@ -561,7 +571,7 @@ def build(build_type: BuildType, distributed: bool = False,
             if asan and (rc := _check_sanitizer_runtime(console, cfg)) != 0:
                 return rc
             args = _configure_args_windows(driver.cmake(cfg), cfg, tree, cmake_build_type,
-                                           gpu_backend, dist, asan, tests)
+                                           gpu_backend, dist, asan, tests, rocm_route)
         else:
             args = _configure_args_linux(driver.cmake(cfg), cfg, tree, cmake_build_type,
                                          gpu_backend, dist, asan, tests, cc, cxx)

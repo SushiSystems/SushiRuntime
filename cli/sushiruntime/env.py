@@ -25,6 +25,7 @@ from sushicore.build_env import (
 
 from . import console
 from .config import Config, find_project_root
+from .rocm_route import K_FORCE_LOAD, RocmRoute, tree_offloads_to_rocm
 
 CACHE_NAME = ".sushiruntime_env.json"
 
@@ -88,6 +89,23 @@ def _inject_toolchain_paths(cfg: Config, env: dict[str, str]) -> None:
         prepend_path(env, "LD_LIBRARY_PATH", libs)
 
 
+def _inject_rocm_runtime(cfg: Config, build_dir: Path, env: dict[str, str]) -> None:
+    """Let a program of a ROCm-offloading Windows tree find the HIP adapter and runtime.
+
+    The Unified Runtime loader does not discover the HIP adapter on Windows, so it is named in
+    ``UR_ADAPTERS_FORCE_LOAD`` beside the CUDA and OpenCL adapters, and the toolkit's ``bin``
+    goes on ``PATH`` for ``amdhip64``. Only a tree whose configure resolved ROCm gets this, so
+    a ``--no-cuda`` or ASan tree and a machine without the route run exactly as before.
+    """
+    if not cfg.is_windows or K_FORCE_LOAD in env or not tree_offloads_to_rocm(build_dir):
+        return
+    route = RocmRoute.discover()
+    if route is None:
+        return
+    prepend_path(env, "PATH", [str(route.root / "bin")])
+    env[K_FORCE_LOAD] = route.force_load_value(Path(cfg.llvm_bin()))
+
+
 def _snapshot_linux(cfg: Config) -> dict[str, str] | None:
     # setvars is sourced only for the oneapi toolchain; see cli/README.md.
     if cfg.toolchain != "oneapi":
@@ -146,8 +164,9 @@ def load_build_env(cfg: Config, build_dir: Path) -> dict[str, str]:
     key = _cache_key(cfg)
 
     def finish(env: dict[str, str]) -> dict[str, str]:
-        """The two steps that are this module's own, applied to every path out."""
+        """The steps that are this module's own, applied to every path out."""
         _inject_toolchain_paths(cfg, env)
+        _inject_rocm_runtime(cfg, build_dir, env)
         _inject_sanitizer_options(env)
         return env
 

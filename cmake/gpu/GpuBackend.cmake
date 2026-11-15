@@ -23,6 +23,9 @@
 #                         the clang toolchains); accelerators append their triple.
 #   SR_GPU_CLANG_OPTIONS  extra driver flags such as -Xsycl-target-backend ...; never a
 #                         path of this machine, since the options are exported.
+#   SR_GPU_CLANG_BUILD_OPTIONS  driver flags that name a path of this machine (a vendor's
+#                         toolkit or device-library root). They reach the options through
+#                         $<BUILD_INTERFACE:> only, so an installed package never carries them.
 #   SR_GPU_NVIDIA         TRUE once an NVIDIA triple was added; the package config then
 #                         finds the consumer's CUDA toolkit at find_package time.
 #   SR_GPU_CUDA_PATH      the CUDA root this build passes as --cuda-path, or empty. It
@@ -35,6 +38,7 @@
 
 set(SR_GPU_CLANG_TRIPLES "spir64")
 set(SR_GPU_CLANG_OPTIONS "")
+set(SR_GPU_CLANG_BUILD_OPTIONS "")
 set(SR_GPU_NVIDIA FALSE)
 set(SR_GPU_CUDA_PATH "")
 set(SR_GPU_ACPP_TARGETS "generic")
@@ -73,6 +77,12 @@ endmacro()
 # Append raw backend flags (e.g. -Xsycl-target-backend=... --offload-arch=...).
 macro(sushiruntime_gpu_add_clang_option)
     list(APPEND SR_GPU_CLANG_OPTIONS ${ARGN})
+endmacro()
+
+# Append driver flags that hold a path of the build machine (--rocm-path=...). They apply to
+# this tree's compiles and links and are left out of the exported options.
+macro(sushiruntime_gpu_add_clang_build_option)
+    list(APPEND SR_GPU_CLANG_BUILD_OPTIONS ${ARGN})
 endmacro()
 
 # Register an AdaptiveCpp target (e.g. cuda:sm_86, hip:gfx1030).
@@ -270,6 +280,12 @@ macro(sushiruntime_gpu_finalize)
                 target_link_options(sushiruntime_gpu_offload INTERFACE
                     "$<BUILD_INTERFACE:--cuda-path=${SR_GPU_CUDA_PATH}>")
             endif()
+            foreach(_sr_build_option IN LISTS SR_GPU_CLANG_BUILD_OPTIONS)
+                target_compile_options(sushiruntime_gpu_offload INTERFACE
+                    "$<BUILD_INTERFACE:${_sr_build_option}>")
+                target_link_options(sushiruntime_gpu_offload INTERFACE
+                    "$<BUILD_INTERFACE:${_sr_build_option}>")
+            endforeach()
             message(STATUS "GPU backend: SYCL targets = ${_sr_targets}")
         else()
             # Only spir64 => JIT default; emit nothing (CPU/Intel-GPU/Windows path).

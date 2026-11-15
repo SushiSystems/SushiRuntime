@@ -87,6 +87,27 @@ resolves the llvm-sycl `libur_adapter_cuda`. That Unified Runtime version mismat
 during SYCL device discovery, in `urVirtualMemMap`. The intel-llvm and adaptivecpp toolchains
 ship on `PATH` and need no setvars, so returning `None` keeps their environment clean.
 
+On Windows a tree whose `CMakeCache.txt` resolved `rocm` also gets the toolkit's `bin` on `PATH`
+and `UR_ADAPTERS_FORCE_LOAD` set (see `rocm_route.py`). The tree decides, not the machine, so a
+`--no-cuda` tree runs as it did. A `UR_ADAPTERS_FORCE_LOAD` the caller already set is kept. On
+the first build the tree has no cache yet, so the build itself runs without them; no build step
+needs them.
+
+## sushiruntime/rocm_route.py
+
+The ROCm route on Windows is three pieces that are installed apart: the toolkit (`rocm/<version>`
+holding the `hipcc` compiler), device libraries the compiler can read (`rocm/devlibs-*`; the toolkit's
+own bitcode is written by a newer LLVM than the SYCL compiler's) and the Unified Runtime HIP
+adapter (`ur/hip-*`). `RocmRoute.discover` looks for all three under the dependency roots and
+returns nothing unless every one is there, so a machine without the route builds as before.
+
+CMake is told the paths as `SR_ROCM_PATH` and `SR_ROCM_DEVICE_LIBS`, so no path is written in
+`cmake/gpu`. The vendor strategy stays in `cmake/gpu/Rocm.cmake`; this module only supplies
+what that file needs. The ISA is `SR_AMD_ARCH` when the environment sets it, else
+`Rocm.cmake` asks `hipInfo`. The route is part of the configure stamp, so installing or moving
+it reconfigures the tree. The loader does not find the HIP adapter on Windows, hence the
+`UR_ADAPTERS_FORCE_LOAD` list that `env.py` builds.
+
 ## sushiruntime/services/diag.py
 
 Read-only troubleshooting. When a build picks the "wrong" compiler or a path looks off,
@@ -391,3 +412,10 @@ the old stamp, skipped configure and reused the previous tree. The cache in that
 read the old toolchain, so nothing anywhere disagreed.
 
 Both halves had to be fixed for the command to work, which is why both are pinned.
+
+## tests/test_rocm_route.py
+
+The ROCm route is all or nothing. The tests guard against a build that hands CMake a route with
+a piece missing, such as device libraries and no adapter, which would configure for AMD offload
+and fail at compile or at run. They also pin the quoted, comma separated adapter list the loader
+takes, and that only a tree whose cache resolved `rocm` is treated as offloading to it.
