@@ -43,7 +43,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T03 | HIP probe | | done |
 | T38 | `cli`, `cmake/gpu`: the HIP backend on Windows | T03 | done |
 | T04 | `foundation/placement`, `surface/api` | T02 | todo |
-| T05 | `platform/memory` directory | T01 | todo |
+| T05 | `platform/memory` directory | T01 | done |
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | todo |
 | T07 | `surface/api` region composer | T06 | todo |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | todo |
@@ -207,6 +207,7 @@ task; the dispatch names the task, its files and its acceptance criterion.
 - Doxygen comments in plain, short English. Line separator comments (`// ===`, `// ---`) are
   forbidden. Load `cpp-code-style`, `source-comments`, `sushisystems-licence`, `testing` and, for a
   README or a page, `documentation`.
+- Every test suite name opens with `Small_`, `Medium_` or `Large_` (`tools/testing/check_test_sizes.py`).
 - Every header and source file gets its mirror test under `tests/` (the commit hook runs
   `tools/testing/check_test_mirror.py`). Register each test file in its tests `CMakeLists.txt`.
 - Write licence blocks by copying one from a sibling file of the same language.

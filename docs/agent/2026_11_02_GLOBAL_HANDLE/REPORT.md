@@ -38,4 +38,15 @@ The AdaptiveCpp route was not needed. T38 puts this route into `sr build`.
 ```
 dispatch: T38 — sonnet medium, 62 turns, passed, rung 1
 dispatch: T01 — opus low, 37 turns, passed, rung 1
+dispatch: T05 — opus low, rung 1, passed
 ```
+
+## T05: the residency directory
+
+- Retired slots do not pass through epoch-based reclamation. Chunks are never freed, so no memory
+  waits on readers, and a reader that races a retire sees the raised generation on its recheck.
+  Deferring reuse to the epoch scan would make the next handle depend on reclamation timing and
+  break "same program, same handles". Decision taken by the orchestrator under the owner's
+  delegation of 2026-11-15.
+- `ResidencyDirectory::entry_address` is public only for the chunk-stability test. It exposes a
+  read-only internal address; a test-only seam would remove it.

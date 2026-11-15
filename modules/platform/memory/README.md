@@ -1,6 +1,7 @@
 # memory
 
-The USM allocator and its allocation owner, the USM registry and epoch-based reclamation.
+The USM allocator and its allocation owner, the USM registry, the residency directory and
+epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
 Everything is in `SushiRuntime::Internal::Memory`.
@@ -87,6 +88,45 @@ check_and_reclaim() picks up the nodes in `remaining_nodes`.
 Free pool storage belongs to this thread alone, so the destructor releases it directly. Orphaned
 retire_list nodes are owned by the EpochManager by then and may come from any thread's pool, so they
 cannot go back to this pool.
+
+## residency_directory.hpp
+
+### ResidencyDirectory
+
+`ResidencyDirectory` implements `HandleSpace` and `HandleResolver` from `foundation/handle`. It is
+one table indexed by the handle's slot. The table grows in chunks of `K_CHUNK_ENTRIES` entries; the
+array of chunk pointers is sized for `K_MAX_CHUNKS` when the directory is built, and a chunk is made
+the first time a slot in it is handed out. A chunk never moves, so a reader holds no lock: a resolve
+loads one chunk pointer, compares the generation with an acquire load and tests one bit of the
+valid-spaces mask. Writers (mint, retire, describe, set_instance, drop_instance) take one mutex
+among themselves and never block a reader.
+
+An entry holds its generation, a live flag, the size, the element layout, the home space and one
+address per memory space, with a 64-bit mask of the spaces that hold one. `K_MAX_MEMORY_SPACES` is
+64, one bit of that mask each. The coherence interval map of the design is not in the entry yet; it
+is added as one more member.
+
+### mint and retire: the ordered free list
+
+A retired slot goes back to a free list that hands out the lowest slot first, and a slot never
+handed out comes only after every freed one. The same program therefore gets the same handles in
+every run. Retire raises the generation at once, so every copy of the old handle resolves to
+`StaleHandle`. A slot whose generation wraps to 0 is not reused; generation 0 is the null handle.
+
+### resolve: a reader that races a retire
+
+A retire stores the new generation, then a release fence, then clears the instances. A resolve
+loads the mask and the address, then an acquire fence, then loads the generation again. A reader
+that saw a cleared or reused instance therefore sees the new generation and returns `StaleHandle`,
+never another handle's address. Because the slot goes back to the free list at once, nothing in the
+directory is left for epoch-based reclamation to free.
+
+### error_code_of and to_result
+
+`error_code_of` turns a failed `HandleStatus` into the `ErrorCode` the runtime reports:
+`StaleHandle` to `StaleHandle`, `NullHandle` and `ForeignUniverse` to `InvalidArgument`,
+`NotResident` to `InvalidAccess` and `SpaceExhausted` to `AllocationFailed`. `to_result` wraps a
+`ResolveOutcome` into a `Result<void*>` with that code.
 
 ## usm_registry.hpp
 

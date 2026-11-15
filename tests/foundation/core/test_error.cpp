@@ -59,6 +59,7 @@ namespace
         EXPECT_EQ(number_of(ErrorCode::InvalidState), 9);
         EXPECT_EQ(number_of(ErrorCode::ProtocolMismatch), 10);
         EXPECT_EQ(number_of(ErrorCode::InvalidArgument), 11);
+        EXPECT_EQ(number_of(ErrorCode::StaleHandle), 12);
     }
 
     TEST(Small_Error, EveryEnumeratorHasItsOwnName)
@@ -74,6 +75,7 @@ namespace
         EXPECT_STREQ(to_string(ErrorCode::InvalidState), "InvalidState");
         EXPECT_STREQ(to_string(ErrorCode::ProtocolMismatch), "ProtocolMismatch");
         EXPECT_STREQ(to_string(ErrorCode::InvalidArgument), "InvalidArgument");
+        EXPECT_STREQ(to_string(ErrorCode::StaleHandle), "StaleHandle");
     }
 
     TEST(Small_Error, AValueOutsideTheEnumIsNamedUnknown)

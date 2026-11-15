@@ -53,7 +53,8 @@ namespace SushiRuntime
         Unsupported,      /**< The implementation does not offer the requested capability. */
         InvalidState,     /**< The call is not allowed in the object's current state. */
         ProtocolMismatch, /**< A peer speaks another version of the wire protocol. */
-        InvalidArgument   /**< A value the caller passed breaks a rule the call states. */
+        InvalidArgument,  /**< A value the caller passed breaks a rule the call states. */
+        StaleHandle       /**< A handle names a slot retired or reused since it was minted. */
     };
 
     /**
@@ -74,6 +75,7 @@ namespace SushiRuntime
             case ErrorCode::InvalidState:     return "InvalidState";
             case ErrorCode::ProtocolMismatch: return "ProtocolMismatch";
             case ErrorCode::InvalidArgument:  return "InvalidArgument";
+            case ErrorCode::StaleHandle:      return "StaleHandle";
         }
         return "Unknown";
     }
