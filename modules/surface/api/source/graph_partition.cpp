@@ -34,7 +34,7 @@
 #include <utility>
 
 #include <SushiRuntime/partition_session/partition_apply.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partitioning/problem_hash.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
@@ -47,41 +47,53 @@ namespace SushiRuntime
                                Internal::Execution::RuntimeContext& runtime)
         {
             using Problem = std::optional<Internal::Coherence::GraphPartitionProblem>;
-            Internal::Coherence::PartitionSession& session = runtime.partitioning();
+            Internal::Coherence::PartitionSessions& sessions = runtime.partitioning();
             answered_again_ = false;
-            if (runtime.devices().count() < 2 || !session.is_active())
+            if (runtime.devices().count() < 2 || (session_ == nullptr && !sessions.is_active()))
                 return Problem();
             const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handle_ports().residency);
             Result<Internal::Coherence::GraphPartitionProblem> graph = Internal::Coherence::make_graph_partition_problem(
-                nodes, memory, runtime.handle_ports().residency, session.devices(), placed_addresses_);
+                nodes, memory, runtime.handle_ports().residency, sessions.devices(), placed_addresses_);
             if (!graph)
                 return make_error(std::move(graph.error()));
             if (graph.value().planned_buffers == 0)
                 return Problem();
 
-            // The same problem keeps its answer unless a horizon put another plan for it in force.
             const std::uint64_t hash = Internal::Coherence::problem_hash(graph.value().problem);
+            // The graph's first problem opens the session this graph alone partitions, measures and journals in.
+            if (session_ == nullptr)
+            {
+                session_ = sessions.open(hash);
+                if (session_ == nullptr)
+                    return Problem();
+            }
+            // The same problem keeps its answer unless a horizon put another plan for it in force.
             const bool same_problem = problem_hash_ && *problem_hash_ == hash;
-            const bool rebalanced = same_problem && session.has_plan() && session.problem_hash() == hash &&
-                                    session.generation() != generation_;
+            const bool rebalanced = same_problem && session_->has_plan() && session_->problem_hash() == hash &&
+                                    session_->generation() != generation_;
             answered_again_ = !same_problem || rebalanced;
             if (!answered_again_)
                 return Problem(std::move(graph.value()));
             const Result<Internal::Coherence::PartitionAssignment, Internal::Coherence::PartitionRefusal>& answered =
-                rebalanced ? session.answer() : session.partition(graph.value().problem);
+                rebalanced ? session_->answer() : session_->partition(graph.value().problem);
+            sessions.partitioned(session_);
             if (!answered)
                 return make_error(answered.error().to_error());
             problem_hash_ = hash;
-            generation_ = session.generation();
+            generation_ = session_->generation();
             assignment_ = answered.value();
             return Problem(std::move(graph.value()));
         }
 
-        bool GraphPartition::rebalanced(Internal::Execution::RuntimeContext& runtime) const noexcept
+        bool GraphPartition::rebalanced() const noexcept
         {
-            const Internal::Coherence::PartitionSession& session = runtime.partitioning();
-            return problem_hash_ && session.has_plan() && session.problem_hash() == *problem_hash_ &&
-                   session.generation() != generation_;
+            return problem_hash_ && session_ != nullptr && session_->has_plan() &&
+                   session_->problem_hash() == *problem_hash_ && session_->generation() != generation_;
+        }
+
+        PartitionReport GraphPartition::report() const
+        {
+            return session_ != nullptr ? session_->report() : PartitionReport{};
         }
 
         Result<std::set<const Internal::Graph::Node*>>

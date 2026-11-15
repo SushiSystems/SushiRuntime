@@ -93,6 +93,7 @@ dispatch: R08 — sonnet medium, rung 1, passed
 dispatch: R06 — sonnet medium, rung 1, passed
 dispatch: R02 — opus low, rung 1, passed but for one wiring line in partition_session (done by the orchestrator)
 dispatch: R09 — sonnet medium, rung 1, passed
+dispatch: R04 — opus low, rung 1, passed after one rebase (temp rebase commit used --no-verify; commit discarded)
 dispatch: T55 — opus low, 56 turns, rung 1, passed in part (recording by handle moved to T56 and T57)
 dispatch: T54 — opus low, 98 turns, rung 1, passed after one return (horizon in the journal)
 dispatch: T56 — opus low, 85 turns, rung 1, passed

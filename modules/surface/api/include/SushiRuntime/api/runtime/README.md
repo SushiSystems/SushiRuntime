@@ -116,11 +116,13 @@ several threads. The call is made between runs; the caller makes sure none is in
 
 ### replay_placements
 
-`replay_placements()` reads a placement journal, the `<device_profile_file>.journal` another run wrote,
-and makes the runtime place its graphs from it: each partition takes the journal's next first entry
-and each change of plan comes at the horizon the journalled run made it at, and the runtime does not rebalance on its own. The runtime needs
-no profile file for it. A file that cannot be read or holds a malformed line is `InvalidArgument`; a
-call after a graph of the runtime was partitioned is `InvalidState`. A problem that differs from the
+`replay_placements()` reads one placement journal, a `<device_profile_file>.<first problem hash>.journal`
+another run wrote for one graph, and makes the graph whose first problem has that hash place from it: each
+partition takes the journal's next first entry and each change of plan comes at the horizon the journalled
+run made it at, and that graph does not rebalance on its own. Other graphs plan as before; call once per
+journal to replay several. The runtime needs no profile file for it. A file that cannot be read, holds a
+malformed line or opens with no first partition is `InvalidArgument`; a call after the graph with that
+first problem was partitioned is `InvalidState`. A problem that differs from the
 entry's fails the graph's commit with the error, which names the entry.
 `modules/engine/partition_session/README.md`, "Placement journal", holds the rule.
 
@@ -322,11 +324,13 @@ run finished and must not start a run or add or remove an observer. The `profili
 `Runtime::partition_report()` returns a `PartitionReport` (`SushiRuntime/report/partition_report.hpp`): one
 row per device with the nodes and bytes it holds, the modelled and measured time of a step on it, its copies
 by path and, for a refused job, the bytes its pool lacked; for the plan the modelled and measured step and the
-floor's modelled step and devices; and `to_text()` for a log. The report is of the last plan the composer or
-`PlanCache` partitioned: a runtime with a device profile file and two devices or more partitions a graph that
-touches a `Residency::Planned` buffer. Before that the report has no rows. A job no plan fits is refused at
-compile with `AllocationFailed` and each pool's shortfall. The rows come from `PartitionSession::report()` of
-the `partition_session` module.
+floor's modelled step and devices; and `to_text()` for a log. Each graph keeps its own plan, so
+`Graph::partition_report()` and `DynamicGraph::partition_report()` report that graph's plan and runs;
+`Runtime::partition_report()` reports the graph that partitioned last, and has no rows once that graph is
+gone. A runtime with a device profile file and two devices or more partitions a graph that touches a
+`Residency::Planned` buffer. Before that the report has no rows. A job no plan fits is refused at compile
+with `AllocationFailed` and each pool's shortfall. The rows come from `PartitionSession::report()` of the
+`partition_session` module.
 
 ### set_rebalancer_enabled
 

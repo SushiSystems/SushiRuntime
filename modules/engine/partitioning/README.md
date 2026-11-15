@@ -101,7 +101,7 @@ parts through `Internal::Graph::dispatch_split()` (`engine/task`) once they do.
 `problem_hash()` folds every field of a `PartitionProblem` into one FNV-1a value, through the same
 `FNVHash` and `fold_device_key()` that `plan_hash()` and `assignment_hash()` use. The API's
 `GraphPartition` runs the partitioner again only when that hash changed, and takes the session's
-answer again when `PartitionSession::generation()` moved for the same hash.
+answer again when the generation of the graph's own `PartitionSession` moved for the same hash.
 
 ## PartitionReportBuilder
 

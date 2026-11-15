@@ -62,14 +62,14 @@ namespace SushiRuntime
             measured.step_seconds = seconds_ / steps;
             for (const auto& entry : device_seconds_)
                 measured.device_seconds[entry.first] = entry.second / steps;
-            // The tallies are ordered by space, then path, so each device's rows come out in path order.
+            // The tallies are ordered by space, then path identity, so each device's rows come out in one fixed order.
             for (const auto& entry : copies)
             {
                 const std::optional<DeviceKey> device = device_of ? device_of(entry.first.first) : std::nullopt;
                 if (!device)
                     continue;
                 measured.copies[*device].push_back(PartitionCopyRow{
-                    entry.first.second, static_cast<double>(entry.second.copies) / steps,
+                    entry.second.path, static_cast<double>(entry.second.copies) / steps,
                     static_cast<double>(entry.second.bytes) / steps});
             }
             return measured;

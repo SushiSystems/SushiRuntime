@@ -49,7 +49,7 @@
 #include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/placement_journal.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>

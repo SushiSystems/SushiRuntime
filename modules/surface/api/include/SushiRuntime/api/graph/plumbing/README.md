@@ -338,7 +338,7 @@ flight that cancel() reads.
 | `has_dangling_resource()`, `K_DANGLING_RESOURCE` | Whether a recorded handle was freed, and the error text |
 | `plan_is_stale()`, `rebuild_plan()` | Whether the plan must be built, and the build |
 | `prepare_run()` | What must happen after the build and before the first step |
-| `run_plan()`, `run_steps()` | The plan a step runs and the per-step hooks around it |
+| `run_plan()`, `run_steps()`, `run_partition()` | The plan a step runs, the per-step hooks around it, and the `GraphPartition` whose session measures the runs |
 | `rearm_plan()` | Restores the plan's per-run state before each step |
 | `may_chain()` | Whether the graph allows its steps to run as an in-order chain from the calling thread |
 | `node_count()` | The count a report multiplies by the steps run |

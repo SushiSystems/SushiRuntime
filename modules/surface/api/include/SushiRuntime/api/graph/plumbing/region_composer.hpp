@@ -44,12 +44,14 @@
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/report/partition_report.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         class RegionComposerState;
+        class GraphPartition;
 
         /**
          * @brief Owns the compiled sub-graph of every region and stitches them into one plan.
@@ -196,6 +198,18 @@ namespace SushiRuntime
                  * @pre commit() has been called since construction or the last move from here.
                  */
                 [[nodiscard]] SUSHIRUNTIME_API const Plan* compiled_plan() const noexcept;
+
+                /**
+                 * @brief Returns the partition report of this graph's plan in force, with what its runs measured.
+                 *
+                 * Each graph partitions in its own session, so the report holds this graph's plan and runs
+                 * only. It is empty before a partition: one device, no profile file, or nothing planned yet.
+                 * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API PartitionReport partition_report() const;
+
+                /** @brief Returns the partition that places this graph and owns its partition session; null before the first commit. */
+                [[nodiscard]] SUSHIRUNTIME_API const GraphPartition* graph_partition() const noexcept;
 
             private:
                 /** @brief The regions, the edges between them and the plan; null until a commit. */

@@ -74,8 +74,8 @@ namespace
         ledger.add_dispatches({DispatchObservation{host_key(1), compute_cost(), 1.0},
                                DispatchObservation{host_key(1), compute_cost(), 3.0}});
         PathTallies copies;
-        copies[{MemorySpaceID(1), "pcie"}] = PathTally{8, 800};
-        copies[{MemorySpaceID(0), "pcie"}] = PathTally{4, 400};
+        copies[{MemorySpaceID(1), TransferPathID::named("pcie")}] = PathTally{"pcie", 8, 800};
+        copies[{MemorySpaceID(0), TransferPathID::named("pcie")}] = PathTally{"pcie", 4, 400};
 
         const PartitionMeasurement measured = ledger.measurement(copies, first_device_at_space_one());
 

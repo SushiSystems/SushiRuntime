@@ -24,7 +24,7 @@
 /**
  * @file partition_measure.cpp
  * @brief Implements measure_partitioned_run() and fold_partition_ledger(), which also rebalances.
- * @see modules/engine/coherence/README.md
+ * @see modules/engine/partition_session/README.md
  * @author Mustafa Garip
  */
 
@@ -33,46 +33,51 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <SushiRuntime/api/api_log_category.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/report/node_table.hpp>
+
+#include "graph_partition.hpp"
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        void measure_partitioned_run(Internal::Execution::RuntimeContext& context,
-                                     const Internal::Graph::CompiledGraph& plan, std::size_t steps, double seconds)
+        void measure_partitioned_run(const GraphPartition* partition, const Internal::Graph::CompiledGraph& plan,
+                                     std::size_t steps, double seconds)
         {
-            Internal::Coherence::PartitionSession& session = context.partitioning();
-            if (!session.has_plan())
+            Internal::Coherence::PartitionSession* session = partition != nullptr ? partition->session() : nullptr;
+            if (session == nullptr || !session->has_plan())
                 return;
-            session.ledger().add_steps(steps, seconds);
+            std::vector<Internal::Coherence::DispatchObservation> dispatches;
             const std::shared_ptr<const NodeTable>& table =
                 plan.observation.table ? plan.observation.table : plan.node_table;
-            if (!plan.profiling || table == nullptr)
-                return;
-            Internal::Coherence::DeviceKeyTable devices;
-            for (const Internal::Coherence::PartitionDevice& device : session.devices())
-                devices.by_index.push_back(device.key);
-            session.ledger().add_dispatches(
-                Internal::Coherence::observe_dispatches(plan.observation.events, *table, devices));
+            if (plan.profiling && table != nullptr)
+            {
+                Internal::Coherence::DeviceKeyTable devices;
+                for (const Internal::Coherence::PartitionDevice& device : session->devices())
+                    devices.by_index.push_back(device.key);
+                dispatches = Internal::Coherence::observe_dispatches(plan.observation.events, *table, devices);
+            }
+            static_cast<void>(session->measure(partition->placed_problem_hash(), steps, seconds, dispatches));
         }
 
-        void fold_partition_ledger(Internal::Execution::RuntimeContext& context)
+        void fold_partition_ledger(Internal::Execution::RuntimeContext& context, const GraphPartition* partition)
         {
-            Internal::Coherence::PartitionSession& session = context.partitioning();
+            Internal::Coherence::PartitionSession* session = partition != nullptr ? partition->session() : nullptr;
             const std::string& path = context.settings().device_profile_file;
-            if (!session.has_plan())
+            if (session == nullptr || !session->has_plan())
                 return;
             // A replaying runtime may have no profile file; its horizons still put the journal's next plan in force.
             if (!path.empty())
             {
-                const Result<bool> folded = session.ledger().fold_into(std::filesystem::path(path));
+                const Result<bool> folded =
+                    session->fold_into(context.partitioning().profiles(), std::filesystem::path(path));
                 if (!folded)
                     SR_LOG_WARN(K_API_LOG_CATEGORY,
                                 "The measured device times were not folded into the profile file {}: {}; the next "
@@ -80,7 +85,7 @@ namespace SushiRuntime
                                 path, folded.error().message);
             }
             // A changed plan raises the session's generation, and the next commit places the graph again.
-            static_cast<void>(session.rebalance());
+            static_cast<void>(session->rebalance());
         }
     } // namespace Detail
 } // namespace SushiRuntime

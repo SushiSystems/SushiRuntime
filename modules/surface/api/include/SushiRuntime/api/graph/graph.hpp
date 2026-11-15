@@ -185,6 +185,7 @@ namespace SushiRuntime
              */
             using PlanCache::coherence_plan_count;
             using PlanCache::id;
+            using PlanCache::partition_report;
 
             /**
              * @brief Names this graph in a profile, so spans of two graphs of one runtime are told apart.
@@ -246,6 +247,9 @@ namespace SushiRuntime
 
             /** @brief Returns the plan a step runs. */
             [[nodiscard]] Detail::Plan* run_plan() noexcept { return compiled_plan(); }
+
+            /** @brief Returns the partition whose session measures this graph's runs; null before the first build. */
+            [[nodiscard]] const Detail::GraphPartition* run_partition() const noexcept { return graph_partition(); }
 
             /** @brief Returns the per-step hooks of the recorded nodes. */
             [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept

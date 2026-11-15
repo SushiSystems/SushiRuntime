@@ -42,19 +42,31 @@ using namespace SushiRuntime::Internal::Coherence;
 
 namespace
 {
-    TEST(Small_TransferPathTally, CopiesAreCountedByDestinationAndPath)
+    TEST(Small_TransferPathTally, TwoPathsOfOneNameButAnotherIdentityAreCountedApart)
     {
         TransferPathTally tally;
-        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100});
-        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 50});
-        tally.copied(TransferRecord{"host_staged", MemorySpaceID(0), MemorySpaceID(2), 10});
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100, TransferPathID::named("pcie")});
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 50, TransferPathID::named("peer")});
 
         const PathTallies tallies = tally.tallies();
 
         ASSERT_EQ(tallies.size(), 2u);
-        EXPECT_EQ(tallies.at({MemorySpaceID(1), "pcie"}).copies, 2u);
-        EXPECT_EQ(tallies.at({MemorySpaceID(1), "pcie"}).bytes, 150u);
-        EXPECT_EQ(tallies.at({MemorySpaceID(2), "host_staged"}).copies, 1u);
+        EXPECT_EQ(tallies.at({MemorySpaceID(1), TransferPathID::named("peer")}).path, "pcie");
+    }
+
+    TEST(Small_TransferPathTally, CopiesAreCountedByDestinationAndPath)
+    {
+        TransferPathTally tally;
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100, TransferPathID::named("pcie")});
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 50, TransferPathID::named("pcie")});
+        tally.copied(TransferRecord{"host_staged", MemorySpaceID(0), MemorySpaceID(2), 10, TransferPathID::named("host_staged")});
+
+        const PathTallies tallies = tally.tallies();
+
+        ASSERT_EQ(tallies.size(), 2u);
+        EXPECT_EQ(tallies.at({MemorySpaceID(1), TransferPathID::named("pcie")}).copies, 2u);
+        EXPECT_EQ(tallies.at({MemorySpaceID(1), TransferPathID::named("pcie")}).bytes, 150u);
+        EXPECT_EQ(tallies.at({MemorySpaceID(2), TransferPathID::named("host_staged")}).copies, 1u);
     }
 
     TEST(Small_TransferPathTally, EachCopyReachesTheNextObserver)
@@ -63,7 +75,7 @@ namespace
         const auto next = std::make_shared<RecordingTransferObserver>();
         tally.set_next(next);
 
-        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100});
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100, TransferPathID::named("pcie")});
 
         ASSERT_EQ(next->heard().size(), 1u);
         EXPECT_EQ(next->heard()[0].path, "pcie");
@@ -72,7 +84,7 @@ namespace
     TEST(Small_TransferPathTally, ClearForgetsEveryTally)
     {
         TransferPathTally tally;
-        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100});
+        tally.copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(1), 100, TransferPathID::named("pcie")});
 
         tally.clear();
 

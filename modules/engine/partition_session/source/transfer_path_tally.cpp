@@ -43,7 +43,9 @@ namespace SushiRuntime
         {
             {
                 const std::lock_guard<std::mutex> hold(mutex_);
-                PathTally& tally = tallies_[{record.destination, std::string(record.path)}];
+                PathTally& tally = tallies_[{record.destination, record.id}];
+                if (tally.copies == 0)
+                    tally.path = std::string(record.path);
                 ++tally.copies;
                 tally.bytes += record.bytes;
             }

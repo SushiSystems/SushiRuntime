@@ -211,7 +211,7 @@ namespace SushiRuntime
                 return "the copy plan is not steady";
             if (state_->host_writes && state_->host_writes->written(runtime.handle_ports().host_writes))
                 return "the host wrote a buffer of the copy plan";
-            if (partition_ != nullptr && partition_->rebalanced(runtime))
+            if (partition_ != nullptr && partition_->rebalanced())
                 return "a horizon rebalanced the partition";
             return "the plan was marked for a rebuild";
         }
@@ -228,7 +228,7 @@ namespace SushiRuntime
             if (state_->host_writes && state_->host_writes->written(runtime.handle_ports().host_writes))
                 return true;
             // A horizon put another plan in force for the problem this graph was placed by.
-            if (partition_ != nullptr && partition_->rebalanced(runtime))
+            if (partition_ != nullptr && partition_->rebalanced())
                 return true;
             return state_->placement->generation != runtime.placement()->generation;
         }
@@ -278,6 +278,11 @@ namespace SushiRuntime
         const Plan* PlanCache::compiled_plan() const noexcept
         {
             return surface_plan(&state_->plan);
+        }
+
+        PartitionReport PlanCache::partition_report() const
+        {
+            return partition_ != nullptr ? partition_->report() : PartitionReport{};
         }
 
         void PlanCache::discard() noexcept

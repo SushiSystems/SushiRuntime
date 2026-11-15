@@ -51,14 +51,14 @@ namespace SushiRuntime
 
         void RuntimeCoherenceParts::start_partitioning(const Device::DeviceQueueSet& devices,
                                                        std::shared_ptr<const Coherence::CostModel> model,
-                                                       const std::filesystem::path& journal_file)
+                                                       const std::filesystem::path& journal_base)
         {
             transfer_observer.install(path_tally);
-            Coherence::PartitionSessionParts parts =
+            Coherence::PartitionSessionsParts parts =
                 make_partition_parts(devices, spaces.views, paths.views, std::move(model), path_tally);
-            if (!journal_file.empty())
-                parts.journal_file = journal_file;
-            partitioning = std::make_unique<Coherence::PartitionSession>(std::move(parts));
+            if (!journal_base.empty())
+                parts.journal_base = journal_base;
+            partitioning = std::make_unique<Coherence::PartitionSessions>(std::move(parts));
         }
 
         std::unique_ptr<RuntimeCoherenceParts> make_coherence_parts(Device::DeviceQueueSet& devices)

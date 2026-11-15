@@ -41,5 +41,4 @@ sushiruntime_add_module(
         profile
         transfer
         coherence
-        partition_session
-    PRIVATE_DEPENDS log sycl placement region device_profile partitioning)
+    PRIVATE_DEPENDS log sycl placement region device_profile partitioning partition_session)

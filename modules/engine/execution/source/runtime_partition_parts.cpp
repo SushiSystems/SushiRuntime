@@ -89,13 +89,13 @@ namespace SushiRuntime
             };
         }
 
-        Coherence::PartitionSessionParts
+        Coherence::PartitionSessionsParts
         make_partition_parts(const Device::DeviceQueueSet& devices, const std::vector<const Memory::MemorySpace*>& spaces,
                              const std::vector<Coherence::TransferPath*>& paths,
                              std::shared_ptr<const Coherence::CostModel> model,
                              std::shared_ptr<Coherence::TransferPathTally> copies)
         {
-            Coherence::PartitionSessionParts parts;
+            Coherence::PartitionSessionsParts parts;
             const std::vector<DeviceDescription>& listed = devices.devices();
             for (std::size_t index = 0; index < listed.size(); ++index)
             {
@@ -114,7 +114,7 @@ namespace SushiRuntime
                 return std::unique_ptr<Coherence::Partitioner>(
                     std::make_unique<Coherence::FloorPartitioner>(std::move(costs)));
             };
-            parts.model = std::move(model);
+            parts.profiles = std::make_shared<Coherence::ProfileStore>(std::move(model));
             parts.copies = std::move(copies);
             parts.device_of = make_space_device_resolver(devices);
             return parts;

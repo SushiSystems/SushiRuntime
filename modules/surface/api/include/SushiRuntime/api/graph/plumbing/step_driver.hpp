@@ -406,6 +406,7 @@ namespace SushiRuntime
                     named.may_chain = self.may_chain();
                     named.may_replay = replay_allowed_;
                     named.placement = placement_policy_.get();
+                    named.partition = self.run_partition();
                     return named;
                 }
 

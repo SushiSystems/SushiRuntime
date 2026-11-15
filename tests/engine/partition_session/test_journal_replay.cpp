@@ -49,7 +49,7 @@ namespace
     /** @brief Returns the journal of a session that partitioned, replanned for a throttled device and tried the floor. */
     std::vector<PlacementJournalEntry> live_journal()
     {
-        PartitionSession session(session_parts({1.0, 1.0, 1.0}));
+        PartitionSession session = live_session({1.0, 1.0, 1.0});
         EXPECT_TRUE(session.partition(independent_nodes(3, 3)).has_value());
         measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 0.5}, {host_key(3), 2.5}});
         EXPECT_EQ(session.rebalance(), RebalanceAction::Replan);

@@ -54,6 +54,7 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/host_identity.hpp>
@@ -289,7 +290,7 @@ namespace SushiRuntime
 
     PartitionReport Runtime::partition_report() const
     {
-        return Internal::ContextAccess::context(context_).partitioning().report();
+        return Internal::ContextAccess::context(context_).partitioning().last_report();
     }
 
     Result<void> Runtime::wait() const

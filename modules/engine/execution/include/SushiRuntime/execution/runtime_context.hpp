@@ -54,7 +54,6 @@
 #include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
@@ -69,7 +68,7 @@ namespace SushiRuntime
     struct NodeFacts;
 
     namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
-    namespace Internal::Coherence { class TransferPath; }
+    namespace Internal::Coherence { class TransferPath; class PartitionSessions; }
 
     namespace Internal::Execution
     {
@@ -193,12 +192,12 @@ namespace SushiRuntime
                 [[nodiscard]] const Internal::Coherence::EvictionPolicy& eviction_policy() const noexcept;
 
                 /**
-                 * @brief Returns the partitioner of this context, its last plan and what the runs measured.
+                 * @brief Returns the registry that opens each graph's partition session and holds the profiles they share.
                  *
-                 * The session is active when create() loaded a device profile file.
-                 * @see modules/engine/coherence/README.md
+                 * It plans live when create() loaded a device profile file.
+                 * @see modules/engine/partition_session/README.md
                  */
-                [[nodiscard]] Internal::Coherence::PartitionSession& partitioning() noexcept;
+                [[nodiscard]] Internal::Coherence::PartitionSessions& partitioning() noexcept;
 
                 /**
                  * @brief Installs the observer every transfer path reports its copies to; null removes it.

@@ -8,11 +8,15 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         graph_partition_problem.cpp
+        journal_plan_source.cpp
         journal_replay.cpp
+        live_plan_source.cpp
         partition_apply.cpp
         partition_ledger.cpp
         partition_session.cpp
+        partition_sessions.cpp
         placement_journal.cpp
+        profile_store.cpp
         rebalance_decision.cpp
         transfer_path_tally.cpp
     DEPENDS

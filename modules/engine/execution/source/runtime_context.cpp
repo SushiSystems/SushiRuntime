@@ -231,16 +231,13 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Counts the copies of every path and builds the partition session over model.
-             * @param model The cost model read at create; null leaves the session inactive.
+             * @brief Counts the copies of every path and builds the registry that opens each graph's partition session.
+             * @param model The cost model read at create; null plans nothing live.
              */
             void start_partitioning(std::shared_ptr<const Internal::Coherence::CostModel> model)
             {
-                // The placement journal sits beside the profile file, the runtime's one settings path.
-                std::filesystem::path journal_file;
-                if (!settings.device_profile_file.empty())
-                    journal_file = settings.device_profile_file + ".journal";
-                coherence->start_partitioning(devices, std::move(model), journal_file);
+                // Each graph's placement journal sits beside the profile file, the runtime's one settings path.
+                coherence->start_partitioning(devices, std::move(model), settings.device_profile_file);
             }
 
             /** @brief Stops everything that submits work, then lets the device set drain. */
@@ -505,7 +502,7 @@ namespace SushiRuntime
             return impl_->coherence->eviction;
         }
 
-        Internal::Coherence::PartitionSession& RuntimeContext::partitioning() noexcept
+        Internal::Coherence::PartitionSessions& RuntimeContext::partitioning() noexcept
         {
             return *impl_->coherence->partitioning;
         }
@@ -606,7 +603,7 @@ namespace SushiRuntime
         {
             // A partitioned plan is timed while a profile file takes what its runs measure.
             const bool measures_partition =
-                !impl_->settings.device_profile_file.empty() && impl_->coherence->partitioning->has_plan();
+                !impl_->settings.device_profile_file.empty() && impl_->coherence->partitioning->has_partitioned();
             return measures_partition || impl_->observers.wants_device_timing();
         }
 

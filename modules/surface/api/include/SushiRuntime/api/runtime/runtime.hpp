@@ -311,11 +311,10 @@ namespace SushiRuntime
             add_run_observer(std::shared_ptr<RunObserver> observer) const;
 
             /**
-             * @brief Returns what the partition in force gave each device: one row per device.
+             * @brief Returns the partition report of the graph that partitioned last, one row per device.
              *
-             * The report has no rows until a plan touching a planned buffer is partitioned. Then
-             * each row holds the nodes and bytes of a device, the modelled and measured time of a
-             * step on it, its copies by path and, for a refused job, the bytes its pool lacked.
+             * Graph::partition_report() and DynamicGraph::partition_report() name the graph. The report
+             * has no rows before a partition or once that graph is gone; the runtime README lists each row.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API PartitionReport partition_report() const;

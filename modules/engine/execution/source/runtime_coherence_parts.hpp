@@ -36,7 +36,7 @@
 #include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/transfer_path_tally.hpp>
 #include <SushiRuntime/transfer/transfer_cost.hpp>
 #include <SushiRuntime/transfer/transfer_observer_slot.hpp>
@@ -67,13 +67,13 @@ namespace SushiRuntime
             RuntimeCoherenceParts& operator=(RuntimeCoherenceParts&&) = delete;
 
             /**
-             * @brief Builds the partition session over model, replacing the one held.
-             * @param model Null leaves the session inactive.
-             * @param journal_file The file the placement journal is appended to; empty keeps it in memory.
+             * @brief Builds the registry that opens each graph's partition session over model, replacing the one held.
+             * @param model Null plans nothing live.
+             * @param journal_base The profile file each graph's placement journal sits beside; empty keeps them in memory.
              */
             void start_partitioning(const Device::DeviceQueueSet& devices,
                                     std::shared_ptr<const Coherence::CostModel> model,
-                                    const std::filesystem::path& journal_file);
+                                    const std::filesystem::path& journal_base);
 
             RuntimeMemorySpaces spaces;                                /**< The host's and each device's space. */
             Coherence::TransferObserverSlot transfer_observer;         /**< Forwards each copy to the observer a caller installed; outlives paths. */
@@ -81,7 +81,7 @@ namespace SushiRuntime
             Coherence::TransferCost transfer_cost;                     /**< Prices one planned copy; the bytes until a profile is loaded. */
             Coherence::LogicalTimeEviction eviction;                   /**< The policy every coherence planner evicts with. */
             std::shared_ptr<Coherence::TransferPathTally> path_tally;  /**< Counts each copy by destination and path. */
-            std::unique_ptr<Coherence::PartitionSession> partitioning; /**< The partitioner, its last plan and its ledger. */
+            std::unique_ptr<Coherence::PartitionSessions> partitioning; /**< Opens each graph's partition session; holds the shared profiles. */
         };
 
         /** @brief Builds the coherence parts of a runtime over devices, which must outlive them. */

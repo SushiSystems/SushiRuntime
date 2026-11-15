@@ -19,10 +19,11 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
+/**************************************************************************/
 
 /**
  * @file test_partition_session.cpp
- * @brief Tests that PartitionSession keeps the last plan, refuses an unfitting job and reports what its runs measured.
+ * @brief Tests that PartitionSession keeps its plan, measures only that plan's runs, rebalances and replays.
  * @see tests/engine/partition_session/README.md
  * @author Mustafa Garip
  */
@@ -35,8 +36,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partitioning/problem_hash.hpp>
 
 #include "support/partition_problem_builder.hpp"
 #include "rebalancing_parts.hpp"
@@ -46,16 +49,16 @@ using namespace SushiRuntime::Internal::Coherence;
 
 namespace
 {
-    /** @brief Returns the parts of an active session over host_key(1) and host_key(2), of speeds 1 and 2. */
-    PartitionSessionParts two_device_parts()
+    /** @brief Returns a session over host_key(1) and host_key(2), of speeds 1 and 2. */
+    PartitionSession two_device_session()
     {
-        return session_parts({1.0, 2.0});
+        return live_session({1.0, 2.0});
     }
 
     /** @brief Returns a session of two equal devices with two independent nodes partitioned one per device. */
     PartitionSession split_session()
     {
-        PartitionSession session(session_parts({1.0, 1.0}));
+        PartitionSession session = live_session({1.0, 1.0});
         EXPECT_TRUE(session.partition(independent_nodes(2, 2)).has_value());
         return session;
     }
@@ -71,19 +74,19 @@ namespace
         return problem;
     }
 
-    TEST(Small_PartitionSession, ASessionWithNoPartitionerIsInactiveAndReportsNothing)
+    TEST(Small_PartitionSession, ASessionWithNoPlanReportsNothingAndDropsARun)
     {
-        PartitionSessionParts parts;
-        parts.copies = std::make_shared<TransferPathTally>();
-        const PartitionSession session(std::move(parts));
+        PartitionSession session = two_device_session();
 
-        EXPECT_FALSE(session.is_active());
+        EXPECT_FALSE(session.measure(problem_hash(chain(3, 100, 2)), 1, 1.0, {}));
+
         EXPECT_TRUE(session.report().rows.empty());
+        EXPECT_EQ(session.dropped_runs(), 1u);
     }
 
     TEST(Small_PartitionSession, AnUnfittingJobIsRefusedWithTheShortfallOfEachPool)
     {
-        PartitionSession session(two_device_parts());
+        PartitionSession session = two_device_session();
 
         const Result<PartitionAssignment, PartitionRefusal>& answer = session.partition(unfitting_job());
 
@@ -97,12 +100,12 @@ namespace
         EXPECT_EQ(report.rows[0].shortfall_bytes, 1100u);
     }
 
-    TEST(Small_PartitionSession, TheReportOfTheLastPlanCarriesWhatItsRunsMeasured)
+    TEST(Small_PartitionSession, TheReportOfThePlanInForceCarriesWhatItsRunsMeasured)
     {
-        PartitionSession session(two_device_parts());
+        PartitionSession session = two_device_session();
         ASSERT_TRUE(session.partition(chain(3, 100, 2)).has_value());
-        session.ledger().add_steps(2, 1.0);
-        session.ledger().add_dispatches({DispatchObservation{host_key(2), NodeCost{}, 0.5}});
+        ASSERT_TRUE(session.measure(session.problem_hash(), 2, 1.0,
+                                    {DispatchObservation{host_key(2), NodeCost{}, 0.5}}));
 
         const PartitionReport report = session.report();
 
@@ -113,15 +116,49 @@ namespace
         EXPECT_GT(report.floor_step_seconds, 0.0);
     }
 
+    TEST(Small_PartitionSession, ARunOfAnotherProblemIsDroppedAndCounted)
+    {
+        PartitionSession session = two_device_session();
+        ASSERT_TRUE(session.partition(chain(3, 100, 2)).has_value());
+
+        EXPECT_FALSE(session.measure(problem_hash(chain(2, 100, 2)), 2, 1.0,
+                                     {DispatchObservation{host_key(2), NodeCost{}, 0.5}}));
+
+        EXPECT_EQ(session.dropped_runs(), 1u);
+        EXPECT_EQ(session.report().measured_step_seconds, 0.0);
+        EXPECT_EQ(session.report().rows[1].measured_seconds, 0.0);
+    }
+
     TEST(Small_PartitionSession, ANewPlanStartsAnEmptyLedger)
     {
-        PartitionSession session(two_device_parts());
+        PartitionSession session = two_device_session();
         ASSERT_TRUE(session.partition(chain(3, 100, 2)).has_value());
-        session.ledger().add_steps(2, 1.0);
+        ASSERT_TRUE(session.measure(session.problem_hash(), 2, 1.0, {}));
 
         ASSERT_TRUE(session.partition(chain(2, 100, 2)).has_value());
 
         EXPECT_EQ(session.report().measured_step_seconds, 0.0);
+    }
+
+    TEST(Small_PartitionSession, TheReportCountsOnlyTheCopiesMadeSinceItsPlanWasPutInForce)
+    {
+        PartitionSessionParts parts = session_parts(2);
+        const std::shared_ptr<TransferPathTally> copies = parts.copies;
+        PartitionSession session(std::move(parts), std::make_unique<LivePlanSource>(
+                                                       speed_store({1.0, 2.0}), runtime_factories(),
+                                                       K_DEFAULT_REBALANCE_MARGIN));
+        // Another graph's copy, counted before this plan, stays in the runtime's tally.
+        copies->copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(2), 100, TransferPathID::named("pcie")});
+        ASSERT_TRUE(session.partition(chain(3, 100, 2)).has_value());
+        copies->copied(TransferRecord{"pcie", MemorySpaceID(0), MemorySpaceID(2), 40, TransferPathID::named("pcie")});
+        ASSERT_TRUE(session.measure(session.problem_hash(), 1, 1.0, {}));
+
+        const PartitionReport report = session.report();
+
+        ASSERT_EQ(report.rows[1].copies.size(), 1u);
+        EXPECT_EQ(report.rows[1].copies[0].copies, 1.0);
+        EXPECT_EQ(report.rows[1].copies[0].bytes, 40.0);
+        EXPECT_EQ(copies->tallies().at({MemorySpaceID(2), TransferPathID::named("pcie")}).copies, 2u);
     }
 
     TEST(Small_PartitionSession, AThrottledDeviceLosesItsNodeAtTheFirstHorizon)
@@ -137,15 +174,17 @@ namespace
         EXPECT_EQ(session.answer().value().node_devices, (std::vector<DeviceKey>{host_key(1), host_key(1)}));
     }
 
-    TEST(Small_PartitionSession, AHorizonFoldsTheMeasuredThroughputIntoTheProfilesInMemory)
+    TEST(Small_PartitionSession, AHorizonFoldsTheMeasuredThroughputIntoTheSharedProfiles)
     {
-        PartitionSession session = split_session();
+        const std::shared_ptr<ProfileStore> store = speed_store({1.0, 1.0});
+        PartitionSession session = live_session(store, 2);
+        ASSERT_TRUE(session.partition(independent_nodes(2, 2)).has_value());
 
         measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
         static_cast<void>(session.rebalance());
 
         // 1000 operations in 2.5 s with no bytes is 400 operations a second.
-        EXPECT_EQ(session.profiles()->find(host_key(2))->base_throughput, 400.0);
+        EXPECT_EQ(store->model()->profiles().find(host_key(2))->base_throughput, 400.0);
     }
 
     TEST(Small_PartitionSession, ADoctoredProfileReturnsToTheFloorWithinTwoHorizons)
@@ -195,9 +234,7 @@ namespace
         measure_step(recorded, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
         ASSERT_EQ(recorded.rebalance(), RebalanceAction::Replan);
 
-        PartitionSession replayed(session_parts({1.0, 1.0}));
-        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
-        ASSERT_TRUE(replayed.is_active());
+        PartitionSession replayed = replay_session(2, recorded.journal().entries());
         ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
         // The replay ignores what the horizon measured: both devices ran at their model.
         measure_step(replayed, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
@@ -226,8 +263,7 @@ namespace
         ASSERT_EQ(recorded.journal().entries().size(), 2u);
         ASSERT_EQ(recorded.journal().entries()[1].horizon, std::optional<std::uint64_t>(2));
 
-        PartitionSession replayed(session_parts({1.0, 1.0}));
-        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
+        PartitionSession replayed = replay_session(2, recorded.journal().entries());
         ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
         const std::vector<DeviceKey> first = replayed.answer().value().node_devices;
 
@@ -256,8 +292,7 @@ namespace
         for (PlacementJournalEntry& entry : entries)
             entry.horizon.reset();
 
-        PartitionSession replayed(session_parts({1.0, 1.0}));
-        ASSERT_TRUE(replayed.replay(std::move(entries)).has_value());
+        PartitionSession replayed = replay_session(2, std::move(entries));
         ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
         measure_step(replayed, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
 
@@ -268,8 +303,7 @@ namespace
     TEST(Small_PartitionSession, AReplayOfAnotherProblemIsRefusedNamingTheEntry)
     {
         PartitionSession recorded = split_session();
-        PartitionSession replayed(session_parts({1.0, 1.0}));
-        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
+        PartitionSession replayed = replay_session(2, recorded.journal().entries());
 
         const Result<PartitionAssignment, PartitionRefusal>& answer = replayed.partition(independent_nodes(3, 2));
 
@@ -277,15 +311,5 @@ namespace
         EXPECT_EQ(answer.error().error.code, ErrorCode::InvalidArgument);
         EXPECT_NE(answer.error().error.message.find("entry 0"), std::string::npos) << answer.error().error.message;
         EXPECT_FALSE(replayed.has_plan());
-    }
-
-    TEST(Small_PartitionSession, AReplayAfterAPlanIsInForceIsRefused)
-    {
-        PartitionSession session = split_session();
-
-        const Result<void> replay = session.replay(session.journal().entries());
-
-        ASSERT_FALSE(replay.has_value());
-        EXPECT_EQ(replay.error().code, ErrorCode::InvalidState);
     }
 } // namespace

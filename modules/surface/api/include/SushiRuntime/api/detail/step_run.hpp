@@ -49,6 +49,8 @@ namespace SushiRuntime
 
     namespace Detail
     {
+        class GraphPartition;
+
         /**
          * @brief Refers to the stop test of a run without owning it or naming its type.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
@@ -105,6 +107,7 @@ namespace SushiRuntime
             bool may_chain = false;                         /**< Whether the graph allows a chain. */
             bool may_replay = false;                        /**< Whether the graph opted into replaying its chain. */
             RunPlacementPolicy* placement = nullptr;        /**< The graph's run placement policy; null for none. */
+            const GraphPartition* partition = nullptr;      /**< The graph's partition, whose session measures its runs; null for none. */
         };
 
         /** @brief Says whether a chained run may skip the host wait between steps. */

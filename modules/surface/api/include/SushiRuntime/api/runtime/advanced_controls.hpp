@@ -142,11 +142,12 @@ namespace SushiRuntime
             install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer) const;
 
             /**
-             * @brief Makes this runtime place its graphs from the placement journal at journal_file.
-             * @return InvalidArgument for a file that cannot be read or holds a malformed line,
-             *         InvalidState when a graph of this runtime was already partitioned.
+             * @brief Makes the graph whose first problem opens the placement journal at journal_file place from it;
+             *        the n-th graph with that first problem takes the n-th journal given, and other graphs plan as before.
+             * @return InvalidArgument for a file that cannot be read, holds a malformed line or opens with no
+             *         first partition; InvalidState when a graph with that first problem was already partitioned.
              * @pre No run of this runtime is in flight.
-             * @see modules/engine/coherence/README.md
+             * @see modules/engine/partition_session/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API Result<void> replay_placements(const std::string& journal_file) const;
 

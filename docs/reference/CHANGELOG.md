@@ -3,6 +3,8 @@
 ## Unreleased
 
 - 2026-11-15 — runtime: Transfer paths, the staging ring and planned nodes report failure as a Result the run returns, so a refused allocation gives AllocationFailed instead of a throw on a worker (GLOBAL_HANDLE R09).
+- 2026-11-15 — runtime: Changed partitioning to one session per graph; a run counts only toward its own graph's plan, and each graph writes its own journal, `<profile>.<first problem hash>.journal` (GLOBAL_HANDLE R04).
+- 2026-11-15 — api: Added `Graph::partition_report()` and `DynamicGraph::partition_report()`; `Runtime::partition_report()` reports the graph that partitioned last, and `replay_placements()` replays one graph (GLOBAL_HANDLE R04).
 - 2026-11-15 — machine: Added `NodeSplit::regions`, the bytes each part reads and writes; the planner and pricing use exactly those ranges, and a split without regions is refused (GLOBAL_HANDLE R02).
 - 2026-11-15 — handle: Added `TransferPathID`, the stable identity of a transfer path (GLOBAL_HANDLE R08).
 - 2026-11-15 — memory: Added `MemorySpace::is_host_memory()` and `is_file_backed()`; no code compares a space's kind name (GLOBAL_HANDLE R08).

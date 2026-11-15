@@ -39,23 +39,27 @@ namespace SushiRuntime
 {
     namespace Detail
     {
-        /**
-         * @brief Adds a finished run of plan to the ledger of the runtime's partitioned plan.
-         *
-         * Nothing is added when no plan was partitioned. The dispatches come from the run's
-         * observation, which holds records only for a timed run.
-         * @param seconds Seconds the steps took on the engine's clock.
-         */
-        void measure_partitioned_run(Internal::Execution::RuntimeContext& context,
-                                     const Internal::Graph::CompiledGraph& plan, std::size_t steps, double seconds);
+        class GraphPartition;
 
         /**
-         * @brief Folds the ledger into the runtime's profile file, when one is set, then rebalances the
-         *        session's plan in memory; called at a horizon.
+         * @brief Adds a finished run of plan to the ledger of the graph's own partition session.
          *
-         * A failed write is logged and the run goes on, since the file only informs the next run.
+         * The session takes the run only when the problem the graph was placed by is its plan in force,
+         * and counts it as dropped otherwise; a timed run also hands over its dispatches.
+         * @param partition The partition of the graph that ran; null for none.
+         * @param seconds   Seconds the steps took on the engine's clock.
+         */
+        void measure_partitioned_run(const GraphPartition* partition, const Internal::Graph::CompiledGraph& plan,
+                                     std::size_t steps, double seconds);
+
+        /**
+         * @brief Folds the ledger of the graph's session into the runtime's profile file, when one is set,
+         *        then rebalances that session's plan; called at a horizon the graph's run passed.
+         *
+         * Only the graph whose run passed the horizon rebalances. A failed write is logged and the run goes on.
+         * @param partition The partition of the graph that ran; null for none.
          * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
          */
-        void fold_partition_ledger(Internal::Execution::RuntimeContext& context);
+        void fold_partition_ledger(Internal::Execution::RuntimeContext& context, const GraphPartition* partition);
     } // namespace Detail
 } // namespace SushiRuntime

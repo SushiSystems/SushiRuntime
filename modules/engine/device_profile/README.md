@@ -158,8 +158,8 @@ run reads them.
   run; the update is called when the run ends, and the next run reads the result. A missing file is an error
   and nothing is created.
 
-The step driver of `surface/api` calls them through the session's `PartitionLedger`: after each blocking run
-of a partitioned plan it adds the run's steps, its seconds and its dispatches, and at each horizon of
-`coherence_horizon()` it folds the dispatches into the file `RuntimeConfig::device_profile_file` names, then
-calls `PartitionSession::rebalance()`. A runtime with no profile file folds nothing. A failed write is logged
+The step driver of `surface/api` calls them through the `PartitionLedger` of the running graph's session:
+after each run of a partitioned plan it adds the run's steps, its seconds and its dispatches, and at each
+horizon of `coherence_horizon()` it folds the dispatches into the file `RuntimeConfig::device_profile_file`
+names, under the lock of the runtime's `ProfileStore`, then calls that session's `PartitionSession::rebalance()`. A runtime with no profile file folds nothing. A failed write is logged
 and the run goes on.

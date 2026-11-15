@@ -195,9 +195,15 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns whether a horizon put another partition in force for this graph since the last commit. */
-                [[nodiscard]] bool partition_rebalanced(Internal::Execution::RuntimeContext& runtime) const noexcept
+                [[nodiscard]] bool partition_rebalanced() const noexcept
                 {
-                    return partition_.rebalanced(runtime);
+                    return partition_.rebalanced();
+                }
+
+                /** @brief Returns the partition that places this graph's nodes and owns its partition session. */
+                [[nodiscard]] const GraphPartition& partition() const noexcept
+                {
+                    return partition_;
                 }
 
                 /** @brief Returns whether the last commit classified the plan for the in-order chain. */
@@ -949,7 +955,17 @@ namespace SushiRuntime
             if (state_ == nullptr)
                 return false;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
-            return state_->coherence_replan_due(runtime.handle_ports().host_writes) || state_->partition_rebalanced(runtime);
+            return state_->coherence_replan_due(runtime.handle_ports().host_writes) || state_->partition_rebalanced();
+        }
+
+        PartitionReport RegionComposer::partition_report() const
+        {
+            return state_ != nullptr ? state_->partition().report() : PartitionReport{};
+        }
+
+        const GraphPartition* RegionComposer::graph_partition() const noexcept
+        {
+            return state_ != nullptr ? &state_->partition() : nullptr;
         }
 
         bool RegionComposer::composed() const noexcept

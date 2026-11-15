@@ -8,11 +8,16 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_partition_session_log_category.cpp
         compile_partitioner_factory.cpp
+        compile_plan_source.cpp
         test_graph_partition_problem.cpp
+        test_journal_plan_source.cpp
         test_journal_replay.cpp
+        test_live_plan_source.cpp
         test_partition_apply.cpp
         test_partition_ledger.cpp
         test_partition_session.cpp
+        test_partition_sessions.cpp
         test_placement_journal.cpp
+        test_profile_store.cpp
         test_rebalance_decision.cpp
         test_transfer_path_tally.cpp)

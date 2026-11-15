@@ -172,7 +172,9 @@ is partitioned as one problem: the report counts both nodes, has a measured step
 host computation, and after two horizons the profile file holds a throughput line for the nodes'
 kind. The split test also needs a device with memory of its own; it rewrites each capacity so no
 pool holds the node whole, and the node then runs as parts, at least two slices, with the bytes of
-the host computation.
+the host computation. A dynamic graph and a static graph on one runtime each report their own nodes and
+measured step, the runtime reports the static graph, which partitioned last, and the profile file's folder
+holds one journal per graph, `journals_of()` finding them by name.
 
 ## test_region_composer/test_partition_hardware.cpp
 

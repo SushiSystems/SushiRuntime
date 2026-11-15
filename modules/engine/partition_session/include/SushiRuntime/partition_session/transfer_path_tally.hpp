@@ -38,6 +38,7 @@
 #include <utility>
 
 #include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 
 namespace SushiRuntime
 {
@@ -46,12 +47,13 @@ namespace SushiRuntime
         /** @brief Holds the copies one destination received over one path. */
         struct PathTally
         {
+            std::string path;         /**< Name of the path, for the report; taken from its first copy. */
             std::uint64_t copies = 0; /**< Copies counted. */
             std::uint64_t bytes = 0;  /**< Bytes those copies moved. */
         };
 
-        /** @brief Holds the tallies by destination space, then path name. */
-        using PathTallies = std::map<std::pair<MemorySpaceID, std::string>, PathTally>;
+        /** @brief Holds the tallies by destination space, then path identity. */
+        using PathTallies = std::map<std::pair<MemorySpaceID, TransferPathID>, PathTally>;
 
         /**
          * @brief Counts each copy by its destination space and path, then hands it to the next observer.

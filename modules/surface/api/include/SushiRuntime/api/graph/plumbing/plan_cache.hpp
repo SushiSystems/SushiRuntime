@@ -44,6 +44,7 @@
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/report/partition_report.hpp>
 
 namespace SushiRuntime
 {
@@ -179,6 +180,21 @@ namespace SushiRuntime
                  * @pre A plan is built.
                  */
                 [[nodiscard]] SUSHIRUNTIME_API const Plan* compiled_plan() const noexcept;
+
+                /**
+                 * @brief Returns the partition report of this graph's plan in force, with what its runs measured.
+                 *
+                 * Each graph partitions in its own session, so the report holds this graph's plan and runs
+                 * only. It is empty before a partition: one device, no profile file, or nothing planned yet.
+                 * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API PartitionReport partition_report() const;
+
+                /** @brief Returns the partition that places this graph and owns its partition session; null before the first build. */
+                [[nodiscard]] const GraphPartition* graph_partition() const noexcept
+                {
+                    return partition_.get();
+                }
 
             private:
                 /** @brief Names why the next build() happens, for its log line; a string literal. */

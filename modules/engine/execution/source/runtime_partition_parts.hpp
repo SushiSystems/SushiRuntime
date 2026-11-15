@@ -37,7 +37,7 @@
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
-#include <SushiRuntime/partition_session/partition_session.hpp>
+#include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/transfer_path_tally.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
@@ -52,14 +52,14 @@ namespace SushiRuntime
         [[nodiscard]] Coherence::SpaceDeviceResolver make_space_device_resolver(const Device::DeviceQueueSet& devices);
 
         /**
-         * @brief Returns the parts of the runtime's partition session.
+         * @brief Returns the parts of the registry that opens the runtime's partition sessions.
          *
          * A CPU or integrated device draws from pool 0, device i otherwise from pool i + 1; its copy
-         * path is the first path to another device. A null model gives no partitioner.
+         * path is the first path to another device. A null model plans nothing live.
          * @param spaces The runtime's spaces, indexed by space id.
          * @see modules/engine/execution/README.md
          */
-        [[nodiscard]] Coherence::PartitionSessionParts
+        [[nodiscard]] Coherence::PartitionSessionsParts
         make_partition_parts(const Device::DeviceQueueSet& devices, const std::vector<const Memory::MemorySpace*>& spaces,
                              const std::vector<Coherence::TransferPath*>& paths,
                              std::shared_ptr<const Coherence::CostModel> model,

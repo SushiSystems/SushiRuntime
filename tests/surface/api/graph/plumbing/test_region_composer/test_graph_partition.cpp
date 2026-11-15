@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -242,10 +243,31 @@ namespace GraphPartitionTests
                 return Runtime::create(config).value();
             }
 
-            /** @brief Returns the placement journal a runtime over the profile file at path writes. */
+            /**
+             * @brief Returns the placement journals a runtime over the profile file at path wrote, one per
+             *        graph, named `<profile>.<first problem hash>.journal`, in name order.
+             */
+            static std::vector<std::filesystem::path> journals_of(const std::filesystem::path& path)
+            {
+                const std::string prefix = path.filename().string() + ".";
+                std::vector<std::filesystem::path> journals;
+                for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(path.parent_path()))
+                {
+                    const std::string name = entry.path().filename().string();
+                    if (name.size() > prefix.size() + 8 && name.compare(0, prefix.size(), prefix) == 0 &&
+                        name.compare(name.size() - 8, 8, ".journal") == 0)
+                        journals.push_back(entry.path());
+                }
+                std::sort(journals.begin(), journals.end());
+                return journals;
+            }
+
+            /** @brief Returns the placement journal of the one graph a runtime over the profile file at path ran; empty for none. */
             static std::filesystem::path journal_of(const std::filesystem::path& path)
             {
-                return std::filesystem::path(path.string() + ".journal");
+                const std::vector<std::filesystem::path> journals = journals_of(path);
+                EXPECT_EQ(journals.size(), 1u);
+                return journals.empty() ? std::filesystem::path() : journals.front();
             }
 
             /** @brief Returns the reason the machine cannot run the test, or nothing when it can. */
@@ -423,15 +445,16 @@ namespace GraphPartitionTests
             const Runtime rt = create_runtime();
             journalled_bytes = run_graph(rt);
         }
-        const std::vector<std::string> journalled = journal_decisions(journal_of(profile_));
-        ASSERT_GE(count_reason(journalled, "first"), 1u) << read_text(journal_of(profile_));
+        const std::filesystem::path journal = journal_of(profile_);
+        const std::vector<std::string> journalled = journal_decisions(journal);
+        ASSERT_GE(count_reason(journalled, "first"), 1u) << read_text(journal);
         // The doctored profile models every device a million times faster than it runs.
-        ASSERT_GE(journalled.size(), 6u) << "no horizon rebalanced: " << read_text(journal_of(profile_));
+        ASSERT_GE(journalled.size(), 6u) << "no horizon rebalanced: " << read_text(journal);
 
         std::vector<std::uint32_t> replayed_bytes;
         {
             const Runtime rt = create_runtime(replay_profile);
-            ASSERT_TRUE(rt.advanced().replay_placements(journal_of(profile_).string()));
+            ASSERT_TRUE(rt.advanced().replay_placements(journal.string()));
             replayed_bytes = run_graph(rt);
         }
 
@@ -475,6 +498,63 @@ namespace GraphPartitionTests
         EXPECT_EQ(count_reason(journal_decisions(journal_of(profile_)), "first"), 1u)
             << read_text(journal_of(profile_));
         EXPECT_FALSE(rt.partition_report().refused) << rt.partition_report().refusal;
+        EXPECT_EQ(output.read_range({0, K_OUTPUT}).value(), host_reference());
+    }
+
+    /**
+     * @brief Tests that two graphs on one runtime each keep their own plan, report and journal, and that
+     *        the runtime's report is the one of the graph that partitioned last.
+     */
+    TEST_F(Medium_GraphPartition, TwoGraphsOnOneRuntimeKeepTheirOwnPlansReportsAndJournals)
+    {
+        const Runtime rt = create_runtime();
+        if (const std::optional<std::string> reason = missing(rt, false))
+            GTEST_SKIP() << *reason;
+
+        auto input = rt.buffer<std::uint32_t>(K_INPUT, Residency::Planned).value();
+        auto middle = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+        auto output = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+        auto single = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+        ASSERT_TRUE(input.write_range({0, K_INPUT}, input_values()));
+        auto world = rt.dynamic_graph();
+        world.region(0).add(K_OUTPUT, In(input), Out(middle),
+                            [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                            { target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index); },
+                            costed());
+        world.region(1).add(K_OUTPUT, In(middle), Out(output),
+                            [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                            { target[index] = source[index]; },
+                            costed());
+        auto graph = rt.graph();
+        graph.add(K_OUTPUT, In(input), Out(single),
+                  [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                  { target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index); },
+                  costed());
+
+        ASSERT_TRUE(world.run(K_STEPS));
+        ASSERT_TRUE(graph.run(K_STEPS));
+
+        const auto nodes_of = [](const PartitionReport& report)
+        {
+            std::size_t nodes = 0;
+            for (const PartitionDeviceRow& row : report.rows)
+                nodes += row.nodes;
+            return nodes;
+        };
+        const PartitionReport world_report = world.partition_report();
+        const PartitionReport graph_report = graph.partition_report();
+        ASSERT_FALSE(world_report.refused) << world_report.refusal;
+        ASSERT_FALSE(graph_report.refused) << graph_report.refusal;
+        EXPECT_EQ(nodes_of(world_report), 2u);
+        EXPECT_EQ(nodes_of(graph_report), 1u);
+        EXPECT_GT(world_report.measured_step_seconds, 0.0);
+        EXPECT_GT(graph_report.measured_step_seconds, 0.0);
+        // The static graph partitioned last, at its build.
+        EXPECT_EQ(rt.partition_report().to_text(), graph_report.to_text());
+        const std::vector<std::filesystem::path> journals = journals_of(profile_);
+        ASSERT_EQ(journals.size(), 2u);
+        for (const std::filesystem::path& journal : journals)
+            EXPECT_EQ(count_reason(journal_decisions(journal), "first"), 1u) << read_text(journal);
         EXPECT_EQ(output.read_range({0, K_OUTPUT}).value(), host_reference());
     }
 } // namespace GraphPartitionTests
