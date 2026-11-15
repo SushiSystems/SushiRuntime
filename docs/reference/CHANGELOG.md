@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Fixed a region graph submitting its roots in address order; they go out by region and by recording order (KI-23, `ab4206f5`).
 - 2026-11-15 — memory: Removed `USMRegistry`; `USMAllocator` allocates and frees and keeps no address table, and the residency directory records each instance and its kind (GLOBAL_HANDLE H2).
 - 2026-11-15 — memory: Added `ResidencyDirectory::instance_kind()`, `live_count()` and a `RetireObserver` that hears each retired handle (GLOBAL_HANDLE H2).
 - 2026-11-15 — distributed: Changed the master to unshare a buffer and send `BUFFER_RELEASE` when its handle retires (GLOBAL_HANDLE H2).

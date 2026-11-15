@@ -31,6 +31,5 @@
 | KI-10 | own | An op recorded on a dynamic-graph region always runs on the master | record the op on a `Graph` | RW-24 |  | 2026-10-19 |
 | KI-11 | own | Frames between master and worker are not protected after the handshake | run the cluster on a trusted network | RW-18 |  | 2026-10-19 |
 | KI-17 | own | `StateStopsOnAWindowPastTheEnd` fails under four parallel test jobs | the test is quarantined; run it alone | RW-67 |  | 2026-10-26 |
-| KI-23 | own | Boundary successor order follows buffer addresses, so submission order varies by run | none; results stay byte-equal, only order and traces differ | none, a stable buffer id is designed in the global handle topic | `modules/surface/api/source/region_composer.cpp` | 2026-11-01 |
 | KI-28 | own | The warm-up period of a GPU session sometimes holds 2 of its 3 device spans | none | none, cause not yet found | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session_devices.cpp` | 2026-11-10 |
 | KI-33 | toolchain | A process that used the HIP adapter on gfx1036 exits with 0xC0000409 after its work ends | none; results are correct, only teardown fails |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-15 |
