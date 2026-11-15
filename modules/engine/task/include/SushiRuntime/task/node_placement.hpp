@@ -31,8 +31,10 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/task/placement_memory.hpp>
 
@@ -49,6 +51,24 @@ namespace SushiRuntime
 
         /** @brief Device a node runs on when it names no owned region and states none. */
         inline constexpr std::size_t K_DEFAULT_PLACEMENT = 0;
+
+        /**
+         * @brief Returns the handle that anchors @p node: its first write region, else its first read region.
+         * @param node A node whose regions are final.
+         * @return The handle, or the null handle when the node has no region.
+         * @see modules/engine/task/README.md
+         */
+        SUSHIRUNTIME_API GlobalHandle anchor_of(const Node& node) noexcept;
+
+        /**
+         * @brief Returns the device that owns the anchor of @p node.
+         * @param node A node whose regions are final.
+         * @param memory The memory facts.
+         * @return The owning device, or nothing when the node has no anchor or the anchor has no owner.
+         * @see modules/engine/task/README.md
+         */
+        SUSHIRUNTIME_API std::optional<std::size_t>
+        anchor_device(const Node& node, const PlacementMemory& memory);
 
         /**
          * @brief Returns the device @p node runs on.

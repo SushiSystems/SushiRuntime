@@ -46,7 +46,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T05 | `platform/memory` directory | T01 | done |
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | done |
 | T07 | `surface/api` region composer | T06 | todo |
-| T08 | `engine/scheduler` and `engine/task` placement | T06 | todo |
+| T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | todo |
 | T10 | `extension/buffer_exchange` | T06 | todo |
 | T11 | resolve benchmark | T09 | todo |
@@ -61,7 +61,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |
 | T21 | copy plan replay | T13 | todo |
 | T22 | horizons | T21 | todo |
-| T23 | `foundation/core` `NodeCost` | T06 | todo |
+| T23 | `foundation/core` `NodeCost` | T06 | running |
 | T37 | `surface/api` `Residency::Planned` | T13 | todo |
 | T24 | device profile and cost model | T04, T23 | todo |
 | T25 | partitioner | T14, T24, T37 | todo |
@@ -73,7 +73,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T28 | wire version 5 | T10 | todo |
 | T29 | owner per handle and recovery | T28 | todo |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
-| T31 | SushiEngine runtime adapter, SushiAI build | T06 | todo |
+| T31 | SushiEngine runtime adapter, SushiAI build | T06 | running |
 | T32 | SushiBLAS conformance kernels | T30 | todo |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
 

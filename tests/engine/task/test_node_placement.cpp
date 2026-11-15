@@ -38,6 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -205,4 +206,47 @@ TEST_F(Small_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
     node->place_on(1);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
+}
+
+namespace
+{
+    /** @brief Memory whose recorded_device() knows nothing while owning_device() names device 1, as an unrecorded USM buffer does. */
+    class UnrecordedOwnerMemory final : public SushiRuntime::Internal::Graph::PlacementMemory
+    {
+        public:
+            [[nodiscard]] std::optional<std::size_t> recorded_device(SushiRuntime::GlobalHandle) const override
+            {
+                return std::nullopt;
+            }
+
+            [[nodiscard]] std::optional<std::size_t> owning_device(SushiRuntime::GlobalHandle handle) const override
+            {
+                if (handle.is_null())
+                    return std::nullopt;
+                return 1;
+            }
+
+            [[nodiscard]] std::size_t device_count() const override
+            {
+                return 2;
+            }
+
+            [[nodiscard]] bool shares_context(std::size_t, std::size_t) const override
+            {
+                return true;
+            }
+    };
+} // namespace
+
+/** @brief Tests that anchor_device names the owner placement_of runs the node on, even when no record exists (the case the scheduler copy missed). */
+TEST(Small_NodePlacementAnchor, AnchorDeviceAgreesWithPlacementOfForAnUnrecordedOwner)
+{
+    int cell = 0;
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
+    const UnrecordedOwnerMemory memory;
+
+    EXPECT_EQ(SushiRuntime::Internal::Graph::anchor_of(*node), node->io_writes_.front().base);
+    EXPECT_EQ(SushiRuntime::Internal::Graph::anchor_device(*node, memory), std::optional<std::size_t>(1));
+    EXPECT_EQ(placement_of(*node, memory).value(), 1u);
 }

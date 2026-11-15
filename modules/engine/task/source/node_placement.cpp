@@ -41,18 +41,19 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
-        namespace
+        GlobalHandle anchor_of(const Node& node) noexcept
         {
-            /** @brief Returns the handle of the first write region, else of the first read region. */
-            GlobalHandle anchor_of(const Node& node) noexcept
-            {
-                if (!node.io_writes_.empty())
-                    return node.io_writes_.front().base;
-                if (!node.io_reads_.empty())
-                    return node.io_reads_.front().base;
-                return GlobalHandle::null();
-            }
-        } // namespace
+            if (!node.io_writes_.empty())
+                return node.io_writes_.front().base;
+            if (!node.io_reads_.empty())
+                return node.io_reads_.front().base;
+            return GlobalHandle::null();
+        }
+
+        std::optional<std::size_t> anchor_device(const Node& node, const PlacementMemory& memory)
+        {
+            return memory.owning_device(anchor_of(node));
+        }
 
         /**
          * @brief Returns the device @p node runs on, or the refusal of its stated device.
@@ -70,7 +71,7 @@ namespace SushiRuntime
         Result<std::size_t> placement_of(const Node& node, const PlacementMemory& memory)
         {
             const std::optional<std::size_t> stated = node.stated_placement();
-            const std::optional<std::size_t> owner = memory.owning_device(anchor_of(node));
+            const std::optional<std::size_t> owner = anchor_device(node, memory);
 
             if (!owner)
                 return stated.value_or(K_DEFAULT_PLACEMENT);

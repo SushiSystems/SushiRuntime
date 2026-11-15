@@ -81,13 +81,8 @@ namespace SushiRuntime
             if (node.locality_checked_)
                 return {};
 
-            GlobalHandle anchor;
-            if (!node.io_writes_.empty())
-                anchor = node.io_writes_.front().base;
-            else if (!node.io_reads_.empty())
-                anchor = node.io_reads_.front().base;
-
-            const int anchor_device = recorded_device_index(memory, anchor);
+            const std::optional<std::size_t> anchor = Internal::Graph::anchor_device(node, memory);
+            const int anchor_device = anchor ? static_cast<int>(*anchor) : -1;
             const bool spans = anchor_device >= 0 &&
                                (leaves_device(node.io_reads_, anchor_device, memory) ||
                                 leaves_device(node.io_writes_, anchor_device, memory));
