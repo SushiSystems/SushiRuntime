@@ -7,6 +7,44 @@ The tests of the `handle` module, mirroring `modules/foundation/handle/`.
 
 A section is named after a test file.
 
+## test_bound_operands.cpp
+
+The file tests `BoundOperands` over a float buffer, a raw byte buffer aligned for any type and a buffer
+with no instance.
+
+| Test | What it proves |
+| --- | --- |
+| `ATypedBufferIsViewedAsItsElementType` | `at<float>()` over a buffer of float gives the table address and `Ok`. |
+| `ATypeWithConstIsViewedAsTheSameElementType` | `at<const float>()` gives the same address as `at<float>()`. |
+| `ATypedBufferRefusesAnElementTypeOfAnotherSize` | `at<double>()` over a buffer of float gives `ElementMismatch` and a null address. |
+| `ATypedBufferRefusesAnElementTypeOfAnotherAlignment` | A type of the buffer's element size and a different alignment gives `ElementMismatch`. |
+| `ARawByteBufferIsViewedAsAnyElementTypeAtAnAlignedOffset` | A byte buffer is viewed as `double` at offset 8 and gives that address. |
+| `ARawByteBufferRefusesAnOffsetThatIsNotAlignedForTheType` | A byte buffer viewed as `float` at offset 2 gives `Misaligned`. |
+| `ATypedBufferIsOffsetByWholeElementsOnly` | A float buffer at two elements gives the third element; at 2 bytes it gives `Misaligned`. |
+| `APositionPastTheLastOperandIsRefused` | A position equal to `size()` gives `OutOfRange`. |
+| `AnOperandWithNoInstanceReadsAsNull` | An operand whose table entry is null gives `Ok` and a null address. |
+| `AViewOfNoOperandIsEmptyAndRefusesEveryPosition` | A default view is empty and refuses position 0. |
+| `AViewOfBytesTreatsEveryOperandAsRawBytes` | `of_bytes()` gives byte layouts, and `at<double>()` over an aligned byte buffer gives its address. |
+| `UntypedReturnsTheTableEntryUnchanged` | `untyped()` returns the table entry. |
+
+## test_element_layout.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `OnlyOneByteAlignedToOneByteIsRawBytes` | The default layout is raw bytes; a 4-byte layout and a 1-byte layout aligned to 2 are not. |
+| `LayoutsAreEqualWhenSizeAndAlignmentBothMatch` | Two layouts are equal when both fields match and differ when either does. |
+
+## compile_device_contexts.cpp
+
+The file includes `device_contexts.hpp` alone and holds a consumer written against `DeviceContexts`.
+`USMAllocator` is checked against the port by `test_usm_placement_memory.cpp`, which hands it to
+`USMPlacementMemory` as a `DeviceContexts`.
+
+## compile_handle_home_reader.cpp
+
+The file includes `handle_home_reader.hpp` alone and holds a consumer written against `HandleHomeReader`,
+so the port is usable without any memory module header.
+
 ## test_global_handle.cpp
 
 | Test | What it proves |

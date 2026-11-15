@@ -219,7 +219,7 @@ namespace SushiRuntime
         }
 
         void attach_kernel_pointers(Internal::Graph::Node& node, const NodeDescription& description,
-                                    const Internal::Memory::ResidencyView& handles,
+                                    const HandleHomeReader& handles,
                                     std::size_t device_count)
         {
             if (description.pointer_handles.empty())

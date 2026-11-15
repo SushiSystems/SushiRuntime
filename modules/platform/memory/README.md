@@ -96,11 +96,17 @@ cannot go back to this pool.
 
 The handle table seen by role, so a consumer takes the port it uses and never the concrete
 `ResidencyDirectory`. `HandleRegistry` (`handle_registry.hpp`) extends `HandleSpace` with `describe()`
-and `live_count()`: it is the API layer's side. `ResidencyView` is the reading side.
+and `live_count()`: it is the API layer's side. `ResidencyReader` is the reading side and
+`ResidencyWriter` the writing side of the directory.
 `HostWriteLog` (`host_write_log.hpp`) records and reads the host writes made outside a plan,
 `CoherenceHistory` (`coherence_history.hpp`) drops the history of retired steps, and `RetireSource`
-(`retire_source.hpp`) installs the one `RetireObserver`. `HandlePorts` holds one reference to each;
-`ResidencyDirectory::ports()` builds it from the directory and the `HostWriteLog` its caller passes. `CoherenceHorizon::advance()` takes a `CoherenceHistory`.
+(`retire_source.hpp`) installs the one `RetireObserver`. `HandlePorts` holds one reference to each,
+the two residency roles as `residency_reader` and `residency_writer`;
+`ResidencyDirectory::ports()` builds it from the directory and the `HostWriteLog` its caller passes.
+`CoherenceHorizon::advance()` takes a `CoherenceHistory`.
+A caller takes the narrowest port it uses: `HandleHomeReader` from `foundation/handle` when it reads
+the home and layout of a handle, `ResidencyReader` when it also needs the size or the kind of an
+instance, `ResidencyWriter` when it only records instances, and both when it does both.
 
 ## host_write_table.hpp
 
@@ -109,7 +115,7 @@ and `live_count()`: it is the API layer's side. `ResidencyView` is the reading s
 The `HostWriteLog` of a runtime, in a unit of its own so the directory knows residency only.
 `record_host_write()` raises the host-write generation by one, under a writer mutex, and stores it in
 the mark of the handle's slot; `host_write_of()` reads it back without a lock, and returns 0 for a
-handle the host never wrote or that is not live. Liveness comes from `ResidencyView::inspect()`;
+handle the host never wrote or that is not live. Liveness comes from `ResidencyReader::inspect()`;
 the table holds nothing else of the directory. A mark carries the generation of the handle it was
 made for, so a reused slot starts at 0 without a retire hook. The marks grow in chunks of
 `K_CHUNK_MARKS` that never move. The owner of the handle parts builds the table after the directory
@@ -118,23 +124,35 @@ at and the buffers it covers: while `host_write_generation()` still equals that 
 was written, which is one atomic load per check, and otherwise a buffer whose mark is higher was
 written after the plan.
 
-## residency_view.hpp
+## residency_reader.hpp
 
-### ResidencyView
+### ResidencyReader
 
-The port `engine/coherence` reads and writes the directory through. It extends `HandleResolver` and
-adds what a planner needs and nothing else: `inspect()`, the coherence map of a handle under its
-lock (`coherence()`, which returns a `LockedCoherence`), `set_instance()`, `drop_instance()` and `instance_kind()`. `EntryView` and `ElementLayout` are
-declared here with it. Minting, retiring, describing and the retire observer stay on
-`ResidencyDirectory`, behind `HandleRegistry`, `HostWriteLog` and `RetireSource`, so a planner cannot call them. A test fake implements the port without a
-table behind it.
+The port every reader of the directory takes. It extends `HandleHomeReader`, so it resolves a handle
+and answers `home_of()`, and adds `inspect()` and `instance_kind()`. `home_of()` is defined here from
+`inspect()`: it maps the entry to a `HandleHome`, so a fake reader implements `inspect()` and
+`instance_kind()` and gets the home for free. `EntryView` is declared here with it. `error_code_of()`
+and `to_result()` turn a failed `HandleStatus` or `ResolveOutcome` into the `ErrorCode` and `Error` the
+runtime reports. The reading calls take no lock. A reader cannot mint, retire, describe or record an
+instance.
+
+## residency_writer.hpp
+
+### ResidencyWriter
+
+The port a planner or a planned step changes the directory through: `set_instance()`,
+`drop_instance()` and the coherence map of a handle under its lock (`coherence()`, which returns a
+`LockedCoherence`). It does not resolve; a consumer that also reads takes `ResidencyReader`. Minting,
+retiring, describing and the retire observer stay on `ResidencyDirectory`, behind `HandleRegistry`,
+`HostWriteLog` and `RetireSource`, so a planner cannot call them. `ElementLayout` is declared in
+`foundation/handle` and named again in `Internal::Memory` by `handle_registry.hpp`.
 
 ## residency_directory.hpp
 
 ### ResidencyDirectory
 
-`ResidencyDirectory` implements `HandleSpace` from `foundation/handle` and `ResidencyView`, which
-carries `HandleResolver`. It is
+`ResidencyDirectory` implements `HandleSpace` from `foundation/handle`, `ResidencyReader`, which
+carries `HandleResolver` and `HandleHomeReader`, and `ResidencyWriter`. It is
 one table indexed by the handle's slot. The table grows in chunks of `K_CHUNK_ENTRIES` entries; the
 array of chunk pointers is sized for `K_MAX_CHUNKS` when the directory is built, and a chunk is made
 the first time a slot in it is handed out. A chunk never moves, so a reader holds no lock: a resolve
@@ -290,7 +308,8 @@ two is refused with null. It keeps no record of its allocations.
 
 ### USMAllocator
 
-The allocator owns one `USMSource` for its whole life and asks it for every byte, and keeps no
+The allocator implements `DeviceContexts` from `foundation/handle` (`device_count()` and
+`shares_context()`), so a module that only needs those two answers does not name the allocator. It owns one `USMSource` for its whole life and asks it for every byte, and keeps no
 table of addresses. The residency directory records each instance, its space and its kind, and
 every question about a buffer is asked of its handle there. A caller with device queues passes
 `make_sycl_usm_source(make_sycl_queues(queues))`; a `sycl::queue` is a handle, so the copies name

@@ -18,7 +18,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, the determinism, the cost and the split of a node |
 | `dispatch_events.hpp` | `note_dispatch_event()`, which a host-work body calls for each event it submitted |
-| `bound_operands.hpp` | BoundOperands and `bound_operands()`, the operand pointers a task bound by handle reads |
+| `bound_operands.hpp` | `bound_operands()`, the operands a task bound by handle reads, as the handle module's `BoundOperands` |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
 BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
@@ -442,10 +442,14 @@ a thread-local scope the dispatcher opens (`modules/engine/task/README.md`).
 
 ### bound_operands
 
-`bound_operands()` returns a `BoundOperands` view of the pointer table the node being dispatched
-on this thread bound on its device: one pointer per handle given to task(access, handles, body), in
-that order. `as<T>(index)` casts one. The view is valid only during the body, and empty outside one.
-It reads the same thread-local scope the capture launches read (`modules/engine/task/README.md`).
+`bound_operands()` returns the `BoundOperands` view (`modules/foundation/handle/README.md`) of the
+pointer table the node being dispatched on this thread bound on its device: one operand per handle
+given to task(access, handles, body), in that order. `at<T>(position)` hands out one as a `T*` when
+the element type fits the buffer's layout and says why when it does not, so a body asking for a
+`double*` over a buffer of `float` is refused here and not at a kernel. The view is valid only during
+the body, and empty outside one. It is the one view of the table: the capture launches and the split
+slices read the same thread-local scope (`modules/engine/task/README.md`).
+
 ## dynamic_graph.hpp
 
 ### DynamicGraph

@@ -41,7 +41,8 @@ namespace
         const SushiRuntime::MintOutcome minted =
             ports.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
         static_cast<void>(ports.registry.describe(minted.handle, 8, ElementLayout{}, SushiRuntime::MemorySpaceID(0)));
-        static_cast<void>(ports.residency.inspect(handle));
+        static_cast<void>(ports.residency_reader.inspect(handle));
+        static_cast<void>(ports.residency_writer.drop_instance(handle, SushiRuntime::MemorySpaceID(0)));
         static_cast<void>(ports.host_writes.record_host_write(handle));
         static_cast<void>(ports.history.retire_coherence_history());
         ports.retirement.set_retire_observer(nullptr);

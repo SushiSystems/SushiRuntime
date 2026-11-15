@@ -23,76 +23,22 @@
 
 /**
  * @file bound_operands.hpp
- * @brief Declares BoundOperands and bound_operands(), the pointers a task body bound by handle reads.
+ * @brief Declares bound_operands(), the view of the operands a task body bound by handle.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
  */
 
 #pragma once
 
-#include <cstddef>
-
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/handle/bound_operands.hpp>
 
 namespace SushiRuntime
 {
     /**
-     * @brief Views the operand pointers of the task being dispatched, bound on its device.
+     * @brief Returns the operands the task being dispatched on this thread bound on its device.
      *
-     * Valid only during the body; it holds one pointer per handle, in the order the task named them.
-     */
-    class BoundOperands final
-    {
-        public:
-            /** @brief Views no pointer. */
-            BoundOperands() noexcept = default;
-
-            /** @brief Views @p count pointers starting at @p table. */
-            BoundOperands(void* const* table, std::size_t count) noexcept
-                : table_(table), count_(count)
-            {
-
-            }
-
-            /** @brief Returns the pointer of operand @p index; @p index must be below size(). */
-            [[nodiscard]] void* operator[](std::size_t index) const noexcept
-            {
-                return table_[index];
-            }
-
-            /** @brief Returns the pointer of operand @p index as a T*. */
-            template <class T>
-            [[nodiscard]] T* as(std::size_t index) const noexcept
-            {
-                return static_cast<T*>(table_[index]);
-            }
-
-            /** @brief Returns the first pointer of the table. */
-            [[nodiscard]] void* const* data() const noexcept { return table_; }
-
-            /** @brief Returns the number of operands. */
-            [[nodiscard]] std::size_t size() const noexcept { return count_; }
-
-            /** @brief Tells whether the view holds no pointer. */
-            [[nodiscard]] bool is_empty() const noexcept { return count_ == 0; }
-
-            /** @brief Returns the first pointer, for a range for. */
-            [[nodiscard]] void* const* begin() const noexcept { return table_; }
-
-            /** @brief Returns one past the last pointer, for a range for. */
-            [[nodiscard]] void* const* end() const noexcept { return table_ + count_; }
-
-        private:
-            /// @brief The bound table of the dispatching node.
-            void* const* table_ = nullptr;
-
-            /// @brief Number of pointers in table_.
-            std::size_t count_ = 0;
-    };
-
-    /**
-     * @brief Returns the operand pointers the task being dispatched on this thread bound on its
-     *        device, the ones its body hands every kernel it submits.
+     * The view is the handle module's BoundOperands, read by position with the element type checked.
      * @return An empty view outside such a body.
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */

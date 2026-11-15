@@ -43,7 +43,7 @@ namespace SushiRuntime
          * @brief Answers which device owns a handle's buffer and which devices share a SYCL context.
          *
          * placement_of() and the chain classifier read memory through this port. USMPlacementMemory
-         * answers from a USMAllocator, and InMemoryPlacementMemory from a table a test fills.
+         * answers from a HandleHomeReader and a DeviceContexts, and InMemoryPlacementMemory from a table a test fills.
          * @see modules/engine/task/README.md
          */
         class PlacementMemory

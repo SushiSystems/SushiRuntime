@@ -95,7 +95,7 @@ class HandleTable
             const SushiRuntime::MintOutcome minted =
                 ports_.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
             EXPECT_EQ(minted.status, SushiRuntime::HandleStatus::Ok);
-            EXPECT_EQ(ports_.residency.set_instance(minted.handle,
+            EXPECT_EQ(ports_.residency_writer.set_instance(minted.handle,
                                               SushiRuntime::Internal::Graph::device_memory_space(device),
                                               const_cast<void*>(address)),
                       SushiRuntime::HandleStatus::Ok);
@@ -123,10 +123,10 @@ class HandleTable
             return SushiRuntime::BufferRegion(place(address, device));
         }
 
-        /** @brief Returns the view, which resolves every handle place() gave. */
-        [[nodiscard]] const SushiRuntime::Internal::Memory::ResidencyView& resolver() const noexcept
+        /** @brief Returns the reader, which resolves every handle place() gave. */
+        [[nodiscard]] const SushiRuntime::Internal::Memory::ResidencyReader& resolver() const noexcept
         {
-            return ports_.residency;
+            return ports_.residency_reader;
         }
 
     private:
@@ -155,7 +155,7 @@ class HandleTable
     const SushiRuntime::MintOutcome minted =
         ports.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
     EXPECT_EQ(minted.status, SushiRuntime::HandleStatus::Ok);
-    EXPECT_EQ(ports.residency.set_instance(minted.handle, SushiRuntime::Internal::Graph::device_memory_space(device),
+    EXPECT_EQ(ports.residency_writer.set_instance(minted.handle, SushiRuntime::Internal::Graph::device_memory_space(device),
                                      const_cast<void*>(address)),
               SushiRuntime::HandleStatus::Ok);
     return minted.handle;

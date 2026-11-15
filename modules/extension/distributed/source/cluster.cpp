@@ -242,7 +242,7 @@ namespace SushiRuntime
             if (!session_id)
                 return make_error(std::move(session_id.error()));
 
-            auto state = std::make_shared<State>(context.handle_ports().residency, context.devices().count(),
+            auto state = std::make_shared<State>(context.handle_ports().residency_reader, context.devices().count(),
                                                  std::move(transport), std::move(options),
                                                  *session_id, runtime.topology());
 

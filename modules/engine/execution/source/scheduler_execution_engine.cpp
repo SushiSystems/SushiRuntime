@@ -203,7 +203,7 @@ namespace SushiRuntime
              */
             Impl(RuntimeContext& context)
                 : scheduler(worker_pool_settings(context.settings()), context.topology(),
-                            context.devices(), context.memory(), context.handle_ports().residency,
+                            context.devices(), context.memory(), context.handle_ports().residency_reader,
                             context.profile_collector()),
                   devices(context.devices()),
                   context(context)

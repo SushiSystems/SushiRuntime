@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* residency_view.hpp                                                     */
+/* residency_reader.hpp                                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,8 +22,8 @@
 /**************************************************************************/
 
 /**
- * @file residency_view.hpp
- * @brief Declares ResidencyView, the port through which a reader and a planner see the directory.
+ * @file residency_reader.hpp
+ * @brief Declares ResidencyReader, the port that reads the residency directory and changes nothing.
  * @see modules/platform/memory/README.md
  * @author Mustafa Garip
  */
@@ -36,24 +36,19 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/element_layout.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
-#include <SushiRuntime/memory/coherence_intervals.hpp>
-#include <SushiRuntime/memory/locked_coherence.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
-        /** @brief Holds the size and alignment of one element of a buffer. */
-        struct ElementLayout
-        {
-            std::size_t size = 1;      /**< Bytes per element. */
-            std::size_t alignment = 1; /**< Alignment of an element in bytes. */
-        };
+        /** @brief Names the layout of one element of a buffer, declared in the handle module. */
+        using SushiRuntime::ElementLayout;
 
         /** @brief Holds what a reader sees of one live entry. */
         struct EntryView
@@ -67,42 +62,20 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief What a planner needs of the residency directory: resolve, inspect, the coherence
-         *        map, and the recording of instances.
+         * @brief What a consumer needs to read the residency directory: resolve, inspect, the home
+         *        of a handle and the kind of an instance.
          *
-         * ResidencyDirectory implements it; a test fake may too. The reading calls take no lock.
+         * ResidencyDirectory implements it; a consumer that changes the directory takes
+         * ResidencyWriter as well. The calls take no lock.
          */
-        class ResidencyView : public HandleResolver
+        class ResidencyReader : public HandleHomeReader
         {
             public:
                 /** @brief Frees nothing. */
-                ~ResidencyView() override = default;
+                ~ResidencyReader() override = default;
 
                 /** @brief Returns the size, layout, home and valid spaces of a live handle. */
                 [[nodiscard]] virtual EntryView inspect(GlobalHandle handle) const = 0;
-
-                /**
-                 * @brief Returns the coherence map of a live handle under its entry's lock.
-                 *
-                 * The lock is held until the returned object is destroyed. The caller takes no
-                 * other directory lock while it holds one.
-                 * @return An empty object when handle is not live.
-                 */
-                [[nodiscard]] virtual LockedCoherence coherence(GlobalHandle handle) = 0;
-
-                /**
-                 * @brief Records address as handle's instance on space, with the kind of USM it is.
-                 * @param kind The kind the instance was allocated as; nothing for memory the
-                 *        runtime did not allocate.
-                 * @return Ok, or the status that says why nothing was recorded.
-                 */
-                [[nodiscard]] virtual HandleStatus
-                set_instance(GlobalHandle handle, MemorySpaceID space, void* address,
-                             std::optional<USMKind> kind = std::nullopt) = 0;
-
-                /** @brief Forgets handle's instance on space; the memory itself is not freed. */
-                [[nodiscard]] virtual HandleStatus drop_instance(GlobalHandle handle,
-                                                                 MemorySpaceID space) = 0;
 
                 /**
                  * @brief Returns the kind of handle's instance on space.
@@ -111,6 +84,9 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] virtual std::optional<USMKind> instance_kind(GlobalHandle handle,
                                                                            MemorySpaceID space) const = 0;
+
+                /** @brief Returns the home of handle, read from inspect(). */
+                [[nodiscard]] HandleHome home_of(GlobalHandle handle) const final;
         };
 
         /**

@@ -82,7 +82,7 @@ A node states that it may run in parts with a `NodeSplit` in `NodeOptions::split
 an index the consumer defines, its extent, the regions function that returns each part's
 `SplitRegions`, the slice that runs once per part with that part's
 `SplitPart`, the `sycl::queue` of the part's device, the events the part depends on and the node's
-kernel pointers bound on that device, and returns the event of the work it submitted without waiting,
+kernel pointers bound on that device as a `BoundOperands` view, and returns the event of the work it submitted without waiting,
 and an optional combine that joins the parts in slice order. The runtime decides
 how many parts and where each runs; the consumer owns every kernel. `NodeOptions` holds it as a
 `std::shared_ptr<const NodeSplit>`, so a node without a split carries one null pointer and a node

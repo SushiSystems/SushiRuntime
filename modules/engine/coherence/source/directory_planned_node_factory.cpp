@@ -47,12 +47,19 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the address of handle's instance on space, or null when it has none. */
-            void* instance_on(const Memory::ResidencyView& directory, GlobalHandle handle,
+            void* instance_on(const Memory::ResidencyReader& directory, GlobalHandle handle,
                               MemorySpaceID space) noexcept
             {
                 const ResolveOutcome outcome = directory.resolve(handle, space);
                 return outcome.status == HandleStatus::Ok ? outcome.address : nullptr;
             }
+
+            /** @brief Holds the two roles of the directory a planned node runs through. */
+            struct DirectoryPorts
+            {
+                const Memory::ResidencyReader* reader; /**< Resolves instances and reads their kind. */
+                Memory::ResidencyWriter* writer;       /**< Records and drops instances and locks coherence maps. */
+            };
 
             /** @brief Returns the device a step's node runs on: the device of its space, else 0. */
             std::size_t device_of_step(const PlannedStep& step) noexcept
@@ -74,7 +81,7 @@ namespace SushiRuntime
             }
 
             /** @brief Makes the instance step names, unless the directory holds one already. */
-            [[nodiscard]] Result<sycl::event> allocate_instance(Memory::ResidencyView& directory,
+            [[nodiscard]] Result<sycl::event> allocate_instance(const DirectoryPorts& directory,
                                                                 InstanceAllocator& allocator,
                                                                 const PlannedStep& step,
                                                                 const std::vector<sycl::event>& dependencies)
@@ -82,7 +89,7 @@ namespace SushiRuntime
                 const Result<void> waited = wait_for(dependencies);
                 if (!waited)
                     return make_error(Error{waited.error()});
-                if (instance_on(directory, step.handle, step.space) != nullptr)
+                if (instance_on(*directory.reader, step.handle, step.space) != nullptr)
                     return sycl::event{};
                 void* address = nullptr;
                 const Result<void> allocated = Internal::SYCL::translate_exceptions([&]()
@@ -94,7 +101,7 @@ namespace SushiRuntime
                 if (address == nullptr)
                     return make_error(Error{ErrorCode::AllocationFailed,
                                             "coherence.allocate: the space refused the instance."});
-                if (directory.set_instance(step.handle, step.space, address, allocator.kind_of(step.space)) !=
+                if (directory.writer->set_instance(step.handle, step.space, address, allocator.kind_of(step.space)) !=
                     HandleStatus::Ok)
                 {
                     allocator.release(step.space, address);
@@ -105,7 +112,7 @@ namespace SushiRuntime
             }
 
             /** @brief Starts the copy step names and returns its event; the map is recorded by the copy's record node. */
-            [[nodiscard]] Result<sycl::event> copy_instance(Memory::ResidencyView& directory,
+            [[nodiscard]] Result<sycl::event> copy_instance(const Memory::ResidencyReader& directory,
                                                             TransferPath& path, const PlannedStep& step,
                                                             const std::vector<sycl::event>& dependencies)
             {
@@ -121,7 +128,7 @@ namespace SushiRuntime
             }
 
             /** @brief Records the copy step names on the map of its buffer. */
-            [[nodiscard]] Result<sycl::event> record_copy(Memory::ResidencyView& directory, const PlannedStep& step,
+            [[nodiscard]] Result<sycl::event> record_copy(Memory::ResidencyWriter& directory, const PlannedStep& step,
                                                           const std::vector<sycl::event>& dependencies)
             {
                 const Result<void> waited = wait_for(dependencies);
@@ -133,28 +140,28 @@ namespace SushiRuntime
             }
 
             /** @brief Drops the instance step names and frees what was allocated here. */
-            [[nodiscard]] Result<sycl::event> free_instance(Memory::ResidencyView& directory,
+            [[nodiscard]] Result<sycl::event> free_instance(const DirectoryPorts& directory,
                                                             InstanceAllocator& allocator, const PlannedStep& step,
                                                             const std::vector<sycl::event>& dependencies)
             {
                 const Result<void> waited = wait_for(dependencies);
                 if (!waited)
                     return make_error(Error{waited.error()});
-                void* const address = instance_on(directory, step.handle, step.space);
+                void* const address = instance_on(*directory.reader, step.handle, step.space);
                 if (address == nullptr)
                     return sycl::event{};
                 // An instance with no kind, such as a file range, was not allocated here.
-                const bool allocated = directory.instance_kind(step.handle, step.space).has_value();
-                static_cast<void>(directory.drop_instance(step.handle, step.space));
+                const bool allocated = directory.reader->instance_kind(step.handle, step.space).has_value();
+                static_cast<void>(directory.writer->drop_instance(step.handle, step.space));
                 if (allocated)
                     allocator.release(step.space, address);
-                if (Memory::LockedCoherence map = directory.coherence(step.handle))
+                if (Memory::LockedCoherence map = directory.writer->coherence(step.handle))
                     map->drop_space(step.space);
                 return sycl::event{};
             }
 
             /** @brief Applies effect to the map of its buffer under the map's lock. */
-            void apply_effect(Memory::ResidencyView& directory, const PlannedEffect& effect)
+            void apply_effect(Memory::ResidencyWriter& directory, const PlannedEffect& effect)
             {
                 Memory::LockedCoherence map = directory.coherence(effect.handle);
                 if (map == nullptr)
@@ -192,10 +199,11 @@ namespace SushiRuntime
             }
         } // namespace
 
-        DirectoryPlannedNodeFactory::DirectoryPlannedNodeFactory(Memory::ResidencyView& directory,
+        DirectoryPlannedNodeFactory::DirectoryPlannedNodeFactory(const Memory::ResidencyReader& reader,
+                                                                 Memory::ResidencyWriter& writer,
                                                                  std::shared_ptr<InstanceAllocator> allocator,
                                                                  std::vector<TransferPath*> paths)
-            : directory_(&directory), allocator_(std::move(allocator)), paths_(std::move(paths))
+            : reader_(&reader), writer_(&writer), allocator_(std::move(allocator)), paths_(std::move(paths))
         {
 
         }
@@ -218,7 +226,7 @@ namespace SushiRuntime
             node->cached_queue_index_ = static_cast<int>(device_of_step(step));
             node->locality_checked_ = true;
 
-            Memory::ResidencyView* const directory = directory_;
+            const DirectoryPorts directory{reader_, writer_};
             const std::shared_ptr<InstanceAllocator> allocator = allocator_;
             switch (step.kind)
             {
@@ -226,17 +234,18 @@ namespace SushiRuntime
                     node->checked_host_work = [directory, allocator, step](
                                                   sycl::queue&, const std::vector<sycl::event>& dependencies)
                     {
-                        return allocate_instance(*directory, *allocator, step, dependencies);
+                        return allocate_instance(directory, *allocator, step, dependencies);
                     };
                     break;
 
                 case PlannedStepKind::Copy:
                 {
                     TransferPath* const path = paths_[step.path];
-                    node->checked_host_work = [directory, path, step](sycl::queue&,
-                                                                      const std::vector<sycl::event>& dependencies)
+                    const Memory::ResidencyReader* const reader = reader_;
+                    node->checked_host_work = [reader, path, step](sycl::queue&,
+                                                                   const std::vector<sycl::event>& dependencies)
                     {
-                        return copy_instance(*directory, *path, step, dependencies);
+                        return copy_instance(*reader, *path, step, dependencies);
                     };
                     break;
                 }
@@ -245,7 +254,7 @@ namespace SushiRuntime
                     node->checked_host_work = [directory, allocator, step](
                                                   sycl::queue&, const std::vector<sycl::event>& dependencies)
                     {
-                        return free_instance(*directory, *allocator, step, dependencies);
+                        return free_instance(directory, *allocator, step, dependencies);
                     };
                     break;
             }
@@ -265,10 +274,10 @@ namespace SushiRuntime
             node->cached_queue_index_ = static_cast<int>(device_of_step(step));
             node->locality_checked_ = true;
 
-            Memory::ResidencyView* const directory = directory_;
-            node->checked_host_work = [directory, step](sycl::queue&, const std::vector<sycl::event>& dependencies)
+            Memory::ResidencyWriter* const writer = writer_;
+            node->checked_host_work = [writer, step](sycl::queue&, const std::vector<sycl::event>& dependencies)
             {
-                return record_copy(*directory, step, dependencies);
+                return record_copy(*writer, step, dependencies);
             };
             return node;
         }
@@ -284,14 +293,14 @@ namespace SushiRuntime
             // A hold is taken and released on every outcome of the run, so a failed run holds nothing.
             node->runs_on_abort = effect.kind != PlannedEffectKind::Write;
 
-            Memory::ResidencyView* const directory = directory_;
-            node->checked_host_work = [directory, effect](sycl::queue&, const std::vector<sycl::event>& dependencies)
+            Memory::ResidencyWriter* const writer = writer_;
+            node->checked_host_work = [writer, effect](sycl::queue&, const std::vector<sycl::event>& dependencies)
                 -> Result<sycl::event>
             {
                 const Result<void> waited = wait_for(dependencies);
                 if (!waited && effect.kind == PlannedEffectKind::Write)
                     return make_error(Error{waited.error()});
-                apply_effect(*directory, effect);
+                apply_effect(*writer, effect);
                 if (!waited)
                     return make_error(Error{waited.error()});
                 return sycl::event{};

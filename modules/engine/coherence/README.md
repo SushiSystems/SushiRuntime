@@ -168,9 +168,13 @@ back only the range each part wrote, and the end of the graph restores the start
 
 ## DirectoryPlannedNodeFactory
 
-The planner and the factory take a `Memory::ResidencyView`, the port the residency directory implements,
-and name no concrete directory. The class keeps its name because its callers in `surface/api` still
-use it; it works over any `ResidencyView`.
+The planner and the factory take a `Memory::ResidencyReader` and a `Memory::ResidencyWriter`, the two
+ports the residency directory implements, and name no concrete directory. The planner reads sizes and
+instances through the reader and locks each buffer's coherence map through the writer; the factory's
+nodes also record and drop instances through the writer. The class keeps its name because its callers
+in `surface/api` still use it; it works over any pair of them. Taking a reader and a writer of one
+directory is how it uses both roles, not a split to undo: the planner reads sizes and locks maps, and a
+step reads instances and records them.
 
 Each node is a host node pinned to the device of the space it makes, writes or frees. An allocate
 node makes the instance only when the directory has none; a copy node resolves both instances when

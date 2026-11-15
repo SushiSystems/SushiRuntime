@@ -39,6 +39,6 @@ namespace SushiRuntime
         const Internal::Graph::KernelPointers* open = Internal::Graph::KernelPointerScope::current();
         if (open == nullptr)
             return BoundOperands();
-        return BoundOperands(open->table(), open->size());
+        return open->operands();
     }
 } // namespace SushiRuntime

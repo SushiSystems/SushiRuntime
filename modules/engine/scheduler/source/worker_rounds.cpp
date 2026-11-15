@@ -46,7 +46,6 @@
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/scheduler/steal_order.hpp>
@@ -79,7 +78,7 @@ namespace SushiRuntime
         WorkerRounds::WorkerRounds(const PoolSize& size, PinPolicy pinning,
                                    const Internal::Topology::TopologyView& topology,
                                    Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                                   const Internal::Memory::ResidencyView& handles, PendingWork& pending, RunState& run,
+                                   const HandleHomeReader& handles, PendingWork& pending, RunState& run,
                                    SubmitFunnels& funnels)
             : num_workers_(size.workers), devices_(devices), memory_(memory), handles_(handles), pending_(pending), run_(run),
               funnels_(funnels)

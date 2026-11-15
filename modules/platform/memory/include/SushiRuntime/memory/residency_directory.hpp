@@ -51,7 +51,8 @@
 #include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/handle_registry.hpp>
 #include <SushiRuntime/memory/host_write_log.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
+#include <SushiRuntime/memory/residency_writer.hpp>
 #include <SushiRuntime/memory/retire_observer.hpp>
 #include <SushiRuntime/memory/retire_source.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -68,7 +69,8 @@ namespace SushiRuntime
          * entry's coherence map has its own lock, taken after the writer mutex, never before it.
          */
         class ResidencyDirectory final : public HandleRegistry,
-                                         public ResidencyView,
+                                         public ResidencyReader,
+                                         public ResidencyWriter,
                                          public CoherenceHistory,
                                          public RetireSource
         {
@@ -155,7 +157,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] HandlePorts ports(HostWriteLog& host_writes) noexcept
                 {
-                    return HandlePorts{*this, *this, host_writes, *this, *this};
+                    return HandlePorts{*this, *this, *this, host_writes, *this, *this};
                 }
 
                 /** @brief Returns the universe this directory mints handles in. */

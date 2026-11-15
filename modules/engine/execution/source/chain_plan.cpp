@@ -284,7 +284,7 @@ namespace SushiRuntime
         Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context,
                                                   UnorderedHostWork unordered_host)
         {
-            return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory(), context.handle_ports().residency),
+            return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory(), context.handle_ports().residency_reader),
                                   context.offload() != nullptr, unordered_host);
         }
 

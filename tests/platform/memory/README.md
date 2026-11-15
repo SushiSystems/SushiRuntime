@@ -11,11 +11,13 @@ A section is named after a test file, and a subsection after the test, helper or
 Sizes and the shared fixture base are described in [the tests README](../../README.md#sizes). The
 allocator tests derive from that fixture base and skip where SYCL reports no device.
 
-## compile_memory_log_category.cpp, compile_residency_view.cpp and compile_usm_request.cpp
+## compile_memory_log_category.cpp, compile_residency_reader.cpp and compile_usm_request.cpp
 
 The files `compile_coherence_history.cpp`, `compile_handle_ports.cpp`, `compile_handle_registry.cpp`,
-`compile_host_write_log.cpp` and `compile_retire_source.cpp` are the same kind. `compile_handle_ports.cpp`
-also holds a consumer written against `HandlePorts` alone, which includes no execution header.
+`compile_host_write_log.cpp`, `compile_residency_writer.cpp` and `compile_retire_source.cpp` are the same
+kind. `compile_handle_ports.cpp` also holds a consumer written against `HandlePorts` alone, which includes
+no execution header. `compile_residency_reader.cpp` and `compile_residency_writer.cpp` each include one
+port header alone and hold a consumer written against that port, so each port is usable without the other.
 
 Each file includes one header alone. See [the scheduler tests](../../engine/scheduler/README.md)
 for why such a file stands in for a test.
@@ -161,6 +163,19 @@ queue.
 | `AHostWriteOnARetiredHandleIsRefusedAndRaisesNoGeneration` | A host write on a retired handle returns `StaleHandle` and leaves the generation at 0. |
 | `TheNullHandleIsRefused` | The null handle gives `NullHandle` and reads 0. |
 | `MarksSurviveGrowthPastOneChunk` | A mark in the first chunk and one in the second both read back. |
+
+## test_residency_reader.cpp
+
+The file tests `ResidencyReader::home_of()` on a real `ResidencyDirectory`, which is the in-memory
+implementation of the port: one buffer of 8-byte elements made on space 2.
+
+| Test | What it proves |
+| --- | --- |
+| `TheHomeCarriesTheSpaceAndTheLayoutOfTheBuffer` | `home_of()` gives the home space and the element layout the buffer was described with. |
+| `TheHomeIsResidentOnlyWhileItHoldsAnInstance` | The home is not resident before an instance is recorded, is while it holds one and is not after it is dropped. |
+| `HostAndSharedMemoryAreHostAccessibleAndDeviceMemoryIsNot` | An instance of kind `Host` or `Shared` reads as host accessible and `Device` as device only. |
+| `AnInstanceWithNoKindReadsAsUnknownMemory` | An instance recorded with no kind reads as unknown memory. |
+| `ARetiredHandleHasNoHomeAndSaysWhy` | A retired handle gives `StaleHandle` and no resident home. |
 
 ## test_borrowed_index.cpp
 

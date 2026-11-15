@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* compile_residency_view.cpp                                            */
+/* test_element_layout.cpp                                                */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,10 +22,35 @@
 /**************************************************************************/
 
 /**
- * @file compile_residency_view.cpp
- * @brief Compiles residency_view.hpp on its own, so the header carries every include it needs.
- * @see tests/platform/memory/README.md
+ * @file test_element_layout.cpp
+ * @brief Tests ElementLayout: which layouts are raw bytes and when two layouts are equal.
+ * @see tests/foundation/handle/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <cstddef>
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/handle/element_layout.hpp>
+
+using SushiRuntime::ElementLayout;
+
+namespace
+{
+    /** @brief Tests that a layout of one byte aligned to one byte is raw bytes and no other layout is. */
+    TEST(Small_ElementLayout, OnlyOneByteAlignedToOneByteIsRawBytes)
+    {
+        EXPECT_TRUE(ElementLayout().is_bytes());
+        EXPECT_FALSE((ElementLayout{4, 4}).is_bytes());
+        EXPECT_FALSE((ElementLayout{1, 2}).is_bytes());
+    }
+
+    /** @brief Tests that two layouts are equal exactly when size and alignment both match. */
+    TEST(Small_ElementLayout, LayoutsAreEqualWhenSizeAndAlignmentBothMatch)
+    {
+        EXPECT_EQ((ElementLayout{8, 4}), (ElementLayout{8, 4}));
+        EXPECT_NE((ElementLayout{8, 4}), (ElementLayout{8, 8}));
+        EXPECT_NE((ElementLayout{8, 4}), (ElementLayout{4, 4}));
+    }
+} // namespace

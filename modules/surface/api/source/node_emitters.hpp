@@ -38,7 +38,7 @@
 #include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -65,7 +65,7 @@ namespace SushiRuntime
          */
         SUSHIRUNTIME_API void attach_kernel_pointers(Internal::Graph::Node& node,
                                                      const NodeDescription& description,
-                                                     const Internal::Memory::ResidencyView& handles,
+                                                     const HandleHomeReader& handles,
                                                      std::size_t device_count);
 
         /**

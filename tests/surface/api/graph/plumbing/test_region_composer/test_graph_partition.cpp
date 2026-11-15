@@ -373,11 +373,11 @@ namespace GraphPartitionTests
         };
         auto slices = std::make_shared<std::atomic<std::size_t>>(0);
         split->slice = [slices](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
-                                span<void* const> pointers)
+                                BoundOperands pointers)
         {
             slices->fetch_add(1);
-            const std::uint32_t* source = static_cast<const std::uint32_t*>(pointers[0]);
-            std::uint32_t* target = static_cast<std::uint32_t*>(pointers[1]);
+            const std::uint32_t* source = static_cast<const std::uint32_t*>(pointers.untyped(0));
+            std::uint32_t* target = static_cast<std::uint32_t*>(pointers.untyped(1));
             const std::size_t begin = static_cast<std::size_t>(part.begin);
             const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
             return queue.parallel_for(sycl::range<1>(static_cast<std::size_t>(part.end - part.begin)), after,

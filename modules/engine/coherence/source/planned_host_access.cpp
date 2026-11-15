@@ -103,7 +103,7 @@ namespace SushiRuntime
             // The host space is the recorded home until the partitioner places the buffer.
             const HandleStatus described = ports_.registry.describe(minted.handle, bytes, layout, host_);
             {
-                Memory::LockedCoherence map = ports_.residency.coherence(minted.handle);
+                Memory::LockedCoherence map = ports_.residency_writer.coherence(minted.handle);
                 if (described == HandleStatus::Ok && map != nullptr)
                 {
                     // A map that covers the bytes and names no space marks the buffer as held nowhere yet.
@@ -124,14 +124,14 @@ namespace SushiRuntime
             Result<GlobalHandle> minted = mint(kind, bytes, layout);
             if (!minted || minted->is_null())
                 return minted;
-            const HandleStatus set = ports_.residency.set_instance(*minted, space, address, std::nullopt);
+            const HandleStatus set = ports_.residency_writer.set_instance(*minted, space, address, std::nullopt);
             if (set != HandleStatus::Ok)
             {
                 static_cast<void>(ports_.registry.retire(*minted));
                 return make_error(directory_error(set, "the residency directory refused the held instance"));
             }
             // The held instance is the one valid copy of every byte.
-            if (Memory::LockedCoherence map = ports_.residency.coherence(*minted))
+            if (Memory::LockedCoherence map = ports_.residency_writer.coherence(*minted))
                 map->reset(bytes, space);
             return minted;
         }
@@ -145,7 +145,7 @@ namespace SushiRuntime
             if (!host_bytes)
                 return make_error(std::move(host_bytes.error()));
             {
-                Memory::LockedCoherence map = ports_.residency.coherence(handle);
+                Memory::LockedCoherence map = ports_.residency_writer.coherence(handle);
                 if (map == nullptr)
                     return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
                 if (map.held_by_run())
@@ -165,7 +165,7 @@ namespace SushiRuntime
             if (bytes == 0)
                 return {};
             const std::size_t end = begin + bytes;
-            Memory::LockedCoherence map = ports_.residency.coherence(handle);
+            Memory::LockedCoherence map = ports_.residency_writer.coherence(handle);
             if (map == nullptr)
                 return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
             if (map.held_by_run())
@@ -180,7 +180,7 @@ namespace SushiRuntime
             Result<unsigned char*> host_bytes = host_instance(handle);
             if (!host_bytes)
                 return make_error(std::move(host_bytes.error()));
-            map = ports_.residency.coherence(handle);
+            map = ports_.residency_writer.coherence(handle);
             if (map == nullptr)
                 return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
             if (map.held_by_run())
@@ -209,28 +209,28 @@ namespace SushiRuntime
         std::vector<MemorySpaceID> PlannedHostAccess::held_spaces(GlobalHandle handle) const
         {
             std::vector<MemorySpaceID> held;
-            const Memory::EntryView entry = ports_.residency.inspect(handle);
+            const Memory::EntryView entry = ports_.residency_reader.inspect(handle);
             if (entry.status != HandleStatus::Ok)
                 return held;
             for (std::uint32_t space = 0; space < Memory::CoherenceIntervals::K_MAX_MEMORY_SPACES; ++space)
                 if ((entry.valid_spaces & (std::uint64_t{1} << space)) != 0 &&
-                    !ports_.residency.instance_kind(handle, MemorySpaceID(space)).has_value())
+                    !ports_.residency_reader.instance_kind(handle, MemorySpaceID(space)).has_value())
                     held.push_back(MemorySpaceID(space));
             return held;
         }
 
         void PlannedHostAccess::release(GlobalHandle handle) noexcept
         {
-            const Memory::EntryView entry = ports_.residency.inspect(handle);
+            const Memory::EntryView entry = ports_.residency_reader.inspect(handle);
             if (entry.status == HandleStatus::Ok)
                 for (std::uint32_t space = 0; space < Memory::CoherenceIntervals::K_MAX_MEMORY_SPACES; ++space)
                 {
                     if ((entry.valid_spaces & (std::uint64_t{1} << space)) == 0)
                         continue;
-                    const ResolveOutcome instance = ports_.residency.resolve(handle, MemorySpaceID(space));
+                    const ResolveOutcome instance = ports_.residency_reader.resolve(handle, MemorySpaceID(space));
                     // An instance with no kind was not allocated here, so it is not freed here.
-                    const bool allocated = ports_.residency.instance_kind(handle, MemorySpaceID(space)).has_value();
-                    static_cast<void>(ports_.residency.drop_instance(handle, MemorySpaceID(space)));
+                    const bool allocated = ports_.residency_reader.instance_kind(handle, MemorySpaceID(space)).has_value();
+                    static_cast<void>(ports_.residency_writer.drop_instance(handle, MemorySpaceID(space)));
                     if (instance.status == HandleStatus::Ok && allocated)
                         allocator_->release(MemorySpaceID(space), instance.address);
                 }
@@ -239,13 +239,13 @@ namespace SushiRuntime
 
         Result<unsigned char*> PlannedHostAccess::host_instance(GlobalHandle handle)
         {
-            const ResolveOutcome held = ports_.residency.resolve(handle, host_);
+            const ResolveOutcome held = ports_.residency_reader.resolve(handle, host_);
             if (held.status == HandleStatus::Ok)
                 return static_cast<unsigned char*>(held.address);
             if (held.status != HandleStatus::NotResident)
                 return make_error(directory_error(held.status, "the planned buffer is not live"));
 
-            const Memory::EntryView entry = ports_.residency.inspect(handle);
+            const Memory::EntryView entry = ports_.residency_reader.inspect(handle);
             if (entry.status != HandleStatus::Ok)
                 return make_error(directory_error(entry.status, "the planned buffer is not live"));
             void* const address = allocator_->allocate(host_, entry.size, entry.layout.alignment);
@@ -253,7 +253,7 @@ namespace SushiRuntime
                 return make_error(Error{ErrorCode::AllocationFailed,
                                         "the host space returned no memory for " + std::to_string(entry.size) +
                                             " bytes of a planned buffer."});
-            const HandleStatus set = ports_.residency.set_instance(handle, host_, address, allocator_->kind_of(host_));
+            const HandleStatus set = ports_.residency_writer.set_instance(handle, host_, address, allocator_->kind_of(host_));
             if (set != HandleStatus::Ok)
             {
                 allocator_->release(host_, address);
@@ -270,7 +270,7 @@ namespace SushiRuntime
             {
                 if (host == nullptr || (valid_spaces & bit_of(source->id())) == 0)
                     continue;
-                const ResolveOutcome from = ports_.residency.resolve(handle, source->id());
+                const ResolveOutcome from = ports_.residency_reader.resolve(handle, source->id());
                 if (from.status != HandleStatus::Ok)
                     continue;
                 for (TransferPath* path : *paths_)

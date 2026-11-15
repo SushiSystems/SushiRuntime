@@ -131,10 +131,10 @@ namespace SushiRuntime
             }
         } // namespace
 
-        CoherencePlanner::CoherencePlanner(Memory::ResidencyView& directory,
+        CoherencePlanner::CoherencePlanner(const Memory::ResidencyReader& reader, Memory::ResidencyWriter& writer,
                                            std::vector<const Memory::MemorySpace*> spaces,
                                            std::vector<const TransferPath*> paths, TransferCost cost)
-            : directory_(&directory), spaces_(std::move(spaces)), paths_(std::move(paths)),
+            : reader_(&reader), writer_(&writer), spaces_(std::move(spaces)), paths_(std::move(paths)),
               cost_(std::move(cost))
         {
 
@@ -237,12 +237,12 @@ namespace SushiRuntime
             if (left_alone(handle))
                 return nullptr;
 
-            const Memory::EntryView entry = directory_->inspect(handle);
+            const Memory::EntryView entry = reader_->inspect(handle);
             if (entry.status != HandleStatus::Ok || entry.size == 0)
                 return nullptr;
             Memory::CoherenceIntervals snapshot;
             {
-                Memory::LockedCoherence map = directory_->coherence(handle);
+                Memory::LockedCoherence map = writer_->coherence(handle);
                 if (map == nullptr)
                     return nullptr;
                 // A buffer with no instance is planned only when its map covers its bytes, as a planned buffer's does.

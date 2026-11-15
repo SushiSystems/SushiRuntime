@@ -36,8 +36,6 @@
 #include <utility>
 
 #include <SushiRuntime/core/assert.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
-#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
@@ -46,9 +44,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Spaces EntryView::valid_spaces has one bit for. */
-            constexpr std::uint32_t K_VALID_SPACE_BITS = 64;
-
             /** @brief Returns the message of a bind that found no instance of @p handle on @p device. */
             std::string missing_instance_message(GlobalHandle handle, std::size_t device)
             {
@@ -60,21 +55,18 @@ namespace SushiRuntime
             }
         } // namespace
 
-        bool home_is_host_visible(const Internal::Memory::EntryView& entry, GlobalHandle handle) noexcept
+        bool home_is_host_visible(const HandleHome& home, GlobalHandle handle) noexcept
         {
-            if (entry.status != HandleStatus::Ok || entry.home.value() >= K_VALID_SPACE_BITS)
+            if (home.status != HandleStatus::Ok || !home.resident)
                 return false;
-            if (((entry.valid_spaces >> entry.home.value()) & 1U) == 0U)
-                return false;
-            if (entry.home == host_memory_space())
+            if (home.home == host_memory_space())
                 return true;
-            if (entry.home_kind)
-                return *entry.home_kind == Internal::Memory::USMKind::Host ||
-                       *entry.home_kind == Internal::Memory::USMKind::Shared;
+            if (home.memory != HomeMemory::Unknown)
+                return home.memory == HomeMemory::HostAccessible;
             return has_flags(handle.flags(), HandleFlags::Borrowed);
         }
 
-        KernelPointerSlot make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory,
+        KernelPointerSlot make_kernel_pointer_slot(const HandleHomeReader& directory,
                                                    GlobalHandle handle, void* home,
                                                    std::size_t device_count)
         {
@@ -84,15 +76,17 @@ namespace SushiRuntime
             const std::optional<HandleLocation> location = locate(directory, handle, device_count);
             if (location && location->address == home)
                 slot.home_device = location->device;
-            slot.host_visible = home_is_host_visible(directory.inspect(handle), handle);
+            const HandleHome facts = directory.home_of(handle);
+            slot.layout = facts.layout;
+            slot.host_visible = home_is_host_visible(facts, handle);
             return slot;
         }
 
-        KernelPointerSlot make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory,
+        KernelPointerSlot make_kernel_pointer_slot(const HandleHomeReader& directory,
                                                    GlobalHandle handle, std::size_t device_count)
         {
             void* home = nullptr;
-            const Internal::Memory::EntryView entry = directory.inspect(handle);
+            const HandleHome entry = directory.home_of(handle);
             if (entry.status == HandleStatus::Ok)
             {
                 const ResolveOutcome outcome = directory.resolve(handle, entry.home);
@@ -106,8 +100,12 @@ namespace SushiRuntime
                                        const HandleResolver& resolver)
             : slots_(std::move(slots)), bound_(slots_.size(), nullptr), resolver_(&resolver)
         {
+            layouts_.reserve(slots_.size());
             for (std::size_t index = 0; index < slots_.size(); ++index)
+            {
                 bound_[index] = slots_[index].home;
+                layouts_.push_back(slots_[index].layout);
+            }
         }
 
         void KernelPointers::bind(std::size_t device) noexcept

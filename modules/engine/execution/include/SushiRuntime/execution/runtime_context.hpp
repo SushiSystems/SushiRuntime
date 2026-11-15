@@ -163,7 +163,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the ports of this context's handle table, one per role.
                  *
-                 * The API layer mints and retires through registry; readers take residency.
+                 * The API layer mints and retires through registry; readers take residency_reader and writers residency_writer.
                  * @return References valid for this context's lifetime.
                  * @see modules/engine/execution/README.md
                  */

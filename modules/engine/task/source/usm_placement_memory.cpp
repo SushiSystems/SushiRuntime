@@ -30,8 +30,6 @@
 
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
-#include <SushiRuntime/memory/residency_view.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/kernel_pointers.hpp>
 
@@ -39,8 +37,8 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
-        USMPlacementMemory::USMPlacementMemory(const Internal::Memory::USMAllocator& memory,
-                                               const Internal::Memory::ResidencyView& handles) noexcept
+        USMPlacementMemory::USMPlacementMemory(const DeviceContexts& memory,
+                                               const HandleHomeReader& handles) noexcept
             : memory_(memory), handles_(handles)
         {
         }
@@ -70,7 +68,7 @@ namespace SushiRuntime
 
         bool USMPlacementMemory::host_visible(GlobalHandle handle) const
         {
-            return home_is_host_visible(handles_.inspect(handle), handle);
+            return home_is_host_visible(handles_.home_of(handle), handle);
         }
     } // namespace Internal::Graph
 } // namespace SushiRuntime

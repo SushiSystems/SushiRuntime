@@ -33,7 +33,8 @@
 #include <SushiRuntime/memory/coherence_history.hpp>
 #include <SushiRuntime/memory/handle_registry.hpp>
 #include <SushiRuntime/memory/host_write_log.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
+#include <SushiRuntime/memory/residency_writer.hpp>
 #include <SushiRuntime/memory/retire_source.hpp>
 
 namespace SushiRuntime
@@ -49,7 +50,8 @@ namespace SushiRuntime
         struct HandlePorts
         {
             HandleRegistry& registry;      /**< Mints, describes and retires handles. */
-            ResidencyView& residency;      /**< Reads and writes what each handle holds where. */
+            ResidencyReader& residency_reader; /**< Reads what each handle holds where. */
+            ResidencyWriter& residency_writer; /**< Records instances and locks coherence maps. */
             HostWriteLog& host_writes;     /**< Records and reads the host writes outside a plan. */
             CoherenceHistory& history;     /**< Drops the history of retired steps. */
             RetireSource& retirement;      /**< Tells an observer about each retired handle. */

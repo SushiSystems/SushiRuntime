@@ -901,7 +901,7 @@ namespace SchedulerStepTests
         SushiRuntime::SeededExecutor executor(TestSupport::K_HOST_RUNTIME_SEED);
         const auto context = TestSupport::make_host_context();
         TaskScheduler scheduler(WorkerPoolSettings{2, 0, SushiRuntime::PinPolicy::Float}, context->topology(),
-                                context->devices(), context->memory(), context->handle_ports().residency);
+                                context->devices(), context->memory(), context->handle_ports().residency_reader);
         scheduler.set_executor(&executor);
         std::vector<SushiRuntime::sushi_ptr<SushiRuntime::Internal::Graph::Node>> nodes;
         std::atomic<std::size_t> executed{0};

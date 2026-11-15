@@ -58,7 +58,7 @@ TEST(Small_NodeSplit, HoldsTheConsumersKernels)
     NodeSplit split;
     split.axis = 1;
     split.extent = 10;
-    split.slice = [](const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const>) { return sycl::event(); };
+    split.slice = [](const SplitPart&, sycl::queue&, span<const sycl::event>, BoundOperands) { return sycl::event(); };
     split.combine = [&combined](span<const SplitPart> parts)
     {
         combined.assign(parts.begin(), parts.end());

@@ -23,7 +23,7 @@
 
 /**
  * @file usm_placement_memory.hpp
- * @brief Declares USMPlacementMemory, the PlacementMemory that answers from the residency directory and a USMAllocator.
+ * @brief Declares USMPlacementMemory, the PlacementMemory that answers from a HandleHomeReader and a DeviceContexts.
  * @author Mustafa Garip
  * @see modules/engine/task/README.md
  */
@@ -35,21 +35,16 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
+#include <SushiRuntime/handle/device_contexts.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 #include <SushiRuntime/task/placement_memory.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Memory
-    {
-        class USMAllocator;
-        class ResidencyView;
-    }
-
     namespace Internal::Graph
     {
         /**
-         * @brief Answers a handle's device and host visibility from the residency directory, and context sharing from the USMAllocator.
+         * @brief Answers a handle's device and host visibility from the residency directory, and context sharing from a DeviceContexts.
          * @see modules/engine/task/README.md
          */
         class SUSHIRUNTIME_API USMPlacementMemory final : public PlacementMemory
@@ -59,8 +54,8 @@ namespace SushiRuntime
                  * @brief Views @p memory and @p handles.
                  * @param memory,handles Must outlive this object.
                  */
-                USMPlacementMemory(const Internal::Memory::USMAllocator& memory,
-                                   const Internal::Memory::ResidencyView& handles) noexcept;
+                USMPlacementMemory(const DeviceContexts& memory,
+                                   const HandleHomeReader& handles) noexcept;
 
                 [[nodiscard]] std::optional<std::size_t> recorded_device(GlobalHandle handle) const override;
                 [[nodiscard]] std::optional<std::size_t> owning_device(GlobalHandle handle) const override;
@@ -69,8 +64,8 @@ namespace SushiRuntime
                 [[nodiscard]] bool host_visible(GlobalHandle handle) const override;
 
             private:
-                const Internal::Memory::USMAllocator& memory_;
-                const Internal::Memory::ResidencyView& handles_;
+                const DeviceContexts& memory_;
+                const HandleHomeReader& handles_;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

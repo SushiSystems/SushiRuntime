@@ -35,7 +35,8 @@
 
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/coherence/planned_node_factory.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
+#include <SushiRuntime/memory/residency_writer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
@@ -53,8 +54,12 @@ namespace SushiRuntime
         class DirectoryPlannedNodeFactory final : public PlannedNodeFactory
         {
             public:
-                /** @brief Builds a factory over the directory, the allocator and the planner's paths. */
-                DirectoryPlannedNodeFactory(Memory::ResidencyView& directory,
+                /**
+                 * @brief Builds a factory over the two roles of the directory, the allocator and the planner's paths.
+                 * @param reader Resolves instances and reads their kind; outlives every node built.
+                 * @param writer Records and drops instances and locks coherence maps; outlives every node built.
+                 */
+                DirectoryPlannedNodeFactory(const Memory::ResidencyReader& reader, Memory::ResidencyWriter& writer,
                                             std::shared_ptr<InstanceAllocator> allocator,
                                             std::vector<TransferPath*> paths);
 
@@ -67,8 +72,11 @@ namespace SushiRuntime
                 [[nodiscard]] Result<sushi_ptr<Graph::Node>> make_copy_record(const PlannedStep& step) override;
 
             private:
-                /// @brief Directory the nodes resolve and record instances in.
-                Memory::ResidencyView* directory_;
+                /// @brief Role of the directory the nodes resolve instances through.
+                const Memory::ResidencyReader* reader_;
+
+                /// @brief Role of the directory the nodes record instances and effects through.
+                Memory::ResidencyWriter* writer_;
 
                 /// @brief Makes and frees instances.
                 std::shared_ptr<InstanceAllocator> allocator_;

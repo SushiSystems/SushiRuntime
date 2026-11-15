@@ -54,7 +54,7 @@ namespace SushiRuntime
                 public:
                     /** @brief Builds an index that adds to problem. */
                     BufferIndex(GraphPartitionProblem& built, const Graph::PlacementMemory& memory,
-                                const Memory::ResidencyView& directory, const std::vector<PartitionDevice>& devices)
+                                const Memory::ResidencyReader& directory, const std::vector<PartitionDevice>& devices)
                         : built_(&built), memory_(&memory), directory_(&directory), devices_(&devices)
                     {
 
@@ -100,7 +100,7 @@ namespace SushiRuntime
                     const Graph::PlacementMemory* memory_;
 
                     /// @brief Gives each buffer's size.
-                    const Memory::ResidencyView* directory_;
+                    const Memory::ResidencyReader* directory_;
 
                     /// @brief Devices by index.
                     const std::vector<PartitionDevice>* devices_;
@@ -122,7 +122,7 @@ namespace SushiRuntime
 
         Result<GraphPartitionProblem>
         make_graph_partition_problem(const std::vector<sushi_ptr<Graph::Node>>& nodes,
-                                     const Graph::PlacementMemory& memory, const Memory::ResidencyView& directory,
+                                     const Graph::PlacementMemory& memory, const Memory::ResidencyReader& directory,
                                      const std::vector<PartitionDevice>& devices,
                                      const std::set<const Graph::Node*>& assigned)
         {

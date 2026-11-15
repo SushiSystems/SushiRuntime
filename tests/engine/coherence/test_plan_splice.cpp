@@ -179,7 +179,7 @@ namespace
 
     TEST_F(Small_PlanSplice, TheCopyRunsAfterTheWriterAndBeforeTheReaderOnTheOtherDevice)
     {
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 
@@ -218,7 +218,7 @@ namespace
 
     TEST_F(Small_PlanSplice, ACopysRecordFollowsTheCopyAndTheReaderWaitsForTheCopyNotTheRecord)
     {
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 
@@ -246,7 +246,7 @@ namespace
         sushi_ptr<Node> unrelated = make_sushi<Node>();
         link(*unrelated, *reader_);
         nodes_ = {writer_, unrelated, reader_};
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 
@@ -276,7 +276,7 @@ namespace
         nodes_ = {writer_, first, second};
         spaces_[first.get()] = K_DEVICE_1;
         spaces_[second.get()] = device_2;
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get(), owned_[2].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get(), owned_[2].get()}, {&path_},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 
@@ -294,7 +294,7 @@ namespace
     TEST_F(Small_PlanSplice, NodesOnOneDeviceGetNoStepAndOnlyTheMapEffectsOfTheBuffer)
     {
         spaces_[reader_.get()] = K_DEVICE_0;
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 
@@ -324,7 +324,7 @@ namespace
         spaces_[third.get()] = K_DEVICE_1;
 
         LogicalTimeEviction policy;
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
                                  uniform_transfer_cost());
         ResidencyOptions options;
         options.policy = &policy;
@@ -351,7 +351,7 @@ namespace
     TEST_F(Small_PlanSplice, ARefusedPlanLeavesTheNodesUnchanged)
     {
         ClosedTransferPath closed;
-        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&closed},
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&closed},
                                  uniform_transfer_cost());
         RecordingFactory factory;
 

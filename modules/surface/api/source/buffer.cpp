@@ -95,7 +95,7 @@ namespace SushiRuntime
                 HandleStatus status = ports.registry.describe(
                     handle, bytes, Internal::Memory::ElementLayout{element_size, element_alignment}, space);
                 if (status == HandleStatus::Ok)
-                    status = ports.residency.set_instance(handle, space, address, kind);
+                    status = ports.residency_writer.set_instance(handle, space, address, kind);
                 if (status != HandleStatus::Ok)
                     return make_error(Error{Internal::Memory::error_code_of(status),
                                             "the residency directory refused the buffer's entry"});

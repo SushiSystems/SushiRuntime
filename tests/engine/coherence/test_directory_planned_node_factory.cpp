@@ -139,7 +139,7 @@ namespace
             ResidencyDirectory directory_{0};
             std::shared_ptr<HeapAllocator> allocator_ = std::make_shared<HeapAllocator>();
             FakeTransferPath path_;
-            DirectoryPlannedNodeFactory factory_{directory_, allocator_, {&path_}};
+            DirectoryPlannedNodeFactory factory_{directory_, directory_, allocator_, {&path_}};
             GlobalHandle buffer_;
             unsigned char bytes_[K_BYTES] = {1, 2, 3, 4, 5, 6, 7, 8};
     };
@@ -240,7 +240,7 @@ namespace
         std::optional<sycl::queue> queue = any_queue();
         if (!queue)
             GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
-        DirectoryPlannedNodeFactory refusing(directory_, std::make_shared<RefusingAllocator>(), {&path_});
+        DirectoryPlannedNodeFactory refusing(directory_, directory_, std::make_shared<RefusingAllocator>(), {&path_});
         const Result<sushi_ptr<Node>> allocate = refusing.make(step(PlannedStepKind::Allocate));
         ASSERT_TRUE(allocate);
 

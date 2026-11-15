@@ -51,9 +51,9 @@ namespace SushiRuntime
             answered_again_ = false;
             if (runtime.devices().count() < 2 || (session_ == nullptr && !sessions.is_active()))
                 return Problem();
-            const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handle_ports().residency);
+            const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handle_ports().residency_reader);
             Result<Internal::Coherence::GraphPartitionProblem> graph = Internal::Coherence::make_graph_partition_problem(
-                nodes, memory, runtime.handle_ports().residency, sessions.devices(), placed_addresses_);
+                nodes, memory, runtime.handle_ports().residency_reader, sessions.devices(), placed_addresses_);
             if (!graph)
                 return make_error(std::move(graph.error()));
             if (graph.value().planned_buffers == 0)

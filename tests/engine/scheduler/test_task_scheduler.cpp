@@ -278,7 +278,7 @@ namespace
             {
                 auto scheduler = std::make_unique<TaskScheduler>(WorkerPoolSettings{workers, 0, PinPolicy::Float},
                                                                  context_->topology(), context_->devices(),
-                                                                 context_->memory(), context_->handle_ports().residency);
+                                                                 context_->memory(), context_->handle_ports().residency_reader);
                 scheduler->set_executor(&executor_);
                 return scheduler;
             }

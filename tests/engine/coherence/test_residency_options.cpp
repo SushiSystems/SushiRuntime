@@ -117,7 +117,7 @@ namespace
             CoherencePlanner planner(const PinSet* pins = nullptr,
                                      std::set<GlobalHandle> host_read = {})
             {
-                CoherencePlanner subject(directory_, {host_space_.get(), device_space_.get()}, {&path_},
+                CoherencePlanner subject(directory_, directory_, {host_space_.get(), device_space_.get()}, {&path_},
                                          uniform_transfer_cost());
                 ResidencyOptions options;
                 options.policy = &policy_;
@@ -311,7 +311,7 @@ namespace
 
     TEST_F(Small_CoherencePlannerResidency, APlannerWithoutOptionsKeepsFreeingEveryInstanceItMade)
     {
-        CoherencePlanner subject(directory_, {host_space_.get(), device_space_.get()}, {&path_},
+        CoherencePlanner subject(directory_, directory_, {host_space_.get(), device_space_.get()}, {&path_},
                                  uniform_transfer_cost());
         const Result<CopyPlan> plan = subject.plan({node({a_}), node({b_}), node({c_})});
         ASSERT_TRUE(plan);

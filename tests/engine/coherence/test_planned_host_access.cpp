@@ -112,7 +112,7 @@ namespace
             /** @brief Returns a planner over every space and the fake path. */
             CoherencePlanner planner()
             {
-                return CoherencePlanner(directory_, spaces_, {&path_}, uniform_transfer_cost());
+                return CoherencePlanner(directory_, directory_, spaces_, {&path_}, uniform_transfer_cost());
             }
 
             /** @brief Returns a node on space that reads and writes the buffers named. */

@@ -75,8 +75,8 @@ namespace
     /** @brief Stands for one kernel a task body submits: out[i] = in[i] + 1 over the bound operands. */
     void add_one(const BoundOperands& operands)
     {
-        const int* source = operands.as<const int>(0);
-        int* target = operands.as<int>(1);
+        const int* source = operands.at<const int>(0).address;
+        int* target = operands.at<int>(1).address;
         for (std::size_t index = 0; index < K_COUNT; ++index)
             target[index] = source[index] + 1;
     }
@@ -116,5 +116,20 @@ namespace
 
         EXPECT_EQ(out_copied, std::vector<int>(K_COUNT, 7));
         EXPECT_EQ(out_home, std::vector<int>(K_COUNT, 0)) << "the home instance is not touched";
+    }
+
+    /** @brief Tests that a body asking for an operand as a type of another size is refused at the API boundary. */
+    TEST(Small_BoundOperands, AnOperandAskedForAnotherElementTypeIsRefused)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        std::vector<int> home(K_COUNT, 1);
+        const GlobalHandle input = homed_on_device_zero(directory, home.data());
+        KernelPointers pointers = table_by_handle(directory, {input});
+        pointers.bind(0);
+
+        const KernelPointerScope scope(pointers);
+
+        EXPECT_EQ(bound_operands().at<int>(0).address, home.data());
+        EXPECT_EQ(bound_operands().at<double>(0).status, OperandStatus::ElementMismatch);
     }
 } // namespace

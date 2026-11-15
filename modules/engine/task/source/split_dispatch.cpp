@@ -46,11 +46,11 @@ namespace SushiRuntime
             part_events.reserve(parts.size());
             for (const SplitDispatchPart& entry : parts)
             {
-                span<void* const> bound;
+                BoundOperands bound;
                 if (pointers)
                 {
                     pointers->bind(entry.device);
-                    bound = span<void* const>(pointers->table(), pointers->size());
+                    bound = pointers->operands();
                 }
                 part_events.push_back(split.slice(entry.part, queue_of(entry.device), dependencies, bound));
             }

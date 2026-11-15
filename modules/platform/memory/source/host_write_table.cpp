@@ -34,7 +34,7 @@ namespace SushiRuntime
 {
     namespace Internal::Memory
     {
-        HostWriteTable::HostWriteTable(const ResidencyView& residency)
+        HostWriteTable::HostWriteTable(const ResidencyReader& residency)
             : residency_(residency), chunks_(new std::atomic<Chunk*>[K_MAX_CHUNKS])
         {
             for (std::uint32_t i = 0; i < K_MAX_CHUNKS; ++i)

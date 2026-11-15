@@ -938,7 +938,7 @@ namespace HandlePortTests
 
         const SushiRuntime::MintOutcome minted = mint_described(ports, 64);
 
-        EXPECT_EQ(ports.residency.inspect(minted.handle).size, 64U);
+        EXPECT_EQ(ports.residency_reader.inspect(minted.handle).size, 64U);
         EXPECT_EQ(ports.registry.live_count(), live_before + 1);
         EXPECT_EQ(ports.registry.retire(minted.handle), SushiRuntime::HandleStatus::Ok);
         EXPECT_EQ(ports.registry.live_count(), live_before);

@@ -36,7 +36,7 @@
 
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
 #include <SushiRuntime/partitioning/partition_problem.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/placement_memory.hpp>
@@ -63,7 +63,7 @@ namespace SushiRuntime
          */
         [[nodiscard]] Result<GraphPartitionProblem>
         make_graph_partition_problem(const std::vector<sushi_ptr<Graph::Node>>& nodes,
-                                     const Graph::PlacementMemory& memory, const Memory::ResidencyView& directory,
+                                     const Graph::PlacementMemory& memory, const Memory::ResidencyReader& directory,
                                      const std::vector<PartitionDevice>& devices,
                                      const std::set<const Graph::Node*>& assigned = {});
     } // namespace Internal::Coherence

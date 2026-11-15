@@ -659,7 +659,7 @@ the one function that names it, from the first of these that applies:
 
 The owner is the device that owns the first write region, else the first read region. The context
 check reads `USMAllocator::shares_context()` and the device USM check the scheduler's
-`ResidencyView`, so `placement_of()` needs no queue of its own. A stated index past the allocator's devices is
+`HandleHomeReader`, so `placement_of()` needs no queue of its own. A stated index past the allocator's devices is
 left to `place_for_dispatch()`, which refuses it with the device count.
 
 A kernel that captured USM the runtime cannot see names no region, so rule 3 or 4 decides

@@ -35,7 +35,7 @@
 #include <optional>
 #include <vector>
 
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
@@ -56,7 +56,7 @@ namespace SushiRuntime
             {
                 public:
                     /** @brief Reads @p handles, which must outlive this object, over @p device_count devices. */
-                    ResidencyHostReachableMemory(const Internal::Memory::ResidencyView& handles,
+                    ResidencyHostReachableMemory(const Internal::Memory::ResidencyReader& handles,
                                                  std::size_t device_count) noexcept
                         : handles_(handles), device_count_(device_count)
                     {
@@ -79,7 +79,7 @@ namespace SushiRuntime
                     }
 
                 private:
-                    const Internal::Memory::ResidencyView& handles_; /**< Resolves a handle and holds its kind. */
+                    const Internal::Memory::ResidencyReader& handles_; /**< Resolves a handle and holds its kind. */
                     std::size_t device_count_;                            /**< Devices a handle is looked for on. */
             };
 
@@ -142,7 +142,7 @@ namespace SushiRuntime
 
         const char* host_step_refusal(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
-            return host_step_refusal(graph, ResidencyHostReachableMemory(context.handle_ports().residency, context.memory().device_count()));
+            return host_step_refusal(graph, ResidencyHostReachableMemory(context.handle_ports().residency_reader, context.memory().device_count()));
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

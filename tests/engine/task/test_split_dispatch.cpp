@@ -63,6 +63,15 @@ namespace
         }
     }
 
+    /** @brief Returns the pointers of @p operands, in position order. */
+    std::vector<void*> pointers_of(const BoundOperands& operands)
+    {
+        std::vector<void*> pointers;
+        for (std::size_t position = 0; position < operands.size(); ++position)
+            pointers.push_back(operands.untyped(position));
+        return pointers;
+    }
+
     /** @brief Records what one slice call received. */
     struct SliceCall
     {
@@ -91,9 +100,9 @@ namespace
         std::vector<SplitPart> combined;
         NodeSplit split;
         split.extent = 10;
-        split.slice = [&calls](const SplitPart& part, sycl::queue& queue, span<const sycl::event>, span<void* const> bound)
+        split.slice = [&calls](const SplitPart& part, sycl::queue& queue, span<const sycl::event>, BoundOperands bound)
         {
-            calls.push_back(SliceCall{part, &queue, std::vector<void*>(bound.begin(), bound.end())});
+            calls.push_back(SliceCall{part, &queue, pointers_of(bound)});
             return sycl::event();
         };
         split.combine = [&combined](span<const SplitPart> parts) { combined.assign(parts.begin(), parts.end()); };
@@ -126,7 +135,7 @@ namespace
         std::vector<std::size_t> sizes;
         NodeSplit split;
         split.extent = 4;
-        split.slice = [&sizes](const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const> bound)
+        split.slice = [&sizes](const SplitPart&, sycl::queue&, span<const sycl::event>, BoundOperands bound)
         {
             sizes.push_back(bound.size());
             return sycl::event();
@@ -216,7 +225,7 @@ namespace
         NodeSplit split;
         split.extent = 3;
         split.slice = [&gate, &log](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
-                                    span<void* const>)
+                                    BoundOperands)
         {
             const std::string index = std::to_string(part.index);
             log.add("submit " + index);
@@ -257,7 +266,7 @@ namespace
         NodeSplit split;
         split.extent = 1;
         split.slice = [&open_gate, &log](const SplitPart&, sycl::queue& on, span<const sycl::event> dependencies,
-                                         span<void* const>)
+                                         BoundOperands)
         {
             return gated_step(on, dependencies, open_gate, [&log] { log.add("part"); });
         };
@@ -284,7 +293,7 @@ namespace
                                                  [&unrelated_done] { unrelated_done.store(true); });
         NodeSplit split;
         split.extent = 1;
-        split.slice = [](const SplitPart&, sycl::queue& on, span<const sycl::event> dependencies, span<void* const>)
+        split.slice = [](const SplitPart&, sycl::queue& on, span<const sycl::event> dependencies, BoundOperands)
         {
             const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
             return on.submit([&](sycl::handler& handler)

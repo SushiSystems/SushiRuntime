@@ -632,12 +632,13 @@ The file tests Access: the regions it keeps in order and the observers of both s
 
 ## test_bound_operands.cpp
 
-The file tests `bound_operands()`: the operand pointers a task bound by handle reads during its body.
+The file tests `bound_operands()`: the operands a task bound by handle reads during its body, through the one `BoundOperands` view.
 
 | Test | What it proves |
 | --- | --- |
 | `Small_BoundOperands.OutsideABodyTheViewIsEmpty` | With no node dispatching, the view holds no pointer. |
 | `Small_BoundOperands.ATaskOnDeviceOneReadsTheCopiedInstanceInEveryKernel` | A table made by handle and bound on device 1 hands the copied instances to two kernels in a row; the home instances stay untouched. |
+| `Small_BoundOperands.AnOperandAskedForAnotherElementTypeIsRefused` | Inside a body, an operand of `int` is handed out as `int` and refused as `double`. |
 
 ## test_dispatch_events.cpp
 

@@ -44,7 +44,8 @@
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
+#include <SushiRuntime/memory/residency_writer.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/transfer/transfer_cost.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
@@ -88,12 +89,14 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Builds a planner over a directory, spaces, paths and a cost.
+                 * @brief Builds a planner over the two roles of a directory, spaces, paths and a cost.
+                 * @param reader Read for each buffer's size and instances; outlives the planner.
+                 * @param writer Locks each buffer's coherence map; outlives the planner.
                  * @param spaces The spaces in DeviceKey order; the first of two equal sources wins.
                  * @param paths  The paths in order of preference; the first of two equal paths wins.
                  * @param cost   Prices one copy over one path; pure.
                  */
-                CoherencePlanner(Memory::ResidencyView& directory,
+                CoherencePlanner(const Memory::ResidencyReader& reader, Memory::ResidencyWriter& writer,
                                  std::vector<const Memory::MemorySpace*> spaces,
                                  std::vector<const TransferPath*> paths, TransferCost cost);
 
@@ -195,8 +198,11 @@ namespace SushiRuntime
                 /** @brief Returns the space with id, or null when the planner has none. */
                 [[nodiscard]] const Memory::MemorySpace* space_with(MemorySpaceID id) const noexcept;
 
-                /// @brief Directory read for instances and start states.
-                Memory::ResidencyView* directory_;
+                /// @brief Role of the directory read for sizes and instances.
+                const Memory::ResidencyReader* reader_;
+
+                /// @brief Role of the directory that locks each buffer's coherence map.
+                Memory::ResidencyWriter* writer_;
 
                 /// @brief Spaces in DeviceKey order.
                 std::vector<const Memory::MemorySpace*> spaces_;

@@ -36,6 +36,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/handle/bound_operands.hpp>
 #include <SushiRuntime/machine/split_part.hpp>
 #include <SushiRuntime/machine/split_regions.hpp>
 
@@ -66,10 +67,11 @@ namespace SushiRuntime
          * @brief Submits the node's work over one part to the queue of the part's device and returns its event.
          *
          * The work depends on the given events and on nothing else, and the call never waits. The
-         * pointers are the node's kernel pointers bound on that device, in the order the node
-         * recorded them; they stay valid for the call only, so a kernel copies the ones it reads.
+         * operands are the node's kernel pointers bound on that device, in the order the node
+         * recorded them, each with its buffer's element layout; they stay valid for the call only,
+         * so a kernel copies the ones it reads.
          */
-        std::function<sycl::event(const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const>)> slice;
+        std::function<sycl::event(const SplitPart&, sycl::queue&, span<const sycl::event>, BoundOperands)> slice;
 
         /** @brief Joins the parts, given in slice order; empty when the parts need no join. */
         std::function<void(span<const SplitPart>)> combine;

@@ -42,7 +42,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -128,12 +128,12 @@ namespace SushiRuntime
         [[nodiscard]] inline sycl::usm::alloc usm_kind_of(
             Internal::Execution::RuntimeContext& context, GlobalHandle handle)
         {
-            const Internal::Memory::EntryView view = context.handle_ports().residency.inspect(handle);
+            const Internal::Memory::EntryView view = context.handle_ports().residency_reader.inspect(handle);
             if (view.status != HandleStatus::Ok)
                 return sycl::usm::alloc::unknown;
             if (view.home_kind)
                 return sycl_kind_of(*view.home_kind);
-            const ResolveOutcome home = context.handle_ports().residency.resolve(handle, view.home);
+            const ResolveOutcome home = context.handle_ports().residency_reader.resolve(handle, view.home);
             if (home.status != HandleStatus::Ok)
                 return sycl::usm::alloc::unknown;
             return usm_kind_of(context, home.address, Internal::Graph::device_of_space(view.home));

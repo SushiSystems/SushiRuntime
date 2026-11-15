@@ -130,7 +130,7 @@ namespace
         ASSERT_EQ(directory.set_instance(buffer, K_DEVICE_2, on_2.data()), HandleStatus::Ok);
 
         const std::vector<TransferPath*> paths{&same_context, &peer};
-        CoherencePlanner planner(directory, {&device_0_, &device_1_, &device_2_}, {&same_context, &peer},
+        CoherencePlanner planner(directory, directory, {&device_0_, &device_1_, &device_2_}, {&same_context, &peer},
                                  uniform_transfer_cost());
         auto access = [buffer](MemorySpaceID space, bool writes)
         {
@@ -145,7 +145,7 @@ namespace
         ASSERT_TRUE(plan);
         ASSERT_EQ(plan.value().steps.size(), 2U);
 
-        DirectoryPlannedNodeFactory factory(directory, nullptr, paths);
+        DirectoryPlannedNodeFactory factory(directory, directory, nullptr, paths);
         sycl::queue* const queue = queues_.queue_of(K_DEVICE_0);
         for (const PlannedStep& step : plan.value().steps)
         {

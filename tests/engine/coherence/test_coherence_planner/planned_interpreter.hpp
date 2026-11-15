@@ -193,7 +193,7 @@ namespace SushiRuntime
             }
 
             FakeTransferPath path;
-            CoherencePlanner planner(directory, spaces, {&path}, uniform_transfer_cost());
+            CoherencePlanner planner(directory, directory, spaces, {&path}, uniform_transfer_cost());
             std::vector<NodeAccess> accesses;
             for (const GraphNode& node : graph.nodes)
                 accesses.push_back(Detail::access_of(node, handles));
@@ -203,7 +203,7 @@ namespace SushiRuntime
             run.steps = plan.value().steps;
 
             const auto allocator = std::make_shared<HeapInstanceAllocator>();
-            DirectoryPlannedNodeFactory factory(directory, allocator, {&path});
+            DirectoryPlannedNodeFactory factory(directory, directory, allocator, {&path});
             const std::vector<PlannedEffect>& effects = plan.value().effects;
             std::size_t next = 0;
             std::size_t next_effect = 0;

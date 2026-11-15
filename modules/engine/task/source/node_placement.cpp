@@ -36,7 +36,6 @@
 #include <vector>
 
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
@@ -90,8 +89,8 @@ namespace SushiRuntime
          * @brief Returns the device @p node runs on, or the refusal of its stated device.
          */
         Result<std::size_t> placement_of(const Node& node,
-                                         const Internal::Memory::USMAllocator& memory,
-                                         const Internal::Memory::ResidencyView& handles)
+                                         const DeviceContexts& memory,
+                                         const HandleHomeReader& handles)
         {
             return placement_of(node, USMPlacementMemory(memory, handles));
         }

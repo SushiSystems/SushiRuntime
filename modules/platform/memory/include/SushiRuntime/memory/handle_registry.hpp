@@ -31,21 +31,24 @@
 #pragma once
 
 #include <cstddef>
+#include <SushiRuntime/handle/element_layout.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_space.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
+        /** @brief Names the layout of one element of a buffer, declared in the handle module. */
+        using SushiRuntime::ElementLayout;
+
         /**
          * @brief Mints and retires handles and records what each names; the API layer's side of
          *        the handle table.
          *
-         * Readers take a ResidencyView or a HandleResolver and never this port.
+         * Readers take a ResidencyReader or a HandleResolver and never this port.
          */
         class HandleRegistry : public HandleSpace
         {

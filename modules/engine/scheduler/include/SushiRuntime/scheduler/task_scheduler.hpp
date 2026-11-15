@@ -41,7 +41,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
@@ -63,7 +63,7 @@ namespace SushiRuntime
     namespace Internal::Observability { class ProfilingLedger; }
     namespace Internal::Topology { class TopologyView; }
     namespace Internal::Device { class DeviceQueueSet; }
-    namespace Internal::Memory { class USMAllocator; class ResidencyView; }
+    namespace Internal::Memory { class USMAllocator; }
 
     namespace Internal::Scheduler 
     {
@@ -103,7 +103,7 @@ namespace SushiRuntime
                               const Internal::Topology::TopologyView& topology,
                               Internal::Device::DeviceQueueSet& devices,
                               const Internal::Memory::USMAllocator& memory,
-                              const Internal::Memory::ResidencyView& handles,
+                              const HandleHomeReader& handles,
                               Profile::Collector& collector = Profile::process_collector());
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();

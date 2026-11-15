@@ -18,6 +18,10 @@ The design is in `docs/design/GLOBAL_HANDLE/README.md`.
 | `handle_status.hpp` | `HandleStatus` |
 | `handle_space.hpp` | `HandleSpace` and `MintOutcome` |
 | `handle_resolver.hpp` | `HandleResolver` and `ResolveOutcome` |
+| `handle_home_reader.hpp` | `HandleHomeReader`, `HandleHome` and `HomeMemory` |
+| `device_contexts.hpp` | `DeviceContexts` |
+| `element_layout.hpp` | `ElementLayout` |
+| `bound_operands.hpp` | `BoundOperands`, `OperandAddress` and `OperandStatus` |
 | `local_handle_space.hpp` | `LocalHandleSpace` and `K_LOCAL_HANDLE_UNIVERSE` |
 
 Every name is declared in `SushiRuntime`.
@@ -82,6 +86,37 @@ interfaces with no data. The runtime's residency directory will implement both.
 They return `MintOutcome` and `ResolveOutcome`, a value with a `HandleStatus`, and not the
 repository's `Result`. `Result` lives in `foundation/core`, and this module takes no dependency on
 another module.
+
+## handle_home_reader.hpp
+
+`HandleHomeReader` extends `HandleResolver` with `home_of()`, which says where a handle's buffer was
+made and what it holds: `HandleHome` carries the status, the home space, whether that space holds an
+instance, what the instance lives in (`HomeMemory`: host accessible, device only or unknown) and the
+`ElementLayout` of one element. A module that must not name the residency directory's own types takes
+this port: `engine/task` reads host visibility and element layout through it.
+
+## device_contexts.hpp
+
+`DeviceContexts` counts the devices of a runtime and says whether two of them share one memory context.
+`USMAllocator` implements it, and `engine/task` takes it where it needs the device count and the shared
+contexts, so its public headers name no `memory` type.
+
+## element_layout.hpp
+
+`ElementLayout` is the size and alignment of one element of a buffer. A layout of one byte aligned to
+one byte is raw bytes (`is_bytes()`).
+
+## bound_operands.hpp
+
+`BoundOperands` is the one view of the buffers a node bound by handle, in the order the node named
+them, each with its `ElementLayout`. `at<T>(position, byte_offset)` returns an `OperandAddress<T>`:
+the address and `OperandStatus::Ok`, or a null address and the reason. It refuses a position past the
+last operand (`OutOfRange`), an element type whose size or alignment differs from the buffer's
+(`ElementMismatch`) and an offset that is not on an element boundary of the type (`Misaligned`). A
+buffer of raw bytes is viewed as any trivially copyable type at an offset aligned for it. The runtime
+knows the layout of a buffer and not the type name, so two types of one size and alignment pass the
+same check. `untyped(position)` returns the table entry with no check, for a launch that holds its own
+pointer types. `of_bytes()` views a table whose buffers are all raw bytes, as a host replay does.
 
 ## local_handle_space.hpp
 

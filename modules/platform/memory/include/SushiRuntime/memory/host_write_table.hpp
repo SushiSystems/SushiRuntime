@@ -39,7 +39,7 @@
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/memory/host_write_log.hpp>
-#include <SushiRuntime/memory/residency_view.hpp>
+#include <SushiRuntime/memory/residency_reader.hpp>
 
 namespace SushiRuntime
 {
@@ -66,7 +66,7 @@ namespace SushiRuntime
                  * @brief Builds an empty table that checks liveness through @p residency.
                  * @param residency Must outlive the table.
                  */
-                explicit HostWriteTable(const ResidencyView& residency);
+                explicit HostWriteTable(const ResidencyReader& residency);
 
                 /** @brief Frees every chunk. */
                 ~HostWriteTable();
@@ -110,7 +110,7 @@ namespace SushiRuntime
                 [[nodiscard]] Mark* find_mark(std::uint32_t slot) const noexcept;
 
                 /// @brief Tells whether a handle is live.
-                const ResidencyView& residency_;
+                const ResidencyReader& residency_;
 
                 /// @brief Chunk pointers; slot s lives in chunk s / K_CHUNK_MARKS.
                 std::unique_ptr<std::atomic<Chunk*>[]> chunks_;

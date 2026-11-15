@@ -73,8 +73,8 @@ namespace
 
         pointers.bind(1);
 
-        ASSERT_EQ(pointers.size(), 1u);
-        EXPECT_EQ(pointers.table()[0], &copy);
+        ASSERT_EQ(pointers.operands().size(), 1u);
+        EXPECT_EQ(pointers.operands().untyped(0), &copy);
         EXPECT_EQ(pointers.resolved_binds(), 1u);
         EXPECT_EQ(pointers.home_binds(), 0u);
     }
@@ -93,7 +93,7 @@ namespace
         pointers.bind(0);
         pointers.bind(0);
 
-        EXPECT_EQ(pointers.table()[0], &home);
+        EXPECT_EQ(pointers.operands().untyped(0), &home);
         EXPECT_EQ(pointers.home_binds(), 2u);
         EXPECT_EQ(pointers.resolved_binds(), 0u);
     }
@@ -108,7 +108,7 @@ namespace
 
         pointers.bind(1);
 
-        EXPECT_EQ(pointers.table()[0], &home);
+        EXPECT_EQ(pointers.operands().untyped(0), &home);
         EXPECT_EQ(pointers.resolved_binds(), 1u);
     }
 
@@ -179,6 +179,19 @@ namespace
         EXPECT_EQ(slot.home_device, std::nullopt);
     }
 
+    /** @brief Tests that a slot made from the directory carries the element layout of its buffer. */
+    TEST(Small_KernelPointerSlot, ASlotCarriesTheElementLayoutOfItsBuffer)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Device);
+
+        const KernelPointerSlot slot = make_kernel_pointer_slot(directory, handle, &home, 2);
+
+        EXPECT_EQ(slot.layout, (ElementLayout{sizeof(int), alignof(int)}));
+    }
+
     /** @brief Tests that a slot made over shared USM is host visible. */
     TEST(Small_KernelPointerSlot, SharedUSMIsHostVisible)
     {
@@ -231,6 +244,22 @@ namespace
 
         EXPECT_FALSE(slot.host_visible);
         EXPECT_EQ(slot.home_device, std::nullopt);
+    }
+
+    /** @brief Tests that the view of a bound table refuses an element type that is not its buffer's. */
+    TEST(Small_KernelPointers, TheViewOfABoundTableRefusesAnElementTypeOfAnotherSize)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Device);
+        KernelPointers pointers({make_kernel_pointer_slot(directory, handle, &home, 2)}, directory);
+        pointers.bind(0);
+
+        const BoundOperands view = pointers.operands();
+
+        EXPECT_EQ(view.at<int>(0).address, &home);
+        EXPECT_EQ(view.at<double>(0).status, OperandStatus::ElementMismatch);
     }
 
     /** @brief Tests that a scope hands its table to current() and restores the one before it. */

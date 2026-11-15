@@ -34,6 +34,7 @@
 #include <memory>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/handle/device_contexts.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/memory/usm_source.hpp>
@@ -48,7 +49,7 @@ namespace SushiRuntime
          * Any thread may call any method; the caller orders two calls on one address.
          * @see modules/platform/memory/README.md
          */
-        class SUSHIRUNTIME_API USMAllocator final
+        class SUSHIRUNTIME_API USMAllocator final : public DeviceContexts
         {
             public:
                 /**
@@ -61,7 +62,7 @@ namespace SushiRuntime
                                       Profile::Collector& collector = Profile::process_collector());
 
                 /** @brief Leaves live allocations alone; their owners free them. */
-                ~USMAllocator() = default;
+                ~USMAllocator() override = default;
 
                 USMAllocator(const USMAllocator&) = delete;
                 USMAllocator& operator=(const USMAllocator&) = delete;
@@ -95,14 +96,14 @@ namespace SushiRuntime
                           std::size_t bytes);
 
                 /** @brief Counts the devices of the allocator, fixed at construction. */
-                [[nodiscard]] std::size_t device_count() const noexcept;
+                [[nodiscard]] std::size_t device_count() const noexcept override;
 
                 /**
                  * @brief Tells whether two devices of the source share one memory context.
                  * @pre Both indices name devices of the allocator.
                  * @see modules/platform/memory/README.md
                  */
-                [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const;
+                [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const override;
 
             private:
                 /**

@@ -91,6 +91,7 @@ two devices.
 | `ANodeOnTheHomeDeviceTakesTheFastPath` | A bind on the home device keeps the home address and counts only home binds. |
 | `AHostVisibleBufferWithNoInstanceThereKeepsItsHomeAddress` | A host-visible slot with no instance on the node's device keeps its home address. |
 | `AScopeOpensItsTableAndRestoresThePreviousOne` | Scopes nest, and each restores the table that was open before it. |
+| `TheViewOfABoundTableRefusesAnElementTypeOfAnotherSize` | The view of a bound table hands out its operand as `int` and refuses it as `double`, from the layout the slot took from the directory. |
 
 `Medium_KernelPointersDeathTest.ABindWithNoInstanceOnTheDeviceFailsItsVerify` binds a slot of device
 memory on a device that holds no instance, and checks the process stops with the handle's slot and
@@ -101,6 +102,7 @@ generation and the device in the message. A death test starts a child process.
 | Test | What it proves |
 | --- | --- |
 | `HostUSMIsHostVisible` | A home instance of kind `Host` is host visible, and the slot names its home device. |
+| `ASlotCarriesTheElementLayoutOfItsBuffer` | A slot made from the directory carries the size and alignment the buffer was described with. |
 | `ASlotMadeByHandleReadsItsHomeAddressFromTheDirectory` | A slot made from a handle alone takes the instance in its home space as its home address and names its home device. |
 | `ASlotMadeByHandleOfAPlannedBufferHasNoHomeAddress` | A slot made from the handle of a planned buffer with no home instance has a null home and no home device. |
 | `SharedUSMIsHostVisible` | A home instance of kind `Shared` is host visible. |

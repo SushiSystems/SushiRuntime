@@ -12,7 +12,7 @@ The module is internal: its headers are for the other modules of the library and
 | --- | --- | --- |
 | `core` | `core/export.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `core/assert.hpp` | Export macro, intrusive pointer, reference count, the check `Node::place_on()` makes |
 | `region` | `region/buffer_region.hpp` | The regions a node reads and writes |
-| `memory` | `memory/usm_allocator.hpp`, `memory/residency_view.hpp` (private) | Which device owns a region; the entry kind that makes a kernel pointer's home host visible |
+| `handle` | `handle/handle_home_reader.hpp`, `handle/device_contexts.hpp`, `handle/bound_operands.hpp`, `handle/element_layout.hpp` | The port that tells a handle's home, host visibility and element layout; the port that counts devices and says which share a context; the view a node's bound pointers are read through |
 | `report` | `report/dispatch_width.hpp` | `K_WIDTH_UNKNOWN` |
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
@@ -51,9 +51,9 @@ fields it stores behind `OffloadState::payload`.
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
 | `placed_split.hpp` | `Internal::Graph::PlacedSplit` and `Internal::Graph::PlacedSplitAccess`: the parts a partitioner cut a node into, each part's device index, axis range and bytes |
 | `split_dispatch.hpp` | `Internal::Graph::SplitDispatchPart`, `Internal::Graph::dispatch_split` and `Internal::Graph::join_split` (defined in `modules/engine/task/source/split_dispatch.cpp`): submit a split node's parts, each with its device's queue and the node's pointers bound there, then wait on their events and combine |
-| `kernel_pointers.hpp` | `Internal::Graph::KernelAddressing`, `Internal::Graph::KernelPointerSlot`, `Internal::Graph::home_is_host_visible`, `Internal::Graph::make_kernel_pointer_slot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): whether a node may leave its home device, and the pointers a node's kernel receives, bound on the node's device at each dispatch |
+| `kernel_pointers.hpp` | `Internal::Graph::KernelAddressing`, `Internal::Graph::KernelPointerSlot`, `Internal::Graph::home_is_host_visible`, `Internal::Graph::make_kernel_pointer_slot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): whether a node may leave its home device, and the pointers a node's kernel receives, bound on the node's device at each dispatch. The header names `handle` types only: a slot is made from a `HandleHomeReader`, and the bound table is read through `BoundOperands` |
 | `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count, the shared contexts and whether a handle's home is host visible |
-| `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from the residency directory (`ResidencyView`) and a `USMAllocator` |
+| `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from a `HandleHomeReader` and a `DeviceContexts` |
 | `in_memory_placement_memory.hpp` | `Internal::Graph::InMemoryPlacementMemory`, a test double of the port that answers from handles a test records |
 
 ## Metadata of a node
@@ -92,7 +92,7 @@ node on another device, the kernel must read the instance there. `Node::kernel_p
 `Node::execute()` calls `KernelPointers::bind()` with the node's device, `cached_queue_index_`, and
 opens a `KernelPointerScope` around the work; the capture launch's command group reads the table
 from the scope while it is built. `Node::execute_host()` does the same around a task's queue body,
-which reads the table through `bound_operands()` for every kernel it submits. A node with no table, or not yet placed, runs its work as before.
+which reads the table through `bound_operands()` for every kernel it submits. The scope hands out the node's table as one `BoundOperands` view (`KernelPointers::operands()`): the pointers of the last bind with the element layout of each slot's buffer. The API's `bound_operands()`, a capture launch, a split slice and the consumer libraries read that view and no other copy of the table. A node with no table, or not yet placed, runs its work as before.
 
 A host node whose body can fail sets `Node::checked_host_work`, a `CheckedHostWork` that returns
 `Result<sycl::event>`. `Task::execute_host_checked()` is the one entry the submission calls for a
@@ -107,14 +107,15 @@ fails its `SR_VERIFY` with a message naming the handle's slot and generation and
 the coherence plan should have copied the buffer there. `home_binds()` and `resolved_binds()` count
 the two cases.
 
-`make_kernel_pointer_slot()` builds a slot from the residency directory once, when the node is
-built, so `bind()` reads no entry kind. The home device is the lowest device whose instance is the
-recorded address. The home is host visible when the directory holds the home instance (its bit is
-set in `valid_spaces`) and one of these is true:
+`make_kernel_pointer_slot()` builds a slot from a `HandleHomeReader` once, when the node is
+built, so `bind()` reads no entry kind. The slot also takes the element layout of the buffer, which
+the view checks a typed read against. The home device is the lowest device whose instance is the
+recorded address. The home is host visible when the reader says the home space holds the instance
+(`HandleHome::resident`) and one of these is true:
 
 - the home is the host space;
-- the home instance's kind is `USMKind::Host` or `USMKind::Shared`;
-- the kind is unknown and the handle carries `HandleFlags::Borrowed`. The runtime is not told the
+- the home instance lives in host or shared USM (`HomeMemory::HostAccessible`);
+- the kind is unknown (`HomeMemory::Unknown`) and the handle carries `HandleFlags::Borrowed`. The runtime is not told the
   kind of borrowed caller memory, and whoever borrowed it vouches that the devices reach it.
 
 A planned buffer with no home instance yet, and device USM, are not host visible.
@@ -128,9 +129,9 @@ so on another device they keep their home address legitimately.
 
 `dispatch_split()` submits every part of a `NodeSplit` in slice order and waits on nothing. For each
 part it calls `KernelPointers::bind()` with the part's device and hands the slice the part, that
-device's queue, the node's input events and the bound table as a `span<void* const>`; it returns the
-event each slice returned. The next bind overwrites the table, so the span is valid during the call
-only and a kernel copies the pointers it reads. A node with no table gives an empty span. All parts
+device's queue, the node's input events and the bound operands as a `BoundOperands`; it returns the
+event each slice returned. The next bind overwrites the table, so the view is valid during the call
+only and a kernel copies the pointers it reads. A node with no table gives an empty view. All parts
 are in flight before any is joined. `join_split()` then waits on those part events only, never on
 a whole queue, so other work on a part's queue does not hold the node; that wait also drives a lazy
 event model such as AdaptiveCpp's. The combine, when the split has one, then receives the parts in
@@ -187,7 +188,7 @@ the table takes no lock. The scope's pointer is a `thread_local` defined once in
    there.
 
 The function needs no queue. It reads both answers through `PlacementMemory`, which is asked about
-a region's `GlobalHandle`; the form that takes a `USMAllocator` and a `ResidencyView` wraps them
+a region's `GlobalHandle`; the form that takes a `DeviceContexts` and a `HandleHomeReader` wraps them
 in `USMPlacementMemory`. Its `owning_device()` is the lowest device the handle resolves to an
 instance on, read from the resolver alone; the allocator keeps no address table and answers only
 `shares_context()`. A test passes

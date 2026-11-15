@@ -194,7 +194,7 @@ namespace
         std::vector<std::uint32_t> output(K_EXTENT, 0);
         NodeSplit split;
         split.extent = K_EXTENT;
-        split.slice = [&](const SplitPart& part, sycl::queue&, span<const sycl::event>, span<void* const>)
+        split.slice = [&](const SplitPart& part, sycl::queue&, span<const sycl::event>, BoundOperands)
         {
             for (std::uint64_t index = part.begin; index < part.end; ++index)
                 output[index] = input[index] * 3u + 1u;
@@ -211,7 +211,7 @@ namespace
         const std::vector<std::uint32_t> split_bytes = output;
 
         std::fill(output.begin(), output.end(), 0u);
-        (void)split.slice(SplitPart{0, 0, K_EXTENT, 0, 1}, *queue, span<const sycl::event>(), span<void* const>());
+        (void)split.slice(SplitPart{0, 0, K_EXTENT, 0, 1}, *queue, span<const sycl::event>(), BoundOperands());
 
         EXPECT_EQ(split_bytes, output);
     }
@@ -240,7 +240,7 @@ namespace
                 }
                 split_.extent = K_PRODUCT_EXTENT;
                 split_.slice = [this](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
-                                      span<void* const>)
+                                      BoundOperands)
                 {
                     std::uint32_t* output = outputs_[&queue == &queues_[0] ? 0 : 1];
                     const std::uint64_t begin = part.begin;

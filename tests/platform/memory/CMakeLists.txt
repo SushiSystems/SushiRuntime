@@ -14,7 +14,8 @@ sushiruntime_add_module_tests(
         compile_memory_log_category.cpp
         compile_memory_probe.cpp
         compile_memory_space.cpp
-        compile_residency_view.cpp
+        compile_residency_reader.cpp
+        compile_residency_writer.cpp
         compile_retire_source.cpp
         compile_usm_request.cpp
         compile_usm_source.cpp
@@ -29,6 +30,7 @@ sushiruntime_add_module_tests(
         test_host_write_table.cpp
         test_memory_pool_capacity.cpp
         test_residency_directory.cpp
+        test_residency_reader.cpp
         test_retire_observer.cpp
         test_sycl_queues.cpp
         test_sycl_usm_source.cpp

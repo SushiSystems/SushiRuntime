@@ -6,7 +6,11 @@
 sushiruntime_add_module_tests(
     MODULE handle
     SOURCES
+        compile_device_contexts.cpp
+        compile_handle_home_reader.cpp
+        test_bound_operands.cpp
         test_device_key.cpp
+        test_element_layout.cpp
         test_global_handle.cpp
         test_handle_resolver.cpp
         test_handle_space.cpp

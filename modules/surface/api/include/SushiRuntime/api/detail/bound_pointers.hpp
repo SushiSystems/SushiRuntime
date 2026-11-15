@@ -36,23 +36,29 @@
 #include <utility>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/handle/bound_operands.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         /**
-         * @brief Returns the pointer table the node being dispatched on this thread bound.
-         * @param count Number of pointers the caller reads.
-         * @return Null when no node bound a table, or when its size is not @p count.
+         * @brief Returns the operands the node being dispatched on this thread bound.
+         * @param count Number of operands the caller reads.
+         * @return An empty view when no node bound a table, or when its size is not @p count.
          */
-        [[nodiscard]] SUSHIRUNTIME_API void* const* dispatch_pointer_table(std::size_t count) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API BoundOperands dispatch_pointer_table(std::size_t count) noexcept;
 
-        /** @brief Builds the tuple of @p table's pointers, each cast to the type of its slot. */
+        /**
+         * @brief Builds the tuple of @p operands' pointers, each cast to the type of its slot.
+         *
+         * A capture launch holds the pointer types it recorded, so the cast is its own and the
+         * view is read untyped.
+         */
         template <class Pointers, std::size_t... Is>
-        Pointers pointers_from_table(void* const* table, std::index_sequence<Is...>) noexcept
+        Pointers pointers_from_table(const BoundOperands& operands, std::index_sequence<Is...>) noexcept
         {
-            return Pointers(static_cast<std::tuple_element_t<Is, Pointers>>(table[Is])...);
+            return Pointers(static_cast<std::tuple_element_t<Is, Pointers>>(operands.untyped(Is))...);
         }
 
         /**
@@ -65,10 +71,10 @@ namespace SushiRuntime
         Pointers bound_pointers(const Pointers& recorded) noexcept
         {
             constexpr std::size_t K_COUNT = std::tuple_size_v<Pointers>;
-            void* const* table = dispatch_pointer_table(K_COUNT);
-            if (table == nullptr)
+            const BoundOperands operands = dispatch_pointer_table(K_COUNT);
+            if (operands.is_empty())
                 return recorded;
-            return pointers_from_table<Pointers>(table, std::make_index_sequence<K_COUNT>{});
+            return pointers_from_table<Pointers>(operands, std::make_index_sequence<K_COUNT>{});
         }
     } // namespace Detail
 } // namespace SushiRuntime

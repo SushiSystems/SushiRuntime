@@ -63,13 +63,23 @@ namespace SushiRuntime
             const std::uint32_t* base_words = bindings.device_base;
             // The node's table holds the count slot's buffer, then the base slot's, bound on its device.
             const std::size_t slots = (count_words != nullptr ? 1U : 0U) + (base_words != nullptr ? 1U : 0U);
-            if (void* const* table = (slots == 0) ? nullptr : dispatch_pointer_table(slots))
+            const BoundOperands table = (slots == 0) ? BoundOperands() : dispatch_pointer_table(slots);
+            if (!table.is_empty())
             {
+                // A word buffer the view refuses as uint32_t keeps the address recorded at add().
                 std::size_t next = 0;
                 if (count_words != nullptr)
-                    count_words = static_cast<const std::uint32_t*>(table[next++]);
+                {
+                    const OperandAddress<const std::uint32_t> bound = table.at<const std::uint32_t>(next++);
+                    if (bound)
+                        count_words = bound.address;
+                }
                 if (base_words != nullptr)
-                    base_words = static_cast<const std::uint32_t*>(table[next]);
+                {
+                    const OperandAddress<const std::uint32_t> bound = table.at<const std::uint32_t>(next);
+                    if (bound)
+                        base_words = bound.address;
+                }
             }
             window.count_slot = (count_words != nullptr)
                 ? count_words + bindings.device_count_index : nullptr;

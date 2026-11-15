@@ -86,7 +86,7 @@ namespace
             /** @brief Returns a planner over every space in id order and the fake path. */
             CoherencePlanner planner(TransferCost cost = uniform_transfer_cost())
             {
-                return CoherencePlanner(directory_, spaces({0, 1, 2}), {&path_}, std::move(cost));
+                return CoherencePlanner(directory_, directory_, spaces({0, 1, 2}), {&path_}, std::move(cost));
             }
 
             /** @brief Returns a node on space that reads and writes the buffers named. */
@@ -164,8 +164,8 @@ namespace
         directory_.coherence(buffer_)->reset(K_BYTES, K_DEVICE_0);
         directory_.coherence(buffer_)->record_copy(0, K_BYTES, K_DEVICE_1);
 
-        CoherencePlanner by_id(directory_, spaces({0, 1, 2}), {&path_}, uniform_transfer_cost());
-        CoherencePlanner by_other_key(directory_, spaces({1, 0, 2}), {&path_}, uniform_transfer_cost());
+        CoherencePlanner by_id(directory_, directory_, spaces({0, 1, 2}), {&path_}, uniform_transfer_cost());
+        CoherencePlanner by_other_key(directory_, directory_, spaces({1, 0, 2}), {&path_}, uniform_transfer_cost());
         const std::vector<NodeAccess> nodes{node(K_DEVICE_2, {buffer_}, {})};
 
         const Result<CopyPlan> first = by_id.plan(nodes);
@@ -197,7 +197,7 @@ namespace
     TEST_F(Small_CoherencePlanner, ACopyNoPathMakesIsRefusedAsUnsupported)
     {
         ClosedTransferPath closed;
-        CoherencePlanner subject(directory_, spaces({0, 1, 2}), {&closed}, uniform_transfer_cost());
+        CoherencePlanner subject(directory_, directory_, spaces({0, 1, 2}), {&closed}, uniform_transfer_cost());
 
         const Result<CopyPlan> plan = subject.plan({node(K_DEVICE_1, {buffer_}, {})});
         ASSERT_FALSE(plan);

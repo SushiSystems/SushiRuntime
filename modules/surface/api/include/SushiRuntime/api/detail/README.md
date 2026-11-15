@@ -380,11 +380,13 @@ its argument pack.
 
 captured_node() takes the handle of each pointer, in pointer order, and keeps the handles and the
 recorded addresses in `pointer_handles` and `pointer_homes`. Its command group and its host form
-pass the pointers through bound_pointers() (`bound_pointers.hpp`), which returns the table the
+pass the pointers through bound_pointers() (`bound_pointers.hpp`), which returns the operands the
 dispatching node bound on its device (`modules/engine/task/README.md`, "The pointers a kernel
 receives"), cast to the type of each pointer, or the recorded pointers when no node bound one. The
-table is read through `dispatch_pointer_table()`, defined in `source/bound_pointers.cpp`, so no
-public header names an engine type. captured_node() sets `NodeDescription::rebindable`, since its
+operands are read through `dispatch_pointer_table()`, defined in `source/bound_pointers.cpp` over
+`bound_operands()`, so no public header names an engine type and no second copy of the table exists.
+The cast to each pointer's type is the launch's own: it holds the types it recorded, so the view is
+read untyped there. captured_node() sets `NodeDescription::rebindable`, since its
 kernel reads no address but the bound ones.
 
 ### late_count_resolver_node

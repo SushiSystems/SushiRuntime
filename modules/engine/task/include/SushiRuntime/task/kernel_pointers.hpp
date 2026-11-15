@@ -36,17 +36,14 @@
 #include <vector>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/handle/bound_operands.hpp>
+#include <SushiRuntime/handle/element_layout.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 #include <SushiRuntime/handle/handle_resolver.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Memory
-    {
-        class ResidencyView;
-        struct EntryView;
-    }
-
     namespace Internal::Graph
     {
         /**
@@ -67,25 +64,26 @@ namespace SushiRuntime
             void* home = nullptr;                   /**< Address recorded at add(). */
             std::optional<std::size_t> home_device; /**< Device that holds the home instance; none for host or planned memory. */
             bool host_visible = false;              /**< The home instance is host memory every device reads in place. */
+            ElementLayout layout{};                 /**< Layout of one element of the buffer; raw bytes until stated. */
         };
 
         /**
          * @brief Returns whether every device reads the home instance of @p handle in place,
          *        the one rule of host visibility.
-         * @param entry What the residency directory holds for @p handle.
+         * @param home Where the buffer of @p handle was made and what its home instance lives in.
          * @see modules/engine/task/README.md
          */
-        [[nodiscard]] SUSHIRUNTIME_API bool home_is_host_visible(const Internal::Memory::EntryView& entry,
+        [[nodiscard]] SUSHIRUNTIME_API bool home_is_host_visible(const HandleHome& home,
                                                                  GlobalHandle handle) noexcept;
 
         /**
          * @brief Returns the slot of the pointer @p home into @p handle, read from @p directory:
-         *        its home device, and whether its home is host visible.
+         *        its element layout, its home device, and whether its home is host visible.
          * @param device_count Devices to look for the home instance on.
          * @see modules/engine/task/README.md
          */
         [[nodiscard]] SUSHIRUNTIME_API KernelPointerSlot
-        make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory, GlobalHandle handle,
+        make_kernel_pointer_slot(const HandleHomeReader& directory, GlobalHandle handle,
                                  void* home, std::size_t device_count);
 
         /**
@@ -95,7 +93,7 @@ namespace SushiRuntime
          * @see modules/engine/task/README.md
          */
         [[nodiscard]] SUSHIRUNTIME_API KernelPointerSlot
-        make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory, GlobalHandle handle,
+        make_kernel_pointer_slot(const HandleHomeReader& directory, GlobalHandle handle,
                                  std::size_t device_count);
 
         /**
@@ -124,11 +122,17 @@ namespace SushiRuntime
                  */
                 SUSHIRUNTIME_API void bind(std::size_t device) noexcept;
 
-                /** @brief Returns the pointers of the last bind(), one per slot, in slot order. */
-                [[nodiscard]] void* const* table() const noexcept { return bound_.data(); }
-
-                /** @brief Returns the number of slots. */
-                [[nodiscard]] std::size_t size() const noexcept { return bound_.size(); }
+                /**
+                 * @brief Returns the view of the pointers of the last bind(), one per slot, in slot
+                 *        order, each with the layout of its buffer's elements.
+                 *
+                 * The view is the one way the dispatched node's body, the API and a consumer read
+                 * the table. It stays valid until the next bind().
+                 */
+                [[nodiscard]] BoundOperands operands() const noexcept
+                {
+                    return BoundOperands(bound_.data(), layouts_.data(), bound_.size());
+                }
 
                 /** @brief Returns how many bind() calls read no directory, every slot being at home. */
                 [[nodiscard]] std::uint64_t home_binds() const noexcept { return home_binds_; }
@@ -139,6 +143,7 @@ namespace SushiRuntime
             private:
                 std::vector<KernelPointerSlot> slots_; /**< What each pointer stands for. */
                 std::vector<void*> bound_;             /**< The pointers of the last bind(). */
+                std::vector<ElementLayout> layouts_;   /**< The element layout of each slot's buffer. */
                 const HandleResolver* resolver_;       /**< The directory the slots resolve through. */
                 std::uint64_t home_binds_ = 0;         /**< Binds that took the home fast path. */
                 std::uint64_t resolved_binds_ = 0;     /**< Binds that read the directory. */

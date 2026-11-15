@@ -34,12 +34,12 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
+#include <SushiRuntime/handle/handle_home_reader.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Graph { struct Node; }
-    namespace Internal::Memory { class USMAllocator; class ResidencyView; }
+    namespace Internal::Memory { class USMAllocator; }
 
     namespace Internal::Scheduler
     {
@@ -53,7 +53,7 @@ namespace SushiRuntime
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void>
         place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
-                           const Internal::Memory::ResidencyView& handles, std::size_t device_count);
+                           const HandleHomeReader& handles, std::size_t device_count);
 
     } // namespace Scheduler
 } // namespace SushiRuntime

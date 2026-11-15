@@ -23,26 +23,25 @@
 
 /**
  * @file bound_pointers.cpp
- * @brief Defines dispatch_pointer_table() over the engine's kernel pointer scope.
+ * @brief Defines dispatch_pointer_table() over bound_operands(), the one view of the bound table.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
 
 #include <SushiRuntime/api/detail/bound_pointers.hpp>
 
-#include <SushiRuntime/task/kernel_pointers.hpp>
+#include <SushiRuntime/api/graph/bound_operands.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        void* const* dispatch_pointer_table(std::size_t count) noexcept
+        BoundOperands dispatch_pointer_table(std::size_t count) noexcept
         {
-            const Internal::Graph::KernelPointers* open =
-                Internal::Graph::KernelPointerScope::current();
-            if (open == nullptr || open->size() != count)
-                return nullptr;
-            return open->table();
+            const BoundOperands operands = bound_operands();
+            if (operands.size() != count)
+                return BoundOperands();
+            return operands;
         }
     } // namespace Detail
 } // namespace SushiRuntime
