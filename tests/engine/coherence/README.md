@@ -9,15 +9,11 @@ speed per device, with the builders `host_key()` and `round_profile()`.
 copies with `memcpy`, `ClosedTransferPath` connects none, and `FixedMemoryProbe` reports one
 gigabyte free.
 
-<<<<<<< ours
 `transfer_path_doubles.hpp` holds the doubles of the path tests: `CPUSpaceQueues` answers one SYCL CPU
 queue for every space, `FixedPeerAccess` grants or refuses every request and counts them, and
 `RecordingTransferObserver` keeps each copy it hears.
 
-## compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
-=======
-## compile_instance_allocator.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp and compile_transfer_path.cpp
->>>>>>> theirs
+## compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
 
