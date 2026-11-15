@@ -127,6 +127,8 @@ namespace SushiRuntime
             description.pointer_handles = std::move(handles);
             description.pointer_homes =
                 pointer_addresses(pointers, std::make_index_sequence<K_POINTERS>{});
+            // The kernel reads no address but the bound pointers, so it may run on any device.
+            description.rebindable = true;
             std::decay_t<F> body(std::forward<F>(kernel));
             if constexpr (has_host_form_v<Launch>)
                 description.host_form = [body, launch, pointers]()

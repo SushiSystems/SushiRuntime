@@ -258,9 +258,9 @@ namespace SushiRuntime
                     options.width == K_WIDTH_UNKNOWN ? capacity : options.width;
 
                 const std::size_t rule = record(
-                    Detail::dynamic_node(
+                    Detail::with_device_slots(window, Detail::dynamic_node(
                         bindings, *fault, std::move(access.reads), std::move(access.writes),
-                        capacity, std::forward<F>(kernel_body), width),
+                        capacity, std::forward<F>(kernel_body), width)),
                     access.lives, options);
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
                 return rule;
@@ -568,9 +568,9 @@ namespace SushiRuntime
                 Detail::gather_life(lives, state);
                 Detail::LiveFields live = live_fields_of(options, view);
                 const std::size_t rule = record(
-                    Detail::dynamic_state_node(
+                    Detail::with_device_slots(window, Detail::dynamic_state_node(
                         view, view->size, bindings, *fault, std::move(slot_reads),
-                        std::forward<F>(kernel_body), std::move(live)),
+                        std::forward<F>(kernel_body), std::move(live))),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 steps_.register_binding_updater(std::move(bindings), std::move(window));

@@ -63,7 +63,7 @@ namespace SushiRuntime
     namespace Internal::Observability { class ProfilingLedger; }
     namespace Internal::Topology { class TopologyView; }
     namespace Internal::Device { class DeviceQueueSet; }
-    namespace Internal::Memory { class USMAllocator; }
+    namespace Internal::Memory { class USMAllocator; class ResidencyView; }
 
     namespace Internal::Scheduler 
     {
@@ -103,7 +103,7 @@ namespace SushiRuntime
                               const Internal::Topology::TopologyView& topology,
                               Internal::Device::DeviceQueueSet& devices,
                               const Internal::Memory::USMAllocator& memory,
-                              const HandleResolver& handles,
+                              const Internal::Memory::ResidencyView& handles,
                               Profile::Collector& collector = Profile::process_collector());
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();

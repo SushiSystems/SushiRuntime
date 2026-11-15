@@ -30,7 +30,9 @@
 
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 
+#include <initializer_list>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -64,6 +66,19 @@ namespace SushiRuntime
                 register_device_slot(base, reads, lives);
             }
             return surface_controls(lb);
+        }
+
+        NodeDescription with_device_slots(const Dynamic& dyn, NodeDescription description)
+        {
+            for (const DeviceSlot* slot : {&DynamicAccess::count_slot(dyn), &DynamicAccess::base_slot(dyn)})
+            {
+                if (slot->words == nullptr)
+                    continue;
+                description.pointer_handles.push_back(slot->buffer);
+                description.pointer_homes.push_back(
+                    const_cast<void*>(static_cast<const void*>(slot->words)));
+            }
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

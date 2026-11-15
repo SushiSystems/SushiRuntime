@@ -290,9 +290,11 @@ process through `SR_VERIFY`, as allocate() does.
 
 `shares_context(first, second)` asks the source whether two devices share one memory context;
 the SYCL source compares their queues' contexts. The task module's
-`placement_of()` asks it before a stated device wins over the device that owns a node's memory,
-since USM is only usable from the context it was allocated in. `device_count()` lets it check an
-index first, because `shares_context()` stops the process on an index past the devices.
+`placement_of()` asks it before a node whose kernel captured raw addresses runs on a stated device
+other than the one that owns its memory, since USM is only usable from the context it was
+allocated in. A node whose pointers are rebound to the stated device's instance is not asked
+about. `device_count()` lets it check an index first, because `shares_context()` stops the process
+on an index past the devices.
 
 ## coherence_intervals.hpp
 

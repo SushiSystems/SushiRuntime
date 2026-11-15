@@ -45,6 +45,7 @@
 #include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
@@ -54,15 +55,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Returns whether the host reads the home instance of a buffer without a copy. */
-            bool home_is_host_visible(const Internal::Memory::EntryView& entry) noexcept
-            {
-                if (entry.home == Internal::Graph::host_memory_space())
-                    return true;
-                return entry.home_kind == Internal::Memory::USMKind::Host ||
-                       entry.home_kind == Internal::Memory::USMKind::Shared;
-            }
-
             /**
              * @brief Returns the buffers nodes touch whose home the host can read.
              *
@@ -82,7 +74,7 @@ namespace SushiRuntime
                 }
                 std::set<GlobalHandle> read;
                 for (GlobalHandle handle : touched)
-                    if (home_is_host_visible(directory.inspect(handle)))
+                    if (Internal::Graph::home_is_host_visible(directory.inspect(handle), handle))
                         read.insert(handle);
                 return read;
             }

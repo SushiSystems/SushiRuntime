@@ -507,7 +507,8 @@ The tests read the device a task ran on back through `Runtime::advanced().queue(
 | Test | What it proves |
 | --- | --- |
 | `ATaskOverBorrowedMemoryRunsOnTheDeviceItStates` | A task that writes a buffer borrowed over host memory and states the runtime's last device is handed that device's queue. |
-| `AStatedDeviceInTheOwnersContextWinsOverTheOwner` | A task over a buffer the runtime allocated on device 0 that states another device of device 0's context is handed the stated device's queue; skipped when no such device exists. |
+| `AStatedDeviceInTheOwnersContextWinsOverTheOwner` | A task over a shared buffer the runtime allocated on device 0 that states another device of device 0's context is handed the stated device's queue; skipped when no such device exists. |
+| `AStatedSiblingDeviceOverDeviceUSMIsRefused` | The same task over a `Residency::Device` buffer fails the run with an `InvalidGraph` error naming the device USM, and its body never runs: device USM is not addressable from a sibling device. Skipped when no such device exists. |
 | `AStatedDeviceInAnotherContextIsRefused` | The same task stating a device outside device 0's context fails the run with an `InvalidGraph` error naming the other context, and its body never runs; skipped when every device shares device 0's context. |
 | `ATaskThatStatesNoDeviceRunsOnTheOwner` | A task that states no device, over a buffer allocated on the last device, is handed that device's queue. |
 | `Regression_ARuleNamingDeviceOneRunsTheNodeThere` | A task that states no device and names no region, recorded in the scope a rule for device 1 matches, is handed device 1's queue; skipped below two devices. |

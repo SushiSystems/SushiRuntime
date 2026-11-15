@@ -41,15 +41,52 @@
 
 namespace SushiRuntime
 {
+    namespace Internal::Memory
+    {
+        class ResidencyView;
+        struct EntryView;
+    }
+
     namespace Internal::Graph
     {
+        /**
+         * @brief Says whether every address a node's kernel reads can be rebound to another
+         *        device's instance.
+         * @see modules/engine/task/README.md
+         */
+        enum class KernelAddressing : std::uint8_t
+        {
+            FixedToHome, /**< The kernel captured raw addresses; it runs only on the home device of its data. */
+            Rebindable   /**< Every address the kernel reads comes from the node's KernelPointers table. */
+        };
+
         /** @brief Describes one pointer a kernel receives: its buffer and its home instance. */
         struct KernelPointerSlot
         {
             GlobalHandle handle;                    /**< Buffer the pointer points into. */
             void* home = nullptr;                   /**< Address recorded at add(). */
             std::optional<std::size_t> home_device; /**< Device that holds the home instance; none for host or planned memory. */
+            bool host_visible = false;              /**< The home instance is host memory every device reads in place. */
         };
+
+        /**
+         * @brief Returns whether every device reads the home instance of @p handle in place,
+         *        the one rule of host visibility.
+         * @param entry What the residency directory holds for @p handle.
+         * @see modules/engine/task/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API bool home_is_host_visible(const Internal::Memory::EntryView& entry,
+                                                                 GlobalHandle handle) noexcept;
+
+        /**
+         * @brief Returns the slot of the pointer @p home into @p handle, read from @p directory:
+         *        its home device, and whether its home is host visible.
+         * @param device_count Devices to look for the home instance on.
+         * @see modules/engine/task/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API KernelPointerSlot
+        make_kernel_pointer_slot(const Internal::Memory::ResidencyView& directory, GlobalHandle handle,
+                                 void* home, std::size_t device_count);
 
         /**
          * @brief Holds the pointers one node's kernel receives, rebound to the node's device at
@@ -71,8 +108,9 @@ namespace SushiRuntime
                 /**
                  * @brief Points every slot at its buffer's instance on @p device.
                  *
-                 * A slot whose buffer has no instance there keeps its home address, which is how
-                 * host, borrowed and shared memory is reached.
+                 * A slot whose buffer has no instance there keeps its home address only when that
+                 * home is host visible; any other such slot stops the process with a message that
+                 * names the handle and the device.
                  */
                 SUSHIRUNTIME_API void bind(std::size_t device) noexcept;
 

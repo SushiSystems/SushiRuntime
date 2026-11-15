@@ -38,7 +38,7 @@
 #include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -57,15 +57,15 @@ namespace SushiRuntime
                            std::optional<std::uint32_t> registration);
 
         /**
-         * @brief Gives a capture launch's node the table of its kernel's pointers, which each
-         *        dispatch binds on the node's device; a node with no pointer gets none.
+         * @brief Gives a node the table of its kernel's pointers, which each dispatch binds on
+         *        the node's device; a node with no pointer gets none.
          * @param handles The directory the pointers resolve through; outlives the node.
          * @param device_count Devices of the runtime.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         SUSHIRUNTIME_API void attach_kernel_pointers(Internal::Graph::Node& node,
                                                      const NodeDescription& description,
-                                                     const HandleResolver& handles,
+                                                     const Internal::Memory::ResidencyView& handles,
                                                      std::size_t device_count);
 
         /**

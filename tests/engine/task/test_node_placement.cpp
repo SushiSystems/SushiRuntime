@@ -137,8 +137,21 @@ TEST_F(Small_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
 }
 
-/** @brief Tests that a stated device in the owner's context outranks the owner. */
-TEST_F(Small_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
+/** @brief Tests that a rebindable node's stated device in the owner's context outranks the owner. */
+TEST_F(Small_NodePlacementRule, ARebindableNodesStatedDeviceInTheOwnersContextOutranksTheOwner)
+{
+    int cell = 0;
+    memory_.record(TestSupport::region_at(&cell).base, 1);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
+    node->kernel_addressing = SushiRuntime::Internal::Graph::KernelAddressing::Rebindable;
+    node->place_on(0);
+
+    EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
+}
+
+/** @brief Tests that a fixed node runs on another device of the owner's context when its memory is host visible. */
+TEST_F(Small_NodePlacementRule, AFixedNodeOverHostVisibleMemoryRunsOnAnotherDeviceOfTheOwnersContext)
 {
     int cell = 0;
     memory_.record(TestSupport::region_at(&cell).base, 1);
@@ -146,11 +159,34 @@ TEST_F(Small_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
     node->io_writes_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(0);
 
-    EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
+    EXPECT_EQ(placement_of(*node, memory_).value(), 0u) << "its raw addresses hold on every device of the context";
 }
 
-/** @brief Tests that a stated device in another SYCL context than the owner's is refused, naming the owner. */
-TEST_F(Small_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
+/** @brief Tests that a fixed node is refused on a sibling device when one of its regions is device USM of another device. */
+TEST_F(Small_NodePlacementRule, AFixedNodeOverDeviceUSMIsRefusedOnASiblingDevice)
+{
+    int shared_cell = 0;
+    int device_cell = 0;
+    memory_.record(TestSupport::region_at(&shared_cell).base, 0);
+    memory_.record(TestSupport::region_at(&device_cell).base, 1);
+    memory_.record_device_only(TestSupport::region_at(&device_cell).base);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(TestSupport::region_at(&shared_cell));
+    node->io_reads_.emplace_back(TestSupport::region_at(&device_cell));
+    node->place_on(1);
+    const sushi_ptr<Node> elsewhere = make_sushi<Node>();
+    elsewhere->io_writes_.emplace_back(TestSupport::region_at(&device_cell));
+    elsewhere->place_on(0);
+
+    EXPECT_EQ(placement_of(*node, memory_).value(), 1u) << "the device USM lives on the stated device";
+    const SushiRuntime::Result<std::size_t> placed = placement_of(*elsewhere, memory_);
+    ASSERT_FALSE(placed);
+    EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
+    EXPECT_NE(placed.error().message.find("device 1 as device USM"), std::string::npos) << placed.error().message;
+}
+
+/** @brief Tests that a fixed node's stated device in another SYCL context than the owner's is refused, naming the owner. */
+TEST_F(Small_NodePlacementContexts, AFixedNodeIsRefusedOnAStatedDeviceInAnotherContext)
 {
     int cell = 0;
     memory_.record(TestSupport::region_at(&cell).base, 1);
@@ -162,13 +198,25 @@ TEST_F(Small_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
 
     ASSERT_FALSE(placed);
     EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
-    EXPECT_NE(placed.error().message.find("device 1 in another SYCL context"), std::string::npos)
-        << placed.error().message;
+    EXPECT_NE(placed.error().message.find("device 1 in another SYCL context"), std::string::npos) << placed.error().message;
     EXPECT_NE(placed.error().message.find("raw addresses"), std::string::npos) << placed.error().message;
 }
 
-/** @brief Tests that a node with a kernel pointer table is placed on a stated device in another context than the owner's. */
-TEST_F(Small_NodePlacementContexts, ANodeWithAPointerTableIsPlacedOnAStatedDeviceInAnotherContext)
+/** @brief Tests that a rebindable node is placed on a stated device in another context than the owner's. */
+TEST_F(Small_NodePlacementContexts, ARebindableNodeIsPlacedOnAStatedDeviceInAnotherContext)
+{
+    int cell = 0;
+    memory_.record(TestSupport::region_at(&cell).base, 1);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
+    node->kernel_addressing = SushiRuntime::Internal::Graph::KernelAddressing::Rebindable;
+    node->place_on(0);
+
+    EXPECT_EQ(placement_of(*node, memory_).value(), 0u) << "the planner copies the region to device 0";
+}
+
+/** @brief Tests that a pointer table alone does not make a node rebindable: the marking is explicit. */
+TEST_F(Small_NodePlacementContexts, APointerTableAloneLeavesTheNodeFixed)
 {
     int cell = 0;
     memory_.record(TestSupport::region_at(&cell).base, 1);
@@ -179,7 +227,10 @@ TEST_F(Small_NodePlacementContexts, ANodeWithAPointerTableIsPlacedOnAStatedDevic
         std::vector<SushiRuntime::Internal::Graph::KernelPointerSlot>{}, directory);
     node->place_on(0);
 
-    EXPECT_EQ(placement_of(*node, memory_).value(), 0u) << "the planner copies the region to device 0";
+    const SushiRuntime::Result<std::size_t> placed = placement_of(*node, memory_);
+
+    ASSERT_FALSE(placed) << "a dynamic node binds its device slots through a table and stays fixed";
+    EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
 }
 
 /** @brief Tests that stating the owner itself is accepted, whatever the contexts. */
@@ -253,6 +304,11 @@ namespace
             [[nodiscard]] bool shares_context(std::size_t, std::size_t) const override
             {
                 return true;
+            }
+
+            [[nodiscard]] bool host_visible(SushiRuntime::GlobalHandle) const override
+            {
+                return false;
             }
     };
 } // namespace

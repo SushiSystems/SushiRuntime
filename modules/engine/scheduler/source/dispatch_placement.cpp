@@ -33,6 +33,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -43,7 +44,7 @@ namespace SushiRuntime
     namespace Internal::Scheduler
     {
         Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& allocator,
-                                        const HandleResolver& handles, std::size_t device_count)
+                                        const Internal::Memory::ResidencyView& handles, std::size_t device_count)
         {
             const Internal::Graph::USMPlacementMemory memory(allocator, handles);
 

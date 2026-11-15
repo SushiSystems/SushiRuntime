@@ -12,7 +12,7 @@ The module is internal: its headers are for the other modules of the library and
 | --- | --- | --- |
 | `core` | `core/export.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `core/assert.hpp` | Export macro, intrusive pointer, reference count, the check `Node::place_on()` makes |
 | `region` | `region/buffer_region.hpp` | The regions a node reads and writes |
-| `memory` | `memory/usm_allocator.hpp` | Which device owns a region |
+| `memory` | `memory/usm_allocator.hpp`, `memory/residency_view.hpp` (private) | Which device owns a region; the entry kind that makes a kernel pointer's home host visible |
 | `report` | `report/dispatch_width.hpp` | `K_WIDTH_UNKNOWN` |
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
@@ -49,9 +49,9 @@ fields it stores behind `OffloadState::payload`.
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of`, `Internal::Graph::anchor_of` and `Internal::Graph::anchor_device` (defined in `modules/engine/task/source/node_placement.cpp`): the one anchor rule, the handle a node is anchored to and its owning device, and the device a node runs on |
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
-| `kernel_pointers.hpp` | `Internal::Graph::KernelPointerSlot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): the pointers a node's kernel receives, bound on the node's device at each dispatch |
-| `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count and the shared contexts |
-| `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from a `HandleResolver` and a `USMAllocator` |
+| `kernel_pointers.hpp` | `Internal::Graph::KernelAddressing`, `Internal::Graph::KernelPointerSlot`, `Internal::Graph::home_is_host_visible`, `Internal::Graph::make_kernel_pointer_slot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): whether a node may leave its home device, and the pointers a node's kernel receives, bound on the node's device at each dispatch |
+| `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count, the shared contexts and whether a handle's home is host visible |
+| `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from the residency directory (`ResidencyView`) and a `USMAllocator` |
 | `in_memory_placement_memory.hpp` | `Internal::Graph::InMemoryPlacementMemory`, a test double of the port that answers from handles a test records |
 
 ## Metadata of a node
@@ -92,9 +92,43 @@ opens a `KernelPointerScope` around the work; the capture launch's command group
 from the scope while it is built. A node with no table, or not yet placed, runs its work as before.
 
 `bind()` keeps the home address of a slot whose home device is the node's device and reads no
-directory. Any other slot is resolved with `resolve_on_device()`, which is lock-free; a buffer with
-no instance there keeps its home address, which is how host, borrowed and shared memory is reached.
-`home_binds()` and `resolved_binds()` count the two cases. One thread dispatches a node at a time, so
+directory. Any other slot is resolved with `resolve_on_device()`, which is lock-free. A buffer with
+no instance there keeps its home address only when its slot is host visible; otherwise `bind()`
+fails its `SR_VERIFY` with a message naming the handle's slot and generation and the device, since
+the coherence plan should have copied the buffer there. `home_binds()` and `resolved_binds()` count
+the two cases.
+
+`make_kernel_pointer_slot()` builds a slot from the residency directory once, when the node is
+built, so `bind()` reads no entry kind. The home device is the lowest device whose instance is the
+recorded address. The home is host visible when the directory holds the home instance (its bit is
+set in `valid_spaces`) and one of these is true:
+
+- the home is the host space;
+- the home instance's kind is `USMKind::Host` or `USMKind::Shared`;
+- the kind is unknown and the handle carries `HandleFlags::Borrowed`. The runtime is not told the
+  kind of borrowed caller memory, and whoever borrowed it vouches that the devices reach it.
+
+A planned buffer with no home instance yet, and device USM, are not host visible.
+
+A `Dynamic`'s device count and device base slots go through the same table: the recorder appends
+the count slot's buffer, then the base slot's, to the node's pointers, and `read_late_window()`
+reads both addresses from the table the dispatching node bound. Those slots are `Residency::Host`,
+so on another device they keep their home address legitimately.
+
+### Which nodes may leave their home device
+
+`Node::kernel_addressing` says whether a node's kernel may run away from the home of its data.
+It defaults to `KernelAddressing::FixedToHome`. The node builder in the API sets it to
+`Rebindable` only for a capture launch, whose description sets `NodeDescription::rebindable`,
+because every address that kernel reads comes from its table. A launch, a raw command group, an
+untracked node, a task body, a host body, a `State` rule and a dynamic node capture raw addresses
+in their own closures and stay fixed. The flag is never inferred from the table: a dynamic node
+has a table for its device slots and is still fixed. A fixed node may still run on another
+device where its raw addresses hold; "Placement rule order" says where.
+
+`home_is_host_visible()` holds the host-visibility rule above. `make_kernel_pointer_slot()`,
+`USMPlacementMemory::host_visible()` and the API's coherence planning
+(`modules/surface/api/source/region_coherence.cpp`) all call it, so the rule is written once. One thread dispatches a node at a time, so
 the table takes no lock. The scope's pointer is a `thread_local` defined once in
 `source/kernel_pointers.cpp` and exported, for the reason given for `DispatchEventScope`.
 
@@ -103,16 +137,21 @@ the table takes no lock. The scope's pointer is a `thread_local` defined once in
 `placement_of()` returns the device a node runs on, or a refusal, in this order:
 
 1. A stated device (`Node::place_on()`) on a node whose first write region, else first read
-   region, a device owns: the stated device when its queue shares a SYCL context with the
-   owner's, or when the node has a `KernelPointers` table, which rebinds each captured buffer to
-   the instance on the stated device while the coherence planner copies the regions there.
-   Otherwise, a node with no table, whose kernel captured raw addresses, gets an
-   `ErrorCode::InvalidGraph` error naming that reason. The node is never moved silently.
+   region, a device owns: the stated device when the node is `KernelAddressing::Rebindable`, whose
+   table rebinds each captured buffer to the instance on the stated device while the coherence
+   planner copies the regions there. A node `FixedToHome` runs where its raw addresses are valid:
+   on the stated device when it shares the owner's SYCL context and no region's home is device
+   USM of another device. Otherwise it gets an `ErrorCode::InvalidGraph` error naming the device
+   that holds the memory, "in another SYCL context" or "as device USM", and the raw addresses.
+   A region's home counts as device USM when `PlacementMemory::host_visible()` says no; that port
+   answers through `home_is_host_visible()`, the one rule of host visibility. The node is never
+   moved silently. A stated index past the devices is returned as stated, for the dispatch to
+   refuse.
 2. No stated device: the owner.
 3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
 
 The function needs no queue. It reads both answers through `PlacementMemory`, which is asked about
-a region's `GlobalHandle`; the form that takes a `USMAllocator` and a `HandleResolver` wraps them
+a region's `GlobalHandle`; the form that takes a `USMAllocator` and a `ResidencyView` wraps them
 in `USMPlacementMemory`. Its `owning_device()` is the lowest device the handle resolves to an
 instance on, read from the resolver alone; the allocator keeps no address table and answers only
 `shares_context()`. A test passes

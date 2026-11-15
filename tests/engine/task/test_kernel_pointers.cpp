@@ -23,13 +23,14 @@
 
 /**
  * @file test_kernel_pointers.cpp
- * @brief Tests KernelPointers, the per-node pointer table bound on the node's device, and its scope.
+ * @brief Tests KernelPointers, its slots and its scope: a node's pointers bound on its device.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -97,18 +98,110 @@ namespace
         EXPECT_EQ(pointers.resolved_binds(), 0u);
     }
 
-    /** @brief Tests that a buffer with no instance on the node's device keeps its home address. */
-    TEST(Small_KernelPointers, ABufferWithNoInstanceThereKeepsItsHomeAddress)
+    /** @brief Tests that a host-visible buffer with no instance on the node's device keeps its home address. */
+    TEST(Small_KernelPointers, AHostVisibleBufferWithNoInstanceThereKeepsItsHomeAddress)
     {
         Internal::Memory::ResidencyDirectory directory(0);
         int home = 1;
         const GlobalHandle handle = minted(directory);
-        KernelPointers pointers({KernelPointerSlot{handle, &home, std::nullopt}}, directory);
+        KernelPointers pointers({KernelPointerSlot{handle, &home, std::nullopt, true}}, directory);
 
         pointers.bind(1);
 
         EXPECT_EQ(pointers.table()[0], &home);
         EXPECT_EQ(pointers.resolved_binds(), 1u);
+    }
+
+    /** @brief Tests that a bind finding no instance of a device-only buffer stops, naming the handle and the device. A death test starts a child process. */
+    TEST(Medium_KernelPointersDeathTest, ABindWithNoInstanceOnTheDeviceFailsItsVerify)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = minted(directory);
+        place(directory, handle, &home, 0);
+        KernelPointers pointers({KernelPointerSlot{handle, &home, 0, false}}, directory);
+
+        EXPECT_DEATH(pointers.bind(1),
+                     "handle slot " + std::to_string(handle.slot()) + " generation " +
+                         std::to_string(handle.generation()) + " has no instance on device 1");
+    }
+
+    /** @brief Records a described buffer homed on @p home with an instance there of @p kind. */
+    GlobalHandle homed(Internal::Memory::ResidencyDirectory& directory, GlobalHandle handle,
+                       MemorySpaceID home, void* address, std::optional<Internal::Memory::USMKind> kind)
+    {
+        EXPECT_EQ(directory.describe(handle, sizeof(int), Internal::Memory::ElementLayout{sizeof(int), alignof(int)}, home),
+                  HandleStatus::Ok);
+        EXPECT_EQ(directory.set_instance(handle, home, address, kind), HandleStatus::Ok);
+        return handle;
+    }
+
+    /** @brief Tests that a slot made over host USM is host visible and knows its home device. */
+    TEST(Small_KernelPointerSlot, HostUSMIsHostVisible)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Host);
+
+        const KernelPointerSlot slot = make_kernel_pointer_slot(directory, handle, &home, 2);
+
+        EXPECT_TRUE(slot.host_visible);
+        EXPECT_EQ(slot.home_device, std::optional<std::size_t>(0));
+    }
+
+    /** @brief Tests that a slot made over shared USM is host visible. */
+    TEST(Small_KernelPointerSlot, SharedUSMIsHostVisible)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Shared);
+
+        EXPECT_TRUE(make_kernel_pointer_slot(directory, handle, &home, 2).host_visible);
+    }
+
+    /** @brief Tests that a slot made over device USM is not host visible. */
+    TEST(Small_KernelPointerSlot, DeviceUSMIsNotHostVisible)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        const GlobalHandle handle = homed(directory, minted(directory), device_memory_space(0), &home,
+                                          Internal::Memory::USMKind::Device);
+
+        EXPECT_FALSE(make_kernel_pointer_slot(directory, handle, &home, 2).host_visible);
+    }
+
+    /** @brief Tests that borrowed memory of unknown kind is host visible and runtime memory of unknown kind is not. */
+    TEST(Small_KernelPointerSlot, OnlyBorrowedMemoryOfUnknownKindIsHostVisible)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int borrowed_cell = 1;
+        int owned_cell = 2;
+        const MintOutcome borrowed_mint = directory.mint(HandleKind::Buffer, HandleFlags::Borrowed);
+        ASSERT_EQ(borrowed_mint.status, HandleStatus::Ok);
+        const GlobalHandle borrowed = homed(directory, borrowed_mint.handle, device_memory_space(0),
+                                            &borrowed_cell, std::nullopt);
+        const GlobalHandle owned = homed(directory, minted(directory), device_memory_space(0),
+                                         &owned_cell, std::nullopt);
+
+        EXPECT_TRUE(make_kernel_pointer_slot(directory, borrowed, &borrowed_cell, 2).host_visible);
+        EXPECT_FALSE(make_kernel_pointer_slot(directory, owned, &owned_cell, 2).host_visible);
+    }
+
+    /** @brief Tests that a planned buffer, homed on the host with no instance yet, is not host visible. */
+    TEST(Small_KernelPointerSlot, APlannedBufferWithNoHomeInstanceIsNotHostVisible)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        const GlobalHandle handle = minted(directory);
+        ASSERT_EQ(directory.describe(handle, sizeof(int), Internal::Memory::ElementLayout{sizeof(int), alignof(int)},
+                                     host_memory_space()),
+                  HandleStatus::Ok);
+
+        const KernelPointerSlot slot = make_kernel_pointer_slot(directory, handle, nullptr, 2);
+
+        EXPECT_FALSE(slot.host_visible);
+        EXPECT_EQ(slot.home_device, std::nullopt);
     }
 
     /** @brief Tests that a scope hands its table to current() and restores the one before it. */

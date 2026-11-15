@@ -23,7 +23,7 @@
 
 /**
  * @file usm_placement_memory.hpp
- * @brief Declares USMPlacementMemory, the PlacementMemory that answers from a HandleResolver and a USMAllocator.
+ * @brief Declares USMPlacementMemory, the PlacementMemory that answers from the residency directory and a USMAllocator.
  * @author Mustafa Garip
  * @see modules/engine/task/README.md
  */
@@ -43,12 +43,13 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         class USMAllocator;
+        class ResidencyView;
     }
 
     namespace Internal::Graph
     {
         /**
-         * @brief Answers a handle's device from its instance in a HandleResolver, and context sharing from the USMAllocator.
+         * @brief Answers a handle's device and host visibility from the residency directory, and context sharing from the USMAllocator.
          * @see modules/engine/task/README.md
          */
         class SUSHIRUNTIME_API USMPlacementMemory final : public PlacementMemory
@@ -59,16 +60,17 @@ namespace SushiRuntime
                  * @param memory,handles Must outlive this object.
                  */
                 USMPlacementMemory(const Internal::Memory::USMAllocator& memory,
-                                   const HandleResolver& handles) noexcept;
+                                   const Internal::Memory::ResidencyView& handles) noexcept;
 
                 [[nodiscard]] std::optional<std::size_t> recorded_device(GlobalHandle handle) const override;
                 [[nodiscard]] std::optional<std::size_t> owning_device(GlobalHandle handle) const override;
                 [[nodiscard]] std::size_t device_count() const override;
                 [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const override;
+                [[nodiscard]] bool host_visible(GlobalHandle handle) const override;
 
             private:
                 const Internal::Memory::USMAllocator& memory_;
-                const HandleResolver& handles_;
+                const Internal::Memory::ResidencyView& handles_;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

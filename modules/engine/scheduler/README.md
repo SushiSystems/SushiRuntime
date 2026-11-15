@@ -645,20 +645,21 @@ A graph node therefore has one placement, and `Internal::Graph::placement_of()` 
 the one function that names it, from the first of these that applies:
 
 1. The node states a placement with `Node::place_on()` and names a region a device owns: the
-   stated device, when its queue shares a SYCL context with the owner's or when the node has a
-   `KernelPointers` table (the planner copies the regions to the stated device and the table
-   rebinds the kernel's pointers there). A node with no table, whose kernel captured raw
-   addresses, in another context gets an `ErrorCode::InvalidGraph` error naming both devices
-   and that reason, and the run fails; the node is never moved to the owner.
+   stated device, when the node is `KernelAddressing::Rebindable` (the planner copies the
+   regions to the stated device and the node's `KernelPointers` table rebinds the kernel's
+   pointers there). A node fixed to its home, whose kernel captured raw addresses, runs on the
+   stated device when it shares the owner's SYCL context and no region's home is device USM of
+   another device. Otherwise it gets an `ErrorCode::InvalidGraph` error naming both devices and
+   that reason, and the run fails; the node is never moved to the owner.
 2. The node names a region a device owns and states no placement: the owner of its first
    write region, else of its first read region.
 3. The node states a placement and names no owned region: that device.
 4. Otherwise device 0, `Internal::Graph::K_DEFAULT_PLACEMENT`, the device a default buffer is allocated
    on.
 
-The owner is the device that owns the first write region, else the first read region. The
-context check reads the allocator's queues through `USMAllocator::shares_context()`, so
-`placement_of()` needs no queue of its own. A stated index past the allocator's devices is
+The owner is the device that owns the first write region, else the first read region. The context
+check reads `USMAllocator::shares_context()` and the device USM check the scheduler's
+`ResidencyView`, so `placement_of()` needs no queue of its own. A stated index past the allocator's devices is
 left to `place_for_dispatch()`, which refuses it with the device count.
 
 A kernel that captured USM the runtime cannot see names no region, so rule 3 or 4 decides

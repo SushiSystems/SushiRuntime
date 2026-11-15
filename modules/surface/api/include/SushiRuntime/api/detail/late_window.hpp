@@ -77,7 +77,8 @@ namespace SushiRuntime
         /**
          * @brief Reads a node's per-step controls once, for the submit of one step.
          * @param controls Not null.
-         * @return The host count and base, and the address of each device slot the node has.
+         * @return The host count and base, and the address of each device slot the node has, as
+         *         the dispatching node's pointer table bound it on its device.
          */
         [[nodiscard]] SUSHIRUNTIME_API LateWindow read_late_window(
             const LateControls* controls) noexcept;

@@ -31,8 +31,10 @@
 #include <SushiRuntime/api/detail/late_window.hpp>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
+#include <SushiRuntime/api/detail/bound_pointers.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
 #include <SushiRuntime/engine_handles/late_controls_access.hpp>
@@ -57,10 +59,22 @@ namespace SushiRuntime
             window.base = bindings.base.load(std::memory_order_relaxed);
             window.rest_of_capacity =
                 (window.count == Internal::Graph::LateBindings::K_USE_BAKED);
-            window.count_slot = (bindings.device_count != nullptr)
-                ? bindings.device_count + bindings.device_count_index : nullptr;
-            window.base_slot = (bindings.device_base != nullptr)
-                ? bindings.device_base + bindings.device_base_index : nullptr;
+            const std::uint32_t* count_words = bindings.device_count;
+            const std::uint32_t* base_words = bindings.device_base;
+            // The node's table holds the count slot's buffer, then the base slot's, bound on its device.
+            const std::size_t slots = (count_words != nullptr ? 1U : 0U) + (base_words != nullptr ? 1U : 0U);
+            if (void* const* table = (slots == 0) ? nullptr : dispatch_pointer_table(slots))
+            {
+                std::size_t next = 0;
+                if (count_words != nullptr)
+                    count_words = static_cast<const std::uint32_t*>(table[next++]);
+                if (base_words != nullptr)
+                    base_words = static_cast<const std::uint32_t*>(table[next]);
+            }
+            window.count_slot = (count_words != nullptr)
+                ? count_words + bindings.device_count_index : nullptr;
+            window.base_slot = (base_words != nullptr)
+                ? base_words + bindings.device_base_index : nullptr;
             window.words = bindings.replay_words;
             return window;
         }

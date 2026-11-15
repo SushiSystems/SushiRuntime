@@ -58,6 +58,7 @@
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
@@ -86,7 +87,7 @@ namespace SushiRuntime
                                      const Internal::Topology::TopologyView& topology,
                                      Internal::Device::DeviceQueueSet& devices,
                                      const Internal::Memory::USMAllocator& memory,
-                                     const HandleResolver& handles,
+                                     const Internal::Memory::ResidencyView& handles,
                                      Profile::Collector& collector)
             : parts_(std::make_unique<Parts>(pool, topology, devices, memory, handles, collector))
         {

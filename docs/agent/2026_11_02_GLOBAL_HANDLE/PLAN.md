@@ -54,7 +54,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | done |
 | T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | done |
-| T44 | `engine/task`, `surface/api`: nodes whose pointers cannot be rebound stay home; a missing instance is an error; `DeviceSlot` on the table | T39, T37 | running |
+| T44 | `engine/task`, `surface/api`: nodes whose pointers cannot be rebound stay home; a missing instance is an error; `DeviceSlot` on the table | T39, T37 | done |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | done |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | done |
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | done |

@@ -30,10 +30,13 @@
 #include <SushiRuntime/task/node_placement.hpp>
 
 #include <cstddef>
+#include <initializer_list>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
@@ -41,6 +44,34 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
+        namespace
+        {
+            /** @brief Returns the device of the first region of @p node whose home is device-only memory of a device other than @p device. */
+            std::optional<std::size_t> device_only_elsewhere(const Node& node, const PlacementMemory& memory,
+                                                             std::size_t device)
+            {
+                for (const std::vector<BufferRegion>* regions : {&node.io_writes_, &node.io_reads_})
+                    for (const BufferRegion& region : *regions)
+                    {
+                        const std::optional<std::size_t> holder = memory.owning_device(region.base);
+                        if (holder && *holder != device && !memory.host_visible(region.base))
+                            return holder;
+                    }
+                return std::nullopt;
+            }
+
+            /** @brief Returns the refusal of a node fixed to its home, stated on @p stated while its memory lies on @p holder. */
+            Error fixed_refusal(std::size_t stated, std::size_t holder, const char* where)
+            {
+                return Error{
+                    ErrorCode::InvalidGraph,
+                    "it is placed on device " + std::to_string(stated) + ", but its memory belongs "
+                    "to device " + std::to_string(holder) + " " + where + ", and its kernel captured "
+                    "raw addresses that cannot be rebound to another device's instance; place it on "
+                    "device " + std::to_string(holder) + " or record it as a capture launch."};
+            }
+        } // namespace
+
         GlobalHandle anchor_of(const Node& node) noexcept
         {
             if (!node.io_writes_.empty())
@@ -60,7 +91,7 @@ namespace SushiRuntime
          */
         Result<std::size_t> placement_of(const Node& node,
                                          const Internal::Memory::USMAllocator& memory,
-                                         const HandleResolver& handles)
+                                         const Internal::Memory::ResidencyView& handles)
         {
             return placement_of(node, USMPlacementMemory(memory, handles));
         }
@@ -79,19 +110,21 @@ namespace SushiRuntime
                 return *owner;
 
             // An index past the allocator's devices is refused by the dispatch, which knows why.
-            if (*stated >= memory.device_count() || memory.shares_context(*stated, *owner))
+            if (*stated >= memory.device_count())
                 return *stated;
 
-            // A pointer table rebinds the kernel to its device's instance, which the planner copies there.
-            if (node.kernel_pointers_)
+            // A rebindable kernel reads its device's instance, which the planner copies there.
+            if (node.kernel_addressing == KernelAddressing::Rebindable)
                 return *stated;
 
-            return make_error(Error{
-                ErrorCode::InvalidGraph,
-                "it is placed on device " + std::to_string(*stated) + ", but its memory belongs "
-                "to device " + std::to_string(*owner) + " in another SYCL context, and its kernel "
-                "captured raw addresses that cannot be rebound to another device's instance; "
-                "place it on a device of that context."});
+            // A fixed kernel's raw addresses hold only in the owner's context.
+            if (!memory.shares_context(*stated, *owner))
+                return make_error(fixed_refusal(*stated, *owner, "in another SYCL context"));
+
+            // Inside it, device USM of a sibling device is not addressable from the stated one.
+            if (const std::optional<std::size_t> holder = device_only_elsewhere(node, memory, *stated))
+                return make_error(fixed_refusal(*stated, *holder, "as device USM"));
+            return *stated;
         }
 
     } // namespace Graph

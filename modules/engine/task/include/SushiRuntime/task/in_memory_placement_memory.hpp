@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <optional>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -73,6 +74,20 @@ namespace SushiRuntime
                     owners_[handle] = device;
                 }
 
+                /**
+                 * @brief Records a handle's home as device-only memory, which no sibling device
+                 *        reads; a recorded handle is host visible until this is called.
+                 */
+                void record_device_only(GlobalHandle handle)
+                {
+                    device_only_.insert(handle);
+                }
+
+                [[nodiscard]] bool host_visible(GlobalHandle handle) const override
+                {
+                    return owners_.count(handle) != 0 && device_only_.count(handle) == 0;
+                }
+
                 [[nodiscard]] std::optional<std::size_t> recorded_device(GlobalHandle handle) const override
                 {
                     const auto found = owners_.find(handle);
@@ -99,6 +114,7 @@ namespace SushiRuntime
             private:
                 std::vector<std::size_t> context_of_device_;
                 std::map<GlobalHandle, std::size_t> owners_;
+                std::set<GlobalHandle> device_only_;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

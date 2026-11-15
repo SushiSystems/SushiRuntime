@@ -72,6 +72,13 @@ namespace SushiRuntime
                  * @param second A device index below device_count().
                  */
                 [[nodiscard]] virtual bool shares_context(std::size_t first, std::size_t second) const = 0;
+
+                /**
+                 * @brief Tells whether every device of the owner's context reads a handle's home
+                 *        instance in place, by home_is_host_visible() (kernel_pointers.hpp).
+                 * @param handle The handle of a buffer; an unknown one is not host visible.
+                 */
+                [[nodiscard]] virtual bool host_visible(GlobalHandle handle) const = 0;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

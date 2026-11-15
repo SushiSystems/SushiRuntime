@@ -221,6 +221,13 @@ namespace SushiRuntime
             std::unique_ptr<KernelPointers> kernel_pointers_;
 
             /**
+             * @brief Says whether the kernel can run on a device other than the home of its
+             *        data; set where the node is built, never inferred from kernel_pointers_.
+             * @see modules/engine/task/README.md
+             */
+            KernelAddressing kernel_addressing = KernelAddressing::FixedToHome;
+
+            /**
              * @brief States the device a node that names no owned region runs on.
              * @param device Index into the runtime's device set; must be below K_NO_PLACEMENT.
              * @pre The node has not been dispatched yet.

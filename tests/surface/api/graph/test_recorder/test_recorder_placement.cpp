@@ -461,7 +461,7 @@ namespace PlacedTaskTests
         };
     }
 
-    /** @brief Tests that a stated device in the owner's context wins over the owner. */
+    /** @brief Tests that a stated device in the owner's context wins over the owner for shared memory. */
     TEST_F(Medium_RecorderPlacedTask, AStatedDeviceInTheOwnersContextWinsOverTheOwner)
     {
         const Runtime& rt = runtime();
@@ -479,6 +479,29 @@ namespace PlacedTaskTests
         ASSERT_TRUE(ran_on.has_value());
         EXPECT_EQ(*ran_on,
                   rt.advanced().queue(DeviceIndex{*device}).get_device());
+    }
+
+    /** @brief Tests that a task over device USM of device 0, stated on a sibling device of its context, is refused. */
+    TEST_F(Medium_RecorderPlacedTask, AStatedSiblingDeviceOverDeviceUSMIsRefused)
+    {
+        const Runtime& rt = runtime();
+        const std::optional<std::size_t> device = other_device(rt, true);
+        if (!device)
+            GTEST_SKIP() << "no second device shares device 0's context";
+
+        const Buffer<std::uint32_t> owned =
+            rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device).value();
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        graph.recorder().task(Access(Reads(), Writes(owned)), noting_body(ran_on),
+                              On(DeviceIndex{*device}));
+        const auto refused = graph.run();
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidGraph);
+        EXPECT_NE(refused.error().message.find("as device USM"), std::string::npos)
+            << refused.error().message;
+        EXPECT_FALSE(ran_on.has_value()) << "a refused node is never moved to the owner";
     }
 
     /** @brief Tests that a stated device in another context than the owner's is refused. */

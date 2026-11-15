@@ -164,6 +164,13 @@ namespace SushiRuntime
 
             /** @brief The home address of each pointer in pointer_handles, recorded at add(). */
             std::vector<void*> pointer_homes;
+
+            /**
+             * @brief True when every address the kernel reads comes from pointer_handles, so the
+             *        node may run on a device other than the home of its data; only a capture
+             *        launch sets it.
+             */
+            bool rebindable = false;
         };
     } // namespace Detail
 } // namespace SushiRuntime

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Changed placement so a node whose kernel captured raw addresses runs elsewhere only where those addresses hold; another SYCL context or a sibling's device USM is refused with `InvalidGraph` (GLOBAL_HANDLE H3).
+- 2026-11-15 — runtime: Changed a kernel pointer bind with no instance on the node's device to fail its verify, unless the home is host-visible memory (GLOBAL_HANDLE H3).
 - 2026-11-15 — coherence: Added the `Partitioner` port and a list-scheduling partitioner that ranks nodes, places each where it finishes earliest within its pool and holds the plan against the floor of the fill plans (GLOBAL_HANDLE H7).
 - 2026-11-15 — coherence: Added refusal of a job that fits no plan as `AllocationFailed`, with the shortfall of each memory pool (GLOBAL_HANDLE H7).
 - 2026-11-15 — api: Added `Runtime::buffer_from_file<T>(path, offset, count)`, a planned buffer whose valid copy is a file range streamed through the staging ring (GLOBAL_HANDLE H4).

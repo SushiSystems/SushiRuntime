@@ -127,7 +127,7 @@ The file tests `captured_node()`: the kernel receives one pointer per capture.
 
 | Test | What it proves |
 | --- | --- |
-| `TheKernelReceivesEachPointer` | The kernel reads one capture and writes the other at each index, and the description states the width, the handles and the home addresses. |
+| `TheKernelReceivesEachPointer` | The kernel reads one capture and writes the other at each index, and the description states the width, the handles and the home addresses, and marks itself `rebindable`. |
 
 ## test_emit_device_sized.cpp
 
@@ -140,11 +140,15 @@ The file tests `device_sized_node()`: the launch covers the capacity and stops a
 ## test_emit_dynamic.cpp
 
 The file tests `dynamic_node()`: a late-bound description runs over the live window it is given. The
-controls come from `bound_controls(sized(...))`.
+controls come from `bound_controls(sized(...))`. It also tests `with_device_slots()` and the slot
+addresses `read_late_window()` reads from a bound table.
 
 | Test | What it proves |
 | --- | --- |
 | `TheKernelRunsOverTheLiveCount` | The kernel runs over the live count only, and the description keeps the controls it was given. |
+| `DeviceSlotsJoinThePointerTableCountFirst` | `with_device_slots()` appends the count slot's buffer and address, then the base slot's, and leaves the description not `rebindable`. |
+| `AWindowWithNoDeviceSlotAddsNoPointer` | A Dynamic with only a host count adds nothing to the pointer table. |
+| `TheWindowReadsTheSlotTheNodeBound` | Inside a `KernelPointerScope` bound on device 1, `read_late_window()` gives the count slot at the instance the table bound, not the recorded address. |
 
 ## test_emit_host.cpp
 

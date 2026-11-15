@@ -89,8 +89,22 @@ two devices.
 | --- | --- |
 | `ANodeOnAnotherDeviceReceivesTheInstanceThere` | A bind on device 1 gives the instance on device 1 and counts one resolved bind. |
 | `ANodeOnTheHomeDeviceTakesTheFastPath` | A bind on the home device keeps the home address and counts only home binds. |
-| `ABufferWithNoInstanceThereKeepsItsHomeAddress` | A buffer with no instance on the node's device keeps its home address. |
+| `AHostVisibleBufferWithNoInstanceThereKeepsItsHomeAddress` | A host-visible slot with no instance on the node's device keeps its home address. |
 | `AScopeOpensItsTableAndRestoresThePreviousOne` | Scopes nest, and each restores the table that was open before it. |
+
+`Medium_KernelPointersDeathTest.ABindWithNoInstanceOnTheDeviceFailsItsVerify` binds a slot of device
+memory on a device that holds no instance, and checks the process stops with the handle's slot and
+generation and the device in the message. A death test starts a child process.
+
+`Small_KernelPointerSlot` checks `make_kernel_pointer_slot()` against directory entries:
+
+| Test | What it proves |
+| --- | --- |
+| `HostUSMIsHostVisible` | A home instance of kind `Host` is host visible, and the slot names its home device. |
+| `SharedUSMIsHostVisible` | A home instance of kind `Shared` is host visible. |
+| `DeviceUSMIsNotHostVisible` | A home instance of kind `Device` is not. |
+| `OnlyBorrowedMemoryOfUnknownKindIsHostVisible` | Of two instances of unknown kind, only the one whose handle carries `HandleFlags::Borrowed` is host visible. |
+| `APlannedBufferWithNoHomeInstanceIsNotHostVisible` | A buffer homed on the host space with no instance yet is not host visible and has no home device. |
 
 ## test_node.cpp
 
@@ -110,7 +124,7 @@ state.
 
 The file covers the placement a node states and the rule `Internal::Graph::placement_of()` applies to it:
 a stated placement wins over the owner of the first write region, else of the first read region,
-when the two share a SYCL context or the node has a `KernelPointers` table, and is refused when they do not and it has none; a node that states nothing runs
+when the node is `KernelAddressing::Rebindable`; a node fixed to its home is refused in another SYCL context, or in the owner's context over device USM of another device; a node that states nothing runs
 on the owner; a node with no owner runs on its stated placement, else device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a dispatch receives.
 
@@ -133,7 +147,9 @@ two, and an address with no record stands for a region no device owns.
 | `ANodeWithOnlyAReadRegionRunsOnItsOwner` | A node whose only region is a read runs on the owner of that region. |
 | `TheFirstWriteRegionOutranksTheFirstReadRegion` | The owner of the first write outranks the owner of the first read. |
 | `AnOwnedRegionPlacesANodeThatStatesNothing` | An owned region places a node that states nothing. |
-| `AStatedDeviceInTheOwnersContextOutranksTheOwner` | A stated device in the owner's context outranks the owner. |
+| `ARebindableNodesStatedDeviceInTheOwnersContextOutranksTheOwner` | A rebindable node's stated device in the owner's context outranks the owner. |
+| `AFixedNodeOverHostVisibleMemoryRunsOnAnotherDeviceOfTheOwnersContext` | A node fixed to its home, over host-visible memory, runs on another device of the owner's context. |
+| `AFixedNodeOverDeviceUSMIsRefusedOnASiblingDevice` | A fixed node is placed on the device that holds its device USM, and a fixed node stated on a sibling device over that device USM is an `InvalidGraph` error naming the device USM. |
 | `AnUnownedRegionWithNothingStatedRunsOnDeviceZero` | An unowned region with nothing stated runs on device 0. |
 | `AnUnownedRegionLeavesTheStatedPlacementInForce` | A stated device stands for an unowned region. |
 
@@ -144,8 +160,9 @@ second device.
 
 | Test | What it proves |
 | --- | --- |
-| `AStatedDeviceInAnotherContextIsRefused` | A node with no pointer table (raw captured addresses) on a stated device in the other context is an `InvalidGraph` error naming the owner and the raw addresses. |
-| `ANodeWithAPointerTableIsPlacedOnAStatedDeviceInAnotherContext` | A node with a `KernelPointers` table on a stated device in the other context is placed there. |
+| `AFixedNodeIsRefusedOnAStatedDeviceInAnotherContext` | A node fixed to its home on a stated device in the other context is an `InvalidGraph` error naming the owner and the raw addresses. |
+| `ARebindableNodeIsPlacedOnAStatedDeviceInAnotherContext` | A rebindable node on a stated device in the other context is placed there. |
+| `APointerTableAloneLeavesTheNodeFixed` | A node with a `KernelPointers` table but no `Rebindable` marking is still refused: the marking is explicit, never read from the table. |
 | `StatingTheOwnerItselfIsAccepted` | Stating the owner itself is accepted. |
 | `AStatedIndexPastTheDevicesIsLeftToTheDispatch` | A stated index past the memory's devices is returned as stated, for `place_for_dispatch()` to refuse with the count. |
 

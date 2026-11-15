@@ -23,12 +23,13 @@
 
 /**
  * @file test_emit_dynamic.cpp
- * @brief Tests dynamic_node(): a late-bound description runs over the live window it is given.
+ * @brief Tests dynamic_node() and with_device_slots(): the live window and the bound device slots.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,10 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
+#include <SushiRuntime/api/detail/late_window.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/task/kernel_pointers.hpp>
 
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
@@ -69,4 +74,53 @@ TEST_F(Small_EmitDynamic, TheKernelRunsOverTheLiveCount)
     EXPECT_EQ(description.kind, Detail::NodeKind::Dynamic);
     EXPECT_EQ(description.bindings, controls);
     EXPECT_EQ(TestSupport::contents(data), TestSupport::window_of<int>(K_CAPACITY, 0, K_LIVE, 1, 0));
+}
+
+/** @brief Tests that with_device_slots() puts the count slot, then the base slot, in the pointer table and leaves the node fixed. */
+TEST_F(Small_EmitDynamic, DeviceSlotsJoinThePointerTableCountFirst)
+{
+    auto counter = runtime().buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
+    auto bases = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    const Dynamic window = sized_from_device(counter, 1).based_at_device(bases, 0);
+
+    const Detail::NodeDescription description =
+        Detail::with_device_slots(window, Detail::NodeDescription{});
+
+    EXPECT_EQ(description.pointer_handles, (std::vector<GlobalHandle>{counter.handle(), bases.handle()}));
+    EXPECT_EQ(description.pointer_homes,
+              (std::vector<void*>{static_cast<void*>(counter.data()), static_cast<void*>(bases.data())}));
+    EXPECT_FALSE(description.rebindable) << "the kernel body captured addresses of its own";
+}
+
+/** @brief Tests that a Dynamic with no device slot adds nothing to the pointer table. */
+TEST_F(Small_EmitDynamic, AWindowWithNoDeviceSlotAddsNoPointer)
+{
+    const Detail::NodeDescription description =
+        Detail::with_device_slots(sized([] { return std::size_t{3}; }), Detail::NodeDescription{});
+
+    EXPECT_TRUE(description.pointer_handles.empty());
+    EXPECT_TRUE(description.pointer_homes.empty());
+}
+
+/** @brief Tests that the window reads its device count slot through the table the dispatching node bound. */
+TEST_F(Small_EmitDynamic, TheWindowReadsTheSlotTheNodeBound)
+{
+    auto counter = runtime().buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
+    std::vector<BufferRegion> reads;
+    std::vector<LivenessObserver> lives;
+    const std::shared_ptr<Detail::LateControls> controls =
+        Detail::make_late_bindings(sized_from_device(counter, 1), reads, lives);
+    Internal::Memory::ResidencyDirectory directory(0);
+    const GlobalHandle handle = directory.mint(HandleKind::Buffer, HandleFlags::None).handle;
+    std::uint32_t instance[2] = {};
+    ASSERT_EQ(directory.set_instance(handle, Internal::Graph::device_memory_space(1), instance),
+              HandleStatus::Ok);
+    Internal::Graph::KernelPointers pointers(
+        {Internal::Graph::KernelPointerSlot{handle, counter.data(), 0}}, directory);
+
+    pointers.bind(1);
+    const Internal::Graph::KernelPointerScope scope(pointers);
+    const Detail::LateWindow window = Detail::read_late_window(controls.get());
+
+    EXPECT_EQ(window.count_slot, &instance[1]);
 }

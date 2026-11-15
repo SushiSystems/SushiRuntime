@@ -70,4 +70,5 @@ TEST_F(Small_EmitCaptured, TheKernelReceivesEachPointer)
     EXPECT_EQ(description.pointer_handles, (std::vector<GlobalHandle>{in.handle(), out.handle()}));
     EXPECT_EQ(description.pointer_homes,
               (std::vector<void*>{static_cast<void*>(in.data()), static_cast<void*>(out.data())}));
+    EXPECT_TRUE(description.rebindable) << "a capture launch reads only its bound pointers";
 }

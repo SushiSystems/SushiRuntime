@@ -83,6 +83,17 @@ namespace SushiRuntime
                            std::vector<LivenessObserver>& lives);
 
         /**
+         * @brief Returns @p description with the Dynamic's device count slot, then its device
+         *        base slot, added to its pointer table, so each dispatch reads the slots bound on
+         *        the node's device.
+         *
+         * The node stays fixed to its home device: its kernel captured raw addresses of its own.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API NodeDescription with_device_slots(const Dynamic& dyn,
+                                                                         NodeDescription description);
+
+        /**
          * @brief Describes a per-element launch whose window varies per step.
          *
          * The node is compiled once and follows per-step changes without a recompile; its

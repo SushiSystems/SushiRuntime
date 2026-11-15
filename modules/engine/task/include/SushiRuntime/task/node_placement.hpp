@@ -43,6 +43,7 @@ namespace SushiRuntime
     namespace Internal::Memory
     {
         class USMAllocator;
+        class ResidencyView;
     }
 
     namespace Internal::Graph
@@ -80,7 +81,7 @@ namespace SushiRuntime
          */
         SUSHIRUNTIME_API Result<std::size_t>
         placement_of(const Node& node, const Internal::Memory::USMAllocator& memory,
-                     const HandleResolver& handles);
+                     const Internal::Memory::ResidencyView& handles);
 
         /**
          * @brief Returns the device @p node runs on, reading memory through a port.

@@ -39,7 +39,7 @@
 namespace SushiRuntime
 {
     namespace Internal::Graph { struct Node; }
-    namespace Internal::Memory { class USMAllocator; }
+    namespace Internal::Memory { class USMAllocator; class ResidencyView; }
 
     namespace Internal::Scheduler
     {
@@ -53,7 +53,7 @@ namespace SushiRuntime
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void>
         place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
-                           const HandleResolver& handles, std::size_t device_count);
+                           const Internal::Memory::ResidencyView& handles, std::size_t device_count);
 
     } // namespace Scheduler
 } // namespace SushiRuntime

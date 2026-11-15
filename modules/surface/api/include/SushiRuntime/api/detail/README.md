@@ -177,7 +177,17 @@ slot as a read and hands the caller the liveness observer of the slot's buffer. 
 orders the node behind whoever writes the slot, and the caller did not have to name it. The
 observer goes to Recorder::record() with the node's other observers, so a run after the buffer
 was destroyed is refused with `DanglingResource`. The controls are the engine's `LateBindings`,
-which the header forward-declares; the function is defined in `source/late_window.cpp`.
+which the header forward-declares; the function is defined in `source/emit_dynamic.cpp`.
+
+### with_device_slots
+
+with_device_slots() appends a Dynamic's device count slot, then its device base slot, to a
+described node's `pointer_handles` and `pointer_homes`; a Dynamic with no device slot adds
+nothing. The recorder wraps every dynamic description in it, so the node gets a `KernelPointers`
+table, and read_late_window() takes each slot's address from the table the dispatching node bound,
+or the recorded address when no table is open. The description stays not `rebindable`: the
+kernel body captured addresses of its own, so the node is fixed to its home device. The function
+is defined in `source/emit_dynamic.cpp`.
 
 ### register_device_slot
 
@@ -369,7 +379,8 @@ pass the pointers through bound_pointers() (`bound_pointers.hpp`), which returns
 dispatching node bound on its device (`modules/engine/task/README.md`, "The pointers a kernel
 receives"), cast to the type of each pointer, or the recorded pointers when no node bound one. The
 table is read through `dispatch_pointer_table()`, defined in `source/bound_pointers.cpp`, so no
-public header names an engine type.
+public header names an engine type. captured_node() sets `NodeDescription::rebindable`, since its
+kernel reads no address but the bound ones.
 
 ### late_count_resolver_node
 
@@ -444,10 +455,17 @@ and no header template of another kind changes.
 
 ### attach_kernel_pointers
 
-attach_kernel_pointers() gives a captured launch's node its `KernelPointers`, after
-RecorderReplay adds it. A pointer's home device is the device whose instance, found by `locate()`,
-is the recorded address; a buffer with no device instance there, such as a planned buffer, has
-none and is resolved at every dispatch.
+attach_kernel_pointers() gives a node with pointers its `KernelPointers`, after RecorderReplay
+adds it: a capture launch, and a dynamic node with device slots. It reads the residency directory
+and builds each slot with `make_kernel_pointer_slot()`, which finds the home device and decides
+whether the home is host visible (`modules/engine/task/README.md`, "The pointers a kernel
+receives"). A buffer with no device instance there, such as a planned buffer, has no home device
+and is resolved at every dispatch.
+
+add_described_node() writes `Node::kernel_addressing` from `NodeDescription::rebindable`: only a
+capture launch sets it, so only a capture launch may run away from the home of its data. Every
+other kind is `FixedToHome`, and `placement_of()` refuses it on a device where its raw addresses
+do not hold: another SYCL context, or a sibling device when one of its regions is device USM.
 
 ### apply_stamp
 

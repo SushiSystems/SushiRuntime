@@ -55,7 +55,7 @@ namespace SushiRuntime
     namespace Internal::Graph { struct Node; }
     namespace Internal::Topology { class TopologyView; }
     namespace Internal::Device { class DeviceQueueSet; }
-    namespace Internal::Memory { class USMAllocator; }
+    namespace Internal::Memory { class USMAllocator; class ResidencyView; }
 
     namespace Internal::Scheduler
     {
@@ -95,7 +95,7 @@ namespace SushiRuntime
                  */
                 WorkerRounds(const PoolSize& size, PinPolicy pinning, const Internal::Topology::TopologyView& topology,
                              Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                             const HandleResolver& handles, PendingWork& pending, RunState& run,
+                             const Internal::Memory::ResidencyView& handles, PendingWork& pending, RunState& run,
                              SubmitFunnels& funnels);
 
                 WorkerRounds(const WorkerRounds&) = delete;
@@ -184,7 +184,7 @@ namespace SushiRuntime
                 std::size_t num_workers_;
                 Internal::Device::DeviceQueueSet& devices_;
                 const Internal::Memory::USMAllocator& memory_;
-                const HandleResolver& handles_;
+                const Internal::Memory::ResidencyView& handles_;
                 PendingWork& pending_;
                 RunState& run_;
                 SubmitFunnels& funnels_;

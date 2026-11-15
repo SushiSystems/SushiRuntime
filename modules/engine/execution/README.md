@@ -18,8 +18,8 @@ Any doubt leaves the plan on the scheduler. classify_chain() refuses the chain f
 a node the installed coordinator acts on, a device value read at dispatch, a node with no USM
 region, a region this context did not allocate, two devices, or a stated device that
 `placement_of()` refuses, which the scheduler then reports. A chained node runs on the device
-`placement_of()` gives it, so a stated device in its owner's context wins on the chain as it does
-at dispatch. Two HOST nodes no path orders keep the plan off under `UnorderedHostWork::Refused`, a
+`placement_of()` gives it, so a stated device that `placement_of()` accepts wins on the chain as
+it does at dispatch. Two HOST nodes no path orders keep the plan off under `UnorderedHostWork::Refused`, a
 static plan's rule; under `InTurnWhenDisjoint`, a composed plan's, they chain when both name every
 byte they touch and share none, reads included. A HOST node only kernels leave unordered does not
 count (`docs/design/GRAPH_REPLAY/README.md`, "Task bodies the dependencies leave unordered").
