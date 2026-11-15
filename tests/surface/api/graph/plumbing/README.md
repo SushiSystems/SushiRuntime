@@ -119,6 +119,12 @@ inside the commit. The next run composes once more, and the run after it compose
 that reads the rules at the start of a commit and the generation at its end tags the old rules with
 the new generation and never composes again.
 
+### `AGraphWithTenBuffersSubmitsInTheSameOrderAcross100Runs`
+
+Ten regions each write their own buffer, so every task is an independent root. The graph runs on 100
+fresh runtimes with the same seeded executor, and the order the tasks ran in must equal the first
+run's. A plan that lists its roots by node address changes that order from run to run (KI-23).
+
 ## test_plan_cache.cpp
 
 The file tests PlanCache through Graph: a plan is compiled once and again only when it changes.

@@ -262,3 +262,58 @@ namespace RegionCommitTests
         EXPECT_EQ(world.compose_count(), composed + 1);
     }
 } // namespace RegionCommitTests
+
+/** @brief Tests that the order the composer submits nodes in is a function of the graph alone. */
+namespace SubmissionOrderTests
+{
+    namespace
+    {
+        /** @brief Number of buffers, and of regions, the graph records. */
+        constexpr std::size_t K_BUFFERS = 10;
+
+        /** @brief Number of fresh runtimes the order is compared across. */
+        constexpr std::size_t K_RUNS = 100;
+
+        /**
+         * @brief Runs a graph of K_BUFFERS regions on a fresh runtime and returns the order its
+         *        tasks ran in.
+         *
+         * Each region writes its own buffer, so the tasks are independent roots and the seeded
+         * executor orders them by the order the plan submitted them.
+         */
+        [[nodiscard]] std::vector<std::size_t> run_once()
+        {
+            HostRuntimeConfig config;
+            config.executor = std::make_shared<SeededExecutor>(TestSupport::K_HOST_RUNTIME_SEED);
+            config.clock = std::make_shared<ManualClock>();
+            Runtime runtime = Runtime::create_host(config).value();
+
+            std::vector<Buffer<int>> buffers;
+            buffers.reserve(K_BUFFERS);
+            for (std::size_t i = 0; i < K_BUFFERS; ++i)
+                buffers.push_back(runtime.buffer<int>(1).value());
+
+            std::vector<std::size_t> order;
+            auto world = runtime.dynamic_graph();
+            for (std::size_t i = 0; i < K_BUFFERS; ++i)
+                world.region(static_cast<int>(i + 1))
+                    .add_host(Reads{}, Writes(buffers[i]), [&order, i]() { order.push_back(i); });
+            world.run().value();
+            return order;
+        }
+    } // namespace
+
+    /** @brief Fixture of the submission order tests; each test builds its own runtimes. */
+    class Medium_SubmissionOrder : public ::testing::Test
+    {
+    };
+
+    /** @brief Tests that ten buffers submit in the same order on every fresh runtime. */
+    TEST_F(Medium_SubmissionOrder, AGraphWithTenBuffersSubmitsInTheSameOrderAcross100Runs)
+    {
+        const std::vector<std::size_t> first = run_once();
+        ASSERT_EQ(first.size(), K_BUFFERS);
+        for (std::size_t run = 1; run < K_RUNS; ++run)
+            ASSERT_EQ(run_once(), first) << "run " << run;
+    }
+} // namespace SubmissionOrderTests

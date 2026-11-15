@@ -45,7 +45,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T04 | `foundation/placement`, `surface/api` | T02 | done |
 | T05 | `platform/memory` directory | T01 | done |
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | done |
-| T07 | `surface/api` region composer | T06 | running |
+| T07 | `surface/api` region composer | T06 | done |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | done |
 | T10 | `extension/buffer_exchange` | T06 | done |
@@ -53,7 +53,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | done |
-| T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | todo |
+| T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | running |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
@@ -66,7 +66,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T21 | copy plan replay | T13 | todo |
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
-| T37 | `surface/api` `Residency::Planned` | T13 | todo |
+| T37 | `surface/api` `Residency::Planned` | T13 | running |
 | T24 | device profile and cost model | T04, T23 | done |
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | todo |
 | T25 | partitioner | T14, T24, T37 | todo |
@@ -76,7 +76,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
 | T28 | wire version 5 | T10 | done |
-| T29 | owner per handle and recovery | T28 | todo |
+| T29 | owner per handle and recovery | T28 | running |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T32 | SushiBLAS conformance kernels | T30 | todo |

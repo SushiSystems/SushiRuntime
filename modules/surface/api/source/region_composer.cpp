@@ -393,14 +393,19 @@ namespace SushiRuntime
                  */
                 void publish_plan(Internal::Execution::RuntimeContext& runtime, bool classify)
                 {
-                    plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
                     plan_.label = label_;
                     plan_.graph_id = graph_id_;
                     plan_.all_nodes.clear();
+                    plan_.roots.clear();
+                    // Roots follow region key then add() order, never the address order of roots_.
                     for (auto& kv : states_)
                         for (auto& np : kv.second.nodes)
+                        {
                             plan_.all_nodes.push_back(np);
+                            if (roots_.count(np.get()) != 0)
+                                plan_.roots.push_back(np.get());
+                        }
 
                     // Every plan carries its node table, so a run that is timed needs no rebuild.
                     renumber_registration_indices();
