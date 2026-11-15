@@ -85,7 +85,8 @@ when its own context would not hold their reading; it still reviews and commits 
 | T30 | SushiBLAS handle, cost and split | T23, T25 | done |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T51 | runtime-free `LocalHandleSpace` | T01 | done |
-| T52 | SushiBLAS host blocks by `LocalHandleSpace` | T49, T51 | todo |
+| T52 | SushiBLAS host blocks by `LocalHandleSpace` | T49, T51 | running |
+| T53 | graph-wide partition across regions, async step measurement, end-to-end run | T47 | todo |
 | T50 | split nodes in the step drivers | T36, T47 | todo |
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | done |
 | T32 | SushiBLAS conformance kernels | T30 | done |
@@ -194,6 +195,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T31 | `haiku` `high` | SushiEngine `modules/foundation/execution/include/SushiEngine/execution/backend/runtime_backend.hpp`: the `ResourceID` to `GlobalHandle` table; then SushiAI's build, unchanged | T06 | The SushiEngine suite is green, and SushiAI's build result is in `REPORT.md` with each break named |
 | T51 | `sonnet` `medium` | `foundation/handle`: `LocalHandleSpace` | T01 | A handle space with no runtime mints distinct, deterministic handles in a universe of its own for host-only memory, never equal to a runtime's, and a runtime refuses to resolve one |
 | T52 | `sonnet` `medium` | SushiBLAS: `HostBlock`, the graph-primitives host double, host-sink tests | T49, T51 | Every host tensor's region names a handle from `LocalHandleSpace`, `mint_host_handle()` is gone, and the host overlap tests keep their edges |
+| T53 | `opus` `low` | `surface/api` composer and step drivers, `engine/coherence` `PartitionSession` | T47 | The composer partitions the whole graph once, not each region alone, and the report holds that plan; `submit_step`/`finish_step` feed the ledger; a runtime created with a profile file on two devices partitions, runs, reports and folds end to end |
 | T50 | `opus` `low` | the problem builder, `placement_of`, the step drivers, `Node`, the coherence planner | T36, T47 | `PartitionNode::split` is filled from the node, each part's device is placed, a cut node runs through `dispatch_split()`, the planner plans each part's read and write ranges, and a node that fits no pool whole runs split in a real step |
 | T49 | `sonnet` `medium` | SushiBLAS worktree `D:/Projects/.worktrees/sushiblas-global_handle`: `tensor.hpp`, `scratch.hpp`, `reduce.hpp`, `counting_sort.cpp`, `prefix_scan.cpp`, host blocks, `gemm_split.hpp` | T30, T36 | Every `BufferRegion` names a handle, a host tensor has a minted host handle, and the GEMM slice runs on the queue and pointers the runtime gives its part |
 | T32 | `sonnet` `medium` | SushiBLAS tests: the conformance kernel set (sum, dot, gemm, softmax, layer norm) on every device | T30 | Each operation gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each difference and why |
