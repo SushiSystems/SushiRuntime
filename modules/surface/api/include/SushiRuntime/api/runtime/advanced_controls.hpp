@@ -55,6 +55,12 @@ namespace SushiRuntime
         class OffloadCoordinator;
     } // namespace Internal::Graph
 
+    namespace Internal::Coherence
+    {
+        /// @brief Names the port that hears which path each copy took, in coherence/transfer_observer.hpp.
+        class TransferObserver;
+    } // namespace Internal::Coherence
+
     /**
      * @brief Answers questions about a runtime's devices, workers and counters, and hands
      *        out the queue of a device.
@@ -122,6 +128,16 @@ namespace SushiRuntime
              */
             SUSHIRUNTIME_API void
             install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> coordinator) const;
+
+            /**
+             * @brief Installs the observer every transfer path of this runtime reports its copies to; null removes it.
+             * @param observer Co-owned while installed; a runtime starts with none. Called from the
+             *        worker that runs a copy, so it must be safe to call from several threads.
+             * @pre No run of this runtime is in flight.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            SUSHIRUNTIME_API void
+            install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer) const;
 
         private:
             friend class Runtime;

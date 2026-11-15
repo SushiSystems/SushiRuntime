@@ -74,6 +74,7 @@ namespace SushiRuntime
             settings.force_scheduler = config.force_scheduler;
             settings.force_chain = config.force_chain;
             settings.submit_funnel = config.submit_funnel;
+            settings.device_profile_file = config.device_profile_file;
             return settings;
         }
 

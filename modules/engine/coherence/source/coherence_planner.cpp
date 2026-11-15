@@ -31,6 +31,7 @@
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -282,6 +283,7 @@ namespace SushiRuntime
                     candidate.bytes = held.size;
                     candidate.next_read = next_use(entry.first, space.value(), node);
                     candidate.sole_copy = sole;
+                    candidate.write_back_cost = sole ? write_back_cost(space, held.size) : 0.0;
                     candidates.push_back(candidate);
                 }
 
@@ -303,6 +305,19 @@ namespace SushiRuntime
                     return evicted;
             }
             return {};
+        }
+
+        double CoherencePlanner::write_back_cost(MemorySpaceID space, std::size_t bytes) const
+        {
+            const Memory::MemorySpace* const source = space_with(space);
+            const Memory::MemorySpace* const host = space_with(residency_.host);
+            double least = std::numeric_limits<double>::infinity();
+            if (source == nullptr || host == nullptr)
+                return least;
+            for (const TransferPath* path : paths_)
+                if (path->connects(*source, *host))
+                    least = std::min(least, cost_(*path, space, residency_.host, bytes));
+            return least;
         }
 
         Result<void> CoherencePlanner::evict(const EvictionCandidate& victim, std::size_t node,

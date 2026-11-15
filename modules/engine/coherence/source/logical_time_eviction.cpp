@@ -47,7 +47,7 @@ namespace SushiRuntime
                 const EvictionCandidate& holder = candidates[best];
                 const bool later = challenger.next_read > holder.next_read;
                 const bool cheaper = challenger.next_read == holder.next_read &&
-                                     holder.sole_copy && !challenger.sole_copy;
+                                     challenger.write_back_cost < holder.write_back_cost;
                 if (later || cheaper)
                     best = index;
             }

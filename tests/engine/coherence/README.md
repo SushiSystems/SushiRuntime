@@ -24,7 +24,7 @@ which builds from a seed a graph of three to eight nodes with forward edges and 
 fixed nodes, and returns the least step time; `placement_of()` turns an assignment into device
 indices of the model.
 
-## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
+## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_probe_devices.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
 
@@ -104,7 +104,8 @@ Each file includes one header alone.
 ## test_logical_time_eviction.cpp
 
 The furthest next read is chosen, an instance never read again goes first, equal reads prefer the
-instance that needs no write-back and then the first candidate, and no candidate gives no victim.
+cheaper write-back, so an instance that needs none goes first, then the first candidate, and no
+candidate gives no victim.
 
 ## test_pin_set.cpp
 
@@ -180,6 +181,18 @@ or a probe that reports no time is refused.
 
 With no model the cost is the uniform one, with a model it is the modelled seconds, and a copy the
 model cannot price costs infinity.
+
+## test_transfer_observer_slot.cpp
+
+An empty slot drops every copy, an installed observer hears each copy in order, and installing null
+stops the forwarding.
+
+## test_device_profile_probe.cpp
+
+Medium, on a SYCL CPU device; it skips when SYCL offers none. `ProfileMeasurement` measures a device
+through `DeviceProfileProbe`: capacity and reserve are the space's, and memory bandwidth, base
+throughput and the same-context path's bandwidth are above zero. A path name no path has is
+`Unsupported`, a kind with no kernel and a key with no device are refused.
 
 ## test_transfer_cost.cpp
 

@@ -37,6 +37,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -93,5 +94,11 @@ namespace SushiRuntime
     void AdvancedControls::install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> coordinator) const
     {
         Internal::ContextAccess::context(context_).install_offload(std::move(coordinator));
+    }
+
+    void AdvancedControls::install_transfer_observer(
+        std::shared_ptr<Internal::Coherence::TransferObserver> observer) const
+    {
+        Internal::ContextAccess::context(context_).install_transfer_observer(std::move(observer));
     }
 } // namespace SushiRuntime

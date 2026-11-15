@@ -32,6 +32,8 @@
 #include <array>
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <numeric>
 #include <string>
@@ -53,6 +55,8 @@
 
 #include <SushiLog/log/log_level.hpp>
 
+#include <SushiRuntime/coherence/device_profile_file.hpp>
+#include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -793,3 +797,92 @@ TEST(Small_RuntimeContextCollector, AnInjectedCollectorSeesTheZonesOfTheContext)
 }
 
 #endif // SR_ENABLE_PROFILER
+
+/** @brief Tests that the context prices planned copies by the device profile file when it has one. */
+namespace TransferCostTests
+{
+    using namespace SushiRuntime::Internal::Execution;
+    using SushiRuntime::Internal::Coherence::DeviceProfile;
+    using SushiRuntime::Internal::Coherence::DeviceProfileFile;
+    using SushiRuntime::Internal::Coherence::DeviceProfileSet;
+    using SushiRuntime::Internal::Coherence::PathProfile;
+    using SushiRuntime::Internal::Coherence::TransferPath;
+
+    namespace
+    {
+        /** @brief Bytes of the copy each test prices. */
+        constexpr std::size_t K_BYTES = 1000;
+
+        /** @brief Returns a path in the temporary directory named for the test that asks. */
+        std::filesystem::path profile_path(const char* name)
+        {
+            return std::filesystem::temp_directory_path() / (std::string("sushiruntime_test_") + name + ".txt");
+        }
+
+        /** @brief Returns what the context charges a copy of K_BYTES inside device 0 over its first path. */
+        double priced(RuntimeContext& context)
+        {
+            const TransferPath& path = *context.transfer_paths().front();
+            const SushiRuntime::MemorySpaceID space(1);
+            return context.transfer_cost()(path, space, space, K_BYTES);
+        }
+    } // namespace
+
+    TEST(Medium_RuntimeContextTransferCost, WithNoProfileFileACopyCostsItsBytes)
+    {
+        auto context = RuntimeContext::create();
+        ASSERT_TRUE(context.has_value()) << context.error().message;
+
+        EXPECT_EQ(priced(**context), static_cast<double>(K_BYTES));
+    }
+
+    TEST(Medium_RuntimeContextTransferCost, APathWithNoFileKeepsTheUniformCost)
+    {
+        RuntimeSettings settings;
+        settings.device_profile_file = profile_path("absent_profile").string();
+        std::filesystem::remove(settings.device_profile_file);
+
+        auto context = RuntimeContext::create({}, nullptr, nullptr, settings);
+        ASSERT_TRUE(context.has_value()) << context.error().message;
+
+        EXPECT_EQ(priced(**context), static_cast<double>(K_BYTES));
+    }
+
+    TEST(Medium_RuntimeContextTransferCost, AProfileFilePricesCopiesThroughTheCostModel)
+    {
+        auto probe = RuntimeContext::create();
+        ASSERT_TRUE(probe.has_value()) << probe.error().message;
+        const TransferPath& path = *(*probe)->transfer_paths().front();
+        DeviceProfile profile;
+        profile.paths.emplace(std::string(path.name()), PathProfile{1.0e9, 1.0e-6});
+        DeviceProfileSet profiles;
+        profiles.set((*probe)->devices().devices().front().key, profile);
+        const std::filesystem::path file = profile_path("loaded_profile");
+        ASSERT_TRUE(DeviceProfileFile::write(file, profiles));
+
+        RuntimeSettings settings;
+        settings.device_profile_file = file.string();
+        auto context = RuntimeContext::create({}, nullptr, nullptr, settings);
+        std::filesystem::remove(file);
+        ASSERT_TRUE(context.has_value()) << context.error().message;
+
+        EXPECT_DOUBLE_EQ(priced(**context), 1.0e-6 + static_cast<double>(K_BYTES) / 1.0e9);
+    }
+
+    TEST(Medium_RuntimeContextTransferCost, AFileThatCannotBeReadRefusesTheCreate)
+    {
+        const std::filesystem::path file = profile_path("malformed_profile");
+        {
+            std::ofstream out(file);
+            out << "format_version 1\nnot a line\n";
+        }
+        RuntimeSettings settings;
+        settings.device_profile_file = file.string();
+
+        auto context = RuntimeContext::create({}, nullptr, nullptr, settings);
+        std::filesystem::remove(file);
+
+        ASSERT_FALSE(context.has_value());
+        EXPECT_EQ(context.error().code, SushiRuntime::ErrorCode::InvalidArgument);
+    }
+} // namespace TransferCostTests

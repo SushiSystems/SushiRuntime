@@ -39,8 +39,9 @@ namespace SushiRuntime
         /**
          * @brief Evicts the instance whose next read is furthest in the recorded graph.
          *
-         * Of equal next reads, an instance that needs no write-back goes first; of the rest, the
-         * first candidate wins. The policy reads graph positions and never the clock.
+         * Of equal next reads, the instance whose write-back costs least goes first, so one that
+         * needs none goes before one that does; of the rest, the first candidate wins. The policy
+         * reads graph positions and prices, never the clock.
          */
         class LogicalTimeEviction final : public EvictionPolicy
         {

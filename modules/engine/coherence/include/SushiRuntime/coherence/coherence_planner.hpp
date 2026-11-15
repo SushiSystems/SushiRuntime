@@ -132,6 +132,12 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> make_room(MemorySpaceID space, std::size_t bytes,
                                                      std::size_t node, CopyPlan& plan);
 
+                /**
+                 * @brief Returns the least cost of copying bytes from space to the residency host
+                 *        over any path that connects them; infinity when none does.
+                 */
+                [[nodiscard]] double write_back_cost(MemorySpaceID space, std::size_t bytes) const;
+
                 /** @brief Writes back, drops and frees one instance, before node. */
                 [[nodiscard]] Result<void> evict(const EvictionCandidate& victim, std::size_t node,
                                                  CopyPlan& plan);

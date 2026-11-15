@@ -37,9 +37,7 @@
 
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
-#include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
-#include <SushiRuntime/coherence/transfer_cost.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
 #include <SushiRuntime/memory/residency_view.hpp>
@@ -102,11 +100,10 @@ namespace SushiRuntime
             Internal::Coherence::CoherencePlanner planner(
                 runtime.handles(), runtime.memory_spaces(),
                 std::vector<const Internal::Coherence::TransferPath*>(paths.begin(), paths.end()),
-                Internal::Coherence::uniform_transfer_cost());
-            // Planned instances stay resident; the policy and the options live as long as the planner.
-            const Internal::Coherence::LogicalTimeEviction eviction;
+                runtime.transfer_cost());
+            // Planned instances stay resident; the context owns the policy and the cost.
             Internal::Coherence::ResidencyOptions residency;
-            residency.policy = &eviction;
+            residency.policy = &runtime.eviction_policy();
             residency.host = Internal::Graph::host_memory_space();
             residency.host_read = host_read_buffers(nodes, runtime.handles());
             planner.set_residency(std::move(residency));

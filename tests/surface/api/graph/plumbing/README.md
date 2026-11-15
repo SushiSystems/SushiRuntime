@@ -307,6 +307,5 @@ Large, on the first machine: a CUDA GPU and a HIP GPU in one runtime. Each test 
 
 | Test | What it proves |
 | --- | --- |
-| `TheDevicesOfTwoVendorsAreConnectedByTheHostStagedPath` | The first transfer path of the context that connects the two device spaces is `host_staged`, in both directions. The runtime registers no `TransferObserver`, so the test reads the planner's choice from the context's path list, which is the order the planner takes. |
-| `ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice` | A node on the CUDA GPU writes a 64 MiB buffer, a node on the HIP GPU reads it and writes a second buffer, and the second buffer equals the host reference. The test prints, and does not assert, the time of the run through the pinned staging ring and of a copy through pageable host memory. |
+| `ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice` | A node on the CUDA GPU writes a 64 MiB buffer, a node on the HIP GPU reads it and writes a second buffer, and the second buffer equals the host reference. An observer installed through `AdvancedControls::install_transfer_observer()` hears every copy; each copy between the two GPUs took `host_staged`, and at least one went from the CUDA GPU to the HIP GPU. The test prints, and does not assert, the time of the run through the pinned staging ring and of a copy through pageable host memory. |
 

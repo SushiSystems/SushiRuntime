@@ -469,7 +469,16 @@ with run_async() is pending; the "StepDriver: moves" section gives the result in
 The returned region records work with the same add() surface as a static graph. region(key) is not
 a mutation: reading a region (`world.region(k).size()`) between two runs leaves compose_count()
 unchanged. A region is rebuilt at the next run when it was created, when something was recorded on
-it, when it was cleared or when one of its rules was given another name.
+it, when it was cleared or when one of its rules was given another name. It is also rebuilt when the
+copy plan of its last build is not steady, so a run on several devices may compose again with no
+recording, and `compose_count()` rises.
+
+### coherence_plan_count
+
+`coherence_plan_count()`, on `DynamicGraph` and on `Graph`, counts the builds that ran the coherence
+planner: one per region a commit planned, or one per compile of a static graph that planned copies.
+A step that replays a steady plan runs no planner and leaves it unchanged. A runtime with one device
+plans nothing, and the count stays at zero.
 
 ### plan_is_stale
 

@@ -16,6 +16,7 @@ sushiruntime_add_module(
         scheduler_execution_engine.cpp
         runtime_context.cpp
         runtime_memory_spaces.cpp
+        runtime_transfer_cost.cpp
         runtime_transfer_paths.cpp
     DEPENDS
         core
@@ -31,4 +32,5 @@ sushiruntime_add_module(
         report
         machine
         profile
-    PRIVATE_DEPENDS coherence log sycl placement region)
+        coherence
+    PRIVATE_DEPENDS log sycl placement region)

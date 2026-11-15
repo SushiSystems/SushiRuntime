@@ -35,6 +35,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <SushiRuntime/coherence/eviction_policy.hpp>
+#include <SushiRuntime/coherence/transfer_cost.hpp>
+#include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -170,6 +173,23 @@ namespace SushiRuntime
                  *        they are tried; the context owns them.
                  */
                 [[nodiscard]] const std::vector<Internal::Coherence::TransferPath*>& transfer_paths() const noexcept;
+
+                /**
+                 * @brief Returns the cost the coherence planners price copies with: the device
+                 *        profile file's CostModel when one was loaded at create, the bytes otherwise.
+                 * @see modules/engine/coherence/README.md
+                 */
+                [[nodiscard]] const Internal::Coherence::TransferCost& transfer_cost() const noexcept;
+
+                /** @brief Returns the policy the coherence planners evict with; the context owns it. */
+                [[nodiscard]] const Internal::Coherence::EvictionPolicy& eviction_policy() const noexcept;
+
+                /**
+                 * @brief Installs the observer every transfer path reports its copies to; null removes it.
+                 * @param observer Co-owned while installed; a context starts with none.
+                 * @pre No run is in flight.
+                 */
+                void install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer);
 
                 /**
                  * @brief Adds the read-only memory space of a file range, for the life of the

@@ -679,8 +679,14 @@ explicitly calls `stop_work()` a second time from its destructor. The seam allow
 `OffloadCoordinator::stop()` and the engine guards its own shutdown, so `Impl` keeps no flag
 for it. `memory_spaces()` holds the host's space and one per device (`source/runtime_memory_spaces.hpp`);
 an integrated device names the host's pool and offers at most the host's usable bytes;
-`transfer_paths()` holds `SameContextPath`, `PeerPath` and `HostStagedPath` with its staging ring
-(`source/runtime_transfer_paths.hpp`). Both are built once from the device set.
+`transfer_paths()` holds `SameContextPath`, `PeerPath`, `HostStagedPath` with its staging ring, and
+`FilePath` (`source/runtime_transfer_paths.hpp`). Both are built once from the device set. Every path
+reports to the context's `TransferObserverSlot`, which forwards to the observer
+`install_transfer_observer()` installed, if any. `transfer_cost()` is the device profile file's
+`CostModel` when `RuntimeSettings::device_profile_file` names a file that is there, and the bytes
+otherwise (`source/runtime_transfer_cost.hpp`); `create()` loads it once, and a file that cannot be
+read refuses the create. `eviction_policy()` is the context's `LogicalTimeEviction`. The coherence
+hook of the composer and of `PlanCache` reads all three from the context, so neither builds its own.
 
 The destructor then clears the directory's retire observer: the directory is a member and lives
 until after the body, so a handle retired in that window would otherwise call the coordinator

@@ -14,6 +14,7 @@ sushiruntime_add_module_tests(
         compile_peer_access.cpp
         compile_pinned_host_memory.cpp
         compile_planned_node_factory.cpp
+        compile_probe_devices.cpp
         compile_profile_probe.cpp
         compile_residency_options.cpp
         compile_space_queues.cpp
@@ -25,6 +26,7 @@ sushiruntime_add_module_tests(
         test_copy_plan.cpp
         test_cost_model.cpp
         test_device_profile.cpp
+        test_device_profile_probe.cpp
         test_device_profile_file.cpp
         test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
@@ -49,4 +51,7 @@ sushiruntime_add_module_tests(
         test_same_context_path.cpp
         test_staging_ring.cpp
         test_transfer_cost.cpp
-        test_usm_instance_allocator.cpp)
+        test_transfer_observer_slot.cpp
+        test_usm_instance_allocator.cpp
+    DEVICE_SOURCES
+        test_device_profile_probe.cpp)

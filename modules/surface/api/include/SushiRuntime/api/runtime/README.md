@@ -27,7 +27,9 @@ rebalancer, the forced scheduler path, `force_chain`, which keeps a graph that a
 the chain, and the submit funnel (`submit_funnel`, off by default: the
 scheduler's kernel nodes are then submitted by one thread per device, on top of the workers; see
 `docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md`). `node_name` and `labels` describe the machine to
-`topology()`. A runtime inside a game shares the machine with a render
+`topology()`. `device_profile_file` names the device profile file the runtime reads once at create
+and prices its planned copies by (`modules/engine/coherence/README.md`); empty, or a path with no
+file, prices them by their bytes, and a file that cannot be read refuses the create. A runtime inside a game shares the machine with a render
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
 owner.
 
@@ -102,6 +104,14 @@ their nodes to, and null removes it. A runtime starts with none. A test installs
 coordinator of `task` through it to see what a run offers. Installing or removing
 one makes every compiled plan stale, so each graph compiles again on its next run. The call is not
 refused while a run is in flight; the caller makes sure none is.
+
+### install_transfer_observer
+
+`install_transfer_observer()` hands the runtime an `Internal::Coherence::TransferObserver` that every
+transfer path tells of each copy it starts: the path's name, the two spaces and the byte count. Null
+removes it, and a runtime starts with none. A test installs one to see which path each planned copy
+took. The observer is called from the worker that runs the copy, so it must be safe to call from
+several threads. The call is made between runs; the caller makes sure none is in flight.
 
 ## placement_scope.hpp
 

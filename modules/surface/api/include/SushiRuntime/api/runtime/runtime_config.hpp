@@ -61,5 +61,11 @@ namespace SushiRuntime
 
         /** @brief Labels the machine reports in NodeFacts, in order. */
         std::vector<NodeLabel> labels;
+
+        /**
+         * @brief The device profile file read once at create; empty, or a path with no file,
+         *        prices copies by their bytes. A file that is there and cannot be read refuses create().
+         */
+        std::string device_profile_file;
     };
 } // namespace SushiRuntime

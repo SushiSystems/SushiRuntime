@@ -192,6 +192,10 @@ none reports the process-wide one, and a host context built over a `SushiProfile
 `ManualTickSource` shows the `wait.queues` zone of its device set in that collector, stamped by the manual
 clock. The zone is a level 2 zone, so the case skips when the build compiles fewer levels.
 
+`Medium_RuntimeContextTransferCost` covers `transfer_cost()`: with no profile file, or a path where no
+file is, a copy costs its bytes; with a profile file it costs the path's latency plus its bytes over
+the path's bandwidth; and a file that cannot be read refuses the create with `InvalidArgument`.
+
 The rest of the file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
 the g1 node event records design spec in the version history, built as task 3 of
 the g1 node event records plan spec in the version history. A profiled node needs the

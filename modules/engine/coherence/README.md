@@ -30,6 +30,7 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
 | `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
+| `transfer_observer_slot.hpp` | `TransferObserverSlot`, the observer the runtime's paths hold, which forwards to one a caller installs |
 | `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance and names its kind of USM |
 | `usm_instance_allocator.hpp` | `USMInstanceAllocator`, the port over a `USMAllocator` |
 | `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step into a node |
@@ -52,6 +53,8 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `pool_occupancy.hpp` | `PoolOccupancy`, the bytes a placement holds in each pool |
 | `fill_plan.hpp` | `fill_plan()`, `floor_plan()`, `FillWalk` and `FloorPlan` |
 | `assignment_hash.hpp` | `assignment_hash()`, the FNV-1a hash of an assignment |
+| `probe_devices.hpp` | `ProbeDevices` and `ProbeDevice`, the port that finds a device's queue and space by `DeviceKey` |
+| `device_profile_probe.hpp` | `DeviceProfileProbe` and `ProbeKernel`, the probe that times real SYCL devices |
 
 ## CoherencePlanner
 
@@ -86,10 +89,13 @@ that used the instance, and orders an allocation on the space after the eviction
 space with nothing to evict refuses the allocation as `AllocationFailed`, naming the planned bytes
 and the usable bytes.
 
+Each candidate carries `write_back_cost`: for a sole copy, the least price of copying its bytes to
+the host over a path that connects them, by the planner's `TransferCost`; zero otherwise.
+
 `LogicalTimeEviction` evicts the instance whose next read is furthest in the recorded graph. A read
 in the next step counts as a position past the graph end, in node order. Of equal positions the
-instance that needs no write-back goes first, then the first candidate. No clock and no address
-takes part, so the same graph gives the same plan, and `plan_hash()` over its steps and `steady`
+instance with the lower `write_back_cost` goes first, so one that needs no write-back goes before one
+that does, then the first candidate. No clock and no address takes part, so the same graph gives the same plan, and `plan_hash()` over its steps and `steady`
 flag gives the same value in every run.
 
 A resident plan does not free what it allocated, so the next step meets the instances it needs. It
@@ -124,7 +130,9 @@ device space records a shared SYCL context. `PeerPath` connects two spaces the s
 when `PeerAccess` grants the destination's device the source's memory. The runtime's `PeerAccess`
 asks the SYCL peer-access extension on DPC++ and refuses everywhere else, so under AdaptiveCpp the
 path connects nothing. Each path tells its optional `TransferObserver` the path name, the two spaces
-and the byte count of every copy it starts; the runtime registers no observer.
+and the byte count of every copy it starts. The runtime gives every path its `TransferObserverSlot`,
+which drops each copy until a caller installs an observer through
+`AdvancedControls::install_transfer_observer()`, between runs.
 
 The runtime builds the paths once, in `engine/execution`'s `build_transfer_paths()`, and the
 context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`, `PeerPath`,
@@ -174,7 +182,8 @@ node the planner places on a device, then copies from the file through this path
 
 ## splice_plan
 
-`splice_plan()` builds every planned node through the factory before it changes the graph, so a
+`splice_plan()` plans the nodes, builds every planned node through the factory before it changes the
+graph, and returns the `CopyPlan` it spliced, so the caller can keep it beside the graph it built. A
 refused step leaves the nodes as they were. A step before a node takes the node's predecessors and
 precedes it. A step precedes every later step and node that uses one of its instances. A step at
 the graph end follows every leaf. Each edge raises the target's in-degree, and the planned nodes are
@@ -210,7 +219,12 @@ bandwidth; the path is looked up on the source device first, then on the destina
 path with no profile gives no time. A device with a rate of zero that has work to do gives infinity.
 
 `select_transfer_cost()` gives the planner its `TransferCost`: the model's seconds when a model is
-loaded, `uniform_transfer_cost()` when none is. A copy the model cannot price costs infinity.
+loaded, `uniform_transfer_cost()` when none is. A copy the model cannot price costs infinity. The
+runtime builds it once, at create, in `engine/execution`'s `load_transfer_cost()`, and hands it out as
+`RuntimeContext::transfer_cost()`; the composer's and `PlanCache`'s hook prices every copy with it,
+so the cheapest path and source win and eviction weighs the price of a write-back. The resolver maps
+a device space to its device's `DeviceKey` and the host space to none, so with a model loaded a copy
+to or from the host costs infinity and a tie goes to the first path.
 
 ## Partitioner
 
@@ -250,6 +264,23 @@ kernel gives the base throughput. Memory bandwidth counts the bytes read and wri
 is the time of the small copy, and its bandwidth is the large copy's bytes over its time less the
 latency. A probe that reports a time of zero or less is refused as `InvalidState`.
 
+## DeviceProfileProbe
+
+`DeviceProfileProbe` is the probe on real devices. It uses standard SYCL only, so it builds under
+AdaptiveCpp. `ProbeDevices` gives it each device's queue and memory space by `DeviceKey`. Capacity
+and reserve are the space's. A device copy is one `memcpy` between two device allocations; a path
+copy goes through the runtime's own `TransferPath` of that name between an allocation on each
+device, so it times what the planner will use; a kind runs the `ProbeKernel` the caller registered
+for it, which returns the operations it did. Each runs once to warm up and once timed, on the host's
+steady clock, from the submit to the end of the wait. The time is a measurement and decides no plan
+until it is written to the profile file. A path no path of that name connects is `Unsupported`; a
+kind with no kernel, or a key with no device, is `InvalidArgument`.
+
+Integrated detection is a hook, not a rule. When a backend reports `host_unified_memory` false for an
+APU that carves its memory from RAM (HIP on gfx1036 is the open case of T42), the probe is where
+the fact may be taken from measured behaviour instead, such as a device copy no faster than a host
+copy. It is not done: no threshold is guessed until the closing run has measured one.
+
 ## Device profile file
 
 `DeviceProfileFile` owns the file. It is read once at the start of a run and is frozen for that run.
@@ -286,4 +317,6 @@ end
 | 2 or later | Rejects it with `Unsupported`, naming the version found and the version known. |
 
 A fault in a line is `InvalidArgument` and names the line. A file that is missing is refused by
-`read()`; a run that has no file runs with no `CostModel`.
+`read()`. The runtime reads the file `RuntimeConfig::device_profile_file` names, once, at create. An
+empty path, or a path with no file, runs with no `CostModel` and logs it; a file that is there and
+cannot be read refuses the create with the reader's error.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `RuntimeConfig::device_profile_file`; a runtime given a profile file prices its planned copies through `CostModel`, and one without keeps the cost by bytes (GLOBAL_HANDLE H9).
+- 2026-11-15 — api: Added `AdvancedControls::install_transfer_observer()`, which reports the path each copy took (GLOBAL_HANDLE H9).
+- 2026-11-15 — coherence: Added `DeviceProfileProbe`, which measures a device's paths, memory and kernels on real SYCL devices (GLOBAL_HANDLE H9).
+- 2026-11-15 — coherence: Changed `LogicalTimeEviction` to break a tie between equal next reads by the cheaper write-back (GLOBAL_HANDLE H9).
 - 2026-11-15 — memory: Added `ResidencyDirectory::retire_coherence_history()`, which joins runs of equal valid spaces and drops their versions so the interval maps stop growing with run length (GLOBAL_HANDLE H5).
 - 2026-11-15 — runtime: Changed placement so a node whose kernel captured raw addresses runs elsewhere only where those addresses hold; another SYCL context or a sibling's device USM is refused with `InvalidGraph` (GLOBAL_HANDLE H3).
 - 2026-11-15 — runtime: Changed a kernel pointer bind with no instance on the node's device to fail its verify, unless the home is host-visible memory (GLOBAL_HANDLE H3).

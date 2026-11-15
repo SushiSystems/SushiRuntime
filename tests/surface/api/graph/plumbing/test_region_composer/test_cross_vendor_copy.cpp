@@ -32,6 +32,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -40,8 +42,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/coherence/transfer_path.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
@@ -94,18 +95,35 @@ namespace CrossVendorCopyTests
             return std::nullopt;
         }
 
-        /** @brief Returns the name of the first path that connects the device spaces of two devices; empty when none does. */
-        std::string first_connecting_path(const Runtime& runtime, std::size_t source, std::size_t destination)
+        /** @brief Keeps every copy the runtime's paths report; safe from several workers. */
+        class RecordingObserver final : public Internal::Coherence::TransferObserver
         {
-            Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(runtime);
-            const auto& spaces = context.memory_spaces();
-            const Internal::Memory::MemorySpace& from = *spaces[Internal::Graph::device_memory_space(source).value()];
-            const Internal::Memory::MemorySpace& to = *spaces[Internal::Graph::device_memory_space(destination).value()];
-            for (const Internal::Coherence::TransferPath* path : context.transfer_paths())
-                if (path->connects(from, to))
-                    return std::string(path->name());
-            return {};
-        }
+            public:
+                /** @brief Holds one copy: the path name and the two spaces. */
+                struct Copy
+                {
+                    std::string path;          /**< Name of the path that took it. */
+                    MemorySpaceID source;      /**< Space read from. */
+                    MemorySpaceID destination; /**< Space written to. */
+                };
+
+                void copied(const Internal::Coherence::TransferRecord& record) override
+                {
+                    const std::lock_guard<std::mutex> hold(lock_);
+                    copies_.push_back(Copy{std::string(record.path), record.source, record.destination});
+                }
+
+                /** @brief Returns the copies heard so far, in the order they were heard. */
+                [[nodiscard]] std::vector<Copy> copies() const
+                {
+                    const std::lock_guard<std::mutex> hold(lock_);
+                    return copies_;
+                }
+
+            private:
+                mutable std::mutex lock_;  /**< Guards copies_. */
+                std::vector<Copy> copies_; /**< The copies heard. */
+        };
 
         /** @brief Returns the seconds a callable takes. */
         template <class Callable>
@@ -167,23 +185,19 @@ namespace CrossVendorCopyTests
             std::size_t hip_ = 0;  /**< Index of the HIP GPU. */
     };
 
-    /** @brief Tests that the first path that connects the two devices is the host-staged path, in both directions. */
-    TEST_F(Large_CrossVendorCopy, TheDevicesOfTwoVendorsAreConnectedByTheHostStagedPath)
-    {
-        EXPECT_EQ(first_connecting_path(runtime(), cuda_, hip_), "host_staged");
-        EXPECT_EQ(first_connecting_path(runtime(), hip_, cuda_), "host_staged");
-    }
-
     /**
      * @brief Tests that a 64 MiB buffer written by a node on the CUDA GPU reads equal on the HIP GPU.
      *
-     * Each node sits where the buffer it writes lives. The host-staged path is the only path between
-     * the two devices, so the copy the plan adds takes it. The test prints the bandwidth of the whole
-     * run and of a copy through pageable host memory; it asserts neither.
+     * Each node sits where the buffer it writes lives. An observer installed through
+     * AdvancedControls hears every copy, and each copy between the two devices took the host-staged
+     * path. The test prints the bandwidth of the whole run and of a copy through pageable host
+     * memory; it asserts neither.
      */
     TEST_F(Large_CrossVendorCopy, ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice)
     {
         const Runtime& rt = runtime();
+        const auto observer = std::make_shared<RecordingObserver>();
+        rt.advanced().install_transfer_observer(observer);
         auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{cuda_}).value();
         auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{hip_}).value();
         auto world = rt.dynamic_graph();
@@ -200,7 +214,23 @@ namespace CrossVendorCopyTests
 
         const double run_seconds = seconds_of([&] { EXPECT_TRUE(world.run()); });
 
+        rt.advanced().install_transfer_observer(nullptr);
+
         EXPECT_EQ(TestSupport::contents(result), reference_result());
+        const MemorySpaceID cuda_space = Internal::Graph::device_memory_space(cuda_);
+        const MemorySpaceID hip_space = Internal::Graph::device_memory_space(hip_);
+        std::size_t cuda_to_hip = 0;
+        for (const RecordingObserver::Copy& copy : observer->copies())
+        {
+            const bool between = (copy.source == cuda_space && copy.destination == hip_space) ||
+                                 (copy.source == hip_space && copy.destination == cuda_space);
+            if (!between)
+                continue;
+            EXPECT_EQ(copy.path, "host_staged");
+            if (copy.source == cuda_space)
+                ++cuda_to_hip;
+        }
+        EXPECT_GE(cuda_to_hip, 1U);
         print_bandwidth("cross_vendor.write_copy_read.pinned_ring", run_seconds);
         print_bandwidth("cross_vendor.copy_only.pageable",
                         pageable_copy_seconds(rt, cuda_, hip_, written.data(), result.data()));

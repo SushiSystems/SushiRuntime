@@ -50,6 +50,8 @@
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
+#include <SushiRuntime/coherence/logical_time_eviction.hpp>
+#include <SushiRuntime/coherence/transfer_observer_slot.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
@@ -75,6 +77,7 @@
 
 #include "host_execution_engine.hpp"
 #include "runtime_memory_spaces.hpp"
+#include "runtime_transfer_cost.hpp"
 #include "runtime_transfer_paths.hpp"
 
 namespace SushiRuntime
@@ -285,8 +288,17 @@ namespace SushiRuntime
             /** @brief The host's and each device's memory space, measured once when the context is built. */
             RuntimeMemorySpaces spaces{build_memory_spaces(devices, Internal::Memory::SystemMemoryProbe{})};
 
+            /** @brief Forwards each copy of the paths to the observer a caller installed; outlives the paths. */
+            Internal::Coherence::TransferObserverSlot transfer_observer;
+
             /** @brief The paths that copy between the spaces; they borrow devices and are destroyed first. */
-            RuntimeTransferPaths paths{build_transfer_paths(devices)};
+            RuntimeTransferPaths paths{build_transfer_paths(devices, &transfer_observer)};
+
+            /** @brief Prices one planned copy; the bytes until create() loads a profile file. */
+            Internal::Coherence::TransferCost transfer_cost{Internal::Coherence::uniform_transfer_cost()};
+
+            /** @brief The policy every coherence planner of the context evicts with. */
+            Internal::Coherence::LogicalTimeEviction eviction;
 
             /** @brief Gives the Borrowed handles of caller-owned memory; mints in handles. */
             Internal::Memory::BorrowedIndex borrowed{handles};
@@ -371,6 +383,15 @@ namespace SushiRuntime
 
                 context = std::shared_ptr<RuntimeContext>(new RuntimeContext(make_sushi<Impl>(
                     settings, *provider, std::move(distance_model), std::move(*descriptors), collector)));
+
+                Result<Internal::Coherence::TransferCost> cost =
+                    load_transfer_cost(settings.device_profile_file, context->impl_->devices);
+                if (!cost)
+                {
+                    refused = std::move(cost.error());
+                    return;
+                }
+                context->impl_->transfer_cost = std::move(cost.value());
 
                 // The engine reads the context while it is built, so impl_ is complete first.
                 auto engine = std::make_unique<SchedulerExecutionEngine>(*context);
@@ -470,6 +491,21 @@ namespace SushiRuntime
         const std::vector<Internal::Coherence::TransferPath*>& RuntimeContext::transfer_paths() const noexcept
         {
             return impl_->paths.views;
+        }
+
+        const Internal::Coherence::TransferCost& RuntimeContext::transfer_cost() const noexcept
+        {
+            return impl_->transfer_cost;
+        }
+
+        const Internal::Coherence::EvictionPolicy& RuntimeContext::eviction_policy() const noexcept
+        {
+            return impl_->eviction;
+        }
+
+        void RuntimeContext::install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer)
+        {
+            impl_->transfer_observer.install(std::move(observer));
         }
 
         Result<MemorySpaceID> RuntimeContext::add_file_space(Internal::Memory::FileRange range)

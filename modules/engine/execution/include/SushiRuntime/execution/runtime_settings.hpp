@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/machine/worker_pool.hpp>
@@ -91,6 +92,15 @@ namespace SushiRuntime
              * @see docs/design/GRAPH_REPLAY/SUBMIT_FUNNEL.md
              */
             bool submit_funnel = false;
+
+            /**
+             * @brief Names the device profile file read once at create; empty for none.
+             *
+             * A file that is there prices every planned copy through CostModel; with none, or with
+             * no file at the path, copies are priced by their bytes.
+             * @see modules/engine/coherence/README.md
+             */
+            std::string device_profile_file;
         };
 
         /** @brief Returns the worker pool a RuntimeSettings asks the scheduler for. */

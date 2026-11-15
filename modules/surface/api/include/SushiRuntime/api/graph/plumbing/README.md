@@ -154,8 +154,7 @@ exactly one update rule per step.
 
 The whole-field form iterates the size of the State written, and add() refuses the rule with
 `InvalidGraph` when a State read is smaller than that. The launch form compares the launch with
-every State
-named.
+every State named.
 
 ### add_dynamic(Dynamic, capacity, Reads, Writes, kernel)
 
@@ -719,7 +718,10 @@ the roots and the plan as the last commit left them, and the caller repeats the 
 recording is repaired. A region built before the one that threw is built again by that commit.
 Each built region is stamped, then `plan_region_coherence()` (`source/region_coherence.hpp`) adds
 the allocate, copy and free nodes of `engine/coherence`, and finish_region() reads its in-degrees,
-roots, leaves and boundary summary; a refused plan fails the commit the same way.
+roots, leaves and boundary summary; a refused plan fails the commit the same way. The hook prices
+copies by the context's `transfer_cost()` and evicts by its `eviction_policy()` through
+`ResidencyOptions`, so instances stay resident; the region stores the `CopyPlan`, a commit rebuilds
+each region whose plan is not steady, and each planned region adds one to `coherence_plan_count()`.
 
 The second phase un-wires the allocations of the retired regions (retire_regions()), installs the
 built ones (install_region()), wires every dirty allocation again (rewire_base()) and publishes the
@@ -732,9 +734,7 @@ sentinel (discard_every_region()), and installs and wires the whole graph from n
 The composer finds the live regions of that rebuild among the keys it still holds and the dirty
 keys it is given, so the caller must pass the dirty and dropped keys of the commit that threw.
 DynamicGraph::rebuild_plan() clears its two sets and frees the retired regions only after commit()
-returns.
-
-Both the old and the new nodes of a dirty region are alive between the two phases.
+returns. Both the old and the new nodes of a dirty region are alive between the two phases.
 
 ### commit: cost
 

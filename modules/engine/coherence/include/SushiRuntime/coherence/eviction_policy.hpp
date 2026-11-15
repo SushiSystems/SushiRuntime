@@ -53,6 +53,7 @@ namespace SushiRuntime
             std::size_t bytes = 0;         /**< Bytes the instance holds. */
             std::size_t next_read = K_NEVER; /**< Position in the recorded graph of its next use. */
             bool sole_copy = false;        /**< True when it holds bytes no other space holds. */
+            double write_back_cost = 0.0;  /**< Price of copying its sole bytes home by the planner's TransferCost; 0 when sole_copy is false. */
         };
 
         /**

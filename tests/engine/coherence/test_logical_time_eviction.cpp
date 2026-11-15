@@ -48,6 +48,7 @@ namespace
         result.next_read = next_read;
         result.sole_copy = sole_copy;
         result.bytes = 64;
+        result.write_back_cost = sole_copy ? 64.0 : 0.0;
         return result;
     }
 
@@ -77,6 +78,14 @@ namespace
         const LogicalTimeEviction subject;
         const std::vector<EvictionCandidate> candidates{candidate(6, true), candidate(6, false),
                                                         candidate(6, false)};
+        EXPECT_EQ(subject.choose(candidates), std::optional<std::size_t>(1));
+    }
+
+    TEST(Small_LogicalTimeEviction, OfEqualNextReadsTheCheaperWriteBackGoesFirst)
+    {
+        const LogicalTimeEviction subject;
+        std::vector<EvictionCandidate> candidates{candidate(6, true), candidate(6, true)};
+        candidates[1].write_back_cost = 8.0;
         EXPECT_EQ(subject.choose(candidates), std::optional<std::size_t>(1));
     }
 
