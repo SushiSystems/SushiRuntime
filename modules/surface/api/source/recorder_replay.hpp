@@ -84,7 +84,7 @@ namespace SushiRuntime
                     {
                         Internal::Execution::RuntimeContext& context =
                             Internal::ContextAccess::context(recorder.context_);
-                        attach_kernel_pointers(added, spec.description, context.handles(),
+                        attach_kernel_pointers(added, spec.description, context.handle_ports().residency,
                                                context.devices().count());
                     }
                     visit(static_cast<std::size_t>(spec.rule), node);

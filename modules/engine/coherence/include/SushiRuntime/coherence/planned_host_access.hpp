@@ -38,8 +38,8 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
 namespace SushiRuntime
@@ -57,11 +57,11 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Builds the access over a runtime's directory, spaces, paths and allocator.
+                 * @brief Builds the access over a runtime's handle ports, spaces, paths and allocator.
                  * @param host The host memory space; spaces holds it.
                  * @pre Every argument outlives this object.
                  */
-                PlannedHostAccess(Memory::ResidencyDirectory& directory,
+                PlannedHostAccess(const Memory::HandlePorts& ports,
                                   const std::vector<const Memory::MemorySpace*>& spaces,
                                   const std::vector<TransferPath*>& paths,
                                   InstanceAllocator& allocator,
@@ -130,7 +130,7 @@ namespace SushiRuntime
                 [[nodiscard]] const Memory::MemorySpace* space_with(MemorySpaceID id) const noexcept;
 
                 /// @brief Entries, instances and coherence maps of the buffers.
-                Memory::ResidencyDirectory* directory_;
+                Memory::HandlePorts ports_;
 
                 /// @brief Spaces in the order a source is chosen.
                 const std::vector<const Memory::MemorySpace*>* spaces_;

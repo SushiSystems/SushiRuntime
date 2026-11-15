@@ -90,6 +90,18 @@ Free pool storage belongs to this thread alone, so the destructor releases it di
 retire_list nodes are owned by the EpochManager by then and may come from any thread's pool, so they
 cannot go back to this pool.
 
+## handle_ports.hpp
+
+### HandlePorts
+
+The handle table seen by role, so a consumer takes the port it uses and never the concrete
+`ResidencyDirectory`. `HandleRegistry` (`handle_registry.hpp`) extends `HandleSpace` with `describe()`
+and `live_count()`: it is the API layer's side. `ResidencyView` is the reading side.
+`HostWriteLog` (`host_write_log.hpp`) records and reads the host writes made outside a plan,
+`CoherenceHistory` (`coherence_history.hpp`) drops the history of retired steps, and `RetireSource`
+(`retire_source.hpp`) installs the one `RetireObserver`. `HandlePorts` holds one reference to each;
+`ResidencyDirectory::ports()` builds it. `CoherenceHorizon::advance()` takes a `CoherenceHistory`.
+
 ## residency_view.hpp
 
 ### ResidencyView
@@ -98,7 +110,7 @@ The port `engine/coherence` reads and writes the directory through. It extends `
 adds what a planner needs and nothing else: `inspect()`, the coherence map of a handle,
 `set_instance()`, `drop_instance()` and `instance_kind()`. `EntryView` and `ElementLayout` are
 declared here with it. Minting, retiring, describing and the retire observer stay on
-`ResidencyDirectory`, so a planner cannot call them. A test fake implements the port without a
+`ResidencyDirectory`, behind `HandleRegistry`, `HostWriteLog` and `RetireSource`, so a planner cannot call them. A test fake implements the port without a
 table behind it.
 
 ## residency_directory.hpp

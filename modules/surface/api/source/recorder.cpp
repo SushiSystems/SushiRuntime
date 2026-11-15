@@ -210,7 +210,7 @@ namespace SushiRuntime
             return host_fault_record();
         Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
         const std::optional<Internal::Graph::HandleLocation> location =
-            Internal::Graph::locate(context.handles(), slot.buffer, context.devices().count());
+            Internal::Graph::locate(context.handle_ports().residency, slot.buffer, context.devices().count());
         return fault_record(DeviceIndex{location ? location->device : 0});
     }
 } // namespace SushiRuntime

@@ -164,7 +164,7 @@ namespace SushiRuntime
                 planned = coherent.value().has_value();
                 built->copy_plan = std::move(coherent.value());
                 if (planned)
-                    built->host_writes.emplace(nodes, runtime.handles());
+                    built->host_writes.emplace(nodes, runtime.handle_ports().host_writes);
                 return {};
             };
             // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
@@ -209,7 +209,7 @@ namespace SushiRuntime
                 return "the placement changed";
             if (state_->copy_plan && !state_->copy_plan->steady)
                 return "the copy plan is not steady";
-            if (state_->host_writes && state_->host_writes->written(runtime.handles()))
+            if (state_->host_writes && state_->host_writes->written(runtime.handle_ports().host_writes))
                 return "the host wrote a buffer of the copy plan";
             if (partition_ != nullptr && partition_->rebalanced(runtime))
                 return "a horizon rebalanced the partition";
@@ -225,7 +225,7 @@ namespace SushiRuntime
                 return true;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
             // A host write between runs left the directory where the stored copy plan does not hold.
-            if (state_->host_writes && state_->host_writes->written(runtime.handles()))
+            if (state_->host_writes && state_->host_writes->written(runtime.handle_ports().host_writes))
                 return true;
             // A horizon put another plan in force for the problem this graph was placed by.
             if (partition_ != nullptr && partition_->rebalanced(runtime))

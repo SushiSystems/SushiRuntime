@@ -160,7 +160,7 @@ namespace
     {
         const std::vector<SushiRuntime::BufferRegion> none;
         const std::vector<SushiRuntime::BufferRegion> writes{
-            SushiRuntime::BufferRegion(TestSupport::place_in(context.handles(), data))};
+            SushiRuntime::BufferRegion(TestSupport::place_in(context.handle_ports(), data))};
 
         TaskGraph graph;
         graph.add_node([data, count](sycl::handler& handler)

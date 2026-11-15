@@ -280,7 +280,7 @@ namespace DevicePipelineTests
     TEST(Medium_DevicePipelineTest, DiamondAllKernelNodes)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
-        TestSupport::HandleTable keys(context.handles());
+        TestSupport::HandleTable keys(context.handle_ports());
 
         if (!numa0_has_single_queue(context))
             GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would scatter "
@@ -468,7 +468,7 @@ namespace HeterogeneousPipelineTests
     TEST(Medium_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
-        TestSupport::HandleTable keys(context.handles());
+        TestSupport::HandleTable keys(context.handle_ports());
         TaskGraph graph;
         const std::vector<sycl::queue*> device_queues = cpu_and_gpu_queues(context);
         ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
@@ -515,7 +515,7 @@ namespace SYCLExecutionTests
     TEST(Medium_SyclExecutionTest, EndToEndVectorAddition)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
-        TestSupport::HandleTable keys(context.handles());
+        TestSupport::HandleTable keys(context.handle_ports());
         TaskGraph graph;
 
         sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
@@ -575,7 +575,7 @@ namespace SYCLExecutionTests
     TEST(Medium_SyclExecutionTest, MultiStageChain)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
-        TestSupport::HandleTable keys(context.handles());
+        TestSupport::HandleTable keys(context.handle_ports());
         TaskGraph graph;
 
         constexpr size_t N     = 2048;
@@ -720,7 +720,7 @@ namespace ReplayHostWriteTests
             ASSERT_NE(output.data(), nullptr);
 
             ExecutionEngine& engine = context.execution_engine();
-            TestSupport::HandleTable keys(context.handles());
+            TestSupport::HandleTable keys(context.handle_ports());
             CompiledGraph plan = compile_increment(input.data(), output.data(), keys, device);
 
             for (std::uint32_t value = 0; value < K_REPLAYS; ++value)
@@ -901,7 +901,7 @@ namespace SchedulerStepTests
         SushiRuntime::SeededExecutor executor(TestSupport::K_HOST_RUNTIME_SEED);
         const auto context = TestSupport::make_host_context();
         TaskScheduler scheduler(WorkerPoolSettings{2, 0, SushiRuntime::PinPolicy::Float}, context->topology(),
-                                context->devices(), context->memory(), context->handles());
+                                context->devices(), context->memory(), context->handle_ports().residency);
         scheduler.set_executor(&executor);
         std::vector<SushiRuntime::sushi_ptr<SushiRuntime::Internal::Graph::Node>> nodes;
         std::atomic<std::size_t> executed{0};

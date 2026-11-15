@@ -62,7 +62,7 @@ namespace SushiRuntime
             {
                 Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
                 Internal::Coherence::USMInstanceAllocator allocator(runtime.shared_memory());
-                Internal::Coherence::PlannedHostAccess access(runtime.handles(), runtime.memory_spaces(),
+                Internal::Coherence::PlannedHostAccess access(runtime.handle_ports(), runtime.memory_spaces(),
                                          runtime.transfer_paths(), allocator,
                                          Internal::Graph::host_memory_space());
                 return action(access);

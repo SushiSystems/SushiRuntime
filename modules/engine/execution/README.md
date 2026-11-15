@@ -765,10 +765,10 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 #### USM ownership
 
 `Internal::Memory::USMAllocator` allocates and frees USM and keeps no table of addresses. Each buffer
-the context makes is a handle in `RuntimeContext::handles()`, the residency directory, whose
+the context makes is a handle in the table behind `RuntimeContext::handle_ports()` ([parts page](source/runtime_parts.md)), whose
 entry records the instance on each memory space and the kind of USM it was allocated as. The
 scheduler reads a buffer's device from the space its handle resolves on, and the host-step
-planner reads the kind from the directory, so neither asks SYCL about a pointer.
+planner reads the kind from the residency port, so neither asks SYCL about a pointer.
 
 Memory a caller brings has no kind in the directory. It enters through `borrowed_handles()`,
 the `BorrowedIndex`, on the device the caller states.

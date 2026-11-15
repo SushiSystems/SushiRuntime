@@ -80,7 +80,7 @@ namespace SushiRuntime
                     installed->stop();
 
                 // The directory forgets the coordinator before the context can destroy it.
-                context.handles().set_retire_observer(nullptr);
+                context.handle_ports().retirement.set_retire_observer(nullptr);
                 context.install_offload(nullptr);
             }
 
@@ -242,7 +242,7 @@ namespace SushiRuntime
             if (!session_id)
                 return make_error(std::move(session_id.error()));
 
-            auto state = std::make_shared<State>(context.handles(), context.devices().count(),
+            auto state = std::make_shared<State>(context.handle_ports().residency, context.devices().count(),
                                                  std::move(transport), std::move(options),
                                                  *session_id, runtime.topology());
 
@@ -260,7 +260,7 @@ namespace SushiRuntime
 
             release_installed(context);
             state->context = &context;
-            context.handles().set_retire_observer(&state->coordinator);
+            context.handle_ports().retirement.set_retire_observer(&state->coordinator);
 
             auto attachment = std::make_shared<State::Attachment>(state);
             context.install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator>(

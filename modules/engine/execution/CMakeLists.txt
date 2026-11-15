@@ -14,7 +14,9 @@ sushiruntime_add_module(
         host_step_plan.cpp
         host_step_run.cpp
         scheduler_execution_engine.cpp
+        runtime_coherence_parts.cpp
         runtime_context.cpp
+        runtime_handle_parts.cpp
         runtime_memory_spaces.cpp
         runtime_partition_parts.cpp
         runtime_probe_kernels.cpp

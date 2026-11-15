@@ -66,6 +66,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
@@ -912,3 +913,48 @@ namespace TransferCostTests
         EXPECT_EQ(context.error().code, SushiRuntime::ErrorCode::InvalidArgument);
     }
 } // namespace TransferCostTests
+
+namespace HandlePortTests
+{
+    using SushiRuntime::Internal::Memory::ElementLayout;
+    using SushiRuntime::Internal::Memory::HandlePorts;
+
+    /** @brief Mints and describes a buffer through the ports alone, as a consumer outside execution does. */
+    SushiRuntime::MintOutcome mint_described(const HandlePorts& ports, std::size_t bytes)
+    {
+        const SushiRuntime::MintOutcome minted =
+            ports.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
+        EXPECT_EQ(ports.registry.describe(minted.handle, bytes, ElementLayout{4, 4}, SushiRuntime::MemorySpaceID(0)),
+                  SushiRuntime::HandleStatus::Ok);
+        return minted;
+    }
+
+    /** @brief Tests that a consumer written against HandlePorts mints, reads, counts and retires a handle of the context. */
+    TEST(Small_RuntimeContextHandlePorts, APortsOnlyConsumerMintsInspectsAndRetiresAHandle)
+    {
+        const std::shared_ptr<RuntimeContext> context = TestSupport::make_host_context();
+        const HandlePorts ports = context->handle_ports();
+        const std::size_t live_before = ports.registry.live_count();
+
+        const SushiRuntime::MintOutcome minted = mint_described(ports, 64);
+
+        EXPECT_EQ(ports.residency.inspect(minted.handle).size, 64U);
+        EXPECT_EQ(ports.registry.live_count(), live_before + 1);
+        EXPECT_EQ(ports.registry.retire(minted.handle), SushiRuntime::HandleStatus::Ok);
+        EXPECT_EQ(ports.registry.live_count(), live_before);
+    }
+
+    /** @brief Tests that a host write recorded through the port raises the generation the port reads. */
+    TEST(Small_RuntimeContextHandlePorts, AHostWriteRecordedThroughThePortRaisesItsGeneration)
+    {
+        const std::shared_ptr<RuntimeContext> context = TestSupport::make_host_context();
+        const HandlePorts ports = context->handle_ports();
+        const SushiRuntime::MintOutcome minted = mint_described(ports, 16);
+        const std::uint64_t before = ports.host_writes.host_write_generation();
+
+        EXPECT_EQ(ports.host_writes.record_host_write(minted.handle), SushiRuntime::HandleStatus::Ok);
+
+        EXPECT_GT(ports.host_writes.host_write_generation(), before);
+        EXPECT_EQ(ports.host_writes.host_write_of(minted.handle), ports.host_writes.host_write_generation());
+    }
+} // namespace HandlePortTests

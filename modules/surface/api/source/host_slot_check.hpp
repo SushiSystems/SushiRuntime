@@ -40,7 +40,7 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 
 #include "context_memory.hpp"
 
@@ -62,7 +62,7 @@ namespace SushiRuntime
             if (slot.words == nullptr)
                 return std::nullopt;
             const std::string where = std::string(what) + ", rule " + std::to_string(rule);
-            if (context.handles().inspect(slot.buffer).status != HandleStatus::Ok)
+            if (context.handle_ports().residency.inspect(slot.buffer).status != HandleStatus::Ok)
                 return Error{ErrorCode::InvalidAccess,
                              where + ": this runtime holds no live handle for the slot's buffer, "
                              "so its residency is unknowable; pass a Residency::Host buffer this "

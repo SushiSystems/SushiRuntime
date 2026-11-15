@@ -36,8 +36,8 @@ namespace SushiRuntime
     namespace Detail
     {
         HostWriteWatch::HostWriteWatch(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
-                                       const Internal::Memory::ResidencyDirectory& directory)
-            : armed_(directory.host_write_generation())
+                                       const Internal::Memory::HostWriteLog& log)
+            : armed_(log.host_write_generation())
         {
             for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
             {
@@ -50,13 +50,13 @@ namespace SushiRuntime
             handles_.erase(std::unique(handles_.begin(), handles_.end()), handles_.end());
         }
 
-        bool HostWriteWatch::written(const Internal::Memory::ResidencyDirectory& directory) noexcept
+        bool HostWriteWatch::written(const Internal::Memory::HostWriteLog& log) noexcept
         {
-            const std::uint64_t current = directory.host_write_generation();
+            const std::uint64_t current = log.host_write_generation();
             if (current == armed_)
                 return false;
             for (GlobalHandle handle : handles_)
-                if (directory.host_write_of(handle) > armed_)
+                if (log.host_write_of(handle) > armed_)
                     return true;
             armed_ = current;
             return false;

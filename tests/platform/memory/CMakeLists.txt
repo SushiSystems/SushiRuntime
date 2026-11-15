@@ -6,10 +6,15 @@
 sushiruntime_add_module_tests(
     MODULE memory
     SOURCES
+        compile_coherence_history.cpp
+        compile_handle_ports.cpp
+        compile_handle_registry.cpp
+        compile_host_write_log.cpp
         compile_memory_log_category.cpp
         compile_memory_probe.cpp
         compile_memory_space.cpp
         compile_residency_view.cpp
+        compile_retire_source.cpp
         compile_usm_request.cpp
         compile_usm_source.cpp
         test_borrowed_index.cpp

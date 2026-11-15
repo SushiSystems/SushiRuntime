@@ -13,6 +13,10 @@ allocator tests derive from that fixture base and skip where SYCL reports no dev
 
 ## compile_memory_log_category.cpp, compile_residency_view.cpp and compile_usm_request.cpp
 
+The files `compile_coherence_history.cpp`, `compile_handle_ports.cpp`, `compile_handle_registry.cpp`,
+`compile_host_write_log.cpp` and `compile_retire_source.cpp` are the same kind. `compile_handle_ports.cpp`
+also holds a consumer written against `HandlePorts` alone, which includes no execution header.
+
 Each file includes one header alone. See [the scheduler tests](../../engine/scheduler/README.md)
 for why such a file stands in for a test.
 

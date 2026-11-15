@@ -90,7 +90,7 @@ TEST(Medium_ChainRun, EachStepRunsTheWholeChain)
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
     ASSERT_NE(value, nullptr);
-    TestSupport::HandleTable keys(context->handles());
+    TestSupport::HandleTable keys(context->handle_ports());
     const std::vector<BufferRegion> region{keys.region(value)};
 
     TaskGraph graph;
@@ -117,7 +117,7 @@ TEST(Medium_ChainRun, WaitReturnsAfterTheStep)
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
     ASSERT_NE(value, nullptr);
-    TestSupport::HandleTable keys(context->handles());
+    TestSupport::HandleTable keys(context->handle_ports());
     const std::vector<BufferRegion> region{keys.region(value)};
 
     TaskGraph graph;

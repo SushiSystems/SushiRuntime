@@ -34,6 +34,8 @@
 #include <cstdint>
 #include <optional>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
@@ -111,5 +113,14 @@ namespace SushiRuntime
                 [[nodiscard]] virtual std::optional<USMKind> instance_kind(GlobalHandle handle,
                                                                            MemorySpaceID space) const = 0;
         };
+
+        /**
+         * @brief Returns the ErrorCode a failed handle operation is reported with.
+         * @pre status is not HandleStatus::Ok.
+         */
+        [[nodiscard]] ErrorCode error_code_of(HandleStatus status) noexcept;
+
+        /** @brief Returns the resolved address, or the Error the outcome's status maps to. */
+        [[nodiscard]] Result<void*> to_result(const ResolveOutcome& outcome);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

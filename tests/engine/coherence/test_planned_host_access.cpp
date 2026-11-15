@@ -189,7 +189,7 @@ namespace
             FakeTransferPath path_;
             std::vector<TransferPath*> paths_;
             HeapAllocator allocator_;
-            PlannedHostAccess access_{directory_, spaces_, paths_, allocator_, K_HOST};
+            PlannedHostAccess access_{directory_.ports(), spaces_, paths_, allocator_, K_HOST};
     };
 
     TEST_F(Small_PlannedHostAccess, APlannedBufferIsMintedWithItsSizeAndNoInstance)

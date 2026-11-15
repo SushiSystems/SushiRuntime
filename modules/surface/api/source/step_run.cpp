@@ -413,7 +413,7 @@ namespace SushiRuntime
             observe_run(context, engine, plan, report.layer);
             measure_partitioned_run(context, plan, executed, run_seconds);
             // Every step of the run has ended, so no plan reads the coherence maps now.
-            if (context.coherence_horizon().advance(context.handles(), executed))
+            if (context.coherence_horizon().advance(context.handle_ports().history, executed))
                 fold_partition_ledger(context);
             return {};
         }
@@ -480,7 +480,7 @@ namespace SushiRuntime
             const double step_seconds = static_cast<double>(engine.clock().now_ns() - state.submitted_ns) * 1e-9;
             measure_partitioned_run(context, *engine_plan(target.plan), 1, step_seconds);
             // The step has ended, so no plan reads the coherence maps now.
-            if (context.coherence_horizon().advance(context.handles(), 1))
+            if (context.coherence_horizon().advance(context.handle_ports().history, 1))
                 fold_partition_ledger(context);
             return {};
         }

@@ -35,7 +35,7 @@
 
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/host_write_log.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -51,9 +51,9 @@ namespace SushiRuntime
         class HostWriteWatch final
         {
             public:
-                /** @brief Watches the buffers nodes read or write, from the directory's current generation. */
+                /** @brief Watches the buffers nodes read or write, from the log's current generation. */
                 HostWriteWatch(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
-                               const Internal::Memory::ResidencyDirectory& directory);
+                               const Internal::Memory::HostWriteLog& log);
 
                 /**
                  * @brief Returns whether the host wrote a watched buffer since the watch was armed.
@@ -61,7 +61,7 @@ namespace SushiRuntime
                  * A host write that touched no watched buffer moves the armed generation up, so the
                  * next check reads one atomic again.
                  */
-                [[nodiscard]] bool written(const Internal::Memory::ResidencyDirectory& directory) noexcept;
+                [[nodiscard]] bool written(const Internal::Memory::HostWriteLog& log) noexcept;
 
             private:
                 /// @brief The watched buffers, sorted and unique.

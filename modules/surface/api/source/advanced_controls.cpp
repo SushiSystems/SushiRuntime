@@ -83,7 +83,7 @@ namespace SushiRuntime
 
     std::size_t AdvancedControls::live_allocation_count() const
     {
-        return Internal::ContextAccess::context(context_).handles().live_count();
+        return Internal::ContextAccess::context(context_).handle_ports().registry.live_count();
     }
 
     std::size_t AdvancedControls::host_to_device_bytes() const noexcept

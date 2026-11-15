@@ -50,8 +50,8 @@
 #include <SushiRuntime/memory/borrowed_index.hpp>
 #include <SushiRuntime/memory/coherence_horizon.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/partition_session/partition_session.hpp>
@@ -161,8 +161,14 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] const std::shared_ptr<Internal::Memory::USMAllocator>& shared_memory() const noexcept;
 
-                /** @brief Returns the residency directory that mints, retires and resolves this context's handles. */
-                [[nodiscard]] Internal::Memory::ResidencyDirectory& handles() noexcept;
+                /**
+                 * @brief Returns the ports of this context's handle table, one per role.
+                 *
+                 * The API layer mints and retires through registry; readers take residency.
+                 * @return References valid for this context's lifetime.
+                 * @see modules/engine/execution/README.md
+                 */
+                [[nodiscard]] Internal::Memory::HandlePorts handle_ports() noexcept;
 
                 /**
                  * @brief Returns the memory spaces of the host and of each device, indexed by space id.

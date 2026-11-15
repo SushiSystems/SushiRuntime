@@ -45,7 +45,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -84,7 +84,7 @@ namespace SushiRuntime
              * @param kind The kind of USM the instance is; nothing for borrowed memory.
              * @return Nothing, or the error the directory refused the entry with.
              */
-            [[nodiscard]] Result<void> describe_entry(Internal::Memory::ResidencyDirectory& directory,
+            [[nodiscard]] Result<void> describe_entry(const Internal::Memory::HandlePorts& ports,
                                                       GlobalHandle handle, void* address,
                                                       std::size_t bytes, std::size_t element_size,
                                                       std::size_t element_alignment,
@@ -92,10 +92,10 @@ namespace SushiRuntime
                                                       std::optional<Internal::Memory::USMKind> kind)
             {
                 const MemorySpaceID space = Internal::Graph::device_memory_space(device);
-                HandleStatus status = directory.describe(
+                HandleStatus status = ports.registry.describe(
                     handle, bytes, Internal::Memory::ElementLayout{element_size, element_alignment}, space);
                 if (status == HandleStatus::Ok)
-                    status = directory.set_instance(handle, space, address, kind);
+                    status = ports.residency.set_instance(handle, space, address, kind);
                 if (status != HandleStatus::Ok)
                     return make_error(Error{Internal::Memory::error_code_of(status),
                                             "the residency directory refused the buffer's entry"});
@@ -110,18 +110,18 @@ namespace SushiRuntime
         {
             if (address == nullptr || !context)
                 return GlobalHandle::null();
-            Internal::Memory::ResidencyDirectory& directory =
-                Internal::ContextAccess::context(context).handles();
-            const MintOutcome minted = directory.mint(kind, HandleFlags::None);
+            const Internal::Memory::HandlePorts ports =
+                Internal::ContextAccess::context(context).handle_ports();
+            const MintOutcome minted = ports.registry.mint(kind, HandleFlags::None);
             if (minted.status != HandleStatus::Ok)
                 return make_error(Error{Internal::Memory::error_code_of(minted.status),
                                         "no handle is left for a new buffer"});
-            Result<void> described = describe_entry(directory, minted.handle, address, bytes,
+            Result<void> described = describe_entry(ports, minted.handle, address, bytes,
                                                     element_size, element_alignment,
                                                     device.value(), usm_kind_for(residency));
             if (!described)
             {
-                static_cast<void>(directory.retire(minted.handle));
+                static_cast<void>(ports.registry.retire(minted.handle));
                 return make_error(std::move(described.error()));
             }
             return minted.handle;
@@ -141,7 +141,7 @@ namespace SushiRuntime
             if (!borrowed->minted)
                 return borrowed->handle;
 
-            Result<void> described = describe_entry(runtime.handles(), borrowed->handle, address,
+            Result<void> described = describe_entry(runtime.handle_ports(), borrowed->handle, address,
                                                     bytes, element_size, element_alignment,
                                                     device.value(), std::nullopt);
             if (!described)
@@ -160,7 +160,7 @@ namespace SushiRuntime
             if (has_flags(handle.flags(), HandleFlags::Borrowed))
                 static_cast<void>(runtime.borrowed_handles().release(handle));
             else
-                static_cast<void>(runtime.handles().retire(handle));
+                static_cast<void>(runtime.handle_ports().registry.retire(handle));
         }
 
         std::size_t device_count(const ContextHandle& context)

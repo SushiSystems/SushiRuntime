@@ -102,7 +102,7 @@ namespace SushiRuntime
                             rebuilt.insert(kv.first);
                     // A copy plan that is not steady, or one over a buffer the host wrote, cannot run again.
                     for (auto& kv : states_)
-                        if (copy_plan_stale(kv.second, runtime.handles()))
+                        if (copy_plan_stale(kv.second, runtime.handle_ports().host_writes))
                             rebuilt.insert(kv.first);
 
                     auto placement = runtime.placement();
@@ -127,7 +127,7 @@ namespace SushiRuntime
                             ++coherence_plans_;
                         state.copy_plan = std::move(coherent.value());
                         if (state.copy_plan)
-                            state.host_writes.emplace(state.nodes, runtime.handles());
+                            state.host_writes.emplace(state.nodes, runtime.handle_ports().host_writes);
                         finish_region(state);
                     }
                     prepare_offload(built, placement->rules, runtime);
@@ -186,10 +186,10 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t coherence_plan_count() const noexcept { return coherence_plans_; }
 
                 /** @brief Returns whether a region holds a copy plan that must be planned again before a run. */
-                [[nodiscard]] bool coherence_replan_due(const Internal::Memory::ResidencyDirectory& directory) noexcept
+                [[nodiscard]] bool coherence_replan_due(const Internal::Memory::HostWriteLog& log) noexcept
                 {
                     for (auto& kv : states_)
-                        if (copy_plan_stale(kv.second, directory))
+                        if (copy_plan_stale(kv.second, log))
                             return true;
                     return false;
                 }
@@ -282,11 +282,11 @@ namespace SushiRuntime
                  *        or the host wrote one of its buffers since it was made.
                  */
                 static bool copy_plan_stale(RegionState& state,
-                                            const Internal::Memory::ResidencyDirectory& directory) noexcept
+                                            const Internal::Memory::HostWriteLog& log) noexcept
                 {
                     if (!state.copy_plan)
                         return false;
-                    return !state.copy_plan->steady || (state.host_writes && state.host_writes->written(directory));
+                    return !state.copy_plan->steady || (state.host_writes && state.host_writes->written(log));
                 }
 
                 /**
@@ -949,7 +949,7 @@ namespace SushiRuntime
             if (state_ == nullptr)
                 return false;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
-            return state_->coherence_replan_due(runtime.handles()) || state_->partition_rebalanced(runtime);
+            return state_->coherence_replan_due(runtime.handle_ports().host_writes) || state_->partition_rebalanced(runtime);
         }
 
         bool RegionComposer::composed() const noexcept

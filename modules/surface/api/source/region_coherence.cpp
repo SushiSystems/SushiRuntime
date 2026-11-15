@@ -86,7 +86,7 @@ namespace SushiRuntime
             if (runtime.devices().count() < 2)
                 return std::optional<Internal::Coherence::CopyPlan>();
 
-            const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handles());
+            const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handle_ports().residency);
             const Internal::Coherence::SpaceOfNode space_of =
                 [&memory](const Internal::Graph::Node& node) -> std::optional<MemorySpaceID>
             {
@@ -99,17 +99,17 @@ namespace SushiRuntime
             // The context owns the paths its devices support; a copy none of them makes is refused as Unsupported.
             const std::vector<Internal::Coherence::TransferPath*>& paths = runtime.transfer_paths();
             Internal::Coherence::CoherencePlanner planner(
-                runtime.handles(), runtime.memory_spaces(),
+                runtime.handle_ports().residency, runtime.memory_spaces(),
                 std::vector<const Internal::Coherence::TransferPath*>(paths.begin(), paths.end()),
                 runtime.transfer_cost());
             // Planned instances stay resident; the context owns the policy and the cost.
             Internal::Coherence::ResidencyOptions residency;
             residency.policy = &runtime.eviction_policy();
             residency.host = Internal::Graph::host_memory_space();
-            residency.host_read = host_read_buffers(nodes, runtime.handles());
+            residency.host_read = host_read_buffers(nodes, runtime.handle_ports().residency);
             planner.set_residency(std::move(residency));
             Internal::Coherence::DirectoryPlannedNodeFactory factory(
-                runtime.handles(),
+                runtime.handle_ports().residency,
                 std::make_shared<Internal::Coherence::USMInstanceAllocator>(runtime.shared_memory()), paths);
             Result<Internal::Coherence::CopyPlan> spliced =
                 Internal::Coherence::splice_plan(nodes, space_of, planner, factory,

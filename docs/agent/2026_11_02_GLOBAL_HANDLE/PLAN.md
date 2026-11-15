@@ -276,10 +276,10 @@ job builds on them.
 | R03 | concurrent split parts | R02 | todo |
 | R04 | one partition session per graph, ledger keyed by problem | R01 | running |
 | R05 | coherence map: planned state apart from current state, enforced phases | R01 | todo |
-| R06 | `RuntimeContext` narrowed to ports | R01 | running |
+| R06 | `RuntimeContext` narrowed to ports | R01 | done |
 | R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | todo |
 | R08 | space and path kinds typed, not strings | R01 | done |
-| R09 | statuses, not exceptions, on worker threads | R01 | todo |
+| R09 | statuses, not exceptions, on worker threads | R01 | running |
 | R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |
 | R11 | unneeded state removed | R01 | todo |
 | R12 | model agrees with plan; insertion EFT; bounded search | R04 | todo |

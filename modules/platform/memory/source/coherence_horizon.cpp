@@ -39,13 +39,13 @@ namespace SushiRuntime
 
         }
 
-        bool CoherenceHorizon::advance(ResidencyDirectory& directory, std::size_t steps)
+        bool CoherenceHorizon::advance(CoherenceHistory& history, std::size_t steps)
         {
             pending_ += steps;
             if (pending_ < steps_per_horizon_)
                 return false;
             pending_ = 0;
-            static_cast<void>(directory.retire_coherence_history());
+            static_cast<void>(history.retire_coherence_history());
             return true;
         }
     } // namespace Internal::Memory

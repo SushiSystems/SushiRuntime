@@ -5,6 +5,9 @@
 - 2026-11-15 — handle: Added `TransferPathID`, the stable identity of a transfer path (GLOBAL_HANDLE R08).
 - 2026-11-15 — memory: Added `MemorySpace::is_host_memory()` and `is_file_backed()`; no code compares a space's kind name (GLOBAL_HANDLE R08).
 - 2026-11-15 — runtime: Changed transfer paths to carry a `TransferPathID`; selection, pricing, measurement and the partition problem key on it, and the profile file keeps path names as its keys, mapped once at load (GLOBAL_HANDLE R08).
+- 2026-11-15 — runtime: Replaced `RuntimeContext::handles()` with `handle_ports()`, so no caller outside execution names the concrete directory (GLOBAL_HANDLE R06).
+- 2026-11-15 — runtime: Grouped the context's owned subsystems into `RuntimeHandleParts` and `RuntimeCoherenceParts`, each built by one factory (GLOBAL_HANDLE R06).
+- 2026-11-15 — memory: Changed `PlannedHostAccess`, `CoherenceHorizon::advance()` and `HostWriteWatch` to take ports instead of `ResidencyDirectory` (GLOBAL_HANDLE R06).
 - 2026-11-15 — runtime: Split the coherence module into five modules of one job each (coherence, transfer, device profile, partitioning, partition session); headers moved to `SushiRuntime/<module>/` (GLOBAL_HANDLE R01).
 - 2026-11-15 — machine: Moved `SplitPart` into `SushiRuntime/machine/split_part.hpp`, which includes no SYCL header (GLOBAL_HANDLE R01).
 - 2026-11-15 — runtime: Changed the log category of transfers, device profiles and the partition session to their own modules' names (GLOBAL_HANDLE R01).

@@ -41,7 +41,6 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -60,7 +59,6 @@
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/sycl_queues.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
-#include <SushiRuntime/memory/system_memory_probe.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/partition_session/transfer_path_tally.hpp>
@@ -74,13 +72,12 @@
 #include <SushiRuntime/topology/sycl_device_enumerator.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
-#include <SushiRuntime/transfer/transfer_observer_slot.hpp>
 
 #include "host_execution_engine.hpp"
+#include "runtime_coherence_parts.hpp"
+#include "runtime_handle_parts.hpp"
 #include "runtime_memory_spaces.hpp"
-#include "runtime_partition_parts.hpp"
 #include "runtime_transfer_cost.hpp"
-#include "runtime_transfer_paths.hpp"
 
 namespace SushiRuntime
 {
@@ -239,13 +236,11 @@ namespace SushiRuntime
              */
             void start_partitioning(std::shared_ptr<const Internal::Coherence::CostModel> model)
             {
-                transfer_observer.install(path_tally);
-                Internal::Coherence::PartitionSessionParts parts =
-                    make_partition_parts(devices, spaces.views, paths.views, std::move(model), path_tally);
                 // The placement journal sits beside the profile file, the runtime's one settings path.
+                std::filesystem::path journal_file;
                 if (!settings.device_profile_file.empty())
-                    parts.journal_file = std::filesystem::path(settings.device_profile_file + ".journal");
-                partitioning = std::make_unique<Internal::Coherence::PartitionSession>(std::move(parts));
+                    journal_file = settings.device_profile_file + ".journal";
+                coherence->start_partitioning(devices, std::move(model), journal_file);
             }
 
             /** @brief Stops everything that submits work, then lets the device set drain. */
@@ -254,7 +249,7 @@ namespace SushiRuntime
                 stop_work();
 
                 // The directory must not call the coordinator this object releases below.
-                handles.set_retire_observer(nullptr);
+                handle_parts.ports().retirement.set_retire_observer(nullptr);
 
                 // The engine is destroyed before devices drains (modules/engine/execution/README.md).
                 engine.reset();
@@ -301,36 +296,11 @@ namespace SushiRuntime
             /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
             std::shared_ptr<Internal::Memory::USMAllocator> memory;
 
-            /** @brief Mints, retires and resolves the handles of every buffer of the context. */
-            Internal::Memory::ResidencyDirectory handles{K_LOCAL_UNIVERSE};
+            /** @brief The handle table of every buffer of the context, its Borrowed index and its horizon. */
+            RuntimeHandleParts handle_parts{K_LOCAL_UNIVERSE};
 
-            /** @brief The host's and each device's memory space, measured once when the context is built. */
-            RuntimeMemorySpaces spaces{build_memory_spaces(devices, Internal::Memory::SystemMemoryProbe{})};
-
-            /** @brief Forwards each copy of the paths to the observer a caller installed; outlives the paths. */
-            Internal::Coherence::TransferObserverSlot transfer_observer;
-
-            /** @brief The paths that copy between the spaces; they borrow devices and are destroyed first. */
-            RuntimeTransferPaths paths{build_transfer_paths(devices, &transfer_observer)};
-
-            /** @brief Prices one planned copy; the bytes until create() loads a profile file. */
-            Internal::Coherence::TransferCost transfer_cost{Internal::Coherence::uniform_transfer_cost()};
-
-            /** @brief The policy every coherence planner of the context evicts with. */
-            Internal::Coherence::LogicalTimeEviction eviction;
-
-            /** @brief Counts each copy by destination and path, then forwards it to the observer a caller installed. */
-            std::shared_ptr<Internal::Coherence::TransferPathTally> path_tally =
-                std::make_shared<Internal::Coherence::TransferPathTally>();
-
-            /** @brief The partitioner, its last plan and the ledger of its runs; never null once built. */
-            std::unique_ptr<Internal::Coherence::PartitionSession> partitioning;
-
-            /** @brief Gives the Borrowed handles of caller-owned memory; mints in handles. */
-            Internal::Memory::BorrowedIndex borrowed{handles};
-
-            /** @brief Counts the steps of every run and retires the coherence history every K_STEPS_PER_HORIZON. */
-            Internal::Memory::CoherenceHorizon coherence_horizon;
+            /** @brief The spaces, paths, copy cost, eviction policy and partitioner; destroyed before devices drains. */
+            std::unique_ptr<RuntimeCoherenceParts> coherence{make_coherence_parts(devices)};
 
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
             Internal::Observability::TransferCounters transfers;
@@ -415,13 +385,14 @@ namespace SushiRuntime
 
                 Result<RuntimeCost> cost =
                     load_transfer_cost(settings.device_profile_file, context->impl_->devices,
-                                       context->impl_->spaces.views, context->impl_->paths.views);
+                                       context->impl_->coherence->spaces.views,
+                                       context->impl_->coherence->paths.views);
                 if (!cost)
                 {
                     refused = std::move(cost.error());
                     return;
                 }
-                context->impl_->transfer_cost = std::move(cost.value().transfer);
+                context->impl_->coherence->transfer_cost = std::move(cost.value().transfer);
                 context->impl_->start_partitioning(std::move(cost.value().model));
 
                 // The engine reads the context while it is built, so impl_ is complete first.
@@ -509,39 +480,39 @@ namespace SushiRuntime
             return impl_->memory;
         }
 
-        Internal::Memory::ResidencyDirectory& RuntimeContext::handles() noexcept
+        Internal::Memory::HandlePorts RuntimeContext::handle_ports() noexcept
         {
-            return impl_->handles;
+            return impl_->handle_parts.ports();
         }
 
         const std::vector<const Internal::Memory::MemorySpace*>& RuntimeContext::memory_spaces() const noexcept
         {
-            return impl_->spaces.views;
+            return impl_->coherence->spaces.views;
         }
 
         const std::vector<Internal::Coherence::TransferPath*>& RuntimeContext::transfer_paths() const noexcept
         {
-            return impl_->paths.views;
+            return impl_->coherence->paths.views;
         }
 
         const Internal::Coherence::TransferCost& RuntimeContext::transfer_cost() const noexcept
         {
-            return impl_->transfer_cost;
+            return impl_->coherence->transfer_cost;
         }
 
         const Internal::Coherence::EvictionPolicy& RuntimeContext::eviction_policy() const noexcept
         {
-            return impl_->eviction;
+            return impl_->coherence->eviction;
         }
 
         Internal::Coherence::PartitionSession& RuntimeContext::partitioning() noexcept
         {
-            return *impl_->partitioning;
+            return *impl_->coherence->partitioning;
         }
 
         void RuntimeContext::install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer)
         {
-            impl_->path_tally->set_next(std::move(observer));
+            impl_->coherence->path_tally->set_next(std::move(observer));
         }
 
         Result<MemorySpaceID> RuntimeContext::add_file_space(Internal::Memory::FileRange range)
@@ -556,32 +527,32 @@ namespace SushiRuntime
                                         range.path + " holds " + std::to_string(file_bytes) +
                                             " bytes, fewer than the range of " + std::to_string(range.bytes) +
                                             " bytes at offset " + std::to_string(range.offset) + " needs."});
-            if (impl_->spaces.vacant_file_ids.empty() &&
-                impl_->spaces.views.size() >= Internal::Memory::ResidencyDirectory::K_MAX_MEMORY_SPACES)
+            if (impl_->coherence->spaces.vacant_file_ids.empty() &&
+                impl_->coherence->spaces.views.size() >= RuntimeHandleParts::max_memory_spaces())
                 return make_error(Error{ErrorCode::AllocationFailed,
                                         "every memory space id a residency entry can name is taken."});
             const Internal::Memory::FileMemorySpace& space =
-                add_file_space_to(impl_->spaces, std::move(range));
-            impl_->paths.file->add(space);
+                add_file_space_to(impl_->coherence->spaces, std::move(range));
+            impl_->coherence->paths.file->add(space);
             return space.id();
         }
 
         bool RuntimeContext::remove_file_space(MemorySpaceID id)
         {
             // The path lets go of the space before the space is replaced.
-            if (impl_->spaces.vacant_file_ids.count(id.value()) == 0)
-                impl_->paths.file->remove(id);
-            return remove_file_space_from(impl_->spaces, id);
+            if (impl_->coherence->spaces.vacant_file_ids.count(id.value()) == 0)
+                impl_->coherence->paths.file->remove(id);
+            return remove_file_space_from(impl_->coherence->spaces, id);
         }
 
         Internal::Memory::CoherenceHorizon& RuntimeContext::coherence_horizon() noexcept
         {
-            return impl_->coherence_horizon;
+            return impl_->handle_parts.horizon();
         }
 
         Internal::Memory::BorrowedIndex& RuntimeContext::borrowed_handles() noexcept
         {
-            return impl_->borrowed;
+            return impl_->handle_parts.borrowed();
         }
 
         Internal::Observability::TransferCounters& RuntimeContext::transfers() noexcept
@@ -635,7 +606,7 @@ namespace SushiRuntime
         {
             // A partitioned plan is timed while a profile file takes what its runs measure.
             const bool measures_partition =
-                !impl_->settings.device_profile_file.empty() && impl_->partitioning->has_plan();
+                !impl_->settings.device_profile_file.empty() && impl_->coherence->partitioning->has_plan();
             return measures_partition || impl_->observers.wants_device_timing();
         }
 

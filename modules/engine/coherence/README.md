@@ -86,7 +86,7 @@ nowhere, so the first node that uses it gets an allocation step and no copy.
 
 `write()` copies the bytes into the buffer's host instance, made through the `InstanceAllocator` on
 first use, and calls `record_write()` on the host space, so every other space loses the range. It
-also calls `ResidencyDirectory::record_host_write()`, so a stored copy plan over the buffer is made
+also calls `HostWriteLog::record_host_write()`, so a stored copy plan over the buffer is made
 again before the next run.
 `read()` zeroes the destination, copies to the host instance each range the host space lacks from
 the first space in the planner's order that holds it, over the first path that connects the two,

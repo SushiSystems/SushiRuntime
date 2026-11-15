@@ -32,15 +32,15 @@
 
 #include <cstddef>
 
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/coherence_history.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
         /**
-         * @brief Counts the steps a runtime ran and retires the coherence history of its
-         *        directory each time the count reaches the interval.
+         * @brief Counts the steps a runtime ran and retires the coherence history it is
+         *        given each time the count reaches the interval.
          *
          * A step driver calls advance() between runs, when no plan is being made.
          */
@@ -57,11 +57,11 @@ namespace SushiRuntime
                 explicit CoherenceHorizon(std::size_t steps_per_horizon = K_STEPS_PER_HORIZON) noexcept;
 
                 /**
-                 * @brief Adds steps to the count and retires directory's coherence history when
+                 * @brief Adds steps to the count and retires history when
                  *        the count reaches the interval; the count then starts again from zero.
                  * @return Whether a horizon fell.
                  */
-                bool advance(ResidencyDirectory& directory, std::size_t steps);
+                bool advance(CoherenceHistory& history, std::size_t steps);
 
                 /** @brief Returns the steps between two horizons. */
                 [[nodiscard]] std::size_t steps_per_horizon() const noexcept

@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -57,16 +58,16 @@ class HandleTable
     public:
         /** @brief Mints in a directory of its own. */
         HandleTable() : owned_(std::make_unique<SushiRuntime::Internal::Memory::ResidencyDirectory>(0)),
-                        directory_(*owned_)
+                        ports_(owned_->ports())
         {
         }
 
         /**
-         * @brief Mints in @p directory, such as a runtime context's handles().
-         * @param directory Must outlive the table.
+         * @brief Mints through @p ports, such as a runtime context's handle_ports().
+         * @param ports Must outlive the table.
          */
-        explicit HandleTable(SushiRuntime::Internal::Memory::ResidencyDirectory& directory)
-            : directory_(directory)
+        explicit HandleTable(const SushiRuntime::Internal::Memory::HandlePorts& ports)
+            : ports_(ports)
         {
         }
 
@@ -77,7 +78,7 @@ class HandleTable
         ~HandleTable()
         {
             for (const auto& placed : placed_)
-                static_cast<void>(directory_.retire(placed.second));
+                static_cast<void>(ports_.registry.retire(placed.second));
         }
 
         /**
@@ -90,9 +91,9 @@ class HandleTable
             if (found != placed_.end())
                 return found->second;
             const SushiRuntime::MintOutcome minted =
-                directory_.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
+                ports_.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
             EXPECT_EQ(minted.status, SushiRuntime::HandleStatus::Ok);
-            EXPECT_EQ(directory_.set_instance(minted.handle,
+            EXPECT_EQ(ports_.residency.set_instance(minted.handle,
                                               SushiRuntime::Internal::Graph::device_memory_space(device),
                                               const_cast<void*>(address)),
                       SushiRuntime::HandleStatus::Ok);
@@ -109,7 +110,7 @@ class HandleTable
             const auto found = placed_.find(address);
             if (found == placed_.end())
                 return SushiRuntime::HandleStatus::NullHandle;
-            const SushiRuntime::HandleStatus status = directory_.retire(found->second);
+            const SushiRuntime::HandleStatus status = ports_.registry.retire(found->second);
             placed_.erase(found);
             return status;
         }
@@ -120,36 +121,36 @@ class HandleTable
             return SushiRuntime::BufferRegion(place(address, device));
         }
 
-        /** @brief Returns the directory, which resolves every handle place() gave. */
-        [[nodiscard]] const SushiRuntime::Internal::Memory::ResidencyDirectory& resolver() const noexcept
+        /** @brief Returns the view, which resolves every handle place() gave. */
+        [[nodiscard]] const SushiRuntime::Internal::Memory::ResidencyView& resolver() const noexcept
         {
-            return directory_;
+            return ports_.residency;
         }
 
     private:
         /// @brief The directory this table made, when it was given none.
         std::unique_ptr<SushiRuntime::Internal::Memory::ResidencyDirectory> owned_;
 
-        /// @brief The directory the handles are minted in.
-        SushiRuntime::Internal::Memory::ResidencyDirectory& directory_;
+        /// @brief The ports the handles are minted through.
+        SushiRuntime::Internal::Memory::HandlePorts ports_;
 
         /// @brief The handle of each placed address.
         std::map<const void*, SushiRuntime::GlobalHandle> placed_;
 };
 
 /**
- * @brief Mints in @p directory a handle whose instance on @p device lies at @p address.
+ * @brief Mints through @p ports a handle whose instance on @p device lies at @p address.
  *
- * The handle lives as long as the directory; for a plan that outlives the test's own scope but
- * not the context that owns the directory.
+ * The handle lives as long as the table behind the ports; for a plan that outlives the test's own
+ * scope but not the context that owns the table.
  */
-[[nodiscard]] inline SushiRuntime::GlobalHandle place_in(SushiRuntime::Internal::Memory::ResidencyDirectory& directory,
+[[nodiscard]] inline SushiRuntime::GlobalHandle place_in(const SushiRuntime::Internal::Memory::HandlePorts& ports,
                                                          const void* address, std::size_t device = 0)
 {
     const SushiRuntime::MintOutcome minted =
-        directory.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
+        ports.registry.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
     EXPECT_EQ(minted.status, SushiRuntime::HandleStatus::Ok);
-    EXPECT_EQ(directory.set_instance(minted.handle, SushiRuntime::Internal::Graph::device_memory_space(device),
+    EXPECT_EQ(ports.residency.set_instance(minted.handle, SushiRuntime::Internal::Graph::device_memory_space(device),
                                      const_cast<void*>(address)),
               SushiRuntime::HandleStatus::Ok);
     return minted.handle;

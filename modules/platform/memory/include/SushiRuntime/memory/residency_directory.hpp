@@ -44,12 +44,16 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/handle/handle_space.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/memory/coherence_history.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
+#include <SushiRuntime/memory/handle_ports.hpp>
+#include <SushiRuntime/memory/handle_registry.hpp>
+#include <SushiRuntime/memory/host_write_log.hpp>
 #include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/retire_observer.hpp>
+#include <SushiRuntime/memory/retire_source.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
 namespace SushiRuntime
@@ -62,7 +66,11 @@ namespace SushiRuntime
          * Writers (mint, retire, describe, set_instance, drop_instance) serialise on one mutex.
          * Readers (resolve, is_stale, inspect) take no lock and never wait on a writer.
          */
-        class ResidencyDirectory final : public HandleSpace, public ResidencyView
+        class ResidencyDirectory final : public HandleRegistry,
+                                         public ResidencyView,
+                                         public HostWriteLog,
+                                         public CoherenceHistory,
+                                         public RetireSource
         {
             public:
                 /** @brief Number of memory spaces an entry can hold an instance on. */
@@ -100,7 +108,7 @@ namespace SushiRuntime
 
                 /** @brief Records the size, element layout and home space of a live handle. */
                 [[nodiscard]] HandleStatus describe(GlobalHandle handle, std::size_t size,
-                                                    ElementLayout layout, MemorySpaceID home);
+                                                    ElementLayout layout, MemorySpaceID home) override;
 
                 /**
                  * @brief Records address as handle's instance on space, with the kind of USM it is.
@@ -127,7 +135,7 @@ namespace SushiRuntime
                  *        replaces or removes it has returned.
                  * @pre The caller is not inside on_retire() of an observer of this directory.
                  */
-                void set_retire_observer(RetireObserver* observer) noexcept;
+                void set_retire_observer(RetireObserver* observer) noexcept override;
 
                 /** @brief Forgets handle's instance on space; the memory itself is not freed. */
                 [[nodiscard]] HandleStatus drop_instance(GlobalHandle handle, MemorySpaceID space) override;
@@ -136,9 +144,15 @@ namespace SushiRuntime
                 [[nodiscard]] EntryView inspect(GlobalHandle handle) const override;
 
                 /** @brief Counts the handles minted and not yet retired, Borrowed ones included. */
-                [[nodiscard]] std::size_t live_count() const noexcept
+                [[nodiscard]] std::size_t live_count() const noexcept override
                 {
                     return live_count_.load(std::memory_order_relaxed);
+                }
+
+                /** @brief Returns the ports of this directory, valid for its lifetime. */
+                [[nodiscard]] HandlePorts ports() noexcept
+                {
+                    return HandlePorts{*this, *this, *this, *this, *this};
                 }
 
                 /** @brief Returns the universe this directory mints handles in. */
@@ -165,17 +179,17 @@ namespace SushiRuntime
                  * the maps take no lock.
                  * @return The intervals left across the live handles.
                  */
-                [[nodiscard]] std::size_t retire_coherence_history();
+                [[nodiscard]] std::size_t retire_coherence_history() override;
 
                 /**
                  * @brief Records that the host wrote bytes of handle outside a plan, under the
                  *        next host-write generation.
                  * @return Ok, or the status of a handle that is not live.
                  */
-                [[nodiscard]] HandleStatus record_host_write(GlobalHandle handle);
+                [[nodiscard]] HandleStatus record_host_write(GlobalHandle handle) override;
 
                 /** @brief Returns the generation of the last host write on any handle; 0 before the first. */
-                [[nodiscard]] std::uint64_t host_write_generation() const noexcept
+                [[nodiscard]] std::uint64_t host_write_generation() const noexcept override
                 {
                     return host_write_generation_.load(std::memory_order_acquire);
                 }
@@ -184,7 +198,7 @@ namespace SushiRuntime
                  * @brief Returns the generation of the last host write on handle, without taking a lock.
                  * @return 0 when the host never wrote handle or handle is not live.
                  */
-                [[nodiscard]] std::uint64_t host_write_of(GlobalHandle handle) const noexcept;
+                [[nodiscard]] std::uint64_t host_write_of(GlobalHandle handle) const noexcept override;
 
                 /** @brief Returns the address of the entry of slot, or null when its chunk is absent. */
                 [[nodiscard]] const void* entry_address(std::uint32_t slot) const noexcept;
@@ -270,14 +284,5 @@ namespace SushiRuntime
                 /// @brief Generation of the last host write on any handle; raised under the writer mutex.
                 std::atomic<std::uint64_t> host_write_generation_{0};
         };
-
-        /**
-         * @brief Returns the ErrorCode a failed handle operation is reported with.
-         * @pre status is not HandleStatus::Ok.
-         */
-        [[nodiscard]] ErrorCode error_code_of(HandleStatus status) noexcept;
-
-        /** @brief Returns the resolved address, or the Error the outcome's status maps to. */
-        [[nodiscard]] Result<void*> to_result(const ResolveOutcome& outcome);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

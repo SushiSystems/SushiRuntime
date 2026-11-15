@@ -1,0 +1,65 @@
+/**************************************************************************/
+/* handle_registry.hpp                                                    */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file handle_registry.hpp
+ * @brief Declares HandleRegistry, the port that mints, describes and retires handles.
+ * @author Mustafa Garip
+ * @see modules/platform/memory/README.md
+ */
+
+#pragma once
+
+#include <cstddef>
+#include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/handle_space.hpp>
+#include <SushiRuntime/handle/handle_status.hpp>
+#include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
+
+namespace SushiRuntime
+{
+    namespace Internal::Memory
+    {
+        /**
+         * @brief Mints and retires handles and records what each names; the API layer's side of
+         *        the handle table.
+         *
+         * Readers take a ResidencyView or a HandleResolver and never this port.
+         */
+        class HandleRegistry : public HandleSpace
+        {
+            public:
+                /**
+                 * @brief Records the size, layout and home space of a freshly minted handle.
+                 * @return Ok, or the status of a handle that is not live.
+                 */
+                [[nodiscard]] virtual HandleStatus describe(GlobalHandle handle, std::size_t size,
+                                                            ElementLayout layout, MemorySpaceID home) = 0;
+
+                /** @brief Returns how many handles are minted and not yet retired; any thread. */
+                [[nodiscard]] virtual std::size_t live_count() const noexcept = 0;
+        };
+
+    } // namespace Internal::Memory
+} // namespace SushiRuntime
