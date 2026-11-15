@@ -250,7 +250,8 @@ above the ones handed out before.
 ## test_device_memory_space.cpp and test_host_memory_space.cpp
 
 Each builds a space on a fake probe and checks capacity, the measured reserve and sorted direct
-targets.
+targets, and that `is_host_memory()` and `is_file_backed()` answer true only for the host space and
+the file space respectively.
 
 ## test_memory_pool_capacity.cpp
 
@@ -263,4 +264,5 @@ The probe reports some memory and no more free bytes than total.
 ## test_file_memory_space.cpp
 
 Checks that a `FileMemorySpace` reports its range as capacity with no reserve, its own pool and no
-direct target, and maps addresses inside its instance token to file offsets.
+direct target, maps addresses inside its instance token to file offsets, and answers
+`is_file_backed()` true and `is_host_memory()` false.

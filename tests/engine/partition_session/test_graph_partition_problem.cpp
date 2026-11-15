@@ -61,7 +61,7 @@ namespace
     /** @brief Returns two devices, host_key(1) and host_key(2), each in a pool of its own. */
     std::vector<PartitionDevice> two_devices()
     {
-        return {PartitionDevice{host_key(1), 1, "pcie"}, PartitionDevice{host_key(2), 2, "pcie"}};
+        return {PartitionDevice{host_key(1), 1, TransferPathID::named("pcie")}, PartitionDevice{host_key(2), 2, TransferPathID::named("pcie")}};
     }
 
     /** @brief Holds a writer of a planned buffer and a reader that writes a buffer device 1 owns. */

@@ -57,7 +57,7 @@ namespace SushiRuntime
             {
                 if (from && to)
                 {
-                    const std::optional<double> direct = model.transfer_time(*from, *to, path.name(), bytes);
+                    const std::optional<double> direct = model.transfer_time(*from, *to, path.id(), bytes);
                     return direct ? direct : model.host_staged_time(*from, *to, bytes);
                 }
                 if (to)

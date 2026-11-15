@@ -75,7 +75,15 @@ namespace SushiRuntime
                  */
                 void remove(MemorySpaceID id) noexcept;
 
+                /// @brief Name of the path, for logs and the profile file.
+                static constexpr std::string_view K_NAME = "file";
+
+                /// @brief Identity of the path; every comparison and price keys on it.
+                static constexpr TransferPathID K_ID = TransferPathID::named(K_NAME);
+
                 [[nodiscard]] std::string_view name() const noexcept override;
+
+                [[nodiscard]] TransferPathID id() const noexcept override;
 
                 /** @brief Returns whether source is a file space added here and destination is not a file. */
                 [[nodiscard]] bool connects(const Memory::MemorySpace& source,

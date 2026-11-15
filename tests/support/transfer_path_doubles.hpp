@@ -184,12 +184,13 @@ namespace SushiRuntime
                     MemorySpaceID source;      /**< Space read from. */
                     MemorySpaceID destination; /**< Space written to. */
                     std::size_t bytes = 0;     /**< Bytes copied. */
+                    TransferPathID id;         /**< Identity of the path. */
                 };
 
                 void copied(const TransferRecord& record) override
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
-                    heard_.push_back(Heard{std::string(record.path), record.source, record.destination, record.bytes});
+                    heard_.push_back(Heard{std::string(record.path), record.source, record.destination, record.bytes, record.id});
                 }
 
                 /** @brief Returns the copies heard so far. */

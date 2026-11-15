@@ -36,23 +36,26 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <SushiRuntime/core/operation_kind.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        /** @brief Holds the speed of one transfer path that leaves a device. */
+        /** @brief Holds the speed of one transfer path that leaves a device, or of a host link. */
         struct PathProfile
         {
             double bandwidth = 0.0; /**< Bytes per second the path moves. */
             double latency = 0.0;   /**< Seconds a copy takes before its first byte moves. */
+            std::string name{};      /**< Name of the path, kept for the profile file and logs; empty for a host link. */
 
-            /** @brief Returns whether both fields are equal. */
+            /** @brief Returns whether every field is equal. */
             [[nodiscard]] bool operator==(const PathProfile& other) const noexcept
             {
-                return bandwidth == other.bandwidth && latency == other.latency;
+                return bandwidth == other.bandwidth && latency == other.latency && name == other.name;
             }
         };
 
@@ -76,7 +79,7 @@ namespace SushiRuntime
             double memory_bandwidth = 0.0;    /**< Bytes per second the device reads and writes in its own memory. */
             double base_throughput = 0.0;     /**< Operations per second of a kind with no entry. */
             std::map<OperationKind, double> throughputs;           /**< Operations per second, per kind. */
-            std::map<std::string, PathProfile, std::less<>> paths; /**< Paths that leave the device, by name. */
+            std::map<TransferPathID, PathProfile> paths;           /**< Paths that leave the device, by identity. */
             std::optional<PathProfile> host_to_device;             /**< Link from host memory into the device; empty when unmeasured. */
             std::optional<PathProfile> device_to_host;             /**< Link from the device into host memory; empty when unmeasured. */
 
@@ -95,11 +98,24 @@ namespace SushiRuntime
                 return found == throughputs.end() ? base_throughput : found->second;
             }
 
-            /** @brief Returns the path named name, or nullptr when the device has no such path. */
-            [[nodiscard]] const PathProfile* find_path(std::string_view name) const noexcept
+            /** @brief Returns the path with identity id, or nullptr when the device has no such path. */
+            [[nodiscard]] const PathProfile* find_path(TransferPathID id) const noexcept
             {
-                const auto found = paths.find(name);
+                const auto found = paths.find(id);
                 return found == paths.end() ? nullptr : &found->second;
+            }
+
+            /**
+             * @brief Stores profile as the path called name, under the identity that name maps to.
+             *
+             * This is the one place a name becomes an identity: the profile file calls it when it is
+             * read, and a measurement calls it with the name of the path it timed.
+             */
+            void set_path(std::string name, PathProfile profile)
+            {
+                const TransferPathID id = TransferPathID::named(name);
+                profile.name = std::move(name);
+                paths[id] = std::move(profile);
             }
 
             /** @brief Returns whether every field is equal. */

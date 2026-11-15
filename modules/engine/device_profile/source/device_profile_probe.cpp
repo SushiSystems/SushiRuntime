@@ -147,7 +147,7 @@ namespace SushiRuntime
 
         Result<CopySample> DeviceProfileProbe::measure_path_copy(const DeviceKey& source,
                                                                  const DeviceKey& destination,
-                                                                 std::string_view path_name, std::uint64_t bytes)
+                                                                 TransferPathID path_id, std::uint64_t bytes)
         {
             Result<ProbeDevice> from_device = device_of(source);
             if (!from_device)
@@ -160,14 +160,14 @@ namespace SushiRuntime
 
             TransferPath* chosen = nullptr;
             for (TransferPath* path : paths_)
-                if (path->name() == path_name && path->connects(from_space, to_space))
+                if (path->id() == path_id && path->connects(from_space, to_space))
                 {
                     chosen = path;
                     break;
                 }
             if (chosen == nullptr)
                 return make_error(Error{ErrorCode::Unsupported,
-                                        "no path named " + std::string(path_name) + " connects " +
+                                        "no path with identity " + std::to_string(path_id.value()) + " connects " +
                                             to_text(source) + " to " + to_text(destination) + "."});
 
             const std::size_t length = static_cast<std::size_t>(bytes);

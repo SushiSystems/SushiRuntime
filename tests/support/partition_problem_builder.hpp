@@ -56,7 +56,7 @@ namespace SushiRuntime::Internal::Coherence
         for (std::size_t index = 0; index < count; ++index)
         {
             const auto ordinal = static_cast<std::uint32_t>(index + 1);
-            problem.devices.push_back(PartitionDevice{host_key(ordinal), ordinal, "pcie"});
+            problem.devices.push_back(PartitionDevice{host_key(ordinal), ordinal, TransferPathID::named("pcie")});
         }
     }
 

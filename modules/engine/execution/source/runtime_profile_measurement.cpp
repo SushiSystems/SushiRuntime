@@ -110,7 +110,7 @@ namespace SushiRuntime
                     for (const Coherence::TransferPath* path : paths)
                         if (path->connects(*from, *to))
                         {
-                            targets.push_back(Coherence::PathTarget{listed[other].key, std::string(path->name())});
+                            targets.push_back(Coherence::PathTarget{listed[other].key, path->id(), std::string(path->name())});
                             break;
                         }
                 }

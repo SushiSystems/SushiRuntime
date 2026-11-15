@@ -26,11 +26,11 @@ missing file is an error that creates nothing.
 A node's time is its operations over throughput plus its bytes over bandwidth, a kind with no entry
 takes the base throughput, a device with no profile has no time, and a device that cannot do the
 work takes infinite time. A copy's time is the latency plus the bytes over the bandwidth, and an
-unknown path has no time.
+unknown path has no time. A path is priced by its identity and never by the name its entry carries.
 
 ## test_device_profile.cpp
 
-A kind with no entry takes the base throughput, and a path is found by name.
+A kind with no entry takes the base throughput, a path is found by its identity, and `set_path()` keys an entry by the identity of its name and keeps the name.
 
 ## test_device_profile_file.cpp
 
@@ -54,7 +54,7 @@ or a probe that reports no time is refused.
 ## test_profile_transfer_cost.cpp
 
 With no model the cost is the uniform one, with a model it is the modelled seconds, and a copy the
-model cannot price costs infinity.
+model cannot price costs infinity. The price follows the path's identity, not the name the profile entry carries.
 
 ## test_device_profile_probe.cpp
 

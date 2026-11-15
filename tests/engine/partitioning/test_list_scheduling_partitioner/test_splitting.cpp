@@ -327,7 +327,7 @@ namespace
             profile.capacity_bytes = gpus[device].get_info<sycl::info::device::global_mem_size>();
             profile.memory_bandwidth = 1.0e11;
             profile.base_throughput = static_cast<double>(K_PRODUCT_EXTENT * K_PRODUCT_ITERATIONS) / seconds;
-            profile.paths["pcie"] = PathProfile{1.0e10, 1.0e-5};
+            profile.set_path("pcie", PathProfile{1.0e10, 1.0e-5, {}});
             profiles.set(host_key(device + 1), profile);
         }
         const auto model = std::make_shared<const CostModel>(profiles);

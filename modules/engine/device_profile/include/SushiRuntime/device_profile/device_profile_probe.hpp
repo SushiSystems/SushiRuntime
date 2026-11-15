@@ -67,7 +67,7 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Builds a probe; devices and the paths must outlive it.
-                 * @param paths   The runtime's paths, searched by name.
+                 * @param paths   The runtime's paths, searched by identity.
                  * @param kernels The kernel the caller registered for each kind.
                  */
                 DeviceProfileProbe(const ProbeDevices& devices, std::vector<TransferPath*> paths,
@@ -80,7 +80,7 @@ namespace SushiRuntime
 
                 [[nodiscard]] Result<CopySample> measure_path_copy(const DeviceKey& source,
                                                                    const DeviceKey& destination,
-                                                                   std::string_view path_name,
+                                                                   TransferPathID path,
                                                                    std::uint64_t bytes) override;
 
                 [[nodiscard]] Result<CopySample> measure_host_copy(const DeviceKey& device,

@@ -63,4 +63,13 @@ namespace
         const DeviceMemorySpace space(DeviceMemorySpaceDescription{MemorySpaceID(2), 2, {}}, probe);
         EXPECT_EQ(space.reserve_bytes(), 0U);
     }
+
+    TEST(Small_DeviceMemorySpace, AnswersTheKindQueries)
+    {
+        const FakeMemoryProbe probe(1000, 700);
+        const DeviceMemorySpace space(DeviceMemorySpaceDescription{MemorySpaceID(1), 1, {}}, probe);
+
+        EXPECT_EQ(space.is_host_memory(), false);
+        EXPECT_EQ(space.is_file_backed(), false);
+    }
 } // namespace

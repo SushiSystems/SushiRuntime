@@ -62,6 +62,16 @@ namespace SushiRuntime
                     return id_;
                 }
 
+                [[nodiscard]] bool is_host_memory() const noexcept override
+                {
+                    return false;
+                }
+
+                [[nodiscard]] bool is_file_backed() const noexcept override
+                {
+                    return false;
+                }
+
                 [[nodiscard]] std::string_view kind_name() const noexcept override
                 {
                     return "device";

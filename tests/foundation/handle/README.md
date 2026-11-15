@@ -63,6 +63,16 @@ A fake space mints from a fixed number of slots, lowest free slot first.
 | `SpacesWithDifferentIDsMintDistinctHandles` | Two ids give different first handles. |
 | `ConcurrentMintsGiveEveryHandleOnce` | Four threads of 1000 mints give 4000 distinct handles over slots 0 to 3999. |
 
+## test_transfer_path_id.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultNamesNoPath` | The default id is 0, is not set and differs from the id of the empty name. |
+| `SameNameGivesSameIDAndDistinctNamesApart` | A name gives one id, and the four path names give four ids, all set. |
+| `KeepsAFixedValueAcrossRuns` | The id of a known name equals its documented FNV-1a value. |
+| `OrdersByValue` | Two ids order one way or the other and no id is below itself. |
+| `EqualIDsHashEqual` | Equal ids hash equal and distinct ids differ. |
+
 ## test_memory_space_id.cpp
 
 | Test | What it proves |

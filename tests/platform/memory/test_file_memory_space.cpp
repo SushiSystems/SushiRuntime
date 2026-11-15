@@ -59,4 +59,12 @@ namespace
         EXPECT_EQ(space.file_offset(base), 128U);
         EXPECT_EQ(space.file_offset(base + 1000), 1128U);
     }
+
+    TEST(Small_FileMemorySpace, AnswersTheKindQueries)
+    {
+        const FileMemorySpace space(MemorySpaceID(5), FileRange{"weights.bin", 128, 4096});
+
+        EXPECT_EQ(space.is_host_memory(), false);
+        EXPECT_EQ(space.is_file_backed(), true);
+    }
 } // namespace

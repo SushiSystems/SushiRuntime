@@ -50,6 +50,11 @@ namespace SushiRuntime
                     return "fake";
                 }
 
+                [[nodiscard]] TransferPathID id() const noexcept override
+                {
+                    return TransferPathID::named("fake");
+                }
+
                 [[nodiscard]] bool connects(const Memory::MemorySpace&,
                                             const Memory::MemorySpace&) const override
                 {
@@ -82,6 +87,11 @@ namespace SushiRuntime
                 [[nodiscard]] std::string_view name() const noexcept override
                 {
                     return "closed";
+                }
+
+                [[nodiscard]] TransferPathID id() const noexcept override
+                {
+                    return TransferPathID::named("closed");
                 }
 
                 [[nodiscard]] bool connects(const Memory::MemorySpace&,

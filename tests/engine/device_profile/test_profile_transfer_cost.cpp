@@ -33,6 +33,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <string>
 
 #include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
 
@@ -54,7 +55,7 @@ namespace
     std::shared_ptr<const CostModel> loaded_model()
     {
         DeviceProfile profile = round_profile(1.0);
-        profile.paths["fake"] = PathProfile{500.0, 0.25};
+        profile.set_path("fake", PathProfile{500.0, 0.25, {}});
         DeviceProfileSet profiles;
         profiles.set(host_key(1), profile);
         profiles.set(host_key(2), profile);
@@ -86,6 +87,22 @@ namespace
         EXPECT_EQ(cost(path, MemorySpaceID(1), MemorySpaceID(9), 10), std::numeric_limits<double>::infinity());
         EXPECT_EQ(cost(unmodelled, MemorySpaceID(1), MemorySpaceID(2), 10),
                   std::numeric_limits<double>::infinity());
+    }
+
+    TEST(Small_ProfileTransferCost, ThePriceFollowsThePathIdentityNotTheNameTheEntryCarries)
+    {
+        DeviceProfile profile = round_profile(1.0);
+        FakeTransferPath path;
+        ClosedTransferPath other;
+        profile.paths[path.id()] = PathProfile{500.0, 0.25, std::string(other.name())};
+        DeviceProfileSet profiles;
+        profiles.set(host_key(1), profile);
+        profiles.set(host_key(2), profile);
+        const TransferCost cost =
+            select_transfer_cost(std::make_shared<const CostModel>(profiles), by_space);
+
+        EXPECT_DOUBLE_EQ(cost(path, MemorySpaceID(1), MemorySpaceID(2), 1000), 0.25 + 1000.0 / 500.0);
+        EXPECT_EQ(cost(other, MemorySpaceID(1), MemorySpaceID(2), 1000), std::numeric_limits<double>::infinity());
     }
 
     /** @brief Returns a model whose two devices measured their host links and no path named for ClosedTransferPath. */

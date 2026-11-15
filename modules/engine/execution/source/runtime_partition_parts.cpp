@@ -56,8 +56,8 @@ namespace SushiRuntime
                 return id < spaces.size() ? spaces[id] : nullptr;
             }
 
-            /** @brief Returns the first path that connects device index to another device, or an empty name. */
-            [[nodiscard]] std::string copy_path_of(std::size_t index, std::size_t count,
+            /** @brief Returns the identity of the first path that connects device index to another device, or none. */
+            [[nodiscard]] TransferPathID copy_path_of(std::size_t index, std::size_t count,
                                                    const std::vector<const Memory::MemorySpace*>& spaces,
                                                    const std::vector<Coherence::TransferPath*>& paths)
             {
@@ -70,10 +70,10 @@ namespace SushiRuntime
                     for (const Coherence::TransferPath* path : paths)
                     {
                         if (path->connects(*from, *to))
-                            return std::string(path->name());
+                            return path->id();
                     }
                 }
-                return std::string();
+                return TransferPathID();
             }
         } // namespace
 

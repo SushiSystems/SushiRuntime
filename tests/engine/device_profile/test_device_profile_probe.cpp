@@ -38,6 +38,7 @@
 #include <SushiRuntime/device_profile/device_profile_probe.hpp>
 #include <SushiRuntime/device_profile/profile_measurement.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
+#include <SushiRuntime/transfer/peer_path.hpp>
 #include <SushiRuntime/transfer/same_context_path.hpp>
 
 #include "support/fake_transfer_path.hpp"
@@ -104,7 +105,7 @@ namespace
                 measured.latency_probe_bytes = 64;
                 measured.bandwidth_probe_bytes = 1U << 20;
                 measured.kinds = {OperationKinds::K_GENERIC};
-                measured.paths = {PathTarget{key_of(1), "same_context"}};
+                measured.paths = {PathTarget{key_of(1), SameContextPath::K_ID, "same_context"}};
                 return measured;
             }
 
@@ -139,8 +140,8 @@ namespace
         EXPECT_EQ(profile.value().reserve_bytes, device_0_.reserve_bytes());
         EXPECT_GT(profile.value().memory_bandwidth, 0.0);
         EXPECT_GT(profile.value().base_throughput, 0.0);
-        ASSERT_EQ(profile.value().paths.count("same_context"), 1U);
-        EXPECT_GT(profile.value().paths.at("same_context").bandwidth, 0.0);
+        ASSERT_EQ(profile.value().paths.count(SameContextPath::K_ID), 1U);
+        EXPECT_GT(profile.value().paths.at(SameContextPath::K_ID).bandwidth, 0.0);
     }
 
     TEST_F(Medium_DeviceProfileProbe, RefusesAPathNoneOfItsPathsNames)
@@ -149,7 +150,7 @@ namespace
         SameContextPath path(queues_);
         DeviceProfileProbe probe(devices, {&path}, {});
 
-        const Result<CopySample> sample = probe.measure_path_copy(key_of(0), key_of(1), "peer", 64);
+        const Result<CopySample> sample = probe.measure_path_copy(key_of(0), key_of(1), PeerPath::K_ID, 64);
 
         ASSERT_FALSE(sample);
         EXPECT_EQ(sample.error().code, ErrorCode::Unsupported);

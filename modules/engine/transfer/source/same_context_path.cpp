@@ -45,7 +45,12 @@ namespace SushiRuntime
 
         std::string_view SameContextPath::name() const noexcept
         {
-            return "same_context";
+            return K_NAME;
+        }
+
+        TransferPathID SameContextPath::id() const noexcept
+        {
+            return K_ID;
         }
 
         bool SameContextPath::connects(const Memory::MemorySpace& source,
@@ -64,7 +69,7 @@ namespace SushiRuntime
                 throw std::runtime_error("same_context: the destination space has no queue.");
             const sycl::event done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
             if (observer_ != nullptr)
-                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes});
+                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;
         }
     } // namespace Internal::Coherence

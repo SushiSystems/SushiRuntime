@@ -40,6 +40,7 @@
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
 #include <SushiRuntime/device_profile/profile_probe.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 
 namespace SushiRuntime
 {
@@ -49,7 +50,8 @@ namespace SushiRuntime
         struct PathTarget
         {
             DeviceKey destination; /**< Device the copies of the probe land on. */
-            std::string path_name; /**< Name of the path, as TransferPath::name() reports it. */
+            TransferPathID path;   /**< Identity of the path, as TransferPath::id() reports it; the probe selects by it. */
+            std::string path_name; /**< Name of the path, as TransferPath::name() reports it; kept in the profile for its file. */
         };
 
         /** @brief Holds what ProfileMeasurement measures on each device. */

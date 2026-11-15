@@ -45,7 +45,12 @@ namespace SushiRuntime
 
         std::string_view PeerPath::name() const noexcept
         {
-            return "peer";
+            return K_NAME;
+        }
+
+        TransferPathID PeerPath::id() const noexcept
+        {
+            return K_ID;
         }
 
         bool PeerPath::connects(const Memory::MemorySpace& source, const Memory::MemorySpace& destination) const
@@ -63,7 +68,7 @@ namespace SushiRuntime
                 throw std::runtime_error("peer: the destination space has no queue.");
             const sycl::event done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
             if (observer_ != nullptr)
-                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes});
+                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;
         }
     } // namespace Internal::Coherence

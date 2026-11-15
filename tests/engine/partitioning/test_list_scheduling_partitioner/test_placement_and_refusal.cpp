@@ -153,7 +153,7 @@ namespace
     TEST(Small_ListSchedulingPartitioner, ADeviceWithNoProfileReceivesNoNode)
     {
         PartitionProblem problem = chain(4, 100, 2);
-        problem.devices.push_back(PartitionDevice{host_key(9), 9, "pcie"});
+        problem.devices.push_back(PartitionDevice{host_key(9), 9, TransferPathID::named("pcie")});
         const ListSchedulingPartitioner partitioner(speed_model({1.0, 2.0}));
 
         const Result<PartitionAssignment, PartitionRefusal> result = partitioner.partition(problem);

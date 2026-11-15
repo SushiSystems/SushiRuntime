@@ -56,7 +56,7 @@ namespace SushiRuntime::Internal::Coherence
         profile.memory_bandwidth = 1000.0 * speed;
         profile.base_throughput = 2000.0 * speed;
         profile.throughputs[OperationKinds::K_COMPUTE_BOUND] = 8000.0 * speed;
-        profile.paths["pcie"] = PathProfile{500.0 * speed, 0.25};
+        profile.set_path("pcie", PathProfile{500.0 * speed, 0.25, {}});
         return profile;
     }
 
@@ -97,7 +97,7 @@ namespace SushiRuntime::Internal::Coherence
             }
 
             [[nodiscard]] Result<CopySample> measure_path_copy(const DeviceKey& source, const DeviceKey&,
-                                                               std::string_view,
+                                                               TransferPathID,
                                                                std::uint64_t bytes) override
             {
                 ++calls;

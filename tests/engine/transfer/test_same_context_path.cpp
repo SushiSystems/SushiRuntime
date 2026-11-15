@@ -89,6 +89,8 @@ namespace
         EXPECT_EQ(to, from);
         ASSERT_EQ(observer_.heard().size(), 1U);
         EXPECT_EQ(observer_.heard()[0].path, "same_context");
+        EXPECT_EQ(observer_.heard()[0].id, SameContextPath::K_ID);
+        EXPECT_EQ(subject.id(), SameContextPath::K_ID);
         EXPECT_EQ(observer_.heard()[0].source, K_DEVICE_0);
         EXPECT_EQ(observer_.heard()[0].destination, K_DEVICE_1);
         EXPECT_EQ(observer_.heard()[0].bytes, to.size());

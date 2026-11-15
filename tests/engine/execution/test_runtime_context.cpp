@@ -880,7 +880,7 @@ namespace TransferCostTests
         ASSERT_TRUE(probe.has_value()) << probe.error().message;
         const TransferPath& path = *(*probe)->transfer_paths().front();
         DeviceProfile profile;
-        profile.paths.emplace(std::string(path.name()), PathProfile{1.0e9, 1.0e-6});
+        profile.set_path(std::string(path.name()), PathProfile{1.0e9, 1.0e-6, {}});
         DeviceProfileSet profiles;
         profiles.set((*probe)->devices().devices().front().key, profile);
         const std::filesystem::path file = profile_path("loaded_profile");

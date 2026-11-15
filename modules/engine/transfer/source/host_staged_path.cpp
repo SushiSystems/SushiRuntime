@@ -38,15 +38,6 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        namespace
-        {
-            /** @brief Returns whether a space is the pinned host space. */
-            bool is_host(const Memory::MemorySpace& space) noexcept
-            {
-                return space.kind_name() == "host";
-            }
-        } // namespace
-
         HostStagedPath::HostStagedPath(const SpaceQueues& queues, StagingRing& ring,
                                        TransferObserver* observer) noexcept
             : queues_(&queues), ring_(&ring), observer_(observer)
@@ -56,14 +47,19 @@ namespace SushiRuntime
 
         std::string_view HostStagedPath::name() const noexcept
         {
-            return "host_staged";
+            return K_NAME;
+        }
+
+        TransferPathID HostStagedPath::id() const noexcept
+        {
+            return K_ID;
         }
 
         bool HostStagedPath::connects(const Memory::MemorySpace& source,
                                       const Memory::MemorySpace& destination) const
         {
-            const bool source_host = is_host(source);
-            const bool destination_host = is_host(destination);
+            const bool source_host = source.is_host_memory();
+            const bool destination_host = destination.is_host_memory();
             if (source_host && destination_host)
                 return false;
             if (source_host)
@@ -111,7 +107,7 @@ namespace SushiRuntime
                 }
             }
             if (observer_ != nullptr)
-                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes});
+                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;
         }
     } // namespace Internal::Coherence

@@ -55,8 +55,17 @@ namespace SushiRuntime
                 /** @brief Returns the id the residency directory names this space by. */
                 [[nodiscard]] virtual MemorySpaceID id() const noexcept = 0;
 
-                /** @brief Returns the name of the kind of this space, for logs. */
+                /** @brief Returns the name of the kind of this space, for logs only; code asks the queries above. */
                 [[nodiscard]] virtual std::string_view kind_name() const noexcept = 0;
+
+                /**
+                 * @brief Returns whether this space is host memory, whose bytes a copy reads or writes
+                 *        with one memcpy and no staging.
+                 */
+                [[nodiscard]] virtual bool is_host_memory() const noexcept = 0;
+
+                /** @brief Returns whether the bytes of this space are a file range, read through a stream. */
+                [[nodiscard]] virtual bool is_file_backed() const noexcept = 0;
 
                 /** @brief Returns the bytes of the pool this space draws on. */
                 [[nodiscard]] virtual std::size_t capacity_bytes() const noexcept = 0;

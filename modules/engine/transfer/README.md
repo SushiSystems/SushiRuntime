@@ -26,6 +26,14 @@ It depends on `handle`, `log` and `memory`.
 | `transfer_observer_slot.hpp` | `TransferObserverSlot`, the observer the runtime's paths hold, which forwards to one a caller installs |
 | `transfer_log_category.hpp` | `K_TRANSFER_LOG_CATEGORY`, the log category of the module |
 
+## Path identity and space kinds
+
+Each path class declares `K_NAME` and `K_ID = TransferPathID::named(K_NAME)`, and `TransferPath::id()`
+returns it. The name is for logs, reports and the profile file; selecting a path, pricing it and
+recording a copy compare the id. `TransferRecord::id` carries it to the observer. A path asks a space
+what it is through `MemorySpace::is_host_memory()` and `MemorySpace::is_file_backed()`, and never
+compares a kind name, so a new kind of space or a new path edits no sibling.
+
 ## SameContextPath and PeerPath
 
 Both copy with one `memcpy` on the destination's queue, which `SpaceQueues` names. `SameContextPath`

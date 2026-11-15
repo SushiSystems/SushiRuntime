@@ -86,7 +86,7 @@ namespace SushiRuntime
                                                               const NodeCost& cost) const;
 
                 /**
-                 * @brief Returns the seconds a copy of bytes takes over the path named path_name.
+                 * @brief Returns the seconds a copy of bytes takes over the path with identity path.
                  *
                  * The path is looked up on the source device's profile first, then on the
                  * destination's.
@@ -94,7 +94,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::optional<double> transfer_time(const DeviceKey& source,
                                                                   const DeviceKey& destination,
-                                                                  std::string_view path_name,
+                                                                  TransferPathID path,
                                                                   std::size_t bytes) const;
 
                 /**

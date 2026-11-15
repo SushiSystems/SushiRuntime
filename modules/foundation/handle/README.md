@@ -14,6 +14,7 @@ The design is in `docs/design/GLOBAL_HANDLE/README.md`.
 | `global_handle.hpp` | `GlobalHandle`, `HandleKind`, `HandleFlags` and `has_flags()` |
 | `device_key.hpp` | `DeviceKey`, `DeviceBackend`, `HardwareIDKind`, `to_text()` and `parse_device_key()` |
 | `memory_space_id.hpp` | `MemorySpaceID` |
+| `transfer_path_id.hpp` | `TransferPathID` |
 | `handle_status.hpp` | `HandleStatus` |
 | `handle_space.hpp` | `HandleSpace` and `MintOutcome` |
 | `handle_resolver.hpp` | `HandleResolver` and `ResolveOutcome` |
@@ -65,6 +66,12 @@ cuda:uuid:00112233445566778899aabbccddeeff:0
 
 `MemorySpaceID` is a strong 32-bit value that names one memory space. Its meaning belongs to the
 runtime that hands it out. `HandleStatus` names what happened to a mint, retire or resolve.
+
+`TransferPathID` is a strong 64-bit value that names one way of copying between memory spaces. A
+path class builds it once from its own name with `TransferPathID::named()`, a constexpr FNV-1a hash,
+so the value is the same on every run and every machine, and 0 is kept for no path. Code that selects,
+prices or records a path compares ids. A name is for logs and for the keys of the profile file, which
+map back to an id once, when the file is read.
 
 ## handle_space.hpp and handle_resolver.hpp
 

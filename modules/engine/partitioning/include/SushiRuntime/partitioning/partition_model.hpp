@@ -32,7 +32,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <vector>
 
 #include <SushiRuntime/core/result.hpp>
@@ -173,7 +172,7 @@ namespace SushiRuntime
                 std::vector<DeviceKey> devices_;
 
                 /// @brief Copy path of each device.
-                std::vector<std::string> copy_paths_;
+                std::vector<TransferPathID> copy_paths_;
 
                 /// @brief Pool index of each device.
                 std::vector<std::size_t> device_pool_;

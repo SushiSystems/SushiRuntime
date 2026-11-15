@@ -37,6 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 
 namespace SushiRuntime
@@ -63,8 +64,16 @@ namespace SushiRuntime
             public:
                 virtual ~TransferPath() = default;
 
-                /** @brief Returns the name of the path, for logs and reports. */
+                /** @brief Returns the name of the path, for logs, reports and the profile file only. */
                 [[nodiscard]] virtual std::string_view name() const noexcept = 0;
+
+                /**
+                 * @brief Returns the identity of the path.
+                 *
+                 * It is fixed per path class and the same on every run. Selecting, pricing and recording
+                 * a path key on it, never on name().
+                 */
+                [[nodiscard]] virtual TransferPathID id() const noexcept = 0;
 
                 /** @brief Returns whether this path copies from source to destination. */
                 [[nodiscard]] virtual bool connects(const Memory::MemorySpace& source,

@@ -99,11 +99,11 @@ namespace SushiRuntime
             {
                 Result<PathProfile> path = link_of(
                     [&](std::uint64_t bytes)
-                    { return probe_.measure_path_copy(device, target.destination, target.path_name, bytes); },
+                    { return probe_.measure_path_copy(device, target.destination, target.path, bytes); },
                     "a path copy");
                 if (!path)
                     return make_error(Error{path.error()});
-                profile.paths[target.path_name] = path.value();
+                profile.set_path(target.path_name, path.value());
             }
 
             if (plan_.host_links)

@@ -51,10 +51,23 @@ namespace
     TEST(Small_DeviceProfile, APathIsFoundByNameAndAnotherIsNot)
     {
         DeviceProfile profile;
-        profile.paths["pcie"] = PathProfile{5.0, 1.0};
+        profile.set_path("pcie", PathProfile{5.0, 1.0, {}});
 
-        ASSERT_NE(profile.find_path("pcie"), nullptr);
-        EXPECT_EQ(profile.find_path("pcie")->bandwidth, 5.0);
-        EXPECT_EQ(profile.find_path("nvlink"), nullptr);
+        ASSERT_NE(profile.find_path(TransferPathID::named("pcie")), nullptr);
+        EXPECT_EQ(profile.find_path(TransferPathID::named("pcie"))->bandwidth, 5.0);
+        EXPECT_EQ(profile.find_path(TransferPathID::named("nvlink")), nullptr);
+    }
+
+    TEST(Small_DeviceProfile, SetPathKeysTheEntryByTheIdentityOfItsNameAndKeepsTheName)
+    {
+        DeviceProfile profile;
+        profile.set_path("pcie", PathProfile{5.0, 1.0, {}});
+        profile.set_path("pcie", PathProfile{7.0, 2.0, {}});
+        profile.set_path("nvlink", PathProfile{9.0, 3.0, {}});
+
+        ASSERT_EQ(profile.paths.size(), 2U);
+        EXPECT_EQ(profile.find_path(TransferPathID::named("pcie"))->bandwidth, 7.0);
+        EXPECT_EQ(profile.find_path(TransferPathID::named("pcie"))->name, "pcie");
+        EXPECT_EQ(profile.find_path(TransferPathID::named("nvlink"))->name, "nvlink");
     }
 } // namespace

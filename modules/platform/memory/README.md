@@ -351,6 +351,11 @@ the reserve is the bytes the probe reports as not free. Tests pass a fake probe.
 `usable_pool_bytes` sums capacity less reserve per `shared_pool`, so an integrated GPU that shares
 the host pool is counted once.
 
+A space tells what it is through queries, never through a name. `is_host_memory()` is true for
+the host space, whose bytes a copy reads or writes with one memcpy and no staging. `is_file_backed()`
+is true for a file space, whose bytes are read through a stream. `kind_name()` is for logs only; no
+code compares it. A new kind answers the queries it needs and no sibling changes.
+
 ## system_memory_probe.hpp
 
 `SystemMemoryProbe` is the `MemoryProbe` of host memory. It reads the physical and available bytes

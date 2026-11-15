@@ -59,13 +59,13 @@ namespace SushiRuntime
         }
 
         std::optional<double> CostModel::transfer_time(const DeviceKey& source, const DeviceKey& destination,
-                                                       std::string_view path_name, std::size_t bytes) const
+                                                       TransferPathID path_id, std::size_t bytes) const
         {
             const DeviceProfile* from = profiles_.find(source);
             const DeviceProfile* to = profiles_.find(destination);
-            const PathProfile* path = from != nullptr ? from->find_path(path_name) : nullptr;
+            const PathProfile* path = from != nullptr ? from->find_path(path_id) : nullptr;
             if (path == nullptr && to != nullptr)
-                path = to->find_path(path_name);
+                path = to->find_path(path_id);
             if (path == nullptr)
                 return std::nullopt;
             return path->latency + seconds_for(static_cast<double>(bytes), path->bandwidth);

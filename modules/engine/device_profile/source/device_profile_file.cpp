@@ -30,6 +30,7 @@
 
 #include <SushiRuntime/device_profile/device_profile_file.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -278,10 +279,9 @@ namespace SushiRuntime
                         const std::optional<double> latency = parse_measure(words[3]);
                         if (!bandwidth || !latency)
                             return fault(number, "'path' holds a bad bandwidth or latency");
-                        const bool inserted =
-                            profile_.paths.emplace(words[1], PathProfile{*bandwidth, *latency}).second;
-                        if (!inserted)
+                        if (profile_.find_path(TransferPathID::named(words[1])) != nullptr)
                             return fault(number, "path " + words[1] + " appears twice");
+                        profile_.set_path(words[1], PathProfile{*bandwidth, *latency, {}});
                         return std::nullopt;
                     }
 
@@ -379,12 +379,17 @@ namespace SushiRuntime
                 stream << K_BASE_THROUGHPUT_KEY << ' ' << profile.base_throughput << '\n';
                 for (const auto& [kind, throughput] : profile.throughputs)
                     stream << K_THROUGHPUT_KEY << ' ' << kind.value << ' ' << throughput << '\n';
-                for (const auto& [name, path] : profile.paths)
+                std::vector<const PathProfile*> named_paths;
+                for (const auto& entry : profile.paths)
+                    named_paths.push_back(&entry.second);
+                std::sort(named_paths.begin(), named_paths.end(),
+                          [](const PathProfile* left, const PathProfile* right) { return left->name < right->name; });
+                for (const PathProfile* path : named_paths)
                 {
-                    if (!is_one_word(name))
+                    if (!is_one_word(path->name))
                         return make_error(Error{ErrorCode::InvalidArgument,
-                                                "a transfer path name must be one word: '" + name + "'"});
-                    stream << K_PATH_KEY << ' ' << name << ' ' << path.bandwidth << ' ' << path.latency
+                                                "a transfer path name must be one word: '" + path->name + "'"});
+                    stream << K_PATH_KEY << ' ' << path->name << ' ' << path->bandwidth << ' ' << path->latency
                            << '\n';
                 }
                 if (profile.host_to_device)

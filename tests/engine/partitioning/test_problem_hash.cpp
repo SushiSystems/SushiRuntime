@@ -42,7 +42,7 @@ namespace
         PartitionProblem problem;
         PartitionDevice device;
         device.key.ordinal = 1;
-        device.copy_path = "peer";
+        device.copy_path = TransferPathID::named("peer");
         problem.devices = {device};
         PartitionBuffer buffer;
         buffer.handle = GlobalHandle::from_words(1, 1);
@@ -85,7 +85,7 @@ namespace
         EXPECT_NE(base, problem_hash(edge));
 
         PartitionProblem path = sample();
-        path.devices[0].copy_path = "host";
+        path.devices[0].copy_path = TransferPathID::named("host");
         EXPECT_NE(base, problem_hash(path));
     }
 } // namespace

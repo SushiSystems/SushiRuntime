@@ -89,12 +89,14 @@ dispatch: T35 (test code) — sonnet medium, rung 1, passed; measured in the clo
 dispatch: T27 — opus low, rung 1, passed but for the bytes clause (moved to T54)
 dispatch: T33 — sonnet medium, 27 turns, rung 1, failed (stopped on a missing SushiBLAS seam; T55 builds it)
 dispatch: R01 — opus low, rung 1, passed
+dispatch: R08 — sonnet medium, rung 1, passed
 dispatch: T55 — opus low, 56 turns, rung 1, passed in part (recording by handle moved to T56 and T57)
 dispatch: T54 — opus low, 98 turns, rung 1, passed after one return (horizon in the journal)
 dispatch: T56 — opus low, 85 turns, rung 1, passed
 dispatch: T57 — sonnet medium, rung 1, passed (SushiBLAS; only binding tasks go by handle)
 dispatch: T33 — sonnet medium, rung 2, passed (SushiBLAS; measured in the closing run)
 dispatch: R01 — opus low, rung 1, passed
+dispatch: R08 — sonnet medium, rung 1, passed
 ```
 
 ## T05: the residency directory

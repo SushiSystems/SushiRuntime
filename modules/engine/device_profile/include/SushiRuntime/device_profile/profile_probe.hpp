@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/device_profile.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 
 namespace SushiRuntime
 {
@@ -81,10 +82,10 @@ namespace SushiRuntime
                 [[nodiscard]] virtual Result<CopySample> measure_device_copy(const DeviceKey& device,
                                                                              std::uint64_t bytes) = 0;
 
-                /** @brief Copies bytes from source to destination over the path named path_name and returns the time. */
+                /** @brief Copies bytes from source to destination over the path with identity path and returns the time. */
                 [[nodiscard]] virtual Result<CopySample> measure_path_copy(const DeviceKey& source,
                                                                            const DeviceKey& destination,
-                                                                           std::string_view path_name,
+                                                                           TransferPathID path,
                                                                            std::uint64_t bytes) = 0;
 
                 /** @brief Copies bytes between host memory and device in direction and returns the time. */

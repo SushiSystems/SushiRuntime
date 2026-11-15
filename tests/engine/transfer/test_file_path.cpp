@@ -188,6 +188,7 @@ namespace
         EXPECT_FALSE(subject_.connects(other, device_));
         EXPECT_FALSE(subject_.connects(device_, host_));
         EXPECT_EQ(subject_.name(), "file");
+        EXPECT_EQ(subject_.id(), FilePath::K_ID);
     }
 
     TEST_F(Small_FilePath, ARemovedFileSpaceIsNoLongerConnectedAndItsIdTakesANewSpace)
@@ -230,6 +231,7 @@ namespace
         EXPECT_EQ(memory_.peak(), 0U);
         ASSERT_EQ(observer_.heard().size(), 1U);
         EXPECT_EQ(observer_.heard()[0].path, "file");
+        EXPECT_EQ(observer_.heard()[0].id, FilePath::K_ID);
         EXPECT_EQ(observer_.heard()[0].bytes, K_RANGE_BYTES);
     }
 

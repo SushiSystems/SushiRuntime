@@ -104,9 +104,7 @@ namespace SushiRuntime
             {
                 fold_device_key(hash, device.key);
                 hash.fold(device.pool);
-                hash.fold(device.copy_path.size());
-                for (const char letter : device.copy_path)
-                    hash.fold(static_cast<unsigned char>(letter));
+                hash.fold(device.copy_path.value());
             }
             return hash.value();
         }

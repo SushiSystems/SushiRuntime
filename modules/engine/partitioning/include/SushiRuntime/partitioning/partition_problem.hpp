@@ -32,12 +32,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <vector>
 
 #include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/transfer_path_id.hpp>
 
 namespace SushiRuntime
 {
@@ -90,7 +90,7 @@ namespace SushiRuntime
         {
             DeviceKey key;           /**< The device. */
             std::uint32_t pool = 0;  /**< Memory pool the device draws from; devices that share memory share it. */
-            std::string copy_path;   /**< Name of the path a copy that leaves the device takes, as its profile names it. */
+            TransferPathID copy_path; /**< Identity of the path a copy that leaves the device takes; its profile prices it. */
         };
 
         /**

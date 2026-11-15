@@ -30,13 +30,17 @@ It depends on `core`, `handle`, `log`, `memory`, `report` and `transfer`.
 
 `DeviceProfile` holds, for one `DeviceKey`, the capacity and reserve of the device's pool, its memory
 bandwidth, a base throughput, a throughput per `OperationKind` and the bandwidth and latency of each
-transfer path that leaves it, by path name. Throughputs are operations per second, bandwidths are bytes
+transfer path that leaves it, by `TransferPathID`. Throughputs are operations per second, bandwidths are bytes
 per second and latencies are seconds. A kind with no entry takes the base throughput.
 
 `DeviceProfileSet` holds the profiles in `DeviceKey` order. `has_profile()` is how the partitioner
 learns that a device was never measured; such a device receives no node.
 
 ## CostModel
+
+A path profile keeps its name for the file and logs, and `DeviceProfile::set_path()` is the one place a
+name becomes an identity. `CostModel::transfer_time()` and `ProfileProbe::measure_path_copy()` take the
+identity; a `PathTarget` names the path by `TransferPath::id()` and carries the name for the file.
 
 `CostModel` is built once from a `DeviceProfileSet` and never changes. `node_time()` is a node's
 operations over the device's throughput for its kind, plus its read and written bytes over the
@@ -73,12 +77,12 @@ latency. A probe that reports a time of zero or less is refused as `InvalidState
 `DeviceProfileProbe` is the probe on real devices. It uses standard SYCL only, so it builds under
 AdaptiveCpp. `ProbeDevices` gives it each device's queue and memory space by `DeviceKey`. Capacity
 and reserve are the space's. A device copy is one `memcpy` between two device allocations; a path
-copy goes through the runtime's own `TransferPath` of that name between an allocation on each
+copy goes through the runtime's own `TransferPath` of that identity between an allocation on each
 device, so it times what the planner will use; a kind runs the `ProbeKernel` the caller registered
 for it, which returns the operations it did; a host copy is one `memcpy` between a device
 allocation and a host allocation. Each runs once to warm up and once timed, on the host's
 steady clock, from the submit to the end of the wait. The time is a measurement and decides no plan
-until it is written to the profile file. A path no path of that name connects is `Unsupported`; a
+until it is written to the profile file. A path identity no path connects is `Unsupported`; a
 kind with no kernel, or a key with no device, is `InvalidArgument`.
 
 Integrated detection is a hook, not a rule. When a backend reports `host_unified_memory` false for an
@@ -115,7 +119,7 @@ end
 | `capacity_bytes`, `reserve_bytes` | Unsigned integers; each appears once per block. |
 | `memory_bandwidth`, `base_throughput` | Finite numbers of zero or more; each appears once per block. |
 | `throughput <kind> <value>` | `<kind>` is the `OperationKind` value as an unsigned integer. One per kind. |
-| `path <name> <bandwidth> <latency>` | `<name>` is one word. One per name. |
+| `path <name> <bandwidth> <latency>` | `<name>` is one word, the on-disk key. The reader maps it once to `TransferPathID::named(<name>)`, and the writer prints the name each entry keeps, in name order. One per name. |
 | `host_to_device <bandwidth> <latency>`, `device_to_host <bandwidth> <latency>` | The host links; each appears at most once per block. A block without one leaves that link unmeasured. Version 2 only. |
 | `end` | Closes the block. |
 

@@ -45,7 +45,7 @@ namespace
         plan.latency_probe_bytes = 1;
         plan.bandwidth_probe_bytes = 1001;
         plan.kinds = {OperationKinds::K_GENERIC, "gemm"_kind};
-        plan.paths = {PathTarget{host_key(2), "pcie"}};
+        plan.paths = {PathTarget{host_key(2), TransferPathID::named("pcie"), "pcie"}};
         return plan;
     }
 
@@ -62,7 +62,7 @@ namespace
         EXPECT_DOUBLE_EQ(profile.value().memory_bandwidth, 2.0 * 1001.0 / (1001.0 / 500.0));
         EXPECT_DOUBLE_EQ(profile.value().base_throughput, 2000.0);
         EXPECT_DOUBLE_EQ(profile.value().throughputs.at("gemm"_kind), 2000.0);
-        const PathProfile* path = profile.value().find_path("pcie");
+        const PathProfile* path = profile.value().find_path(TransferPathID::named("pcie"));
         ASSERT_NE(path, nullptr);
         EXPECT_NEAR(path->latency, 0.5 + 1.0 / 100.0, 1e-12);
         EXPECT_NEAR(path->bandwidth, 100.1, 1e-9);

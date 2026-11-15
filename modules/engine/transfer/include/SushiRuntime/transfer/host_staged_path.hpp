@@ -61,7 +61,15 @@ namespace SushiRuntime
                 HostStagedPath(const SpaceQueues& queues, StagingRing& ring,
                                TransferObserver* observer = nullptr) noexcept;
 
+                /// @brief Name of the path, for logs and the profile file.
+                static constexpr std::string_view K_NAME = "host_staged";
+
+                /// @brief Identity of the path; every comparison and price keys on it.
+                static constexpr TransferPathID K_ID = TransferPathID::named(K_NAME);
+
                 [[nodiscard]] std::string_view name() const noexcept override;
+
+                [[nodiscard]] TransferPathID id() const noexcept override;
 
                 /**
                  * @brief Returns whether the copy needs a device queue and two spaces that are not both host.

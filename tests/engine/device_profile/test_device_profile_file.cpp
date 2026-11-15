@@ -80,8 +80,8 @@ namespace
                           after.node_time(host_key(ordinal), sample_cost(kind)));
             }
         }
-        EXPECT_EQ(before.transfer_time(host_key(1), host_key(2), "pcie", 4096),
-                  after.transfer_time(host_key(1), host_key(2), "pcie", 4096));
+        EXPECT_EQ(before.transfer_time(host_key(1), host_key(2), TransferPathID::named("pcie"), 4096),
+                  after.transfer_time(host_key(1), host_key(2), TransferPathID::named("pcie"), 4096));
     }
 
     TEST(Small_DeviceProfileFile, AChangedFileChangesTheCostModelTimes)
@@ -203,7 +203,7 @@ namespace
     {
         DeviceProfileSet profiles;
         DeviceProfile profile = round_profile(1.0);
-        profile.paths["two words"] = PathProfile{1.0, 0.0};
+        profile.set_path("two words", PathProfile{1.0, 0.0, {}});
         profiles.set(host_key(1), profile);
 
         const Result<std::string> text = DeviceProfileFile::serialise(profiles);

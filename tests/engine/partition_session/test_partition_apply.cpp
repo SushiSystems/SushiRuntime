@@ -79,8 +79,8 @@ namespace
             /** @brief Returns the graph's problem over host_key(1) and host_key(2), each in a pool of its own. */
             [[nodiscard]] Result<GraphPartitionProblem> problem() const
             {
-                const std::vector<PartitionDevice> devices{PartitionDevice{host_key(1), 1, "pcie"},
-                                                           PartitionDevice{host_key(2), 2, "pcie"}};
+                const std::vector<PartitionDevice> devices{PartitionDevice{host_key(1), 1, TransferPathID::named("pcie")},
+                                                           PartitionDevice{host_key(2), 2, TransferPathID::named("pcie")}};
                 return make_graph_partition_problem(nodes_, memory_, directory_, devices);
             }
 
@@ -201,8 +201,8 @@ namespace
         answer.node_devices = {host_key(1), host_key(2), host_key(1)};
         ASSERT_TRUE(apply_partition(first.value(), answer).has_value());
 
-        const std::vector<PartitionDevice> devices{PartitionDevice{host_key(1), 1, "pcie"},
-                                                   PartitionDevice{host_key(2), 2, "pcie"}};
+        const std::vector<PartitionDevice> devices{PartitionDevice{host_key(1), 1, TransferPathID::named("pcie")},
+                                                   PartitionDevice{host_key(2), 2, TransferPathID::named("pcie")}};
         const std::set<const Node*> assigned{nodes_[0].get(), nodes_[1].get(), nodes_[2].get()};
         const Result<GraphPartitionProblem> again =
             make_graph_partition_problem(nodes_, memory_, directory_, devices, assigned);

@@ -53,4 +53,13 @@ namespace
         ASSERT_EQ(space.direct_targets().size(), 1U);
         EXPECT_EQ(space.direct_targets()[0], MemorySpaceID(2));
     }
+
+    TEST(Small_HostMemorySpace, AnswersTheKindQueries)
+    {
+        const FakeMemoryProbe probe(4096, 1024);
+        const HostMemorySpace space(HostMemorySpaceDescription{MemorySpaceID(0), 0, 1, {}}, probe);
+
+        EXPECT_EQ(space.is_host_memory(), true);
+        EXPECT_EQ(space.is_file_backed(), false);
+    }
 } // namespace

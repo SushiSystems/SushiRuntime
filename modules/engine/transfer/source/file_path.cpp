@@ -84,12 +84,17 @@ namespace SushiRuntime
 
         std::string_view FilePath::name() const noexcept
         {
-            return "file";
+            return K_NAME;
+        }
+
+        TransferPathID FilePath::id() const noexcept
+        {
+            return K_ID;
         }
 
         bool FilePath::connects(const Memory::MemorySpace& source, const Memory::MemorySpace& destination) const
         {
-            return space_with(source.id()) == &source && destination.kind_name() != "file";
+            return space_with(source.id()) == &source && !destination.is_file_backed();
         }
 
         sycl::event FilePath::copy(const TransferRequest& request, const std::vector<sycl::event>& dependencies)
@@ -138,7 +143,7 @@ namespace SushiRuntime
                 }
             }
             if (observer_ != nullptr)
-                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes});
+                observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;
         }
 

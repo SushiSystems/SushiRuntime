@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/host_memory_space.hpp>
+#include <SushiRuntime/transfer/file_path.hpp>
 #include <SushiRuntime/transfer/host_staged_path.hpp>
 
 #include "support/fake_transfer_path.hpp"
@@ -95,6 +96,8 @@ namespace
         EXPECT_TRUE(subject_.connects(device_0_, host_));
         EXPECT_FALSE(subject_.connects(host_, host_));
         EXPECT_EQ(subject_.name(), "host_staged");
+        EXPECT_EQ(subject_.id(), HostStagedPath::K_ID);
+        EXPECT_NE(HostStagedPath::K_ID, FilePath::K_ID);
     }
 
     TEST_F(Medium_HostStagedPath, CopiesBetweenTwoSpacesWithNoDirectPathAndMatchesTheBytes)
@@ -133,6 +136,7 @@ namespace
 
         ASSERT_EQ(observer_.heard().size(), 1U);
         EXPECT_EQ(observer_.heard()[0].path, "host_staged");
+        EXPECT_EQ(observer_.heard()[0].id, HostStagedPath::K_ID);
         EXPECT_EQ(observer_.heard()[0].source, K_DEVICE_0);
         EXPECT_EQ(observer_.heard()[0].destination, K_DEVICE_1);
         EXPECT_EQ(observer_.heard()[0].bytes, from.size());

@@ -93,14 +93,29 @@ namespace
 
     TEST(Small_CostModel, ACopyTakesTheLatencyPlusItsBytesOverTheBandwidthOfThePath)
     {
-        EXPECT_DOUBLE_EQ(*model().transfer_time(host_key(1), host_key(2), "pcie", 1000), 0.25 + 1000.0 / 500.0);
-        EXPECT_DOUBLE_EQ(*model().transfer_time(host_key(2), host_key(1), "pcie", 1000), 0.25 + 1000.0 / 1000.0);
+        const TransferPathID pcie = TransferPathID::named("pcie");
+        EXPECT_DOUBLE_EQ(*model().transfer_time(host_key(1), host_key(2), pcie, 1000), 0.25 + 1000.0 / 500.0);
+        EXPECT_DOUBLE_EQ(*model().transfer_time(host_key(2), host_key(1), pcie, 1000), 0.25 + 1000.0 / 1000.0);
     }
 
     TEST(Small_CostModel, ACopyOverAnUnknownPathHasNoTime)
     {
-        EXPECT_FALSE(model().transfer_time(host_key(1), host_key(2), "nvlink", 1000).has_value());
-        EXPECT_FALSE(model().transfer_time(host_key(8), host_key(9), "pcie", 1000).has_value());
+        const TransferPathID pcie = TransferPathID::named("pcie");
+        EXPECT_FALSE(model().transfer_time(host_key(1), host_key(2), TransferPathID::named("nvlink"), 1000).has_value());
+        EXPECT_FALSE(model().transfer_time(host_key(1), host_key(2), TransferPathID(), 1000).has_value());
+        EXPECT_FALSE(model().transfer_time(host_key(8), host_key(9), pcie, 1000).has_value());
+    }
+
+    TEST(Small_CostModel, APathIsPricedByItsIdentityAndNeverByTheNameItCarries)
+    {
+        DeviceProfile profile = round_profile(1.0);
+        profile.paths[TransferPathID::named("one")] = PathProfile{500.0, 0.25, "another"};
+        DeviceProfileSet profiles;
+        profiles.set(host_key(1), profile);
+        const CostModel priced(profiles);
+
+        EXPECT_TRUE(priced.transfer_time(host_key(1), host_key(2), TransferPathID::named("one"), 10).has_value());
+        EXPECT_FALSE(priced.transfer_time(host_key(1), host_key(2), TransferPathID::named("another"), 10).has_value());
     }
 
     TEST(Small_CostModel, ThePathOfTheDestinationServesWhenTheSourceHasNone)
@@ -109,6 +124,6 @@ namespace
         profiles.set(host_key(2), round_profile(1.0));
         const CostModel only_destination(profiles);
 
-        EXPECT_TRUE(only_destination.transfer_time(host_key(9), host_key(2), "pcie", 10).has_value());
+        EXPECT_TRUE(only_destination.transfer_time(host_key(9), host_key(2), TransferPathID::named("pcie"), 10).has_value());
     }
 } // namespace
