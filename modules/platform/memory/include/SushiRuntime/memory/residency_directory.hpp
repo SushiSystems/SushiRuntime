@@ -44,11 +44,11 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
-#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/handle/handle_space.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/memory/retire_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
@@ -56,31 +56,13 @@ namespace SushiRuntime
 {
     namespace Internal::Memory
     {
-        /** @brief Holds the size and alignment of one element of a buffer. */
-        struct ElementLayout
-        {
-            std::size_t size = 1;      /**< Bytes per element. */
-            std::size_t alignment = 1; /**< Alignment of an element in bytes. */
-        };
-
-        /** @brief Holds what a reader sees of one live entry. */
-        struct EntryView
-        {
-            std::size_t size = 0;                   /**< Bytes of the buffer. */
-            ElementLayout layout;                   /**< Layout of one element. */
-            MemorySpaceID home;                     /**< Space the buffer was made on. */
-            std::uint64_t valid_spaces = 0;         /**< Bit i set when space i holds an instance. */
-            HandleStatus status = HandleStatus::Ok; /**< Ok, or why nothing was read. */
-            std::optional<USMKind> home_kind;       /**< Kind of the home instance; nothing when unknown. */
-        };
-
         /**
          * @brief Maps handles to the instances of their buffer on each memory space.
          *
          * Writers (mint, retire, describe, set_instance, drop_instance) serialise on one mutex.
          * Readers (resolve, is_stale, inspect) take no lock and never wait on a writer.
          */
-        class ResidencyDirectory final : public HandleSpace, public HandleResolver
+        class ResidencyDirectory final : public HandleSpace, public ResidencyView
         {
             public:
                 /** @brief Number of memory spaces an entry can hold an instance on. */
@@ -129,7 +111,7 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] HandleStatus set_instance(GlobalHandle handle, MemorySpaceID space,
                                                         void* address,
-                                                        std::optional<USMKind> kind = std::nullopt);
+                                                        std::optional<USMKind> kind = std::nullopt) override;
 
                 /**
                  * @brief Returns the kind of handle's instance on space, without taking a lock.
@@ -137,7 +119,7 @@ namespace SushiRuntime
                  *         instance's kind is unknown.
                  */
                 [[nodiscard]] std::optional<USMKind> instance_kind(GlobalHandle handle,
-                                                                   MemorySpaceID space) const;
+                                                                   MemorySpaceID space) const override;
 
                 /**
                  * @brief Installs the observer retire() tells and waits out the calls in flight.
@@ -148,10 +130,10 @@ namespace SushiRuntime
                 void set_retire_observer(RetireObserver* observer) noexcept;
 
                 /** @brief Forgets handle's instance on space; the memory itself is not freed. */
-                [[nodiscard]] HandleStatus drop_instance(GlobalHandle handle, MemorySpaceID space);
+                [[nodiscard]] HandleStatus drop_instance(GlobalHandle handle, MemorySpaceID space) override;
 
                 /** @brief Returns the size, layout, home and valid spaces of a live handle. */
-                [[nodiscard]] EntryView inspect(GlobalHandle handle) const;
+                [[nodiscard]] EntryView inspect(GlobalHandle handle) const override;
 
                 /** @brief Counts the handles minted and not yet retired, Borrowed ones included. */
                 [[nodiscard]] std::size_t live_count() const noexcept
@@ -170,10 +152,10 @@ namespace SushiRuntime
                  *
                  * The planner is the map's only writer, at plan time; the map takes no lock.
                  */
-                [[nodiscard]] CoherenceIntervals* coherence(GlobalHandle handle) noexcept;
+                [[nodiscard]] CoherenceIntervals* coherence(GlobalHandle handle) noexcept override;
 
                 /** @brief Returns the coherence map of a live handle, or null when it is not live. */
-                [[nodiscard]] const CoherenceIntervals* coherence(GlobalHandle handle) const noexcept;
+                [[nodiscard]] const CoherenceIntervals* coherence(GlobalHandle handle) const noexcept override;
 
                 /** @brief Returns the address of the entry of slot, or null when its chunk is absent. */
                 [[nodiscard]] const void* entry_address(std::uint32_t slot) const noexcept;

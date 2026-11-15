@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -66,11 +65,6 @@ namespace
             void free(void* address, std::size_t device_index) override
             {
                 frees_.emplace_back(address, device_index);
-            }
-
-            [[nodiscard]] std::optional<std::size_t> resolve_owner(const void*) const override
-            {
-                return std::nullopt;
             }
 
             [[nodiscard]] bool shares_context(std::size_t, std::size_t) const override { return true; }

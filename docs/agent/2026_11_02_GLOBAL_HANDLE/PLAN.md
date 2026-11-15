@@ -55,7 +55,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T14 | `engine/coherence` eviction | T13 | done |
 | T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | running |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
-| T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |
+| T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | done |
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
 | T15 | reference interpreter test | T13 | done |
 | T16 | determinism suite | T13 | done |

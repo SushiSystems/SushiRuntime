@@ -36,7 +36,7 @@
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/coherence/planned_node_factory.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 
 namespace SushiRuntime
 {
@@ -54,7 +54,7 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Builds a factory over the directory, the allocator and the planner's paths. */
-                DirectoryPlannedNodeFactory(Memory::ResidencyDirectory& directory,
+                DirectoryPlannedNodeFactory(Memory::ResidencyView& directory,
                                             std::shared_ptr<InstanceAllocator> allocator,
                                             std::vector<TransferPath*> paths);
 
@@ -62,7 +62,7 @@ namespace SushiRuntime
 
             private:
                 /// @brief Directory the nodes resolve and record instances in.
-                Memory::ResidencyDirectory* directory_;
+                Memory::ResidencyView* directory_;
 
                 /// @brief Makes and frees instances.
                 std::shared_ptr<InstanceAllocator> allocator_;

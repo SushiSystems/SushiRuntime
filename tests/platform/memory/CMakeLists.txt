@@ -9,6 +9,7 @@ sushiruntime_add_module_tests(
         compile_memory_log_category.cpp
         compile_memory_probe.cpp
         compile_memory_space.cpp
+        compile_residency_view.cpp
         compile_usm_request.cpp
         compile_usm_source.cpp
         test_borrowed_index.cpp

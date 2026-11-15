@@ -46,7 +46,7 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the address of handle's instance on space, or null when it has none. */
-            void* instance_on(const Memory::ResidencyDirectory& directory, GlobalHandle handle,
+            void* instance_on(const Memory::ResidencyView& directory, GlobalHandle handle,
                               MemorySpaceID space) noexcept
             {
                 const ResolveOutcome outcome = directory.resolve(handle, space);
@@ -76,7 +76,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        DirectoryPlannedNodeFactory::DirectoryPlannedNodeFactory(Memory::ResidencyDirectory& directory,
+        DirectoryPlannedNodeFactory::DirectoryPlannedNodeFactory(Memory::ResidencyView& directory,
                                                                  std::shared_ptr<InstanceAllocator> allocator,
                                                                  std::vector<TransferPath*> paths)
             : directory_(&directory), allocator_(std::move(allocator)), paths_(std::move(paths))
@@ -102,7 +102,7 @@ namespace SushiRuntime
             node->cached_queue_index_ = static_cast<int>(device_of_step(step));
             node->locality_checked_ = true;
 
-            Memory::ResidencyDirectory* const directory = directory_;
+            Memory::ResidencyView* const directory = directory_;
             const std::shared_ptr<InstanceAllocator> allocator = allocator_;
             switch (step.kind)
             {

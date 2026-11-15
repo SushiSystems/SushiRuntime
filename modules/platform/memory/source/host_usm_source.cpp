@@ -34,12 +34,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <iterator>
 #include <limits>
-#include <map>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
 
 #include <SushiRuntime/core/assert.hpp>
@@ -69,8 +65,7 @@ namespace SushiRuntime
             /**
              * @brief Allocates every kind of USM from the host heap, for a fixed number of devices.
              *
-             * Every device shares one context. It records its shared and device allocations, so
-             * an address inside one resolves to its device.
+             * Every device shares one context. It records nothing about its allocations.
              */
             class HostUSMSource final : public USMSource
             {
@@ -81,8 +76,6 @@ namespace SushiRuntime
                     [[nodiscard]] std::size_t device_count() const noexcept override;
                     [[nodiscard]] void* allocate(const USMRequest& request) override;
                     void free(void* address, std::size_t device_index) override;
-                    [[nodiscard]] std::optional<std::size_t>
-                    resolve_owner(const void* address) const override;
                     [[nodiscard]] bool shares_context(std::size_t first,
                                                       std::size_t second) const override;
                     void copy(void* destination, const void* source, std::size_t bytes,
@@ -90,21 +83,8 @@ namespace SushiRuntime
                     [[nodiscard]] std::string device_name(std::size_t index) const override;
 
                 private:
-                    /** @brief The extent and the device of one owned allocation. */
-                    struct Owned
-                    {
-                        std::size_t bytes = 0;  /**< The bytes it was asked for. */
-                        std::size_t device = 0; /**< The device it was made for. */
-                    };
-
                     /** @brief The number of devices the source stands for. */
                     std::size_t device_count_;
-
-                    /** @brief Guards owned_. */
-                    mutable std::mutex mutex_;
-
-                    /** @brief The shared and device allocations, by start address. */
-                    std::map<std::uintptr_t, Owned> owned_;
             };
         } // namespace
 
@@ -137,11 +117,6 @@ namespace SushiRuntime
             const std::uintptr_t aligned = (start + alignment - 1) & ~(std::uintptr_t{alignment} - 1);
             void** const slot = reinterpret_cast<void**>(aligned);
             slot[-1] = raw;
-            if (request.kind != USMKind::Host)
-            {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                owned_[aligned] = Owned{request.bytes, request.device_index};
-            }
             return slot;
         }
 
@@ -150,25 +125,7 @@ namespace SushiRuntime
             require_device(device_index, device_count_);
             if (address == nullptr)
                 return;
-            {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                owned_.erase(reinterpret_cast<std::uintptr_t>(address));
-            }
             std::free(static_cast<void**>(address)[-1]);
-        }
-
-        std::optional<std::size_t> HostUSMSource::resolve_owner(const void* address) const
-        {
-            const std::uintptr_t at = reinterpret_cast<std::uintptr_t>(address);
-            const std::lock_guard<std::mutex> lock(mutex_);
-            auto after = owned_.upper_bound(at);
-            if (after == owned_.begin())
-                return std::nullopt;
-            const auto& [start, owned] = *std::prev(after);
-            // An allocation of no bytes still owns its own address.
-            if (at == start || at - start < owned.bytes)
-                return owned.device;
-            return std::nullopt;
         }
 
         bool HostUSMSource::shares_context(std::size_t first, std::size_t second) const

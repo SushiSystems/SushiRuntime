@@ -31,7 +31,6 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <string>
 
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -70,15 +69,6 @@ namespace SushiRuntime
                  * @pre address came from allocate() with this device index and is not freed.
                  */
                 virtual void free(void* address, std::size_t device_index) = 0;
-
-                /**
-                 * @brief Returns the device that owns a shared or device allocation of the source's
-                 *        devices, an address inside one included.
-                 * @return The device, or nothing for host memory: a Host allocation, a stack or heap
-                 *         address, and an address no device of the source owns.
-                 */
-                [[nodiscard]] virtual std::optional<std::size_t>
-                resolve_owner(const void* address) const = 0;
 
                 /**
                  * @brief Reports whether two devices share one memory context.

@@ -46,7 +46,7 @@
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
-#include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/residency_view.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -79,7 +79,7 @@ namespace SushiRuntime
                  * @param paths  The paths in order of preference; the first of two equal paths wins.
                  * @param cost   Prices one copy over one path; pure.
                  */
-                CoherencePlanner(Memory::ResidencyDirectory& directory,
+                CoherencePlanner(Memory::ResidencyView& directory,
                                  std::vector<const Memory::MemorySpace*> spaces,
                                  std::vector<const TransferPath*> paths, TransferCost cost);
 
@@ -163,7 +163,7 @@ namespace SushiRuntime
                 [[nodiscard]] const Memory::MemorySpace* space_with(MemorySpaceID id) const noexcept;
 
                 /// @brief Directory read for instances and start states.
-                Memory::ResidencyDirectory* directory_;
+                Memory::ResidencyView* directory_;
 
                 /// @brief Spaces in DeviceKey order.
                 std::vector<const Memory::MemorySpace*> spaces_;

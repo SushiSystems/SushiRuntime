@@ -107,7 +107,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        CoherencePlanner::CoherencePlanner(Memory::ResidencyDirectory& directory,
+        CoherencePlanner::CoherencePlanner(Memory::ResidencyView& directory,
                                            std::vector<const Memory::MemorySpace*> spaces,
                                            std::vector<const TransferPath*> paths, TransferCost cost)
             : directory_(&directory), spaces_(std::move(spaces)), paths_(std::move(paths)),

@@ -90,11 +90,23 @@ Free pool storage belongs to this thread alone, so the destructor releases it di
 retire_list nodes are owned by the EpochManager by then and may come from any thread's pool, so they
 cannot go back to this pool.
 
+## residency_view.hpp
+
+### ResidencyView
+
+The port `engine/coherence` reads and writes the directory through. It extends `HandleResolver` and
+adds what a planner needs and nothing else: `inspect()`, the coherence map of a handle,
+`set_instance()`, `drop_instance()` and `instance_kind()`. `EntryView` and `ElementLayout` are
+declared here with it. Minting, retiring, describing and the retire observer stay on
+`ResidencyDirectory`, so a planner cannot call them. A test fake implements the port without a
+table behind it.
+
 ## residency_directory.hpp
 
 ### ResidencyDirectory
 
-`ResidencyDirectory` implements `HandleSpace` and `HandleResolver` from `foundation/handle`. It is
+`ResidencyDirectory` implements `HandleSpace` from `foundation/handle` and `ResidencyView`, which
+carries `HandleResolver`. It is
 one table indexed by the handle's slot. The table grows in chunks of `K_CHUNK_ENTRIES` entries; the
 array of chunk pointers is sized for `K_MAX_CHUNKS` when the directory is built, and a chunk is made
 the first time a slot in it is handed out. A chunk never moves, so a reader holds no lock: a resolve
@@ -188,12 +200,10 @@ The destructor is protected and not virtual because the directory never owns its
 ### USMSource
 
 The port `USMAllocator` takes its memory from. A source makes, frees and copies bytes and
-answers four questions about its devices: how many there are, which one owns an address, whether
-two of them share one memory context, and a device's name for a log line. The owner promise is one
-for both adapters: a shared or device allocation of the source, an interior address included,
-resolves to its device, and host memory (a `Host` allocation, a stack or heap address) to none.
-`copy()` moves bytes on a device's memory engine and returns when they have arrived. A source keeps
-only what its owner promise needs; the allocator keeps nothing. Both adapters
+answers three questions about its devices: how many there are, whether two of them share one
+memory context, and a device's name for a log line. `copy()` moves bytes on a device's memory
+engine and returns when they have arrived. A source keeps nothing about its allocations; the
+allocator keeps the records. Both adapters
 pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and
 `Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
 its factory and holds it as a `USMSource`.
@@ -203,9 +213,7 @@ its factory and holds it as a `USMSource`.
 ### make_sycl_usm_source
 
 The device adapter: `sycl::malloc_*` and `sycl::aligned_alloc_*` on one queue per device,
-`sycl::free` on release, `queue.memcpy()` for a copy, and `sycl::get_pointer_type` and
-`get_pointer_device` across the queues' contexts for an owner. A shared match wins at once; a device
-match waits for a later shared one. The header includes no SYCL header: the factory takes a
+`sycl::free` on release and `queue.memcpy()` for a copy. The header includes no SYCL header: the factory takes a
 `SYCLQueues`, a move-only handle that holds the queues behind a pointer.
 
 ## sycl_queues.hpp
@@ -224,8 +232,7 @@ The in-memory adapter: every kind of USM comes from the host heap, aligned by ov
 with the heap block's address stored in the word below the one returned, and a copy is a
 `std::memcpy`. It makes no device and starts no thread, so the host runtime and the small tests of
 the allocator run on it. Every device shares one context, and an alignment that is not a power of
-two is refused with null. It keeps the extent and device of each shared and device allocation, so
-it keeps the owner promise as a device does.
+two is refused with null. It keeps no record of its allocations.
 
 ## usm_allocator.hpp
 

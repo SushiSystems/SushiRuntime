@@ -135,6 +135,10 @@ appended in plan order.
 
 ## DirectoryPlannedNodeFactory
 
+The planner and the factory take a `Memory::ResidencyView`, the port the residency directory implements,
+and name no concrete directory. The class keeps its name because its callers in `surface/api` still
+use it; it works over any `ResidencyView`.
+
 Each node is a host node pinned to the device of the space it makes, writes or frees. An allocate
 node makes the instance only when the directory has none; a copy node resolves both instances when
 it runs and hands them to its `TransferPath`; a free node drops the instance and releases it. The

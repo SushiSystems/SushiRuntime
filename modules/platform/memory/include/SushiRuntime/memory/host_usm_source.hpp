@@ -43,7 +43,7 @@ namespace SushiRuntime
         /**
          * @brief Makes a source that allocates every kind of USM from the host heap.
          *
-         * Every device shares one context, and owners resolve as on a device. It makes no device
+         * Every device shares one context. It makes no device
          * and starts no thread.
          * @param device_count The devices the source stands for; 0 refuses every request.
          * @see modules/platform/memory/README.md

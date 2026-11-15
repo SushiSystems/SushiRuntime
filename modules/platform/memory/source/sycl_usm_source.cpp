@@ -33,7 +33,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -87,8 +86,6 @@ namespace SushiRuntime
                     [[nodiscard]] std::size_t device_count() const noexcept override;
                     [[nodiscard]] void* allocate(const USMRequest& request) override;
                     void free(void* address, std::size_t device_index) override;
-                    [[nodiscard]] std::optional<std::size_t>
-                    resolve_owner(const void* address) const override;
                     [[nodiscard]] bool shares_context(std::size_t first,
                                                       std::size_t second) const override;
                     void copy(void* destination, const void* source, std::size_t bytes,
@@ -126,34 +123,6 @@ namespace SushiRuntime
         void SYCLUSMSource::free(void* address, std::size_t device_index)
         {
             sycl::free(address, queue_at(device_index));
-        }
-
-        std::optional<std::size_t> SYCLUSMSource::resolve_owner(const void* address) const
-        {
-            std::optional<std::size_t> best;
-            for (std::size_t index = 0; index < queues_.size(); ++index)
-            {
-                const sycl::queue& queue = queues_[index];
-                try
-                {
-                    const sycl::context context = queue.get_context();
-                    const sycl::usm::alloc kind = sycl::get_pointer_type(address, context);
-                    if (kind == sycl::usm::alloc::unknown || kind == sycl::usm::alloc::host)
-                        continue;
-                    if (sycl::get_pointer_device(address, context) != queue.get_device())
-                        continue;
-                    // A shared match wins at once; a device match waits for a later shared one.
-                    if (kind == sycl::usm::alloc::shared)
-                        return index;
-                    best = index;
-                }
-                catch (const sycl::exception&)
-                {
-                    // This context cannot resolve the address, which answers "not this device".
-                    continue;
-                }
-            }
-            return best;
         }
 
         bool SYCLUSMSource::shares_context(std::size_t first, std::size_t second) const

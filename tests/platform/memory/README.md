@@ -11,7 +11,7 @@ A section is named after a test file, and a subsection after the test, helper or
 Sizes and the shared fixture base are described in [the tests README](../../README.md#sizes). The
 allocator tests derive from that fixture base and skip where SYCL reports no device.
 
-## compile_memory_log_category.cpp and compile_usm_request.cpp
+## compile_memory_log_category.cpp, compile_residency_view.cpp and compile_usm_request.cpp
 
 Each file includes one header alone. See [the scheduler tests](../../engine/scheduler/README.md)
 for why such a file stands in for a test.
@@ -124,9 +124,6 @@ queue.
 | `ASharedAllocationKeepsItsBytes` | A shared allocation holds the bytes written through it. |
 | `AnAlignedAllocationStartsOnItsAlignment` | An allocation with an alignment starts on it. |
 | `ADeviceSharesItsContextWithItself` | A device shares its memory context with itself. |
-| `AStackAddressHasNoOwner` | A stack address no device allocated resolves to no device. |
-| `AnAddressInsideASharedAllocationResolvesToItsDevice` | An interior address of a shared allocation resolves to its device. |
-| `AHostAllocationHasNoOwner` | Host memory belongs to no device. |
 | `ACopyPutsTheBytesInTheDestination` | `copy()` on a device puts the source bytes in a shared allocation. |
 | `ASourceOfOneDeviceCountsOne` | A source of one device reports one. |
 | `RefusesAnAlignmentThatIsNotAPowerOfTwo` | The host source refuses an alignment that is not a power of two with null. |
