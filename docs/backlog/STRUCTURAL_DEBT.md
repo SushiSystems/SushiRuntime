@@ -14,3 +14,4 @@
 
 | ID | Origin | Symptom | Workaround | Fix | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- |
+| KI-34 | own | chain_replay, chained_run_mark, recorded_steps and submit_form headers have no mirror test | none | none, found by the GLOBAL_HANDLE workers; tests to be written | `tools/testing/check_test_mirror.py` | 2026-11-15 |
