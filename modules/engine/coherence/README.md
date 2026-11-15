@@ -14,6 +14,11 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | --- | --- |
 | `coherence_planner.hpp` | `CoherencePlanner`, `NodeAccess` and `byte_range()` |
 | `copy_plan.hpp` | `CopyPlan`, `PlannedStep` and `PlannedStepKind` |
+| `eviction_policy.hpp` | `EvictionPolicy`, the interface that chooses a victim, and `EvictionCandidate` |
+| `logical_time_eviction.hpp` | `LogicalTimeEviction`, the default policy |
+| `pin_set.hpp` | `PinSet`, the instances eviction never touches |
+| `residency_options.hpp` | `ResidencyOptions`, the capacity rules of one planner |
+| `plan_hash.hpp` | `plan_hash()`, the FNV-1a hash of a plan |
 | `transfer_path.hpp` | `TransferPath`, the interface of one way of copying, and `TransferRequest` |
 | `transfer_cost.hpp` | `TransferCost` and `uniform_transfer_cost()` |
 | `same_context_path.hpp` | `SameContextPath`, one memcpy between two devices of one SYCL context |
@@ -43,13 +48,43 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 not hold, it adds an allocation when the space has no instance, then one copy per missing interval.
 The source is the cheapest valid space by `TransferCost`; of equal costs, the first space in the
 order the planner was given wins, and the caller gives spaces in `DeviceKey` order. Of equal paths,
-the first path wins. Each write leaves only the node's space valid. At the graph end the plan copies
+the first path wins. Each write leaves only the node's space valid. Without residency options, at the graph end the plan copies
 every byte back to each space it was valid on before the graph, and frees each instance the plan
 made, so a graph run again meets the state it was planned for.
 
 A plan reads only its inputs: the nodes, the directory's state, the spaces, the paths and the cost.
 A buffer with the `Borrowed` or `HostOnly` flag, or with no instance, is left alone. A copy no path
 makes is refused as `Unsupported`.
+
+## Capacity and eviction
+
+`CoherencePlanner::set_residency()` turns the capacity rules on; without it the planner behaves as
+described above. With it the planner counts the bytes it plans on each space, starting from the
+instances the buffers of the nodes already hold, and keeps the count below
+`MemorySpace::capacity_bytes()` less `reserve_bytes()`. Memory held by anything the nodes do not
+name is left to the reserve.
+
+When a space cannot hold a new instance, the planner lists the instances on that space in handle
+order and asks the `EvictionPolicy` for one. It never lists an instance of `PinSet`, an instance the
+current node uses, or the only copy on the host, which has nowhere to be written back to. The
+victim's bytes that no other space holds are first copied to `ResidencyOptions::host`; then the
+instance is freed. Both steps carry `evicts`, so the splice orders them after every earlier node
+that used the instance, and orders an allocation on the space after the evictions that made room. A
+space with nothing to evict refuses the allocation as `AllocationFailed`, naming the planned bytes
+and the usable bytes.
+
+`LogicalTimeEviction` evicts the instance whose next read is furthest in the recorded graph. A read
+in the next step counts as a position past the graph end, in node order. Of equal positions the
+instance that needs no write-back goes first, then the first candidate. No clock and no address
+takes part, so the same graph gives the same plan, and `plan_hash()` over its steps and `steady`
+flag gives the same value in every run.
+
+A resident plan does not free what it allocated, so the next step meets the instances it needs. It
+copies back only the buffers named in `ResidencyOptions::host_read`, each to its home space; any
+other buffer a node wrote stays valid only where it was written. The plan then writes the end state
+into each buffer's map in the directory, so the next `plan()` starts from it, and sets
+`CopyPlan::steady` to whether every buffer is still valid on the spaces it was valid on before.
+A plan that is not steady must be planned again before the next run and is never replayed.
 
 ## SameContextPath and PeerPath
 

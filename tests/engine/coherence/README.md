@@ -75,6 +75,34 @@ and the plan leaves no instance outside device 0. A second case runs each seed t
 plans and the bytes. A failure names its seed, which reproduces the graph. The tests skip when SYCL
 offers no queue.
 
+## test_residency_options.cpp
+
+On a device that holds two of three buffers, the instance read furthest ahead is evicted in graph
+order, and the eviction plan has equal steps and an equal `plan_hash()` across planners. An instance
+holding the only valid copy is copied to the host before it is freed, a pinned instance is never
+chosen, a space with only pinned or in-use instances refuses the allocation as `AllocationFailed`,
+and a plan within capacity frees nothing and is steady. A write the host does not read leaves no copy
+back and a plan that is not steady; a buffer named in `host_read` is copied back to its home. A
+second plan starts from the state the first left, and a planner with no options frees every
+instance as before.
+
+## compile_eviction_policy.cpp and compile_residency_options.cpp
+
+Each file includes one header alone.
+
+## test_logical_time_eviction.cpp
+
+The furthest next read is chosen, an instance never read again goes first, equal reads prefer the
+instance that needs no write-back and then the first candidate, and no candidate gives no victim.
+
+## test_pin_set.cpp
+
+A pin holds for its buffer and space only, pinning twice counts once, and unpinning removes it.
+
+## test_plan_hash.cpp
+
+Equal plans hash equal; each field of a step, the order of steps and the steady flag change the hash.
+
 ## test_copy_plan.cpp
 
 Two steps compare equal only when every field is equal.
@@ -113,7 +141,8 @@ SYCL offers no queue.
 
 The copy runs after the writer and before the reader on the other device, and the copy back and
 the free follow the reader. Nodes on one device are left as they are, and a refused plan leaves the
-nodes unchanged.
+nodes unchanged. An eviction runs after the node that wrote the instance and before the
+allocation it makes room for.
 
 ## test_profile_measurement.cpp
 

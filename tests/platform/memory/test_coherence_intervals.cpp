@@ -133,6 +133,22 @@ namespace
         EXPECT_EQ(map.size(), 16U);
     }
 
+    TEST(Small_CoherenceIntervals, DroppingASpaceRemovesItFromEveryIntervalAndJoinsEqualNeighbours)
+    {
+        CoherenceIntervals map;
+        map.reset(16, K_HOST);
+        map.record_copy(0, 8, K_DEVICE);
+        ASSERT_EQ(map.intervals().size(), 2U);
+
+        map.drop_space(K_DEVICE);
+        ASSERT_EQ(map.intervals().size(), 1U);
+        EXPECT_EQ(map.intervals()[0].valid_spaces, bit(K_HOST));
+        EXPECT_EQ(map.intervals()[0].end, 16U);
+
+        map.drop_space(MemorySpaceID(CoherenceIntervals::K_MAX_MEMORY_SPACES));
+        EXPECT_EQ(map.intervals().size(), 1U);
+    }
+
     TEST(Small_CoherenceIntervals, ClearEmptiesTheMap)
     {
         CoherenceIntervals map;

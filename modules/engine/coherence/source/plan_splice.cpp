@@ -129,6 +129,17 @@ namespace SushiRuntime
 
             EdgeWriter edges;
             std::map<InstanceKey, std::vector<Node*>> touching;
+            std::map<InstanceKey, std::vector<Node*>> users;
+            std::map<std::uint32_t, std::vector<Node*>> evicted;
+
+            // An allocation waits for the evictions that made room on its space.
+            const auto order_by_capacity = [&edges, &evicted](const PlannedStep& step, Node* step_node)
+            {
+                if (step.kind == PlannedStepKind::Allocate)
+                    edges.link_all(evicted[step.space.value()], step_node);
+                else if (step.kind == PlannedStepKind::Free && step.evicts)
+                    evicted[step.space.value()].push_back(step_node);
+            };
             std::size_t next = 0;
             for (std::size_t index = 0; index < nodes.size(); ++index)
             {
@@ -138,7 +149,13 @@ namespace SushiRuntime
                     Node* const step_node = made[next].get();
                     edges.link_all(predecessors[target], step_node);
                     for (const InstanceKey& key : instances_of(steps[next]))
+                    {
                         edges.link_all(touching[key], step_node);
+                        // An eviction may reach instances no edge ties to the node it precedes.
+                        if (steps[next].evicts)
+                            edges.link_all(users[key], step_node);
+                    }
+                    order_by_capacity(steps[next], step_node);
                     edges.link(step_node, target);
                     for (const InstanceKey& key : instances_of(steps[next]))
                         touching[key].push_back(step_node);
@@ -148,9 +165,15 @@ namespace SushiRuntime
                     continue;
                 const std::uint32_t space = accesses[index].space.value();
                 for (const BufferRegion& region : accesses[index].reads)
+                {
                     edges.link_all(touching[{region.base, space}], target);
+                    users[{region.base, space}].push_back(target);
+                }
                 for (const BufferRegion& region : accesses[index].writes)
+                {
                     edges.link_all(touching[{region.base, space}], target);
+                    users[{region.base, space}].push_back(target);
+                }
             }
 
             std::vector<Node*> leaves;
@@ -165,6 +188,7 @@ namespace SushiRuntime
             {
                 Node* const step_node = made[next].get();
                 edges.link_all(leaves, step_node);
+                order_by_capacity(steps[next], step_node);
                 for (const InstanceKey& key : instances_of(steps[next]))
                 {
                     edges.link_all(touching[key], step_node);

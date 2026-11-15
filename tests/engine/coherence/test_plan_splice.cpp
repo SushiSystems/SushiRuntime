@@ -37,6 +37,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
@@ -49,7 +50,9 @@ using SushiRuntime::Internal::Graph::Node;
 using SushiRuntime::Internal::Memory::DeviceMemorySpace;
 using SushiRuntime::Internal::Memory::DeviceMemorySpaceDescription;
 using SushiRuntime::Internal::Memory::ElementLayout;
+using SushiRuntime::Internal::Memory::MemoryProbe;
 using SushiRuntime::Internal::Memory::MemorySpace;
+using SushiRuntime::Internal::Memory::ProbedMemory;
 using SushiRuntime::Internal::Memory::ResidencyDirectory;
 
 namespace
@@ -72,6 +75,16 @@ namespace
             }
 
             std::vector<PlannedStep> steps; /**< Steps built, in order. */
+    };
+
+    /** @brief Reports a pool of K_BYTES bytes, all of it free. */
+    class OneBufferProbe final : public MemoryProbe
+    {
+        public:
+            [[nodiscard]] ProbedMemory probe() const override
+            {
+                return ProbedMemory{K_BYTES, K_BYTES};
+            }
     };
 
     /** @brief Returns whether to is a successor of from. */
@@ -171,6 +184,45 @@ namespace
 
         EXPECT_EQ(nodes_.size(), 2U);
         EXPECT_EQ(reader_->in_degree.load(), 1);
+    }
+
+    TEST_F(Small_PlanSplice, AnEvictionRunsAfterTheNodesThatUsedTheInstanceAndBeforeTheAllocationItMakesRoomFor)
+    {
+        OneBufferProbe one_buffer;
+        owned_[1] = std::make_unique<DeviceMemorySpace>(
+            DeviceMemorySpaceDescription{K_DEVICE_1, K_DEVICE_1.value(), {}}, one_buffer);
+        const GlobalHandle other = directory_.mint(HandleKind::Buffer, HandleFlags::None).handle;
+        unsigned char other_bytes[K_BYTES] = {};
+        ASSERT_EQ(directory_.describe(other, K_BYTES, ElementLayout{}, K_DEVICE_0), HandleStatus::Ok);
+        ASSERT_EQ(directory_.set_instance(other, K_DEVICE_0, &other_bytes), HandleStatus::Ok);
+        sushi_ptr<Node> third = make_sushi<Node>();
+        third->io_reads_.emplace_back(other);
+        nodes_.push_back(third);
+        spaces_[third.get()] = K_DEVICE_1;
+
+        LogicalTimeEviction policy;
+        CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+                                 uniform_transfer_cost());
+        ResidencyOptions options;
+        options.policy = &policy;
+        options.host = K_DEVICE_0;
+        planner.set_residency(options);
+        RecordingFactory factory;
+
+        ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
+
+        // The reader's buffer is the only copy on device 1, so it is written back and freed first.
+        ASSERT_EQ(nodes_.size(), 9U);
+        Node* const write_back = nodes_[5].get();
+        Node* const free = nodes_[6].get();
+        Node* const allocate_other = nodes_[7].get();
+        EXPECT_STREQ(write_back->metadata.name, "copy");
+        EXPECT_STREQ(free->metadata.name, "free");
+        EXPECT_STREQ(allocate_other->metadata.name, "allocate");
+        EXPECT_TRUE(precedes(*reader_, write_back));
+        EXPECT_TRUE(precedes(*write_back, free));
+        EXPECT_TRUE(precedes(*free, allocate_other));
+        EXPECT_TRUE(precedes(*free, third.get()));
     }
 
     TEST_F(Small_PlanSplice, ARefusedPlanLeavesTheNodesUnchanged)

@@ -30,10 +30,12 @@
 
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/coherence/eviction_policy.hpp>
 #include <SushiRuntime/core/error.hpp>
 
 namespace SushiRuntime
@@ -81,6 +83,28 @@ namespace SushiRuntime
                 return has_flags(handle.flags(), HandleFlags::Borrowed) ||
                        has_flags(handle.flags(), HandleFlags::HostOnly);
             }
+
+            /** @brief Returns whether map holds bytes that only the space named by bit holds. */
+            bool holds_sole_copy(const Memory::CoherenceIntervals& map, std::uint64_t bit) noexcept
+            {
+                for (const Memory::CoherenceInterval& interval : map.intervals())
+                    if (interval.valid_spaces == bit)
+                        return true;
+                return false;
+            }
+
+            /** @brief Returns whether kept holds, at every byte, every space that before held. */
+            bool keeps_validity(const Memory::CoherenceIntervals& before,
+                                const Memory::CoherenceIntervals& kept) noexcept
+            {
+                for (const Memory::CoherenceInterval& interval : before.intervals())
+                    if ((interval.valid_spaces & ~kept.valid_spaces_at(interval.begin)) != 0)
+                        return false;
+                for (const Memory::CoherenceInterval& interval : kept.intervals())
+                    if ((before.valid_spaces_at(interval.begin) & ~interval.valid_spaces) != 0)
+                        return false;
+                return true;
+            }
         } // namespace
 
         CoherencePlanner::CoherencePlanner(Memory::ResidencyDirectory& directory,
@@ -92,10 +116,20 @@ namespace SushiRuntime
 
         }
 
+        void CoherencePlanner::set_residency(ResidencyOptions options)
+        {
+            residency_ = std::move(options);
+        }
+
         Result<CopyPlan> CoherencePlanner::plan(const std::vector<NodeAccess>& nodes)
         {
             buffers_.clear();
+            uses_.clear();
+            planned_bytes_.fill(0);
+            node_count_ = nodes.size();
             CopyPlan plan;
+            if (residency_.policy != nullptr)
+                record_uses(nodes);
             for (std::size_t node = 0; node < nodes.size(); ++node)
             {
                 const NodeAccess& access = nodes[node];
@@ -107,7 +141,9 @@ namespace SushiRuntime
                     BufferState* const state = read.valid() ? state_of(read.base) : nullptr;
                     if (state == nullptr)
                         continue;
-                    ensure_instance(read.base, *state, access.space, node, plan);
+                    Result<void> ensured = ensure_instance(read.base, *state, access.space, node, plan);
+                    if (!ensured)
+                        return make_error(std::move(ensured.error()));
                     const std::pair<std::size_t, std::size_t> range = byte_range(read, state->size);
                     Result<void> made = make_valid(read.base, *state, range.first, range.second,
                                                    access.space, node, plan);
@@ -120,13 +156,15 @@ namespace SushiRuntime
                     BufferState* const state = write.valid() ? state_of(write.base) : nullptr;
                     if (state == nullptr)
                         continue;
-                    ensure_instance(write.base, *state, access.space, node, plan);
+                    Result<void> ensured = ensure_instance(write.base, *state, access.space, node, plan);
+                    if (!ensured)
+                        return make_error(std::move(ensured.error()));
                     const std::pair<std::size_t, std::size_t> range = byte_range(write, state->size);
                     state->current.record_write(range.first, range.second, access.space);
                 }
             }
 
-            Result<void> restored = restore(plan);
+            Result<void> restored = residency_.policy != nullptr ? settle_resident(plan) : restore(plan);
             if (!restored)
                 return make_error(std::move(restored.error()));
             return plan;
@@ -154,18 +192,48 @@ namespace SushiRuntime
             state.size = entry.size;
             state.alignment = entry.layout.alignment;
             state.instances = entry.valid_spaces;
+            state.start_instances = entry.valid_spaces;
+            state.home = entry.home;
             state.start = *map;
             state.current = *map;
+            if (residency_.policy != nullptr)
+                for (std::uint32_t space = 0; space < planned_bytes_.size(); ++space)
+                    if ((state.instances & (std::uint64_t{1} << space)) != 0)
+                        planned_bytes_[space] += state.size;
             return &buffers_.emplace(handle, std::move(state)).first->second;
         }
 
-        void CoherencePlanner::ensure_instance(GlobalHandle handle, BufferState& state,
-                                               MemorySpaceID space, std::size_t node,
-                                               CopyPlan& plan) const
+        void CoherencePlanner::record_uses(const std::vector<NodeAccess>& nodes)
+        {
+            for (std::size_t node = 0; node < nodes.size(); ++node)
+            {
+                if (!nodes[node].planned)
+                    continue;
+                for (const std::vector<BufferRegion>* regions : {&nodes[node].reads, &nodes[node].writes})
+                    for (const BufferRegion& region : *regions)
+                    {
+                        if (!region.valid() || state_of(region.base) == nullptr)
+                            continue;
+                        uses_[region.base].push_back(Use{node, nodes[node].space.value()});
+                    }
+            }
+        }
+
+        Result<void> CoherencePlanner::ensure_instance(GlobalHandle handle, BufferState& state,
+                                                       MemorySpaceID space, std::size_t node,
+                                                       CopyPlan& plan)
         {
             const std::uint64_t wanted = bit_of(space);
             if ((state.instances & wanted) != 0)
-                return;
+                return {};
+
+            if (residency_.policy != nullptr && wanted != 0)
+            {
+                Result<void> room = make_room(space, state.size, node, plan);
+                if (!room)
+                    return room;
+                planned_bytes_[space.value()] += state.size;
+            }
 
             PlannedStep step;
             step.kind = PlannedStepKind::Allocate;
@@ -177,6 +245,170 @@ namespace SushiRuntime
             plan.steps.push_back(step);
             state.instances |= wanted;
             state.allocated |= wanted;
+            return {};
+        }
+
+        Result<void> CoherencePlanner::make_room(MemorySpaceID space, std::size_t bytes,
+                                                 std::size_t node, CopyPlan& plan)
+        {
+            const Memory::MemorySpace* const target = space_with(space);
+            if (target == nullptr)
+                return {};
+            const std::size_t capacity = target->capacity_bytes();
+            const std::size_t usable = capacity - std::min(target->reserve_bytes(), capacity);
+            const std::uint64_t bit = bit_of(space);
+
+            while (planned_bytes_[space.value()] + bytes > usable)
+            {
+                std::vector<EvictionCandidate> candidates;
+                for (const auto& entry : buffers_)
+                {
+                    const BufferState& held = entry.second;
+                    if ((held.instances & bit) == 0)
+                        continue;
+                    if (residency_.pins != nullptr && residency_.pins->is_pinned(entry.first, space))
+                        continue;
+                    if (used_at(entry.first, space.value(), node))
+                        continue;
+                    const bool sole = holds_sole_copy(held.current, bit);
+                    // The host is where bytes are written back to; its only copy has nowhere to go.
+                    if (sole && space == residency_.host)
+                        continue;
+                    EvictionCandidate candidate;
+                    candidate.handle = entry.first;
+                    candidate.space = space;
+                    candidate.bytes = held.size;
+                    candidate.next_read = next_use(entry.first, space.value(), node);
+                    candidate.sole_copy = sole;
+                    candidates.push_back(candidate);
+                }
+
+                if (candidates.empty())
+                    return make_error(Error{
+                        ErrorCode::AllocationFailed,
+                        "memory space " + std::to_string(space.value()) + " cannot hold " +
+                            std::to_string(bytes) + " more bytes: " +
+                            std::to_string(planned_bytes_[space.value()]) + " of " +
+                            std::to_string(usable) + " are planned and nothing is evictable."});
+
+                const std::optional<std::size_t> chosen = residency_.policy->choose(candidates);
+                if (!chosen || *chosen >= candidates.size())
+                    return make_error(Error{ErrorCode::InvalidState,
+                                            "the eviction policy chose no victim among " +
+                                                std::to_string(candidates.size()) + " candidates."});
+                Result<void> evicted = evict(candidates[*chosen], node, plan);
+                if (!evicted)
+                    return evicted;
+            }
+            return {};
+        }
+
+        Result<void> CoherencePlanner::evict(const EvictionCandidate& victim, std::size_t node,
+                                             CopyPlan& plan)
+        {
+            BufferState& state = buffers_.at(victim.handle);
+            const std::uint64_t bit = bit_of(victim.space);
+            const std::size_t first_step = plan.steps.size();
+
+            if (victim.sole_copy)
+            {
+                const std::vector<Memory::CoherenceInterval> snapshot = state.current.intervals();
+                for (const Memory::CoherenceInterval& interval : snapshot)
+                {
+                    if (interval.valid_spaces != bit)
+                        continue;
+                    Result<void> room = ensure_instance(victim.handle, state, residency_.host, node, plan);
+                    if (!room)
+                        return room;
+                    Result<void> written = make_valid(victim.handle, state, interval.begin,
+                                                      interval.end, residency_.host, node, plan);
+                    if (!written)
+                        return written;
+                }
+            }
+
+            state.current.drop_space(victim.space);
+            PlannedStep step;
+            step.kind = PlannedStepKind::Free;
+            step.handle = victim.handle;
+            step.space = victim.space;
+            step.end = state.size;
+            step.node = node;
+            plan.steps.push_back(step);
+            state.instances &= ~bit;
+            state.allocated &= ~bit;
+            planned_bytes_[victim.space.value()] -= state.size;
+
+            for (std::size_t index = first_step; index < plan.steps.size(); ++index)
+                plan.steps[index].evicts = true;
+            return {};
+        }
+
+        std::size_t CoherencePlanner::next_use(GlobalHandle handle, std::uint32_t space,
+                                               std::size_t node) const
+        {
+            const auto found = uses_.find(handle);
+            if (found == uses_.end())
+                return EvictionCandidate::K_NEVER;
+            std::size_t first = EvictionCandidate::K_NEVER;
+            for (const Use& use : found->second)
+            {
+                if (use.space != space)
+                    continue;
+                if (use.node > node)
+                    return use.node;
+                if (first == EvictionCandidate::K_NEVER)
+                    first = use.node;
+            }
+            // No later use in this graph: the next one is the first use of the next step.
+            return first == EvictionCandidate::K_NEVER ? first : node_count_ + first;
+        }
+
+        bool CoherencePlanner::used_at(GlobalHandle handle, std::uint32_t space, std::size_t node) const
+        {
+            const auto found = uses_.find(handle);
+            if (found == uses_.end())
+                return false;
+            return std::any_of(found->second.begin(), found->second.end(), [&](const Use& use)
+            {
+                return use.node == node && use.space == space;
+            });
+        }
+
+        bool CoherencePlanner::is_steady() const
+        {
+            for (const auto& entry : buffers_)
+            {
+                const BufferState& state = entry.second;
+                if ((state.start_instances & ~state.instances) != 0 ||
+                    !keeps_validity(state.start, state.current))
+                    return false;
+            }
+            return true;
+        }
+
+        Result<void> CoherencePlanner::settle_resident(CopyPlan& plan)
+        {
+            for (auto& entry : buffers_)
+            {
+                if (residency_.host_read.count(entry.first) == 0)
+                    continue;
+                BufferState& state = entry.second;
+                Result<void> ensured = ensure_instance(entry.first, state, state.home,
+                                                       PlannedStep::K_GRAPH_END, plan);
+                if (!ensured)
+                    return ensured;
+                Result<void> made = make_valid(entry.first, state, 0, state.size, state.home,
+                                               PlannedStep::K_GRAPH_END, plan);
+                if (!made)
+                    return made;
+            }
+
+            plan.steady = is_steady();
+            for (auto& entry : buffers_)
+                if (Memory::CoherenceIntervals* const map = directory_->coherence(entry.first))
+                    *map = entry.second.current;
+            return {};
         }
 
         Result<void> CoherencePlanner::make_valid(GlobalHandle handle, BufferState& state,

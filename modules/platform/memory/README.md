@@ -349,7 +349,8 @@ the shared and device allocations it made.
 Each directory entry holds one map from `[begin, end)` to the valid spaces and the version of those
 bytes. A write makes the written space the only valid one at a fresh version; a copy adds a space
 and keeps the version. The map then joins neighbours with equal state, so a buffer written whole is
-one interval again. The intervals sit in a sorted vector, so the order never depends on a hash.
+one interval again. `drop_space()` takes a space out of every interval, which is how a plan records
+an eviction. The intervals sit in a sorted vector, so the order never depends on a hash.
 The planner is the only writer of a buffer's map, at plan time, and the map takes no lock.
 
 ## memory_space.hpp

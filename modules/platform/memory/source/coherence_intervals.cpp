@@ -126,6 +126,16 @@ namespace SushiRuntime
             merge_around(first, past - 1);
         }
 
+        void CoherenceIntervals::drop_space(MemorySpaceID space)
+        {
+            if (space.value() >= K_MAX_MEMORY_SPACES || intervals_.empty())
+                return;
+            const std::uint64_t bit = std::uint64_t{1} << space.value();
+            for (CoherenceInterval& interval : intervals_)
+                interval.valid_spaces &= ~bit;
+            merge_around(0, intervals_.size() - 1);
+        }
+
         std::uint64_t CoherenceIntervals::valid_spaces_at(std::size_t offset) const noexcept
         {
             const auto after = std::upper_bound(

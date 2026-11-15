@@ -45,14 +45,14 @@ when its own context would not hold their reading; it still reviews and commits 
 | T04 | `foundation/placement`, `surface/api` | T02 | done |
 | T05 | `platform/memory` directory | T01 | done |
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | done |
-| T07 | `surface/api` region composer | T06 | todo |
+| T07 | `surface/api` region composer | T06 | running |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
 | T09 | `platform/memory` `usm_registry` | T06 | running |
 | T10 | `extension/buffer_exchange` | T06 | done |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | done |
-| T14 | `engine/coherence` eviction | T13 | running |
+| T14 | `engine/coherence` eviction | T13 | done |
 | T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | todo |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |

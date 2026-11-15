@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -37,6 +38,7 @@
 #include <vector>
 
 #include <SushiRuntime/coherence/copy_plan.hpp>
+#include <SushiRuntime/coherence/residency_options.hpp>
 #include <SushiRuntime/coherence/transfer_cost.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -61,12 +63,12 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Plans the allocate, copy and free steps that keep every instance a graph's nodes
-         *        read coherent.
+         * @brief Plans the allocate, copy and free steps that keep a graph's reads coherent.
          *
          * A plan is a pure function of the nodes, the directory's state, the spaces, the paths and
          * the cost: no clock, address or hash order decides it. A plan leaves every buffer valid on
          * the spaces it was valid on before, so a graph run again meets the state it was planned for.
+         * With ResidencyOptions it also evicts when a space is full; see the module README.
          */
         class CoherencePlanner final
         {
@@ -80,6 +82,9 @@ namespace SushiRuntime
                 CoherencePlanner(Memory::ResidencyDirectory& directory,
                                  std::vector<const Memory::MemorySpace*> spaces,
                                  std::vector<const TransferPath*> paths, TransferCost cost);
+
+                /** @brief Turns capacity tracking, eviction and residency on; replaces earlier options. */
+                void set_residency(ResidencyOptions options);
 
                 /**
                  * @brief Plans the steps nodes need, in node order, and writes the start state of
@@ -96,16 +101,51 @@ namespace SushiRuntime
                     std::size_t alignment = 1;         /**< Alignment of one element. */
                     std::uint64_t instances = 0;       /**< Bit i set when space i holds an instance. */
                     std::uint64_t allocated = 0;       /**< Instances this plan made. */
+                    std::uint64_t start_instances = 0; /**< Instances the buffer had before the graph. */
+                    MemorySpaceID home;                /**< Space the buffer was made on. */
                     Memory::CoherenceIntervals start;  /**< The state before the graph. */
                     Memory::CoherenceIntervals current; /**< The state after the nodes planned so far. */
+                };
+
+                /** @brief Holds one place a buffer is used: a node and the space it runs on. */
+                struct Use
+                {
+                    std::size_t node = 0;      /**< Position of the node in the graph. */
+                    std::uint32_t space = 0;   /**< Space the node runs on. */
                 };
 
                 /** @brief Returns the state of handle, reading it from the directory once; null when skipped. */
                 [[nodiscard]] BufferState* state_of(GlobalHandle handle);
 
-                /** @brief Adds an allocation on space before node when the buffer has no instance there. */
-                void ensure_instance(GlobalHandle handle, BufferState& state, MemorySpaceID space,
-                                     std::size_t node, CopyPlan& plan) const;
+                /**
+                 * @brief Adds an allocation on space before node when the buffer has no instance
+                 *        there, after making room for it when the space is full.
+                 */
+                [[nodiscard]] Result<void> ensure_instance(GlobalHandle handle, BufferState& state,
+                                                           MemorySpaceID space, std::size_t node,
+                                                           CopyPlan& plan);
+
+                /** @brief Records the nodes that use each buffer; runs only with residency options. */
+                void record_uses(const std::vector<NodeAccess>& nodes);
+
+                /** @brief Evicts instances from space until bytes more fit, through the policy. */
+                [[nodiscard]] Result<void> make_room(MemorySpaceID space, std::size_t bytes,
+                                                     std::size_t node, CopyPlan& plan);
+
+                /** @brief Writes back, drops and frees one instance, before node. */
+                [[nodiscard]] Result<void> evict(const EvictionCandidate& victim, std::size_t node,
+                                                 CopyPlan& plan);
+
+                /** @brief Returns the position of the next node that uses handle on space after node. */
+                [[nodiscard]] std::size_t next_use(GlobalHandle handle, std::uint32_t space,
+                                                   std::size_t node) const;
+
+                /** @brief Returns whether the node at position uses handle on space. */
+                [[nodiscard]] bool used_at(GlobalHandle handle, std::uint32_t space,
+                                           std::size_t node) const;
+
+                /** @brief Returns whether the end state of every buffer equals its start state. */
+                [[nodiscard]] bool is_steady() const;
 
                 /** @brief Adds the copies that make [begin, end) valid on space, before node. */
                 [[nodiscard]] Result<void> make_valid(GlobalHandle handle, BufferState& state,
@@ -115,6 +155,9 @@ namespace SushiRuntime
 
                 /** @brief Adds the copies and frees that return every buffer to its start state. */
                 [[nodiscard]] Result<void> restore(CopyPlan& plan);
+
+                /** @brief Copies the buffers the host reads back to their home and keeps the rest resident. */
+                [[nodiscard]] Result<void> settle_resident(CopyPlan& plan);
 
                 /** @brief Returns the space with id, or null when the planner has none. */
                 [[nodiscard]] const Memory::MemorySpace* space_with(MemorySpaceID id) const noexcept;
@@ -130,6 +173,18 @@ namespace SushiRuntime
 
                 /// @brief Price of one copy over one path.
                 TransferCost cost_;
+
+                /// @brief Capacity rules; inactive while the policy is null.
+                ResidencyOptions residency_;
+
+                /// @brief Bytes planned on each space by the current plan.
+                std::array<std::uint64_t, Memory::CoherenceIntervals::K_MAX_MEMORY_SPACES> planned_bytes_{};
+
+                /// @brief Uses of each buffer in node order; filled only with residency options.
+                std::map<GlobalHandle, std::vector<Use>> uses_;
+
+                /// @brief Number of nodes of the current plan.
+                std::size_t node_count_ = 0;
 
                 /// @brief State of each buffer met by the current plan, in handle order.
                 std::map<GlobalHandle, BufferState> buffers_;

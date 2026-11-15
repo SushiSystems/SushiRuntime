@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — coherence: Added `EvictionPolicy`, `LogicalTimeEviction`, `PinSet` and `plan_hash()` for eviction by logical time (GLOBAL_HANDLE H3).
+- 2026-11-15 — coherence: Added `ResidencyOptions` and `CoherencePlanner::set_residency()` for capacity tracking, eviction and resident instances (GLOBAL_HANDLE H3).
 - 2026-11-15 — wire: Changed the protocol to version 5, which carries every buffer id as a 128-bit `GlobalHandle`; a version-4 peer is refused as a version mismatch, and `GlobalBufferID` is removed (GLOBAL_HANDLE H6).
 - 2026-11-15 — distributed: Changed `Cluster::share`, `bump_buffer` and `buffer_handle` to take a `GlobalHandle` in place of an address (GLOBAL_HANDLE H2).
 - 2026-11-15 — handle: Added `GlobalHandle`, `DeviceKey`, `HandleSpace` and `HandleResolver` in the new `foundation/handle` module (GLOBAL_HANDLE H0).

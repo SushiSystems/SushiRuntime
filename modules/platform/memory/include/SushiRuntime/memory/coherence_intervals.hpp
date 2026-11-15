@@ -90,6 +90,13 @@ namespace SushiRuntime
                  */
                 void record_copy(std::size_t begin, std::size_t end, MemorySpaceID space);
 
+                /**
+                 * @brief Records that space no longer holds any byte of the buffer.
+                 *
+                 * The versions do not change. A space past K_MAX_MEMORY_SPACES changes nothing.
+                 */
+                void drop_space(MemorySpaceID space);
+
                 /** @brief Returns the intervals, sorted by begin. */
                 [[nodiscard]] const std::vector<CoherenceInterval>& intervals() const noexcept
                 {

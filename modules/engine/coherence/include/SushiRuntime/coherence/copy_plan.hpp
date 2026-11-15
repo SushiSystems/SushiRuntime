@@ -65,13 +65,15 @@ namespace SushiRuntime
             std::size_t alignment = 1;                    /**< Alignment an allocation asks for. */
             std::size_t path = 0;                         /**< Index of the path a copy takes. */
             std::size_t node = 0;                         /**< Node the step runs before, or K_GRAPH_END. */
+            bool evicts = false;                          /**< True for a step that makes room on a full space. */
 
             /** @brief Returns whether both steps are equal in every field. */
             [[nodiscard]] bool operator==(const PlannedStep& other) const noexcept
             {
                 return kind == other.kind && handle == other.handle && space == other.space &&
                        source == other.source && begin == other.begin && end == other.end &&
-                       alignment == other.alignment && path == other.path && node == other.node;
+                       alignment == other.alignment && path == other.path && node == other.node &&
+                       evicts == other.evicts;
             }
         };
 
@@ -79,11 +81,12 @@ namespace SushiRuntime
          * @brief Holds the steps of one plan in the order they are added.
          *
          * Steps before a node come in node order; steps at K_GRAPH_END come last, copies before
-         * frees.
+         * frees. Only a steady plan may be replayed as it is.
          */
         struct CopyPlan
         {
             std::vector<PlannedStep> steps; /**< The steps, in order. */
+            bool steady = true;             /**< Whether a run keeps every valid space and instance it found. */
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

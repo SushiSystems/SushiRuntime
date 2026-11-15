@@ -300,8 +300,8 @@ test can check that a space probes once and derives its reserve from the result.
 ## test_coherence_intervals.cpp
 
 The tests cover a partial write splitting one interval into three, a write invalidating every
-other space, two copies joining back into one interval, and a whole-buffer write leaving one
-interval.
+other space, two copies joining back into one interval, a whole-buffer write leaving one
+interval, and `drop_space()` removing a space and joining equal neighbours.
 
 ## test_device_memory_space.cpp and test_host_memory_space.cpp
 
