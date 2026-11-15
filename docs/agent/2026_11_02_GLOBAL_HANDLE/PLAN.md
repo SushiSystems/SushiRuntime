@@ -91,8 +91,10 @@ when its own context would not hold their reading; it still reviews and commits 
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | done |
 | T32 | SushiBLAS conformance kernels | T30 | done |
 | T54 | journal replay into a live runtime, static `Graph` rebalancing | T27 | running |
-| T55 | SushiBLAS tensors over planned and file-backed buffers | T52 | running |
-| T33 | SushiBLAS file-backed large test | T19, T27, T30, T55 | todo |
+| T55 | SushiBLAS tensors over planned and file-backed buffers | T52 | done |
+| T56 | `Recorder::task` binds its operands' handles | T39 | running |
+| T57 | SushiBLAS records operations by handle | T55, T56 | todo |
+| T33 | SushiBLAS file-backed large test | T19, T27, T30, T57 | todo |
 
 ## Tasks
 
@@ -203,6 +205,8 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T32 | `sonnet` `medium` | SushiBLAS tests: the conformance kernel set (sum, dot, gemm, softmax, layer norm) on every device | T30 | Each operation gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each difference and why |
 | T54 | `opus` `low` | `engine/coherence` session, `surface/api` `plan_cache`, runtime settings | T27 | A runtime given a placement journal replays its placements and its output bytes equal the journalled run's; a static `Graph` rebalances at horizons as a `DynamicGraph` does |
 | T55 | `opus` `low` | SushiBLAS: a planned storage block, `TensorFactory::planned` and `from_file`, recording operands by handle | T52 | A tensor over a planned or file-backed buffer has a handle and a host round trip, and a GEMM over planned tensors equals the host reference |
+| T56 | `opus` `low` | `surface/api` recorder task form, `engine/task` node pointer table | T39 | A task recorded with its operands' handles gets a `KernelPointers` table bound on its node's device, its body reads the bound pointers, and the node is rebindable |
+| T57 | `sonnet` `medium` | SushiBLAS: `GraphTaskSink::add_pair`, `PairRun`, GEMM and its split, elementwise and copy | T55, T56 | GEMM, elementwise and copy over planned tensors equal the host reference, and an op not yet ported still refuses by name |
 | T33 | inline | SushiBLAS large test: a file-backed product graph larger than any one device's memory | T19, T27, T30 | On the first machine it runs across every device the plan gives a node, with no file reads after loading, equal bytes over ten runs, and a step time at most 1.05 times that of the floor plan's devices alone |
 
 ## Closing
