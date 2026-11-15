@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Changed `NodeSplit::slice` to receive the part's `sycl::queue` and the pointers bound on its device (GLOBAL_HANDLE H8).
+- 2026-11-15 — runtime: Moved `NodeSplit` and `SplitPart` from `SushiRuntime/core/node_split.hpp` to `SushiRuntime/machine/node_split.hpp` (GLOBAL_HANDLE H8).
+- 2026-11-15 — coherence: Added splitting of a declared-splittable node into parts sized by device speed, at most one per device (GLOBAL_HANDLE H8).
 - 2026-11-15 — api: Changed a `write_range()` on a planned buffer after a steady plan to make the next run plan its copies again, on `Graph` and `DynamicGraph` (GLOBAL_HANDLE H5).
 - 2026-11-15 — runtime: Changed a dropped file-backed buffer to free its file space for the next one, lowest id first (GLOBAL_HANDLE H4).
 - 2026-11-15 — runtime: Added retirement of the coherence history every 64 steps by both step drivers (GLOBAL_HANDLE H5).

@@ -401,13 +401,3 @@ OperationKind, the consumer-named class of work a node's operations belong to.
 | `Small_OperationKind.AKindIsTheHashOfItsName` | A kind is the FNV-1a hash of its name, the literal included. |
 | `Small_OperationKind.DistinctNamesGiveDistinctKinds` | Distinct names give distinct kinds, and kinds order by their hash. |
 | `Small_OperationKind.IsAFourByteValue` | A kind is a four-byte trivially copyable value. |
-
-## test_node_split.cpp
-
-NodeSplit and SplitPart, how a node states that it may run in parts.
-
-| Test | What it proves |
-| --- | --- |
-| `Small_NodeSplit.ADefaultSplitHoldsNoKernel` | A default split names axis zero, no extent and no kernel. |
-| `Small_NodeSplit.RunsTheConsumersKernelsOverTheParts` | The slice runs with the range of each part and the combine sees the parts in slice order. |
-| `Small_SplitPart.EqualityComparesEveryField` | Equality of a part compares every field. |

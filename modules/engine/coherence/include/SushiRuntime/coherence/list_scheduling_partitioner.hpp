@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include <SushiRuntime/coherence/cost_model.hpp>
@@ -41,16 +42,24 @@ namespace SushiRuntime
         /**
          * @brief Shares a graph across devices by list scheduling in the manner of HEFT.
          *
-         * Nodes are taken by descending upward rank and each goes to the device that finishes it
-         * earliest within capacity. A node then moves to a neighbour's device while the step falls,
-         * and the floor replaces the plan when it is faster. A job that fits in no plan is refused
-         * with the bytes it puts in each pool.
+         * Nodes go by descending upward rank to the device that finishes them earliest within
+         * capacity, move to a neighbour's device while the step falls, and the floor replaces a
+         * slower plan. A declared split is taken when the node fits no pool whole or the step falls.
+         * @see modules/engine/coherence/README.md
          */
         class ListSchedulingPartitioner final : public Partitioner
         {
             public:
+                /** @brief Says whether the partitioner may cut a node that declares a split. */
+                enum class Splitting : std::uint8_t
+                {
+                    Allowed, /**< A declared split is taken when the node fits no pool whole or the step falls. */
+                    Off      /**< Every node runs whole. */
+                };
+
                 /** @brief Builds a partitioner priced by costs, which must not be null. */
-                explicit ListSchedulingPartitioner(std::shared_ptr<const CostModel> costs);
+                explicit ListSchedulingPartitioner(std::shared_ptr<const CostModel> costs,
+                                                   Splitting splitting = Splitting::Allowed);
 
                 [[nodiscard]] Result<PartitionAssignment, PartitionRefusal> partition(
                     const PartitionProblem& problem) const override;
@@ -58,6 +67,9 @@ namespace SushiRuntime
             private:
                 /// @brief The frozen cost model.
                 std::shared_ptr<const CostModel> costs_;
+
+                /// @brief Whether a declared split may be taken.
+                Splitting splitting_;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

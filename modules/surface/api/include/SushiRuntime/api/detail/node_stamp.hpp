@@ -41,7 +41,7 @@
 #include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
-#include <SushiRuntime/core/node_split.hpp>
+#include <SushiRuntime/machine/node_split.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>

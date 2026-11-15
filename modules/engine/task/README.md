@@ -49,6 +49,7 @@ fields it stores behind `OffloadState::payload`.
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of`, `Internal::Graph::anchor_of` and `Internal::Graph::anchor_device` (defined in `modules/engine/task/source/node_placement.cpp`): the one anchor rule, the handle a node is anchored to and its owning device, and the device a node runs on |
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
+| `split_dispatch.hpp` | `Internal::Graph::SplitDispatchPart` and `Internal::Graph::dispatch_split` (defined in `modules/engine/task/source/split_dispatch.cpp`): run a split node's parts, each with its device's queue and the node's pointers bound there |
 | `kernel_pointers.hpp` | `Internal::Graph::KernelAddressing`, `Internal::Graph::KernelPointerSlot`, `Internal::Graph::home_is_host_visible`, `Internal::Graph::make_kernel_pointer_slot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): whether a node may leave its home device, and the pointers a node's kernel receives, bound on the node's device at each dispatch |
 | `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count, the shared contexts and whether a handle's home is host visible |
 | `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from the residency directory (`ResidencyView`) and a `USMAllocator` |
@@ -114,6 +115,15 @@ A `Dynamic`'s device count and device base slots go through the same table: the 
 the count slot's buffer, then the base slot's, to the node's pointers, and `read_late_window()`
 reads both addresses from the table the dispatching node bound. Those slots are `Residency::Host`,
 so on another device they keep their home address legitimately.
+
+### The parts of a split node
+
+`dispatch_split()` runs a `NodeSplit` over its parts in slice order. For each part it calls
+`KernelPointers::bind()` with the part's device and hands the slice the part, that device's queue
+and the bound table as a `span<void* const>`. The next bind overwrites the table, so the span is
+valid during the call only and a kernel copies the pointers it reads. A node with no table gives
+an empty span. The combine, when the split has one, then receives the parts in slice order. The
+queue of a device comes from the caller, so the function reads no device set.
 
 ### Which nodes may leave their home device
 

@@ -5,9 +5,9 @@ pin policy a caller sets, the device descriptions and the worker pool a runtime 
 facts a machine states about itself. The
 module is header-only and its headers are installed.
 
-It depends on the C++ standard library. `device_description.hpp` alone also includes the SYCL
-headers, for the `sycl::backend` a device description names; the other headers include no SYCL
-header. It depends on no other module of the repository.
+It depends on the C++ standard library, on `core` for `span` and on `handle`. `device_description.hpp`
+includes the SYCL headers for the `sycl::backend` a device description names, and `node_split.hpp`
+for the `sycl::queue` a slice receives; the other headers include no SYCL header.
 
 ## Public entry points
 
@@ -21,6 +21,7 @@ header. It depends on no other module of the repository.
 | `operating_system.hpp` | `OperatingSystem`, the system a machine runs |
 | `node_label.hpp` | `NodeLabel`, one `key`/`value` pair a machine reports |
 | `device_facts.hpp` | `DeviceFacts`, a device's kind, name and memory in bytes |
+| `node_split.hpp` | `NodeSplit`, how a node states that it may be cut along one axis, and `SplitPart`, the range and slice-order place of one part |
 | `node_facts.hpp` | `NodeFacts`, the name, system, labels and devices of one machine |
 
 Every name is declared in `SushiRuntime`. `topology` reads the filter, `device` fills the
@@ -70,3 +71,15 @@ The settings are what the caller asked for; WorkerPool is what the runtime could
 diverge when the requested core range does not fit the machine, or when the count exceeds
 K_MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPool and not
 against its own request, because a reservation is only worth something if it actually happened.
+
+## node_split.hpp
+
+### NodeSplit
+
+A node states that it may run in parts with a `NodeSplit` in `NodeOptions::split`: the axis to cut,
+an index the consumer defines, its extent, the slice that runs once per part with that part's
+`SplitPart`, the `sycl::queue` of the part's device and the node's kernel pointers bound on that
+device, and an optional combine that joins the parts in slice order. The runtime decides
+how many parts and where each runs; the consumer owns every kernel. `NodeOptions` holds it as a
+`std::shared_ptr<const NodeSplit>`, so a node without a split carries one null pointer and a node
+with one shares the caller's declaration.

@@ -277,7 +277,7 @@ TEST_F(Small_PlanView, ANodeThatDeclaresASplitRecordsIt)
     auto split = std::make_shared<NodeSplit>();
     split->axis = 0;
     split->extent = K_WIDTH;
-    split->slice = [](const SplitPart&) {};
+    split->slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
     NodeOptions splittable;
     splittable.split = split;
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; },

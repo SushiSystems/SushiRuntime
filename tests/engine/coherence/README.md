@@ -259,6 +259,21 @@ A pool's shortfall is the bytes required above the usable ones, and zero when th
 
 Equal assignments hash equal; another device or the floor flag changes the hash.
 
+## test_split_sizing.cpp
+
+`size_split()` sizes parts by speed and they sum to the extent; the rounding remainder goes to the
+fastest device, the first of equals; no device gets two parts and one with an infinite time gets
+none; an axis shorter than the device count gives fewer parts; equal inputs give equal parts; and a
+zero extent or no usable device gives none.
+
+## test_split_expansion.cpp
+
+On a three-node chain whose middle node is cut 7 to 3, `expand_splits()` gives one placed node per
+part with its share of the operations and of the written bytes, edges into the cut node reach each
+part whole and edges out of it carry each part's share, and every edge still runs forward.
+`planned_splits()` gives disjoint written ranges that cover the buffer and whole read ranges. A
+node with one part stays whole.
+
 ## test_pool_occupancy.cpp
 
 A buffer two nodes touch is counted once per pool, and a buffer with a stated home is held in its
@@ -279,7 +294,7 @@ and there is none when no subset fits.
 
 ## test_list_scheduling_partitioner/
 
-`ListSchedulingPartitioner` has two test files, so its tests sit in a folder of that name.
+`ListSchedulingPartitioner` has three test files, so its tests sit in a folder of that name.
 
 ### test_placement_and_refusal.cpp
 
@@ -297,3 +312,17 @@ seed. The partitioner's modelled step time is within 10% of the best that an exh
 every fitting placement finds. No plan is modelled slower than its floor. With a device a thousand
 times slower added, that device gets no node. The search counts `devices ^ nodes` placements, at most
 6561 here, and prices each with `PartitionModel`.
+
+### test_splitting.cpp
+
+A node that writes 1200 bytes, more than a pool's 900 usable, and declares a split of extent 12
+runs as two parts on two devices of speed 2 and 1: 8 and 4 indices, writing bytes [0, 800) and
+[800, 1200). With `Splitting::Off` the same node is refused, and a node that fits whole has no
+parts. A node with no declared split is not cut, and a split plan hashes equal across runs. The
+parts, run through `dispatch_split()` on a CPU queue, give the bytes of one slice over the whole
+extent; the test skips without a CPU device.
+
+`Large_ListSchedulingPartitioner.ASplitProductStepIsShorterThanWithSplittingOff` runs on the first
+machine and skips with fewer than two GPUs. It times a product kernel whole on each GPU, builds the
+profiles from those times, and runs the parts the partitioner gives with splitting allowed and
+with it turned off; the split run, best of three after a warm-up, must take less wall time.

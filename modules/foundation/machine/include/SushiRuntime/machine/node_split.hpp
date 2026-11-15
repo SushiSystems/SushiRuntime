@@ -25,7 +25,7 @@
  * @file node_split.hpp
  * @brief Declares NodeSplit and SplitPart, how a node states that it may run in parts.
  * @author Mustafa Garip
- * @see modules/foundation/core/README.md
+ * @see modules/foundation/machine/README.md
  */
 
 #pragma once
@@ -34,13 +34,15 @@
 #include <cstdint>
 #include <functional>
 
+#include <sycl/sycl.hpp>
+
 #include <SushiRuntime/core/span.hpp>
 
 namespace SushiRuntime
 {
     /**
      * @brief Names one part of a split node: the range of the axis it covers and its place in slice order.
-     * @see modules/foundation/core/README.md
+     * @see modules/foundation/machine/README.md
      */
     struct SplitPart
     {
@@ -68,17 +70,22 @@ namespace SushiRuntime
      * @brief States that a node may be cut along one axis into parts the runtime places.
      *
      * The runtime picks how many parts there are and where each runs; the consumer owns the
-     * kernels. The slice runs once per part with that part's range, and the combine, when given,
-     * joins the parts in slice order. A node states it through NodeOptions::split.
-     * @see modules/foundation/core/README.md
+     * kernels. The slice runs once per part on the part's device; the combine, when given, joins
+     * the parts in slice order. A node states it through NodeOptions::split.
+     * @see modules/foundation/machine/README.md
      */
     struct NodeSplit
     {
         std::uint32_t axis = 0;   /**< The axis to cut along, an index the consumer defines. */
         std::uint64_t extent = 0; /**< Length of that axis; the parts cover [0, extent). */
 
-        /** @brief Runs the node's work over one part. */
-        std::function<void(const SplitPart&)> slice;
+        /**
+         * @brief Submits the node's work over one part to the queue of the part's device.
+         *
+         * The pointers are the node's kernel pointers bound on that device, in the order the node
+         * recorded them; they stay valid for the call only, so a kernel copies the ones it reads.
+         */
+        std::function<void(const SplitPart&, sycl::queue&, span<void* const>)> slice;
 
         /** @brief Joins the parts, given in slice order; empty when the parts need no join. */
         std::function<void(span<const SplitPart>)> combine;

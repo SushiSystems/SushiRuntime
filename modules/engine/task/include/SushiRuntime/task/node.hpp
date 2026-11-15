@@ -44,7 +44,7 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/core/node_split.hpp>
+#include <SushiRuntime/machine/node_split.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/kernel_pointers.hpp>

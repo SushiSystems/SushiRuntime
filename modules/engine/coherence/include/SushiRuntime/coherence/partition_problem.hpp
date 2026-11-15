@@ -52,6 +52,18 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Holds the split a node declared: the axis it may be cut along and that axis's length.
+         *
+         * A part reads every buffer the node reads whole and writes the share of each written buffer
+         * that its range of the axis covers.
+         */
+        struct PartitionSplit
+        {
+            std::uint32_t axis = 0;    /**< The axis, as the consumer numbers it. */
+            std::uint64_t extent = 0;  /**< Length of the axis; zero states no split. */
+        };
+
+        /**
          * @brief Holds one node of the graph: its declared cost, its placement and the buffers it touches.
          *
          * A node that writes a buffer with a stated device is fixed to that device, as a placed node is.
@@ -62,6 +74,7 @@ namespace SushiRuntime
             std::optional<DeviceKey> placed;   /**< Device the consumer placed the node on, if any. */
             std::vector<std::size_t> reads;    /**< Indices into PartitionProblem::buffers the node reads. */
             std::vector<std::size_t> writes;   /**< Indices into PartitionProblem::buffers the node writes. */
+            std::optional<PartitionSplit> split; /**< The split the node declared; empty for a node that declares none. */
         };
 
         /** @brief Holds one dependency: the reader waits on the writer and receives bytes from it. */

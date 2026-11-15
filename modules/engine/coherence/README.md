@@ -45,7 +45,9 @@ It depends on `core`, `handle`, `region`, `report`, `memory` and `task`.
 | `profile_probe.hpp` | `ProfileProbe`, the port that times copies and kernels on a device |
 | `profile_measurement.hpp` | `ProfileMeasurement` and `MeasurementPlan`, which build a `DeviceProfile` through the probe |
 | `partition_problem.hpp` | `PartitionProblem`, `PartitionNode`, `PartitionBuffer`, `PartitionEdge` and `PartitionDevice` |
-| `partition_assignment.hpp` | `PartitionAssignment`, the device of each node and the home of each planned buffer |
+| `partition_assignment.hpp` | `PartitionAssignment`, the device of each node, the parts of each split node and the home of each planned buffer, with `PlannedSplit`, `PlannedSplitPart` and `BufferRange` |
+| `split_sizing.hpp` | `size_split()` and `SizedPart`: an axis cut into parts sized by device speed, at most one per device |
+| `split_expansion.hpp` | `expand_splits()`, `planned_splits()` and `SplitExpansion`: a split node as one placed node per part, and the byte ranges each part reads and writes |
 | `partition_refusal.hpp` | `PartitionRefusal` and `PoolShortfall`, a refusal with the shortfall per pool |
 | `partitioner.hpp` | `Partitioner`, the port that shares a graph across devices |
 | `list_scheduling_partitioner.hpp` | `ListSchedulingPartitioner`, rank, place, refine and the floor check |
@@ -269,7 +271,34 @@ with their declared size, edges, devices with their pool and copy path) and retu
   each row holds what the fill plan over every device puts in the pool.
 - `PartitionAssignment::home_of()` gives each `Residency::Planned` buffer the device of its first
   writer, or of its first reader when nothing writes it. `assignment_hash()` hashes the devices, the
-  homes, the step time and the floor flag, so equal inputs and one profile file give equal hashes.
+  homes, the step time, the floor flag and the parts of each split node, so equal inputs and one
+  profile file give equal hashes.
+
+### Splitting
+
+A `PartitionNode` whose `split` holds an extent of two or more may run as parts.
+`ListSchedulingPartitioner` takes a declared split when the node fits no pool whole, and otherwise
+when the cut shortens the modelled step; `Splitting::Off` keeps every node whole. Nodes are tried
+in recording order and a cut is kept only when it lowers the step time of the best plan so far,
+which starts as the plan of the graph with its nodes whole, so a plan with splits is never
+modelled slower than that plan or its floor. A consumer-placed node is never cut.
+
+- `size_split()` gives each device a share of the extent in proportion to its speed, one over the
+  time `CostModel` gives the whole node there. Shares are whole numbers rounded down, the remainder
+  goes to the fastest device (the first of equals), a device with no share gets no part, and parts
+  follow `DeviceKey` order.
+- `expand_splits()` replaces the node with one node per part, placed on the part's device, costing
+  its share of the operations and bytes. A part reads every buffer the node reads whole and writes
+  a buffer of its own that holds its share of each written buffer, so capacity counts only that
+  share. An edge into the node reaches every part whole; an edge out of it carries each part's
+  share. The expanded problem is scheduled like any other.
+- `planned_splits()` gives the assignment one `PlannedSplit` per cut node: per part the device, the
+  `SplitPart`, the whole range of each buffer read and the bytes `[bytes * begin / extent, bytes *
+  end / extent)` of each buffer written. The written ranges of one node are disjoint and cover the
+  buffer; reads may overlap. `node_devices` names the first part's device for a cut node.
+
+The step drivers, the composer and the copy planner do not read `splits` yet; a cut node runs as
+parts through `Internal::Graph::dispatch_split()` (`engine/task`) once they do.
 
 ## PartitionReportBuilder
 

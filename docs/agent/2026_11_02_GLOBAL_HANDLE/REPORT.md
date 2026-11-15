@@ -79,6 +79,7 @@ dispatch: T30 — sonnet medium, 86 turns, rung 1, passed (SushiBLAS 18ad521b; s
 dispatch: T48 — opus low, rung 1, passed
 dispatch: T32 — sonnet medium, 39 turns, rung 1, passed (SushiBLAS)
 dispatch: T46 — opus low, 144 turns, rung 1, passed
+dispatch: T36 — opus low, 142 turns, rung 1, passed (skipped loading style skills; checkers clean)
 ```
 
 ## T05: the residency directory

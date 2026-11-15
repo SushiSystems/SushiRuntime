@@ -106,6 +106,15 @@ generation and the device in the message. A death test starts a child process.
 | `OnlyBorrowedMemoryOfUnknownKindIsHostVisible` | Of two instances of unknown kind, only the one whose handle carries `HandleFlags::Borrowed` is host visible. |
 | `APlannedBufferWithNoHomeInstanceIsNotHostVisible` | A buffer homed on the host space with no instance yet is not host visible and has no home device. |
 
+## test_split_dispatch.cpp
+
+`dispatch_split()` on CPU queues; each test skips without a CPU device.
+
+| Test | What it proves |
+| --- | --- |
+| `EachPartRunsOnItsDeviceWithThePointersBoundThere` | The part on device 0 gets its queue and the home address, the part on device 1 gets its own queue and the instance there, and the combine sees both parts in order. |
+| `ANodeWithNoPointersGivesAnEmptyTable` | A node with no pointer table gives the slice an empty span. |
+
 ## test_node.cpp
 
 The file tests Node: successors inline and spilled, readiness on completion, placement and offload

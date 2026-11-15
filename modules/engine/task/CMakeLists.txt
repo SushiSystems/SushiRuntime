@@ -6,7 +6,8 @@
 sushiruntime_add_module(
     NAME task TIER engine INTERNAL
     SYCL
-    SOURCES dispatch_events.cpp kernel_pointers.cpp node_host_run.cpp node_placement.cpp node_widths.cpp task_submission.cpp
+    SOURCES dispatch_events.cpp kernel_pointers.cpp node_host_run.cpp node_placement.cpp node_widths.cpp split_dispatch.cpp
+        task_submission.cpp
         usm_placement_memory.cpp
-    DEPENDS core handle report region
+    DEPENDS core handle machine report region
     PRIVATE_DEPENDS memory)

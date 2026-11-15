@@ -43,6 +43,8 @@
 
 #include <SushiRuntime/coherence/fill_plan.hpp>
 #include <SushiRuntime/coherence/partition_model.hpp>
+#include <SushiRuntime/coherence/split_expansion.hpp>
+#include <SushiRuntime/coherence/split_sizing.hpp>
 
 namespace SushiRuntime
 {
@@ -251,10 +253,111 @@ namespace SushiRuntime
                 return PartitionRefusal{Error{ErrorCode::AllocationFailed, "the job needs more bytes than the pools hold"},
                                         model.pool_demand(fill_plan(model, all).placement)};
             }
+
+            /** @brief Holds a placement and whether the floor supplied it. */
+            struct Schedule
+            {
+                std::vector<std::size_t> placement; /**< Device index of each node. */
+                bool floor_taken = false;           /**< Whether the floor replaced the scheduled plan. */
+            };
+
+            /**
+             * @brief Returns the scheduled plan of model, or its floor when the floor is faster.
+             * @return Nothing when no plan fits.
+             */
+            [[nodiscard]] std::optional<Schedule> schedule(const PartitionModel& model)
+            {
+                std::optional<std::vector<std::size_t>> scheduled = place(model);
+                if (scheduled)
+                    refine(model, *scheduled);
+                const std::optional<FloorPlan> floor = floor_plan(model);
+                if (scheduled && (!floor || !(floor->step_time < model.step_time(*scheduled))))
+                    return Schedule{std::move(*scheduled), false};
+                if (floor)
+                    return Schedule{floor->placement, true};
+                return std::nullopt;
+            }
+
+            /**
+             * @brief Returns the assignment of the original nodes from a schedule of model.
+             * @param origin Original node of each node of model, in order.
+             */
+            [[nodiscard]] PartitionAssignment assignment_of(const PartitionModel& model, const Schedule& chosen,
+                                                            const std::vector<std::size_t>& origin)
+            {
+                PartitionAssignment assignment;
+                assignment.floor_taken = chosen.floor_taken;
+                assignment.step_time = model.step_time(chosen.placement);
+                assignment.homes = homes_of(model, chosen.placement);
+                for (std::size_t node = 0; node < chosen.placement.size(); ++node)
+                {
+                    if (origin[node] == assignment.node_devices.size())
+                        assignment.node_devices.push_back(model.device_key(chosen.placement[node]));
+                }
+                return assignment;
+            }
+
+            /** @brief Returns whether node needs more bytes than any pool holds. */
+            [[nodiscard]] bool fits_no_pool(const PartitionModel& model, std::size_t node)
+            {
+                const PoolOccupancy empty = model.empty_occupancy();
+                for (std::size_t pool = 0; pool < model.pool_count(); ++pool)
+                {
+                    if (empty.used(pool) + empty.added_bytes(node, pool) <= model.usable_bytes(pool))
+                        return false;
+                }
+                return true;
+            }
+
+            /** @brief Returns the key of every device of model, in device order. */
+            [[nodiscard]] std::vector<DeviceKey> device_keys(const PartitionModel& model)
+            {
+                std::vector<DeviceKey> keys;
+                keys.reserve(model.device_count());
+                for (std::size_t device = 0; device < model.device_count(); ++device)
+                    keys.push_back(model.device_key(device));
+                return keys;
+            }
+
+            /** @brief Returns the parts node is cut into, or nothing when it declares no split it may take. */
+            [[nodiscard]] std::vector<SizedPart> declared_parts(const PartitionModel& model, std::size_t node)
+            {
+                const PartitionNode& entry = model.problem().nodes[node];
+                if (!entry.split || entry.split->extent < 2 || model.fixed_device(node))
+                    return {};
+                std::vector<double> times(model.device_count(), 0.0);
+                for (std::size_t device = 0; device < model.device_count(); ++device)
+                    times[device] = model.node_time(node, device);
+                std::vector<SizedPart> parts = size_split(entry.split->axis, entry.split->extent, times);
+                if (parts.size() < 2)
+                    return {};
+                return parts;
+            }
+
+            /**
+             * @brief Returns the assignment of the problem with each node that has parts cut into them.
+             * @return Nothing when that problem fits in no plan.
+             */
+            [[nodiscard]] std::optional<PartitionAssignment> split_assignment(
+                const PartitionProblem& problem, const CostModel& costs,
+                const std::vector<std::vector<SizedPart>>& parts, const std::vector<DeviceKey>& devices)
+            {
+                const SplitExpansion expansion = expand_splits(problem, parts, devices);
+                Result<PartitionModel, PartitionRefusal> built = PartitionModel::build(expansion.problem, costs);
+                if (!built)
+                    return std::nullopt;
+                const std::optional<Schedule> chosen = schedule(built.value());
+                if (!chosen)
+                    return std::nullopt;
+                PartitionAssignment assignment = assignment_of(built.value(), *chosen, expansion.origin);
+                assignment.splits = planned_splits(problem, parts, devices);
+                return assignment;
+            }
         } // namespace
 
-        ListSchedulingPartitioner::ListSchedulingPartitioner(std::shared_ptr<const CostModel> costs)
-            : costs_(std::move(costs))
+        ListSchedulingPartitioner::ListSchedulingPartitioner(std::shared_ptr<const CostModel> costs,
+                                                             Splitting splitting)
+            : costs_(std::move(costs)), splitting_(splitting)
         {
 
         }
@@ -267,33 +370,55 @@ namespace SushiRuntime
                 return make_error(std::move(built.error()));
             const PartitionModel& model = built.value();
 
-            std::optional<std::vector<std::size_t>> scheduled = place(model);
-            if (scheduled)
-                refine(model, *scheduled);
-            const std::optional<FloorPlan> floor = floor_plan(model);
+            std::vector<std::size_t> origin(model.node_count());
+            std::iota(origin.begin(), origin.end(), std::size_t{0});
+            std::optional<PartitionAssignment> best;
+            if (const std::optional<Schedule> whole = schedule(model))
+                best = assignment_of(model, *whole, origin);
 
-            PartitionAssignment assignment;
-            std::vector<std::size_t> placement;
-            if (scheduled && (!floor || !(floor->step_time < model.step_time(*scheduled))))
+            if (splitting_ == Splitting::Allowed)
             {
-                placement = std::move(*scheduled);
+                const std::vector<DeviceKey> devices = device_keys(model);
+                std::vector<std::vector<SizedPart>> taken(model.node_count());
+                std::vector<std::size_t> optional_nodes;
+                bool forced = false;
+                for (std::size_t node = 0; node < model.node_count(); ++node)
+                {
+                    std::vector<SizedPart> parts = declared_parts(model, node);
+                    if (parts.empty())
+                        continue;
+                    if (fits_no_pool(model, node))
+                    {
+                        taken[node] = std::move(parts);
+                        forced = true;
+                    }
+                    else
+                    {
+                        optional_nodes.push_back(node);
+                    }
+                }
+                if (forced)
+                {
+                    std::optional<PartitionAssignment> cut = split_assignment(problem, *costs_, taken, devices);
+                    if (cut && (!best || cut->step_time < best->step_time))
+                        best = std::move(cut);
+                }
+                for (const std::size_t node : optional_nodes)
+                {
+                    std::vector<std::vector<SizedPart>> trial = taken;
+                    trial[node] = declared_parts(model, node);
+                    std::optional<PartitionAssignment> cut = split_assignment(problem, *costs_, trial, devices);
+                    if (cut && (!best || cut->step_time < best->step_time))
+                    {
+                        best = std::move(cut);
+                        taken = std::move(trial);
+                    }
+                }
             }
-            else if (floor)
-            {
-                placement = floor->placement;
-                assignment.floor_taken = true;
-            }
-            else
-            {
+
+            if (!best)
                 return make_error(capacity_refusal(model));
-            }
-
-            assignment.step_time = model.step_time(placement);
-            assignment.homes = homes_of(model, placement);
-            assignment.node_devices.reserve(placement.size());
-            for (const std::size_t device : placement)
-                assignment.node_devices.push_back(model.device_key(device));
-            return assignment;
+            return std::move(*best);
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

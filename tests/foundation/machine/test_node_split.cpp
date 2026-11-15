@@ -24,7 +24,7 @@
 /**
  * @file test_node_split.cpp
  * @brief Tests NodeSplit and SplitPart, how a node states that it may run in parts.
- * @see tests/foundation/core/README.md
+ * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
@@ -32,7 +32,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/core/node_split.hpp>
+#include <SushiRuntime/machine/node_split.hpp>
 
 using namespace SushiRuntime;
 
@@ -47,26 +47,26 @@ TEST(Small_NodeSplit, ADefaultSplitHoldsNoKernel)
     EXPECT_FALSE(split.combine);
 }
 
-/** @brief Tests that the slice runs with the range of the part it is given and the combine sees the parts in order. */
-TEST(Small_NodeSplit, RunsTheConsumersKernelsOverTheParts)
+/**
+ * @brief Tests that the slice takes a part, a queue and the bound pointers, and the combine sees
+ *        the parts in order.
+ */
+TEST(Small_NodeSplit, HoldsTheConsumersKernels)
 {
-    std::vector<SplitPart> sliced;
     std::vector<SplitPart> combined;
     NodeSplit split;
     split.axis = 1;
     split.extent = 10;
-    split.slice = [&sliced](const SplitPart& part) { sliced.push_back(part); };
+    split.slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
     split.combine = [&combined](span<const SplitPart> parts)
     {
         combined.assign(parts.begin(), parts.end());
     };
 
     const std::vector<SplitPart> parts = {{1, 0, 6, 0, 2}, {1, 6, 10, 1, 2}};
-    for (const SplitPart& part : parts)
-        split.slice(part);
     split.combine(span<const SplitPart>(parts.data(), parts.size()));
 
-    EXPECT_EQ(sliced, parts);
+    EXPECT_TRUE(split.slice);
     EXPECT_EQ(combined, parts);
 }
 

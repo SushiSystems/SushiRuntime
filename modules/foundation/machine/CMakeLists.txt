@@ -7,4 +7,5 @@ sushiruntime_add_module(
     NAME machine TIER foundation
     HEADER_ONLY SYCL
     DEPENDS
+        core
         handle)

@@ -79,6 +79,19 @@ namespace SushiRuntime
             std::memcpy(&step_bits, &assignment.step_time, sizeof(step_bits));
             fold(hash, step_bits);
             fold(hash, assignment.floor_taken ? 1U : 0U);
+            fold(hash, assignment.splits.size());
+            for (const PlannedSplit& split : assignment.splits)
+            {
+                fold(hash, split.node);
+                fold(hash, split.parts.size());
+                for (const PlannedSplitPart& part : split.parts)
+                {
+                    fold_key(hash, part.device);
+                    fold(hash, part.part.axis);
+                    fold(hash, part.part.begin);
+                    fold(hash, part.part.end);
+                }
+            }
             return hash;
         }
     } // namespace Internal::Coherence

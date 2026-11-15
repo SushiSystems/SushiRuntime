@@ -23,7 +23,6 @@ The twenty public headers under `include/SushiRuntime/core/`:
 | `executor.hpp` | `Executor`, the port a part that runs jobs takes them through: `post()` and `run_one()` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `node_cost.hpp` | `NodeCost`, the operations, bytes read, bytes written, `OperationKind` and `NodeDType` a caller states one dispatch of a node does, `NodeDType` and `dtype_name()` |
-| `node_split.hpp` | `NodeSplit`, how a node states that it may be cut along one axis, and `SplitPart`, the range and slice-order place of one part |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `operation_kind.hpp` | `OperationKind`, the 32-bit FNV-1a hash of a consumer-named class of work, the shared kinds in `OperationKinds` and the `_kind` literal in `Literals` |
 | `placement_class.hpp` | `PlacementClass`, the 32-bit FNV-1a hash of a dotted class name with the hash of each of its prefixes, and the `_class` literal in `Literals` |
@@ -60,17 +59,6 @@ An `OperationKind` is built from a name, as an `OperationID` is: the 32-bit FNV-
 consumer names its kinds and the runtime holds no list of them, since the runtime knows no math.
 `OperationKinds` holds three any consumer may share: `K_GENERIC` (the default, value 0, which takes
 a device's base throughput), `K_MEMORY_BOUND` and `K_COMPUTE_BOUND`.
-
-## node_split.hpp
-
-### NodeSplit
-
-A node states that it may run in parts with a `NodeSplit` in `NodeOptions::split`: the axis to cut,
-an index the consumer defines, its extent, the slice kernel that runs once per part with that
-part's `SplitPart`, and an optional combine that joins the parts in slice order. The runtime decides
-how many parts and where each runs; the consumer owns every kernel. `NodeOptions` holds it as a
-`std::shared_ptr<const NodeSplit>`, so a node without a split carries one null pointer and a node
-with one shares the caller's declaration.
 
 ## allocation.hpp
 

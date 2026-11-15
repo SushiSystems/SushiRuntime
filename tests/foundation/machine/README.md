@@ -59,3 +59,13 @@ Includes `pin_policy.hpp` alone, so the build fails if the header misses an incl
 ## compile_worker_pool.cpp
 
 Includes `worker_pool.hpp` alone, so the build fails if the header misses an include. It holds no test.
+
+## test_node_split.cpp
+
+NodeSplit and SplitPart, how a node states that it may run in parts.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_NodeSplit.ADefaultSplitHoldsNoKernel` | A default split names axis zero, no extent and no kernel. |
+| `Small_NodeSplit.HoldsTheConsumersKernels` | The slice takes a part, a queue and the bound pointers, and the combine sees the parts in slice order. |
+| `Small_SplitPart.EqualityComparesEveryField` | Equality of a part compares every field. |

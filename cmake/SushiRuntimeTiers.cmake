@@ -80,6 +80,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     placement       machine
     placement       handle
     machine         handle
+    machine         core
     test_runner     log
     test_runner     report
     dependency_tracking task

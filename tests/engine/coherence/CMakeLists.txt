@@ -36,6 +36,7 @@ sushiruntime_add_module_tests(
         test_host_staged_path.cpp
         test_list_scheduling_partitioner/test_partition_properties.cpp
         test_list_scheduling_partitioner/test_placement_and_refusal.cpp
+        test_list_scheduling_partitioner/test_splitting.cpp
         test_logical_time_eviction.cpp
         test_partition_assignment.cpp
         test_partition_model.cpp
@@ -53,9 +54,12 @@ sushiruntime_add_module_tests(
         test_profile_update.cpp
         test_residency_options.cpp
         test_same_context_path.cpp
+        test_split_expansion.cpp
+        test_split_sizing.cpp
         test_staging_ring.cpp
         test_transfer_cost.cpp
         test_transfer_observer_slot.cpp
         test_usm_instance_allocator.cpp
     DEVICE_SOURCES
-        test_device_profile_probe.cpp)
+        test_device_profile_probe.cpp
+        test_list_scheduling_partitioner/test_splitting.cpp)
