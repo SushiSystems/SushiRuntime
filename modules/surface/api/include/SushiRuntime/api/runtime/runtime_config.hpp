@@ -63,8 +63,8 @@ namespace SushiRuntime
         std::vector<NodeLabel> labels;
 
         /**
-         * @brief The device profile file read once at create; empty, or a path with no file,
-         *        prices copies by their bytes. A file that is there and cannot be read refuses create().
+         * @brief The device profile file read once at create; empty prices copies by their bytes.
+         *        A path with no file is measured and written at create. A file that cannot be read refuses create().
          */
         std::string device_profile_file;
     };

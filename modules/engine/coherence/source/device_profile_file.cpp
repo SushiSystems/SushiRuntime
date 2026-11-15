@@ -59,6 +59,18 @@ namespace SushiRuntime
             constexpr const char* K_THROUGHPUT_KEY = "throughput";
             constexpr const char* K_PATH_KEY = "path";
             constexpr const char* K_END_KEY = "end";
+            constexpr const char* K_HOST_TO_DEVICE_KEY = "host_to_device";
+            constexpr const char* K_DEVICE_TO_HOST_KEY = "device_to_host";
+
+            /**
+             * @brief Upgrades a version 1 set to version 2.
+             *
+             * Version 1 has no host links, so every device keeps its links unmeasured.
+             */
+            [[nodiscard]] DeviceProfileSet upgrade_from_version_1(DeviceProfileSet profiles)
+            {
+                return profiles;
+            }
 
             /** @brief Returns an Error result for line number line. */
             template <typename T>
@@ -155,6 +167,8 @@ namespace SushiRuntime
                         if (open_)
                             return line_error<DeviceProfileSet>(ErrorCode::InvalidArgument, number + 1,
                                                                 "device block without end");
+                        if (version_ == 1)
+                            return upgrade_from_version_1(std::move(profiles_));
                         return std::move(profiles_);
                     }
 
@@ -176,6 +190,8 @@ namespace SushiRuntime
                             return take_throughput(number, words);
                         if (key == K_PATH_KEY)
                             return take_path(number, words);
+                        if (version_ >= 2 && (key == K_HOST_TO_DEVICE_KEY || key == K_DEVICE_TO_HOST_KEY))
+                            return take_host_link(number, words);
                         return take_scalar(number, words);
                     }
 
@@ -188,11 +204,14 @@ namespace SushiRuntime
                         const std::optional<std::uint64_t> version = parse_unsigned(words[1]);
                         if (!version)
                             return fault(number, "the version is not a number");
-                        if (*version != static_cast<std::uint64_t>(DeviceProfileFile::K_CURRENT_VERSION))
+                        if (*version < static_cast<std::uint64_t>(DeviceProfileFile::K_OLDEST_VERSION) ||
+                            *version > static_cast<std::uint64_t>(DeviceProfileFile::K_CURRENT_VERSION))
                             return Error{ErrorCode::Unsupported,
                                          "device profile file has format_version " + words[1] +
-                                             ", this reader knows version " +
+                                             ", this reader knows versions " +
+                                             std::to_string(DeviceProfileFile::K_OLDEST_VERSION) + " to " +
                                              std::to_string(DeviceProfileFile::K_CURRENT_VERSION)};
+                        version_ = *version;
                         version_seen_ = true;
                         return std::nullopt;
                     }
@@ -266,6 +285,25 @@ namespace SushiRuntime
                         return std::nullopt;
                     }
 
+                    /** @brief Reads a host_to_device or a device_to_host line. */
+                    [[nodiscard]] std::optional<Error> take_host_link(std::size_t number,
+                                                                      const std::vector<std::string>& words)
+                    {
+                        const std::string& key = words[0];
+                        if (words.size() != 3)
+                            return fault(number, "'" + key + "' takes a bandwidth and a latency");
+                        const std::optional<double> bandwidth = parse_measure(words[1]);
+                        const std::optional<double> latency = parse_measure(words[2]);
+                        if (!bandwidth || !latency)
+                            return fault(number, "'" + key + "' holds a bad bandwidth or latency");
+                        std::optional<PathProfile>& link =
+                            key == K_HOST_TO_DEVICE_KEY ? profile_.host_to_device : profile_.device_to_host;
+                        if (link)
+                            return fault(number, "'" + key + "' appears twice");
+                        link = PathProfile{*bandwidth, *latency};
+                        return std::nullopt;
+                    }
+
                     /** @brief Reads one of the four scalar lines. */
                     [[nodiscard]] std::optional<Error> take_scalar(std::size_t number,
                                                                    const std::vector<std::string>& words)
@@ -309,6 +347,7 @@ namespace SushiRuntime
                     DeviceProfile profile_;     /**< The block being read. */
                     DeviceKey key_;             /**< Key of the block being read. */
                     SeenKeys seen_;             /**< Scalar keys of the block seen so far. */
+                    std::uint64_t version_ = 0; /**< Version the file declares. */
                     bool version_seen_ = false; /**< Whether the version line has been read. */
                     bool open_ = false;         /**< Whether a device block is open. */
             };
@@ -348,6 +387,12 @@ namespace SushiRuntime
                     stream << K_PATH_KEY << ' ' << name << ' ' << path.bandwidth << ' ' << path.latency
                            << '\n';
                 }
+                if (profile.host_to_device)
+                    stream << K_HOST_TO_DEVICE_KEY << ' ' << profile.host_to_device->bandwidth << ' '
+                           << profile.host_to_device->latency << '\n';
+                if (profile.device_to_host)
+                    stream << K_DEVICE_TO_HOST_KEY << ' ' << profile.device_to_host->bandwidth << ' '
+                           << profile.device_to_host->latency << '\n';
                 stream << K_END_KEY << '\n';
             }
             return stream.str();

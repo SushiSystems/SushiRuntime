@@ -132,12 +132,55 @@ namespace
 
     TEST(Small_DeviceProfileFile, ANewerVersionIsRefusedNamingBothVersions)
     {
-        const Result<DeviceProfileSet> parsed = DeviceProfileFile::parse("format_version 2\n");
+        const Result<DeviceProfileSet> parsed = DeviceProfileFile::parse("format_version 3\n");
 
         ASSERT_FALSE(parsed.has_value());
         EXPECT_EQ(parsed.error().code, ErrorCode::Unsupported);
+        EXPECT_NE(parsed.error().message.find('3'), std::string::npos);
         EXPECT_NE(parsed.error().message.find('2'), std::string::npos);
-        EXPECT_NE(parsed.error().message.find('1'), std::string::npos);
+    }
+
+    TEST(Small_DeviceProfileFile, HostLinksAreWrittenAndReadBack)
+    {
+        DeviceProfile profile = round_profile(1.0);
+        profile.host_to_device = PathProfile{250.0, 0.125};
+        profile.device_to_host = PathProfile{200.0, 0.0625};
+        DeviceProfileSet profiles;
+        profiles.set(host_key(1), profile);
+
+        const Result<std::string> text = DeviceProfileFile::serialise(profiles);
+        ASSERT_TRUE(text.has_value());
+        EXPECT_EQ(text.value().rfind("format_version 2\n", 0), 0u);
+        const Result<DeviceProfileSet> parsed = DeviceProfileFile::parse(text.value());
+        ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+
+        EXPECT_EQ(parsed.value(), profiles);
+    }
+
+    TEST(Small_DeviceProfileFile, AVersionOneFileIsUpgradedWithUnmeasuredHostLinks)
+    {
+        const std::string key = to_text(host_key(1));
+        const Result<DeviceProfileSet> parsed = DeviceProfileFile::parse(
+            "format_version 1\ndevice " + key +
+            "\ncapacity_bytes 1\nreserve_bytes 0\nmemory_bandwidth 1\nbase_throughput 1\nend\n");
+
+        ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+        const DeviceProfile* profile = parsed.value().find(host_key(1));
+        ASSERT_NE(profile, nullptr);
+        EXPECT_FALSE(profile->host_to_device.has_value());
+        EXPECT_FALSE(profile->device_to_host.has_value());
+    }
+
+    TEST(Small_DeviceProfileFile, AHostLinkInAVersionOneFileIsRefused)
+    {
+        const std::string key = to_text(host_key(1));
+        const Result<DeviceProfileSet> parsed = DeviceProfileFile::parse(
+            "format_version 1\ndevice " + key +
+            "\ncapacity_bytes 1\nreserve_bytes 0\nmemory_bandwidth 1\nbase_throughput 1\n"
+            "host_to_device 1 0\nend\n");
+
+        ASSERT_FALSE(parsed.has_value());
+        EXPECT_EQ(parsed.error().code, ErrorCode::InvalidArgument);
     }
 
     TEST(Small_DeviceProfileFile, MalformedTextIsRefusedWithItsLine)

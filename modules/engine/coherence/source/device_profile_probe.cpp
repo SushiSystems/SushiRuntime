@@ -63,6 +63,13 @@ namespace SushiRuntime
 
                     }
 
+                    /** @brief Allocates bytes of host memory the device of queue reads directly. */
+                    DeviceBytes(std::size_t bytes, sycl::queue& queue, sycl::usm::alloc kind)
+                        : queue_(queue), address_(sycl::malloc(bytes, queue, kind))
+                    {
+
+                    }
+
                     ~DeviceBytes()
                     {
                         if (address_ != nullptr)
@@ -181,6 +188,28 @@ namespace SushiRuntime
             CopySample sample;
             sample.bytes = bytes;
             sample.seconds = seconds_of([&]() { chosen->copy(request, {}).wait(); });
+            return sample;
+        }
+
+        Result<CopySample> DeviceProfileProbe::measure_host_copy(const DeviceKey& device, HostDirection direction,
+                                                                 std::uint64_t bytes)
+        {
+            Result<ProbeDevice> found = device_of(device);
+            if (!found)
+                return make_error(std::move(found.error()));
+            sycl::queue& queue = *found.value().queue;
+            const std::size_t length = static_cast<std::size_t>(bytes);
+            const DeviceBytes on_device(length, queue);
+            const DeviceBytes on_host(length, queue, sycl::usm::alloc::host);
+            if (on_device.address() == nullptr || on_host.address() == nullptr)
+                return make_error(refused_allocation(2 * bytes, device));
+
+            void* to = direction == HostDirection::ToDevice ? on_device.address() : on_host.address();
+            const void* from = direction == HostDirection::ToDevice ? on_host.address() : on_device.address();
+            queue.memcpy(to, from, length).wait();
+            CopySample sample;
+            sample.bytes = bytes;
+            sample.seconds = seconds_of([&]() { queue.memcpy(to, from, length).wait(); });
             return sample;
         }
 

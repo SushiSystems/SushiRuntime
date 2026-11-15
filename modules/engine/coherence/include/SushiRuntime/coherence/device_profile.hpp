@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -55,6 +56,13 @@ namespace SushiRuntime
             }
         };
 
+        /** @brief Names the way a copy crosses between host memory and a device. */
+        enum class HostDirection
+        {
+            ToDevice, /**< From host memory into the device's memory. */
+            ToHost    /**< From the device's memory into host memory. */
+        };
+
         /**
          * @brief Holds what the runtime measured on one device: its pool, its speeds and its paths.
          *
@@ -69,6 +77,16 @@ namespace SushiRuntime
             double base_throughput = 0.0;     /**< Operations per second of a kind with no entry. */
             std::map<OperationKind, double> throughputs;           /**< Operations per second, per kind. */
             std::map<std::string, PathProfile, std::less<>> paths; /**< Paths that leave the device, by name. */
+            std::optional<PathProfile> host_to_device;             /**< Link from host memory into the device; empty when unmeasured. */
+            std::optional<PathProfile> device_to_host;             /**< Link from the device into host memory; empty when unmeasured. */
+
+            /** @brief Returns the host link in direction, or nullptr when it was not measured. */
+            [[nodiscard]] const PathProfile* host_link(HostDirection direction) const noexcept
+            {
+                const std::optional<PathProfile>& link =
+                    direction == HostDirection::ToDevice ? host_to_device : device_to_host;
+                return link ? &*link : nullptr;
+            }
 
             /** @brief Returns the throughput of kind, or base_throughput when the kind has no entry. */
             [[nodiscard]] double throughput_for(OperationKind kind) const noexcept
@@ -90,7 +108,8 @@ namespace SushiRuntime
                 return capacity_bytes == other.capacity_bytes && reserve_bytes == other.reserve_bytes &&
                        memory_bandwidth == other.memory_bandwidth &&
                        base_throughput == other.base_throughput && throughputs == other.throughputs &&
-                       paths == other.paths;
+                       paths == other.paths && host_to_device == other.host_to_device &&
+                       device_to_host == other.device_to_host;
             }
         };
     } // namespace Internal::Coherence

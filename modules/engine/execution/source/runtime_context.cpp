@@ -385,7 +385,8 @@ namespace SushiRuntime
                     settings, *provider, std::move(distance_model), std::move(*descriptors), collector)));
 
                 Result<Internal::Coherence::TransferCost> cost =
-                    load_transfer_cost(settings.device_profile_file, context->impl_->devices);
+                    load_transfer_cost(settings.device_profile_file, context->impl_->devices,
+                                       context->impl_->spaces.views, context->impl_->paths.views);
                 if (!cost)
                 {
                     refused = std::move(cost.error());

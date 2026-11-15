@@ -49,8 +49,8 @@ namespace SushiRuntime
         /**
          * @brief Returns the cost function a planner is given.
          *
-         * A copy costs its modelled seconds, or infinity when the model cannot price it. With no
-         * model the result is uniform_transfer_cost().
+         * Two devices: the path's seconds, else both host links. A device and the host or a file:
+         * that device's host link. Unmeasured: infinity, logged once. No model: uniform.
          * @param model    The frozen model, or null when no profile file was loaded.
          * @param resolver Maps a memory space to its device; read only when model is not null.
          */

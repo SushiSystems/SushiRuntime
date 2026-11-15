@@ -68,6 +68,27 @@ namespace
         EXPECT_NEAR(path->bandwidth, 100.1, 1e-9);
     }
 
+    TEST(Small_ProfileMeasurement, HostLinksAreMeasuredOnlyWhenThePlanAsks)
+    {
+        FakeProfileProbe probe;
+        MeasurementPlan plan = plan_with_kinds();
+        ProfileMeasurement without(probe, plan);
+        const Result<DeviceProfile> bare = without.measure(host_key(1));
+        ASSERT_TRUE(bare.has_value());
+        EXPECT_FALSE(bare.value().host_to_device.has_value());
+
+        plan.host_links = true;
+        ProfileMeasurement with(probe, plan);
+        const Result<DeviceProfile> linked = with.measure(host_key(1));
+
+        ASSERT_TRUE(linked.has_value());
+        ASSERT_TRUE(linked.value().host_to_device.has_value());
+        ASSERT_TRUE(linked.value().device_to_host.has_value());
+        EXPECT_NEAR(linked.value().host_to_device->latency, 0.5 + 1.0 / 200.0, 1e-12);
+        EXPECT_NEAR(linked.value().host_to_device->bandwidth, 200.2, 1e-9);
+        EXPECT_NEAR(linked.value().device_to_host->bandwidth, 100.1, 1e-9);
+    }
+
     TEST(Small_ProfileMeasurement, AFasterDeviceMeasuresFaster)
     {
         FakeProfileProbe probe;

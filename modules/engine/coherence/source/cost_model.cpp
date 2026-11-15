@@ -70,5 +70,25 @@ namespace SushiRuntime
                 return std::nullopt;
             return path->latency + seconds_for(static_cast<double>(bytes), path->bandwidth);
         }
+
+        std::optional<double> CostModel::host_copy_time(const DeviceKey& device, HostDirection direction,
+                                                        std::size_t bytes) const
+        {
+            const DeviceProfile* found = profiles_.find(device);
+            const PathProfile* link = found != nullptr ? found->host_link(direction) : nullptr;
+            if (link == nullptr)
+                return std::nullopt;
+            return link->latency + seconds_for(static_cast<double>(bytes), link->bandwidth);
+        }
+
+        std::optional<double> CostModel::host_staged_time(const DeviceKey& source, const DeviceKey& destination,
+                                                          std::size_t bytes) const
+        {
+            const std::optional<double> down = host_copy_time(source, HostDirection::ToHost, bytes);
+            const std::optional<double> up = host_copy_time(destination, HostDirection::ToDevice, bytes);
+            if (!down || !up)
+                return std::nullopt;
+            return *down + *up;
+        }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

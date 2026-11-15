@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-15 — coherence: Changed a copy through host memory to be priced from the profile's measured host links; only a copy no link covers is infinite, logged once (GLOBAL_HANDLE H7).
+- 2026-11-15 — coherence: Changed the device profile file to version 2 with host link lines; version 1 is read and upgraded, a newer one refused (GLOBAL_HANDLE H7).
+- 2026-11-15 — runtime: Added measurement of every device on first start when the profile file is absent, written atomically for the next start (GLOBAL_HANDLE H7).
 - 2026-11-15 — api: Added `PartitionReport` and `Runtime::partition_report()`, one row per device with nodes, bytes, modelled time and a refused job's shortfall (GLOBAL_HANDLE H7).
 - 2026-11-15 — coherence: Added folding of measured node throughput from the profiling ledger into the device profiles and the profile file (GLOBAL_HANDLE H7).
 - 2026-11-15 — api: Added `RuntimeConfig::device_profile_file`; a runtime given a profile file prices its planned copies through `CostModel`, and one without keeps the cost by bytes (GLOBAL_HANDLE H9).

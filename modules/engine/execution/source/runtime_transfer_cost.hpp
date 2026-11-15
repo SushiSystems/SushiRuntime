@@ -31,8 +31,11 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <SushiRuntime/coherence/transfer_cost.hpp>
+#include <SushiRuntime/coherence/transfer_path.hpp>
+#include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 
@@ -43,12 +46,14 @@ namespace SushiRuntime
         /**
          * @brief Returns the cost the runtime's planners price copies with.
          *
-         * An empty path, or one with no file, gives uniform_transfer_cost() and logs it; a file is
-         * read once and frozen into a CostModel.
-         * @param devices Names the key of each device; must outlive the result.
-         * @return The cost, or the reader's error for a file that cannot be read.
+         * An empty path gives uniform_transfer_cost(). A path with no file is a first start: the
+         * devices, spaces and paths are measured and the file is written atomically. A file there
+         * is read once. devices must outlive the result.
+         * @return The cost, or the error of the reader, the measurement or the writer.
          */
-        [[nodiscard]] Result<Coherence::TransferCost> load_transfer_cost(const std::string& path,
-                                                                         const Device::DeviceQueueSet& devices);
+        [[nodiscard]] Result<Coherence::TransferCost>
+        load_transfer_cost(const std::string& path, Device::DeviceQueueSet& devices,
+                           const std::vector<const Memory::MemorySpace*>& spaces,
+                           const std::vector<Coherence::TransferPath*>& paths);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

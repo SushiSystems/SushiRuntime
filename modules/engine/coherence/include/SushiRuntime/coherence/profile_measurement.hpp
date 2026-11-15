@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,7 @@ namespace SushiRuntime
             std::uint64_t bandwidth_probe_bytes = 64ULL << 20;     /**< Size of the large copy that gives the bandwidth. */
             std::vector<OperationKind> kinds;                      /**< Kinds to time; must include OperationKinds::K_GENERIC, which gives the base throughput. */
             std::vector<PathTarget> paths;                         /**< Paths that leave each device, to time. */
+            bool host_links = false;                               /**< Whether to time each device's links to and from host memory. */
         };
 
         /**
@@ -86,6 +88,14 @@ namespace SushiRuntime
                 [[nodiscard]] Result<DeviceProfileSet> measure_all(const std::vector<DeviceKey>& devices);
 
             private:
+                /**
+                 * @brief Returns the link copy measures: the small copy's time is the latency, the
+                 *        large copy's bytes over its time less the latency is the bandwidth.
+                 * @param what Names the copy in the error of a probe that reported no time.
+                 */
+                [[nodiscard]] Result<PathProfile> link_of(
+                    const std::function<Result<CopySample>(std::uint64_t)>& copy, const char* what) const;
+
                 /// @brief The port that times copies and kernels.
                 ProfileProbe& probe_;
 

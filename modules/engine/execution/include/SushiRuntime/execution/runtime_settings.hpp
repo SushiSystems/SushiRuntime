@@ -96,8 +96,8 @@ namespace SushiRuntime
             /**
              * @brief Names the device profile file read once at create; empty for none.
              *
-             * A file that is there prices every planned copy through CostModel; with none, or with
-             * no file at the path, copies are priced by their bytes.
+             * A file that is there prices every planned copy through CostModel. With no file at the
+             * path, create measures every device and writes it. Empty prices copies by their bytes.
              * @see modules/engine/coherence/README.md
              */
             std::string device_profile_file;

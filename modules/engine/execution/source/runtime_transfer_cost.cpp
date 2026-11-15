@@ -36,6 +36,7 @@
 #include <optional>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <SushiRuntime/coherence/cost_model.hpp>
 #include <SushiRuntime/coherence/device_profile_file.hpp>
@@ -44,12 +45,47 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
+#include "runtime_profile_measurement.hpp"
+
 namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        Result<Coherence::TransferCost> load_transfer_cost(const std::string& path,
-                                                           const Device::DeviceQueueSet& devices)
+        namespace
+        {
+            /** @brief Returns the profiles of the file at path, measuring the devices and writing it first when it is absent. */
+            [[nodiscard]] Result<Coherence::DeviceProfileSet>
+            profiles_at(const std::string& path, Device::DeviceQueueSet& devices,
+                        const std::vector<const Memory::MemorySpace*>& spaces,
+                        const std::vector<Coherence::TransferPath*>& paths)
+            {
+                std::error_code failed;
+                if (std::filesystem::exists(path, failed))
+                {
+                    Result<Coherence::DeviceProfileSet> read = Coherence::DeviceProfileFile::read(path);
+                    if (read)
+                        SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY,
+                                    "Loaded the device profile file {}; copies are priced by it.", path);
+                    return read;
+                }
+
+                SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY,
+                            "No device profile file at {}; measuring {} device(s) for it.", path, devices.count());
+                Result<Coherence::DeviceProfileSet> measured = measure_runtime_profiles(devices, spaces, paths);
+                if (!measured)
+                    return measured;
+                Result<bool> written = Coherence::DeviceProfileFile::write(path, measured.value());
+                if (!written)
+                    return make_error(std::move(written.error()));
+                SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Wrote the device profile file {}; copies are priced by it.",
+                            path);
+                return measured;
+            }
+        } // namespace
+
+        Result<Coherence::TransferCost> load_transfer_cost(const std::string& path, Device::DeviceQueueSet& devices,
+                                                           const std::vector<const Memory::MemorySpace*>& spaces,
+                                                           const std::vector<Coherence::TransferPath*>& paths)
         {
             if (path.empty())
             {
@@ -57,19 +93,10 @@ namespace SushiRuntime
                             "No device profile file is configured; copies are priced by their bytes.");
                 return Coherence::uniform_transfer_cost();
             }
-            std::error_code failed;
-            if (!std::filesystem::exists(path, failed))
-            {
-                SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY,
-                            "No device profile file at {}; copies are priced by their bytes.", path);
-                return Coherence::uniform_transfer_cost();
-            }
 
-            Result<Coherence::DeviceProfileSet> profiles = Coherence::DeviceProfileFile::read(path);
+            Result<Coherence::DeviceProfileSet> profiles = profiles_at(path, devices, spaces, paths);
             if (!profiles)
                 return make_error(std::move(profiles.error()));
-            SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Loaded the device profile file {}; copies are priced by it.",
-                        path);
 
             auto model = std::make_shared<const Coherence::CostModel>(std::move(profiles.value()));
             const Device::DeviceQueueSet* const set = &devices;

@@ -104,6 +104,14 @@ namespace SushiRuntime::Internal::Coherence
                 return CopySample{bytes, latency + static_cast<double>(bytes) / (100.0 * speed_of(source))};
             }
 
+            [[nodiscard]] Result<CopySample> measure_host_copy(const DeviceKey& device, HostDirection direction,
+                                                               std::uint64_t bytes) override
+            {
+                ++calls;
+                const double rate = direction == HostDirection::ToDevice ? 200.0 : 100.0;
+                return CopySample{bytes, latency + static_cast<double>(bytes) / (rate * speed_of(device))};
+            }
+
             [[nodiscard]] Result<KernelSample> measure_kernel(const DeviceKey& device, OperationKind) override
             {
                 ++calls;

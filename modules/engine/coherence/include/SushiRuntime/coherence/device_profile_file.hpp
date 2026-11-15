@@ -53,7 +53,10 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Holds the version the writer writes and the reader reads without upgrading. */
-                static constexpr int K_CURRENT_VERSION = 1;
+                static constexpr int K_CURRENT_VERSION = 2;
+
+                /** @brief Holds the oldest version the reader reads and upgrades. */
+                static constexpr int K_OLDEST_VERSION = 1;
 
                 /**
                  * @brief Returns the text of profiles in the current version.
@@ -63,6 +66,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the profiles that text holds.
+                 *
+                 * A version 1 file is upgraded in memory: it has no host links, so each device's
+                 * links stay unmeasured.
                  * @return InvalidArgument for a malformed line, with its number; Unsupported for a
                  *         version this reader does not know, naming both versions.
                  */

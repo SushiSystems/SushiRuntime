@@ -219,16 +219,22 @@ learns that a device was never measured; such a device receives no node.
 `CostModel` is built once from a `DeviceProfileSet` and never changes. `node_time()` is a node's
 operations over the device's throughput for its kind, plus its read and written bytes over the
 device's memory bandwidth. `transfer_time()` is the latency of a path plus the bytes over its
-bandwidth; the path is looked up on the source device first, then on the destination. A device or a
-path with no profile gives no time. A device with a rate of zero that has work to do gives infinity.
+bandwidth; the path is looked up on the source device first, then on the destination.
+`host_copy_time()` prices a copy over a device's host link in one direction, and `host_staged_time()`
+prices a copy between two devices through host memory as the source's device-to-host link plus the
+destination's host-to-device link. A device, a path or a link with no profile gives no time. A device
+with a rate of zero that has work to do gives infinity.
 
 `select_transfer_cost()` gives the planner its `TransferCost`: the model's seconds when a model is
 loaded, `uniform_transfer_cost()` when none is. A copy the model cannot price costs infinity. The
 runtime builds it once, at create, in `engine/execution`'s `load_transfer_cost()`, and hands it out as
 `RuntimeContext::transfer_cost()`; the composer's and `PlanCache`'s hook prices every copy with it,
 so the cheapest path and source win and eviction weighs the price of a write-back. The resolver maps
-a device space to its device's `DeviceKey` and the host space to none, so with a model loaded a copy
-to or from the host costs infinity and a tie goes to the first path.
+a device space to its device's `DeviceKey` and the host space, or a file space, to none. A copy between
+two devices costs the path's own measurement, or the copy through host memory when the profile names no
+such path, which prices `HostStagedPath`. A copy between a device and a space with no device costs
+that device's host link, which prices host copies and `FilePath`. A copy no measurement covers costs
+infinity, and the first such copy is logged as a warning.
 
 ## Partitioner
 
@@ -299,7 +305,8 @@ The runtime does not call these yet; the calls belong where the run ends and the
 
 `ProfileMeasurement` fills a `DeviceProfile` through the `ProfileProbe` port. The probe copies bytes no
 consumer reads and times a kernel the caller registered for each kind in the `MeasurementPlan`; the
-runtime holds no kernel and no list of kinds. The plan must name `OperationKinds::K_GENERIC`, whose
+measurement holds no kernel and no list of kinds. With `host_links` set, it also times each device's
+copy from host memory and back, and stores them as the host links. The plan must name `OperationKinds::K_GENERIC`, whose
 kernel gives the base throughput. Memory bandwidth counts the bytes read and written. A path's latency
 is the time of the small copy, and its bandwidth is the large copy's bytes over its time less the
 latency. A probe that reports a time of zero or less is refused as `InvalidState`.
@@ -311,7 +318,8 @@ AdaptiveCpp. `ProbeDevices` gives it each device's queue and memory space by `De
 and reserve are the space's. A device copy is one `memcpy` between two device allocations; a path
 copy goes through the runtime's own `TransferPath` of that name between an allocation on each
 device, so it times what the planner will use; a kind runs the `ProbeKernel` the caller registered
-for it, which returns the operations it did. Each runs once to warm up and once timed, on the host's
+for it, which returns the operations it did; a host copy is one `memcpy` between a device
+allocation and a host allocation. Each runs once to warm up and once timed, on the host's
 steady clock, from the submit to the end of the wait. The time is a measurement and decides no plan
 until it is written to the profile file. A path no path of that name connects is `Unsupported`; a
 kind with no kernel, or a key with no device, is `InvalidArgument`.
@@ -329,7 +337,7 @@ name, with doubles in 17 significant digits, so one set always gives the same by
 written to a temporary file and renamed over the old one.
 
 ```
-format_version 1
+format_version 2
 
 device cuda:uuid:00112233445566778899aabbccddeeff:0
 capacity_bytes 12884901888
@@ -338,6 +346,8 @@ memory_bandwidth 9.1e+11
 base_throughput 1.2e+13
 throughput 3195455669 3.1e+13
 path pcie 1.2e+10 1e-05
+host_to_device 1.1e+10 8e-06
+device_to_host 1.0e+10 9e-06
 end
 ```
 
@@ -349,14 +359,17 @@ end
 | `memory_bandwidth`, `base_throughput` | Finite numbers of zero or more; each appears once per block. |
 | `throughput <kind> <value>` | `<kind>` is the `OperationKind` value as an unsigned integer. One per kind. |
 | `path <name> <bandwidth> <latency>` | `<name>` is one word. One per name. |
+| `host_to_device <bandwidth> <latency>`, `device_to_host <bandwidth> <latency>` | The host links; each appears at most once per block. A block without one leaves that link unmeasured. Version 2 only. |
 | `end` | Closes the block. |
 
 | Version | The reader |
 | --- | --- |
-| 1 | Reads it. It is the current version. |
-| 2 or later | Rejects it with `Unsupported`, naming the version found and the version known. |
+| 1 | Reads it and upgrades it: it has no host links, so every link stays unmeasured. A host link line in it is a fault. |
+| 2 | Reads it. It is the current version. |
+| 3 or later | Rejects it with `Unsupported`, naming the version found and the versions known. |
 
 A fault in a line is `InvalidArgument` and names the line. A file that is missing is refused by
 `read()`. The runtime reads the file `RuntimeConfig::device_profile_file` names, once, at create. An
-empty path, or a path with no file, runs with no `CostModel` and logs it; a file that is there and
-cannot be read refuses the create with the reader's error.
+empty path runs with no `CostModel` and logs it. A path with no file is a first start: the runtime
+measures every device and writes the file, which the next start reads. A file that is there and cannot
+be read refuses the create with the reader's error.

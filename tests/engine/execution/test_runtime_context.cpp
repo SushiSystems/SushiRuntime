@@ -32,6 +32,7 @@
 #include <array>
 #include <atomic>
 #include <cstdlib>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -836,16 +837,41 @@ namespace TransferCostTests
         EXPECT_EQ(priced(**context), static_cast<double>(K_BYTES));
     }
 
-    TEST(Medium_RuntimeContextTransferCost, APathWithNoFileKeepsTheUniformCost)
+    TEST(Medium_RuntimeContextTransferCost, AFirstStartMeasuresTheDevicesAndWritesTheFileTheNextStartReads)
     {
+        SushiRuntime::DeviceFilter cpu_only;
+        cpu_only.include_gpu = false;
+        cpu_only.include_accelerator = false;
         RuntimeSettings settings;
-        settings.device_profile_file = profile_path("absent_profile").string();
-        std::filesystem::remove(settings.device_profile_file);
+        const std::filesystem::path file = profile_path("first_start_profile");
+        std::filesystem::remove(file);
+        settings.device_profile_file = file.string();
 
-        auto context = RuntimeContext::create({}, nullptr, nullptr, settings);
-        ASSERT_TRUE(context.has_value()) << context.error().message;
+        auto first = RuntimeContext::create(cpu_only, nullptr, nullptr, settings);
+        if (!first.has_value() && first.error().code == SushiRuntime::ErrorCode::Unsupported)
+            GTEST_SKIP() << "No SYCL CPU device: " << first.error().message;
+        ASSERT_TRUE(first.has_value()) << first.error().message;
+        ASSERT_TRUE(std::filesystem::exists(file));
+        const auto written = DeviceProfileFile::read(file);
+        ASSERT_TRUE(written.has_value()) << written.error().message;
+        const DeviceProfile* profile = written.value().find((*first)->devices().devices().front().key);
+        ASSERT_NE(profile, nullptr);
+        EXPECT_GT(profile->memory_bandwidth, 0.0);
+        EXPECT_GT(profile->base_throughput, 0.0);
+        ASSERT_TRUE(profile->host_to_device.has_value());
+        ASSERT_TRUE(profile->device_to_host.has_value());
+        const double first_price = priced(**first);
+        EXPECT_TRUE(std::isfinite(first_price));
+        first.value().reset();
 
-        EXPECT_EQ(priced(**context), static_cast<double>(K_BYTES));
+        auto second = RuntimeContext::create(cpu_only, nullptr, nullptr, settings);
+        ASSERT_TRUE(second.has_value()) << second.error().message;
+        const auto reread = DeviceProfileFile::read(file);
+        std::filesystem::remove(file);
+        ASSERT_TRUE(reread.has_value());
+
+        EXPECT_EQ(reread.value(), written.value());
+        EXPECT_EQ(priced(**second), first_price);
     }
 
     TEST(Medium_RuntimeContextTransferCost, AProfileFilePricesCopiesThroughTheCostModel)

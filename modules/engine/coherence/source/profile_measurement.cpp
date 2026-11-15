@@ -31,6 +31,7 @@
 #include <SushiRuntime/coherence/profile_measurement.hpp>
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 namespace SushiRuntime
@@ -96,26 +97,47 @@ namespace SushiRuntime
 
             for (const PathTarget& target : plan_.paths)
             {
-                const Result<CopySample> small =
-                    probe_.measure_path_copy(device, target.destination, target.path_name,
-                                             plan_.latency_probe_bytes);
-                if (!small)
-                    return make_error(Error{small.error()});
-                const Result<CopySample> large =
-                    probe_.measure_path_copy(device, target.destination, target.path_name,
-                                             plan_.bandwidth_probe_bytes);
-                if (!large)
-                    return make_error(Error{large.error()});
-                if (large.value().seconds <= 0.0)
-                    return make_error(no_time("a path copy"));
+                Result<PathProfile> path = link_of(
+                    [&](std::uint64_t bytes)
+                    { return probe_.measure_path_copy(device, target.destination, target.path_name, bytes); },
+                    "a path copy");
+                if (!path)
+                    return make_error(Error{path.error()});
+                profile.paths[target.path_name] = path.value();
+            }
 
-                const double latency = std::max(small.value().seconds, 0.0);
-                const double moving = large.value().seconds > latency ? large.value().seconds - latency
-                                                                      : large.value().seconds;
-                profile.paths[target.path_name] =
-                    PathProfile{static_cast<double>(large.value().bytes) / moving, latency};
+            if (plan_.host_links)
+            {
+                for (const HostDirection direction : {HostDirection::ToDevice, HostDirection::ToHost})
+                {
+                    Result<PathProfile> link = link_of(
+                        [&](std::uint64_t bytes) { return probe_.measure_host_copy(device, direction, bytes); },
+                        "a host copy");
+                    if (!link)
+                        return make_error(Error{link.error()});
+                    (direction == HostDirection::ToDevice ? profile.host_to_device : profile.device_to_host) =
+                        link.value();
+                }
             }
             return profile;
+        }
+
+        Result<PathProfile> ProfileMeasurement::link_of(const std::function<Result<CopySample>(std::uint64_t)>& copy,
+                                                        const char* what) const
+        {
+            const Result<CopySample> small = copy(plan_.latency_probe_bytes);
+            if (!small)
+                return make_error(Error{small.error()});
+            const Result<CopySample> large = copy(plan_.bandwidth_probe_bytes);
+            if (!large)
+                return make_error(Error{large.error()});
+            if (large.value().seconds <= 0.0)
+                return make_error(no_time(what));
+
+            const double latency = std::max(small.value().seconds, 0.0);
+            const double moving = large.value().seconds > latency ? large.value().seconds - latency
+                                                                  : large.value().seconds;
+            return PathProfile{static_cast<double>(large.value().bytes) / moving, latency};
         }
 
         Result<DeviceProfileSet> ProfileMeasurement::measure_all(const std::vector<DeviceKey>& devices)

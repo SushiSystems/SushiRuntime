@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include <SushiRuntime/coherence/device_profile.hpp>
 #include <SushiRuntime/core/operation_kind.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
@@ -84,6 +85,11 @@ namespace SushiRuntime
                 [[nodiscard]] virtual Result<CopySample> measure_path_copy(const DeviceKey& source,
                                                                            const DeviceKey& destination,
                                                                            std::string_view path_name,
+                                                                           std::uint64_t bytes) = 0;
+
+                /** @brief Copies bytes between host memory and device in direction and returns the time. */
+                [[nodiscard]] virtual Result<CopySample> measure_host_copy(const DeviceKey& device,
+                                                                           HostDirection direction,
                                                                            std::uint64_t bytes) = 0;
 
                 /** @brief Runs the kernel the caller registered for kind on device and returns the time. */

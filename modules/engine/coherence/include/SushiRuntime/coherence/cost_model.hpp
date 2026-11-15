@@ -97,6 +97,24 @@ namespace SushiRuntime
                                                                   std::string_view path_name,
                                                                   std::size_t bytes) const;
 
+                /**
+                 * @brief Returns the seconds a copy of bytes takes over device's host link in direction.
+                 * @return Nothing when device has no profile or never measured that link.
+                 */
+                [[nodiscard]] std::optional<double> host_copy_time(const DeviceKey& device,
+                                                                   HostDirection direction,
+                                                                   std::size_t bytes) const;
+
+                /**
+                 * @brief Returns the seconds a copy of bytes takes from source to destination through host memory.
+                 *
+                 * It is the source's device-to-host link plus the destination's host-to-device link.
+                 * @return Nothing when either link was not measured.
+                 */
+                [[nodiscard]] std::optional<double> host_staged_time(const DeviceKey& source,
+                                                                     const DeviceKey& destination,
+                                                                     std::size_t bytes) const;
+
             private:
                 /// @brief The frozen profiles.
                 DeviceProfileSet profiles_;

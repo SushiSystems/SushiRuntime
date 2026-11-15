@@ -83,6 +83,10 @@ namespace SushiRuntime
                                                                    std::string_view path_name,
                                                                    std::uint64_t bytes) override;
 
+                [[nodiscard]] Result<CopySample> measure_host_copy(const DeviceKey& device,
+                                                                   HostDirection direction,
+                                                                   std::uint64_t bytes) override;
+
                 [[nodiscard]] Result<KernelSample> measure_kernel(const DeviceKey& device,
                                                                   OperationKind kind) override;
 

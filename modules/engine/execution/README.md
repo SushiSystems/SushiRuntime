@@ -683,9 +683,13 @@ an integrated device names the host's pool and offers at most the host's usable 
 `FilePath` (`source/runtime_transfer_paths.hpp`). Both are built once from the device set. Every path
 reports to the context's `TransferObserverSlot`, which forwards to the observer
 `install_transfer_observer()` installed, if any. `transfer_cost()` is the device profile file's
-`CostModel` when `RuntimeSettings::device_profile_file` names a file that is there, and the bytes
-otherwise (`source/runtime_transfer_cost.hpp`); `create()` loads it once, and a file that cannot be
-read refuses the create. `eviction_policy()` is the context's `LogicalTimeEviction`. The coherence
+`CostModel` when `RuntimeSettings::device_profile_file` is set, and the bytes otherwise
+(`source/runtime_transfer_cost.hpp`); `create()` loads it once, and a file that cannot be read refuses
+the create. When the path is set and no file is there, `create()` measures every device first
+(`source/runtime_profile_measurement.hpp`) with `DeviceProfileProbe` and the runtime's two internal
+probe kernels (`source/runtime_probe_kernels.hpp`: a streaming copy for `K_MEMORY_BOUND` and a fixed
+chain of multiply-adds for `K_GENERIC`), writes the file through a temporary file and a rename, and
+prices by it; the next start reads that file. `eviction_policy()` is the context's `LogicalTimeEviction`. The coherence
 hook of the composer and of `PlanCache` reads all three from the context, so neither builds its own.
 
 The destructor then clears the directory's retire observer: the directory is a member and lives
