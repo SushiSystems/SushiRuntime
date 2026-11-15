@@ -1,0 +1,104 @@
+/**************************************************************************/
+/* graph_partition.hpp                                                    */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file graph_partition.hpp
+ * @brief Declares GraphPartition, which places every node of one graph from one partition of the whole graph.
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+ * @author Mustafa Garip
+ */
+
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <set>
+#include <vector>
+
+#include <SushiRuntime/coherence/graph_partition_problem.hpp>
+#include <SushiRuntime/coherence/partition_assignment.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/task/node.hpp>
+
+namespace SushiRuntime
+{
+    namespace Detail
+    {
+        /**
+         * @brief Partitions the nodes of every region of one graph as one problem and states the answer on them.
+         *
+         * A node this object placed counts as free in the next problem, so a graph partitioned again
+         * gives the same problem. The partitioner runs again only when the problem's hash changed.
+         * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
+         */
+        class GraphPartition final
+        {
+            public:
+                /**
+                 * @brief Returns the nodes this object placed that the partition of nodes now puts
+                 *        elsewhere or cuts anew; nothing is placed.
+                 * @param nodes Every work node of the graph, in region then recording order.
+                 * @return The moved nodes, or the refusal, with each pool's shortfall, of a job no plan fits.
+                 */
+                [[nodiscard]] Result<std::set<const Internal::Graph::Node*>>
+                moved(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                      Internal::Execution::RuntimeContext& runtime);
+
+                /**
+                 * @brief States on every movable node of nodes the device the partition of nodes gives it.
+                 *
+                 * The runtime's session holds the problem and its answer for partition_report().
+                 * @param nodes Every work node of the graph, in region then recording order.
+                 * @return The refusal of a job no plan fits, or the error of a fixed node's placement.
+                 */
+                [[nodiscard]] Result<void> place(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                                                 Internal::Execution::RuntimeContext& runtime);
+
+            private:
+                /**
+                 * @brief Builds the problem of nodes and answers it, partitioning only when its hash changed.
+                 * @return Nothing when no partition applies; the error of a refusal or a fixed node.
+                 */
+                [[nodiscard]] Result<std::optional<Internal::Coherence::GraphPartitionProblem>>
+                answer(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                       Internal::Execution::RuntimeContext& runtime);
+
+                /// @brief The nodes the last place() stated a device on; held so no other node takes an address.
+                std::vector<sushi_ptr<Internal::Graph::Node>> placed_;
+
+                /// @brief The addresses of placed_, for the problem builder.
+                std::set<const Internal::Graph::Node*> placed_addresses_;
+
+                /// @brief Hash of the last problem answered; nothing before the first.
+                std::optional<std::uint64_t> problem_hash_;
+
+                /// @brief Whether the last answer() ran the partitioner rather than reusing its answer.
+                bool answered_again_ = false;
+
+                /// @brief The answer to the last problem.
+                Internal::Coherence::PartitionAssignment assignment_;
+        };
+    } // namespace Detail
+} // namespace SushiRuntime

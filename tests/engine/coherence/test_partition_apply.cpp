@@ -31,12 +31,14 @@
 
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
 #include <SushiRuntime/coherence/partition_apply.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
+#include <SushiRuntime/task/placed_split.hpp>
 
 #include "partition_problem_builder.hpp"
 
@@ -138,5 +140,80 @@ namespace
 
         ASSERT_FALSE(applied.has_value());
         EXPECT_FALSE(nodes_[0]->stated_placement().has_value());
+    }
+
+    TEST_F(Small_PartitionApply, ASplitNodeGetsEachPartOnTheIndexOfItsDeviceWithItsByteRanges)
+    {
+        const Result<GraphPartitionProblem> graph = problem();
+        ASSERT_TRUE(graph.has_value());
+        PartitionAssignment cut;
+        cut.node_devices = {host_key(1), host_key(2), host_key(1)};
+        PlannedSplit split;
+        split.node = 1;
+        split.parts.push_back(PlannedSplitPart{host_key(2), SplitPart{0, 0, 4, 0, 2},
+                                               {BufferRange{buffers_[0], 0, 300}}, {BufferRange{buffers_[1], 0, 100}}});
+        split.parts.push_back(PlannedSplitPart{host_key(1), SplitPart{0, 4, 12, 1, 2},
+                                               {BufferRange{buffers_[0], 0, 300}}, {BufferRange{buffers_[1], 100, 300}}});
+        cut.splits.push_back(split);
+
+        ASSERT_TRUE(apply_partition(graph.value(), cut).has_value());
+
+        ASSERT_NE(nodes_[1]->placed_split, nullptr);
+        EXPECT_EQ(nodes_[0]->placed_split, nullptr);
+        const Internal::Graph::PlacedSplit& placed = *nodes_[1]->placed_split;
+        ASSERT_EQ(placed.parts.size(), 2u);
+        ASSERT_EQ(placed.access.size(), 2u);
+        EXPECT_EQ(placed.parts[0].device, 1u);
+        EXPECT_EQ(placed.parts[1].device, 0u);
+        EXPECT_EQ(placed.parts[1].part, (SplitPart{0, 4, 12, 1, 2}));
+        ASSERT_EQ(placed.access[1].writes.size(), 1u);
+        EXPECT_EQ(placed.access[1].writes[0].offset, 100u);
+        EXPECT_EQ(placed.access[1].writes[0].length, 200u);
+        ASSERT_EQ(placed.access[0].reads.size(), 1u);
+        EXPECT_EQ(placed.access[0].reads[0].length, 300u);
+    }
+
+    TEST_F(Small_PartitionApply, APartOnADeviceTheProblemDoesNotHoldIsRefusedAndChangesNoNode)
+    {
+        const Result<GraphPartitionProblem> graph = problem();
+        ASSERT_TRUE(graph.has_value());
+        PartitionAssignment cut;
+        cut.node_devices = {host_key(1), host_key(2), host_key(1)};
+        PlannedSplit split;
+        split.node = 1;
+        split.parts.push_back(PlannedSplitPart{host_key(2), SplitPart{0, 0, 4, 0, 2}, {}, {}});
+        split.parts.push_back(PlannedSplitPart{host_key(9), SplitPart{0, 4, 12, 1, 2}, {}, {}});
+        cut.splits.push_back(split);
+
+        const Result<void> applied = apply_partition(graph.value(), cut);
+
+        ASSERT_FALSE(applied.has_value());
+        EXPECT_EQ(applied.error().code, ErrorCode::InvalidArgument);
+        EXPECT_FALSE(nodes_[0]->stated_placement().has_value());
+        EXPECT_EQ(nodes_[1]->placed_split, nullptr);
+    }
+
+    TEST_F(Small_PartitionApply, ANodeAnEarlierPartitionPlacedCountsAsFreeInTheNextProblem)
+    {
+        const Result<GraphPartitionProblem> first = problem();
+        ASSERT_TRUE(first.has_value());
+        PartitionAssignment answer;
+        answer.node_devices = {host_key(1), host_key(2), host_key(1)};
+        ASSERT_TRUE(apply_partition(first.value(), answer).has_value());
+
+        const std::vector<PartitionDevice> devices{PartitionDevice{host_key(1), 1, "pcie"},
+                                                   PartitionDevice{host_key(2), 2, "pcie"}};
+        const std::set<const Node*> assigned{nodes_[0].get(), nodes_[1].get(), nodes_[2].get()};
+        const Result<GraphPartitionProblem> again =
+            make_graph_partition_problem(nodes_, memory_, directory_, devices, assigned);
+        const Result<GraphPartitionProblem> stated = make_graph_partition_problem(nodes_, memory_, directory_, devices);
+        ASSERT_TRUE(again.has_value());
+        ASSERT_TRUE(stated.has_value());
+
+        for (std::size_t node = 0; node < 3; ++node)
+        {
+            EXPECT_FALSE(again.value().problem.nodes[node].placed.has_value());
+            EXPECT_TRUE(stated.value().problem.nodes[node].placed.has_value());
+        }
     }
 } // namespace

@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -108,10 +109,11 @@ namespace SushiRuntime
                     std::map<GlobalHandle, std::size_t> indices_;
             };
 
-            /** @brief Returns whether the partitioner may move node. */
-            [[nodiscard]] bool is_movable(const Graph::Node& node, const Graph::PlacementMemory& memory)
+            /** @brief Returns whether the partitioner may move node; a node of assigned counts as unstated. */
+            [[nodiscard]] bool is_movable(const Graph::Node& node, const Graph::PlacementMemory& memory,
+                                          const std::set<const Graph::Node*>& assigned)
             {
-                if (node.stated_placement())
+                if (node.stated_placement() && assigned.count(&node) == 0)
                     return false;
                 return node.kernel_addressing == Graph::KernelAddressing::Rebindable ||
                        !Graph::anchor_device(node, memory).has_value();
@@ -121,7 +123,8 @@ namespace SushiRuntime
         Result<GraphPartitionProblem>
         make_graph_partition_problem(const std::vector<sushi_ptr<Graph::Node>>& nodes,
                                      const Graph::PlacementMemory& memory, const Memory::ResidencyView& directory,
-                                     const std::vector<PartitionDevice>& devices)
+                                     const std::vector<PartitionDevice>& devices,
+                                     const std::set<const Graph::Node*>& assigned)
         {
             GraphPartitionProblem built;
             built.problem.devices = devices;
@@ -155,7 +158,7 @@ namespace SushiRuntime
                     last_writer[*buffer] = index;
                 }
 
-                if (!is_movable(node, memory))
+                if (!is_movable(node, memory, assigned))
                 {
                     const Result<std::size_t> placed = Graph::placement_of(node, memory);
                     if (!placed)

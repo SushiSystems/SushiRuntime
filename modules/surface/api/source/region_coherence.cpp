@@ -38,9 +38,6 @@
 
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
-#include <SushiRuntime/coherence/graph_partition_problem.hpp>
-#include <SushiRuntime/coherence/partition_apply.hpp>
-#include <SushiRuntime/coherence/partition_session.hpp>
 #include <SushiRuntime/coherence/plan_splice.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
@@ -80,34 +77,6 @@ namespace SushiRuntime
                         read.insert(handle);
                 return read;
             }
-
-            /**
-             * @brief Puts the movable nodes where the runtime's partitioner says, or refuses the job.
-             *
-             * Nothing happens when the runtime has no partitioner or the graph no planned buffer.
-             * @return The refusal, with each pool's shortfall, of a job no plan fits.
-             * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
-             */
-            Result<void> partition_nodes(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
-                                         Internal::Execution::RuntimeContext& runtime,
-                                         const Internal::Graph::PlacementMemory& memory)
-            {
-                Internal::Coherence::PartitionSession& session = runtime.partitioning();
-                if (!session.is_active())
-                    return {};
-                Result<Internal::Coherence::GraphPartitionProblem> graph =
-                    Internal::Coherence::make_graph_partition_problem(nodes, memory, runtime.handles(),
-                                                                      session.devices());
-                if (!graph)
-                    return make_error(std::move(graph.error()));
-                if (graph.value().planned_buffers == 0)
-                    return {};
-                const Result<Internal::Coherence::PartitionAssignment, Internal::Coherence::PartitionRefusal>& answer =
-                    session.partition(graph.value().problem);
-                if (!answer)
-                    return make_error(answer.error().to_error());
-                return Internal::Coherence::apply_partition(graph.value(), answer.value());
-            }
         } // namespace
 
         Result<std::optional<Internal::Coherence::CopyPlan>>
@@ -118,9 +87,6 @@ namespace SushiRuntime
                 return std::optional<Internal::Coherence::CopyPlan>();
 
             const Internal::Graph::USMPlacementMemory memory(runtime.memory(), runtime.handles());
-            Result<void> partitioned = partition_nodes(nodes, runtime, memory);
-            if (!partitioned)
-                return make_error(std::move(partitioned.error()));
             const Internal::Coherence::SpaceOfNode space_of =
                 [&memory](const Internal::Graph::Node& node) -> std::optional<MemorySpaceID>
             {
@@ -146,7 +112,8 @@ namespace SushiRuntime
                 runtime.handles(),
                 std::make_shared<Internal::Coherence::USMInstanceAllocator>(runtime.shared_memory()), paths);
             Result<Internal::Coherence::CopyPlan> spliced =
-                Internal::Coherence::splice_plan(nodes, space_of, planner, factory);
+                Internal::Coherence::splice_plan(nodes, space_of, planner, factory,
+                                                 &Internal::Graph::device_memory_space);
             if (!spliced)
                 return make_error(std::move(spliced.error()));
             return std::optional<Internal::Coherence::CopyPlan>(std::move(spliced.value()));

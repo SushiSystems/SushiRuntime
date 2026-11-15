@@ -53,6 +53,7 @@
 #include <SushiRuntime/scheduler/dispatch_placement.hpp>
 #include "dispatch_queue_selection.hpp"
 #include "host_node_run.hpp"
+#include "split_node_run.hpp"
 #include "submit_funnel.hpp"
 #include "submit_funnels.hpp"
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
@@ -456,6 +457,19 @@ namespace SushiRuntime
                         abort_run(name_failure(*task, placed.error()));
                         return;
                     }
+                }
+
+                // A node the partitioner cut runs as its parts, each on its own device (modules/engine/scheduler/README.md).
+                if (node && node->placed_split)
+                {
+                    const Result<void> split = run_split_node(*node, devices_);
+                    if (!split)
+                    {
+                        abort_run(name_failure(*task, split.error()));
+                        return;
+                    }
+                    events.push(completed_host_event(task));
+                    return;
                 }
 
                 // With the funnel on, a plain task's device is looked up too, so the task reaches that device's funnel.

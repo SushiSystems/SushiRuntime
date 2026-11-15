@@ -14,6 +14,7 @@ sushiruntime_add_module(
         executor_rounds.cpp
         failure_naming.cpp
         host_node_run.cpp
+        split_node_run.cpp
         offload_return.cpp
         pending_work.cpp
         run_state.cpp

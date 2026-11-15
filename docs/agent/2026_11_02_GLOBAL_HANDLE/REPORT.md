@@ -84,6 +84,7 @@ dispatch: T49 — sonnet medium, 115 turns, rung 1, passed after one return (hoo
 dispatch: T51 — sonnet medium, rung 1, passed
 dispatch: T52 — sonnet medium, rung 1, passed (SushiBLAS)
 dispatch: T47 — opus low, 277 turns, rung 1, passed after one rebase
+dispatch: T53+T50 — opus low, 178 turns, rung 1, passed
 ```
 
 ## T05: the residency directory

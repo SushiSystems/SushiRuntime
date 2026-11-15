@@ -19,6 +19,7 @@ It depends on `core`, `handle`, `region`, `report`, `memory` and `task`.
 | `pin_set.hpp` | `PinSet`, the instances eviction never touches |
 | `residency_options.hpp` | `ResidencyOptions`, the capacity rules of one planner |
 | `plan_hash.hpp` | `plan_hash()`, the FNV-1a hash of a plan |
+| `problem_hash.hpp` | `problem_hash()`, the FNV-1a hash of a partition problem |
 | `transfer_path.hpp` | `TransferPath`, the interface of one way of copying, and `TransferRequest` |
 | `transfer_cost.hpp` | `TransferCost` and `uniform_transfer_cost()` |
 | `same_context_path.hpp` | `SameContextPath`, one memcpy between two devices of one SYCL context |
@@ -319,12 +320,27 @@ any other is planned. An edge joins the last earlier writer of a buffer to each 
 the bytes the reader's region names; the edges are ordered by writer, then reader. A node with a
 stated device, or a `FixedToHome` node whose anchor a device owns, is placed where `placement_of()`
 puts it (`modules/engine/task/README.md`, "Placement rule order"); the partitioner may move every
-other node.
+other node. A node in the `assigned` set counts as unstated: an earlier partition of the same graph
+gave it its device, so partitioning the graph again gives the same problem.
+
+`problem_hash()` folds every field of a `PartitionProblem` into one FNV-1a value, through the same
+`FNVHash` and `fold_device_key()` that `plan_hash()` and `assignment_hash()` use. The API's
+`GraphPartition` runs the partitioner again only when that hash changed.
 
 `apply_partition()` states the assigned device on each movable node, or changes nothing and returns
 `InvalidArgument` when the assignment does not fit the problem. The coherence planner then
 allocates each planned buffer's first instance on the device of its first writer, which is the home
 the assignment gives it. Rebalancing calls the same function with a new assignment.
+
+A node the assignment cuts gets a `Graph::PlacedSplit` (`modules/engine/task/README.md`, "The parts
+of a split node"): each part's `DeviceKey` becomes its device index, and each part's read and written
+`BufferRange` becomes a `BufferRegion`. A part on a device the problem does not hold is refused with
+`InvalidArgument`, before any node changes. A node the assignment does not cut loses any parts it held.
+
+`splice_plan()` given a `SpaceOfDevice` plans a cut node as its parts: `NodeAccess::parts` holds each
+part's space, reads and writes. The planner makes every part's reads valid on its space before it
+records any part's writes, since the parts run at once. A later reader on another space then copies
+back only the range each part wrote, and the end of the graph restores the start state as for any node.
 
 `PartitionSession` holds what the runtime keeps: the frozen `CostModel`, the `Partitioner`, the
 devices with their pools and copy paths, the problem and answer of the last plan, its

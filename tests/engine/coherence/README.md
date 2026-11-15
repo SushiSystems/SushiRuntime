@@ -96,7 +96,9 @@ device a space of host memory. The operation is test code; the runtime holds no 
 buffers three times, each time with a planner of its own. The steps compare equal, and a canonical FNV-1a
 hash of the steps (count, then each field in declaration order) is equal across the runs. The planner
 takes no worker count, so this check does not vary the pool; its determinism is a property of the plan
-alone.
+alone. In `EachPartOfASplitNodeHoldsItsReadsAndItsWrittenRangeComesBackToALaterReader` the part on
+device 1 gets the whole buffer before the node, and only the half it wrote is copied back to device 0
+for the reader after it.
 
 A node on device 1 reading a buffer written on device 0 gets an allocation and a copy, and its
 write makes a later reader on device 0 copy back. A node on the device that holds the bytes gets no
@@ -141,6 +143,11 @@ A pin holds for its buffer and space only, pinning twice counts once, and unpinn
 ## test_plan_hash.cpp
 
 Equal plans hash equal; each field of a step, the order of steps and the steady flag change the hash.
+
+## test_problem_hash.cpp
+
+Equal problems hash equal; a node's cost, placement or split, a buffer's bytes, an edge's bytes and
+a device's copy path each change the hash.
 
 ## test_copy_plan.cpp
 
@@ -270,6 +277,9 @@ carries its axis and extent, and a `Borrowed` buffer is left out.
 `Small_PartitionApply` partitions a three-node chain of planned buffers over two devices: each node is
 put on its assigned device, which is the home the assignment gives the buffer it writes first. An
 assignment of another graph, or one naming a device the problem lacks, is refused and changes no node.
+A cut node gets each part on the index of its device with its byte ranges; a part on a device the
+problem lacks is refused and changes no node; a node an earlier partition placed counts as free in
+the next problem.
 
 ## test_partition_ledger.cpp
 

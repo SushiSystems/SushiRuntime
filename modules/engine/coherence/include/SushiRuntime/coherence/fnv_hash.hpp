@@ -32,6 +32,8 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/handle/device_key.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Coherence
@@ -70,5 +72,15 @@ namespace SushiRuntime
                 /// @brief The hash so far.
                 std::uint64_t hash_ = K_OFFSET;
         };
+
+        /** @brief Folds every field of key into hash: backend, id kind, each id byte, ordinal. */
+        inline void fold_device_key(FNVHash& hash, const DeviceKey& key) noexcept
+        {
+            hash.fold(static_cast<std::uint64_t>(key.backend));
+            hash.fold(static_cast<std::uint64_t>(key.id_kind));
+            for (const std::uint8_t byte : key.hardware_id)
+                hash.fold(byte);
+            hash.fold(key.ordinal);
+        }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

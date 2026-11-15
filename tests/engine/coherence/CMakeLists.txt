@@ -54,6 +54,7 @@ sushiruntime_add_module_tests(
         test_plan_splice.cpp
         test_planned_host_access.cpp
         test_pool_occupancy.cpp
+        test_problem_hash.cpp
         test_profile_fold.cpp
         test_profile_measurement.cpp
         test_profile_transfer_cost.cpp

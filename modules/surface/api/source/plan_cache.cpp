@@ -55,6 +55,7 @@
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
 #include "host_write_watch.hpp"
+#include "graph_partition.hpp"
 #include "region_coherence.hpp"
 #include "rule_stamp.hpp"
 
@@ -149,6 +150,10 @@ namespace SushiRuntime
             const TaskGraph::NodeSplice coherence =
                 [&built, &runtime, &planned](std::vector<sushi_ptr<Internal::Graph::Node>>& nodes) -> Result<void>
             {
+                // A static graph is one region, so a partition of its nodes is the graph-wide one.
+                Result<void> placed = Detail::GraphPartition().place(nodes, runtime);
+                if (!placed)
+                    return placed;
                 Result<std::optional<Internal::Coherence::CopyPlan>> coherent = plan_region_coherence(nodes, runtime);
                 if (!coherent)
                     return make_error(std::move(coherent.error()));

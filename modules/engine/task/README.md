@@ -49,6 +49,7 @@ fields it stores behind `OffloadState::payload`.
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of`, `Internal::Graph::anchor_of` and `Internal::Graph::anchor_device` (defined in `modules/engine/task/source/node_placement.cpp`): the one anchor rule, the handle a node is anchored to and its owning device, and the device a node runs on |
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
+| `placed_split.hpp` | `Internal::Graph::PlacedSplit` and `Internal::Graph::PlacedSplitAccess`: the parts a partitioner cut a node into, each part's device index, axis range and bytes |
 | `split_dispatch.hpp` | `Internal::Graph::SplitDispatchPart` and `Internal::Graph::dispatch_split` (defined in `modules/engine/task/source/split_dispatch.cpp`): run a split node's parts, each with its device's queue and the node's pointers bound there |
 | `kernel_pointers.hpp` | `Internal::Graph::KernelAddressing`, `Internal::Graph::KernelPointerSlot`, `Internal::Graph::home_is_host_visible`, `Internal::Graph::make_kernel_pointer_slot`, `Internal::Graph::KernelPointers` and `Internal::Graph::KernelPointerScope` (defined in `modules/engine/task/source/kernel_pointers.cpp`): whether a node may leave its home device, and the pointers a node's kernel receives, bound on the node's device at each dispatch |
 | `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of a handle's buffer, the device count, the shared contexts and whether a handle's home is host visible |
@@ -124,6 +125,11 @@ and the bound table as a `span<void* const>`. The next bind overwrites the table
 valid during the call only and a kernel copies the pointers it reads. A node with no table gives
 an empty span. The combine, when the split has one, then receives the parts in slice order. The
 queue of a device comes from the caller, so the function reads no device set.
+
+`Node::placed_split` holds the parts `apply_partition()` gave a node, null for a node that runs
+whole. `PlacedSplit::parts` is contiguous so the step driver hands it to `dispatch_split()` as is, with
+`Node::kernel_pointers()`, the narrow accessor of the node's table. `PlacedSplit::access` holds the
+bytes each part reads and writes, which the coherence planner plans part by part.
 
 ### Which nodes may leave their home device
 

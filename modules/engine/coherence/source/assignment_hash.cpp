@@ -37,31 +37,18 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        namespace
-        {
-            /** @brief Folds every field of key into hash. */
-            void fold_key(FNVHash& hash, const DeviceKey& key) noexcept
-            {
-                hash.fold(static_cast<std::uint64_t>(key.backend));
-                hash.fold(static_cast<std::uint64_t>(key.id_kind));
-                for (const std::uint8_t byte : key.hardware_id)
-                    hash.fold(byte);
-                hash.fold(key.ordinal);
-            }
-        } // namespace
-
         std::uint64_t assignment_hash(const PartitionAssignment& assignment) noexcept
         {
             FNVHash hash;
             hash.fold(assignment.node_devices.size());
             for (const DeviceKey& key : assignment.node_devices)
-                fold_key(hash, key);
+                fold_device_key(hash, key);
             hash.fold(assignment.homes.size());
             for (const auto& home : assignment.homes)
             {
                 hash.fold(home.first.to_high_word());
                 hash.fold(home.first.to_low_word());
-                fold_key(hash, home.second);
+                fold_device_key(hash, home.second);
             }
             std::uint64_t step_bits = 0;
             static_assert(sizeof(step_bits) == sizeof(assignment.step_time), "a double is eight bytes");
@@ -75,7 +62,7 @@ namespace SushiRuntime
                 hash.fold(split.parts.size());
                 for (const PlannedSplitPart& part : split.parts)
                 {
-                    fold_key(hash, part.device);
+                    fold_device_key(hash, part.device);
                     hash.fold(part.part.axis);
                     hash.fold(part.part.begin);
                     hash.fold(part.part.end);

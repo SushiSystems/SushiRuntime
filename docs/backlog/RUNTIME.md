@@ -16,6 +16,7 @@
 | RW-150 | P2 | open | Count a host-placed run's tasks as host tasks in the run report | fill_run_report counts a Host run's tasks as host tasks on a GPU runtime, tested |  | `modules/foundation/report/include/SushiRuntime/report/run_report.hpp` | 2026-11-14 |
 | RW-151 | P3 | open | Record ExecutionLayer::Host in the PROFILING design topic | The PROFILING topic names ExecutionLayer::Host and links RUN_PLACEMENT |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
 | RW-152 | P3 | open | Measure host_step_refusal's per-run region lock cost | A benchmark row gives host_step_refusal's cost per run for a 4-node and a 64-node plan |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
+| RW-154 | P2 | open | Wait only on a split node's own part events, not on whole device queues | run_split_node waits on the events its parts' slices return, and unrelated work on a part's queue does not delay the node |  | `modules/engine/scheduler/source/split_node_run.cpp` | 2026-11-15 |
 
 ## Known issues
 

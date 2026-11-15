@@ -202,6 +202,32 @@ namespace
         EXPECT_EQ(plan.error().code, ErrorCode::Unsupported);
     }
 
+    TEST_F(Small_CoherencePlanner, EachPartOfASplitNodeHoldsItsReadsAndItsWrittenRangeComesBackToALaterReader)
+    {
+        NodeAccess split = node(K_DEVICE_0, {}, {});
+        split.parts.push_back(NodeAccessPart{K_DEVICE_0, {BufferRegion(buffer_)}, {BufferRegion(buffer_, 0, 32)}});
+        split.parts.push_back(NodeAccessPart{K_DEVICE_1, {BufferRegion(buffer_)}, {BufferRegion(buffer_, 32, 32)}});
+        CoherencePlanner subject = planner();
+
+        const Result<CopyPlan> plan = subject.plan({split, node(K_DEVICE_0, {buffer_}, {})});
+        ASSERT_TRUE(plan);
+
+        const auto has_copy = [&plan](MemorySpaceID source, MemorySpaceID destination, std::size_t begin,
+                                      std::size_t end, std::size_t before)
+        {
+            for (const PlannedStep& step : plan.value().steps)
+                if (step.kind == PlannedStepKind::Copy && step.source == source && step.space == destination &&
+                    step.begin == begin && step.end == end && step.node == before)
+                    return true;
+            return false;
+        };
+        // The part on device 1 reads the whole buffer, which device 0 alone held before the node.
+        EXPECT_TRUE(has_copy(K_DEVICE_0, K_DEVICE_1, 0, K_BYTES, 0));
+        // The range that part wrote comes back to device 0 for the reader after it, and nothing else does.
+        EXPECT_TRUE(has_copy(K_DEVICE_1, K_DEVICE_0, 32, K_BYTES, 1));
+        EXPECT_FALSE(has_copy(K_DEVICE_1, K_DEVICE_0, 0, K_BYTES, 1));
+    }
+
     TEST_F(Small_CoherencePlanner, ANodeThePlannerLeavesAloneGetsNoStep)
     {
         NodeAccess skipped = node(K_DEVICE_1, {buffer_}, {});

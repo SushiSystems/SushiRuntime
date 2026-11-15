@@ -321,6 +321,10 @@ namespace SushiRuntime
                                       ? "an installed offload coordinator acts on a node"
                                       : "a node is native host work");
 
+                // A cut node runs its parts on several devices, which the scheduler's step driver does.
+                if (node->placed_split)
+                    return refuse("the partitioner cut a node into parts on several devices");
+
                 const int index = chained_queue_index(*node, memory);
                 if (index < 0)
                     return refuse("a node has no USM region on one known device, or its placement was refused");

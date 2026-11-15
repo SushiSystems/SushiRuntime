@@ -86,8 +86,8 @@ when its own context would not hold their reading; it still reviews and commits 
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T51 | runtime-free `LocalHandleSpace` | T01 | done |
 | T52 | SushiBLAS host blocks by `LocalHandleSpace` | T49, T51 | done |
-| T53 | graph-wide partition across regions, async step measurement, end-to-end run | T47 | todo |
-| T50 | split nodes in the step drivers | T36, T47 | todo |
+| T53 | graph-wide partition across regions, async step measurement, end-to-end run | T47 | done |
+| T50 | split nodes in the step drivers | T36, T47 | done |
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | done |
 | T32 | SushiBLAS conformance kernels | T30 | done |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |

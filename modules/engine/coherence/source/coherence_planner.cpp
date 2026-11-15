@@ -106,6 +106,29 @@ namespace SushiRuntime
                         return false;
                 return true;
             }
+
+            /** @brief Names what one piece of a node touches: the whole node, or one of its parts. */
+            struct AccessPiece
+            {
+                MemorySpaceID space;                      /**< Space the piece runs on. */
+                const std::vector<BufferRegion>* reads;   /**< Bytes it reads; not null. */
+                const std::vector<BufferRegion>* writes;  /**< Bytes it writes; not null. */
+            };
+
+            /** @brief Returns the pieces access runs as: its parts in slice order, or the node whole. */
+            [[nodiscard]] std::vector<AccessPiece> pieces_of(const NodeAccess& access)
+            {
+                std::vector<AccessPiece> pieces;
+                if (access.parts.empty())
+                {
+                    pieces.push_back(AccessPiece{access.space, &access.reads, &access.writes});
+                    return pieces;
+                }
+                pieces.reserve(access.parts.size());
+                for (const NodeAccessPart& part : access.parts)
+                    pieces.push_back(AccessPiece{part.space, &part.reads, &part.writes});
+                return pieces;
+            }
         } // namespace
 
         CoherencePlanner::CoherencePlanner(Memory::ResidencyView& directory,
@@ -133,35 +156,21 @@ namespace SushiRuntime
                 record_uses(nodes);
             for (std::size_t node = 0; node < nodes.size(); ++node)
             {
-                const NodeAccess& access = nodes[node];
-                if (!access.planned)
+                if (!nodes[node].planned)
                     continue;
-
-                for (const BufferRegion& read : access.reads)
+                // Parts run at once, so every part reads the bytes as they were before any part wrote.
+                const std::vector<AccessPiece> pieces = pieces_of(nodes[node]);
+                for (const AccessPiece& piece : pieces)
                 {
-                    BufferState* const state = read.valid() ? state_of(read.base) : nullptr;
-                    if (state == nullptr)
-                        continue;
-                    Result<void> ensured = ensure_instance(read.base, *state, access.space, node, plan);
-                    if (!ensured)
-                        return make_error(std::move(ensured.error()));
-                    const std::pair<std::size_t, std::size_t> range = byte_range(read, state->size);
-                    Result<void> made = make_valid(read.base, *state, range.first, range.second,
-                                                   access.space, node, plan);
-                    if (!made)
-                        return make_error(std::move(made.error()));
+                    Result<void> read = plan_reads(piece.space, *piece.reads, node, plan);
+                    if (!read)
+                        return make_error(std::move(read.error()));
                 }
-
-                for (const BufferRegion& write : access.writes)
+                for (const AccessPiece& piece : pieces)
                 {
-                    BufferState* const state = write.valid() ? state_of(write.base) : nullptr;
-                    if (state == nullptr)
-                        continue;
-                    Result<void> ensured = ensure_instance(write.base, *state, access.space, node, plan);
-                    if (!ensured)
-                        return make_error(std::move(ensured.error()));
-                    const std::pair<std::size_t, std::size_t> range = byte_range(write, state->size);
-                    state->current.record_write(range.first, range.second, access.space);
+                    Result<void> written = plan_writes(piece.space, *piece.writes, node, plan);
+                    if (!written)
+                        return make_error(std::move(written.error()));
                 }
             }
 
@@ -169,6 +178,42 @@ namespace SushiRuntime
             if (!restored)
                 return make_error(std::move(restored.error()));
             return plan;
+        }
+
+        Result<void> CoherencePlanner::plan_reads(MemorySpaceID space, const std::vector<BufferRegion>& reads,
+                                                  std::size_t node, CopyPlan& plan)
+        {
+            for (const BufferRegion& read : reads)
+            {
+                BufferState* const state = read.valid() ? state_of(read.base) : nullptr;
+                if (state == nullptr)
+                    continue;
+                Result<void> ensured = ensure_instance(read.base, *state, space, node, plan);
+                if (!ensured)
+                    return make_error(std::move(ensured.error()));
+                const std::pair<std::size_t, std::size_t> range = byte_range(read, state->size);
+                Result<void> made = make_valid(read.base, *state, range.first, range.second, space, node, plan);
+                if (!made)
+                    return make_error(std::move(made.error()));
+            }
+            return {};
+        }
+
+        Result<void> CoherencePlanner::plan_writes(MemorySpaceID space, const std::vector<BufferRegion>& writes,
+                                                   std::size_t node, CopyPlan& plan)
+        {
+            for (const BufferRegion& write : writes)
+            {
+                BufferState* const state = write.valid() ? state_of(write.base) : nullptr;
+                if (state == nullptr)
+                    continue;
+                Result<void> ensured = ensure_instance(write.base, *state, space, node, plan);
+                if (!ensured)
+                    return make_error(std::move(ensured.error()));
+                const std::pair<std::size_t, std::size_t> range = byte_range(write, state->size);
+                state->current.record_write(range.first, range.second, space);
+            }
+            return {};
         }
 
         CoherencePlanner::BufferState* CoherencePlanner::state_of(GlobalHandle handle)
@@ -212,13 +257,14 @@ namespace SushiRuntime
             {
                 if (!nodes[node].planned)
                     continue;
-                for (const std::vector<BufferRegion>* regions : {&nodes[node].reads, &nodes[node].writes})
-                    for (const BufferRegion& region : *regions)
-                    {
-                        if (!region.valid() || state_of(region.base) == nullptr)
-                            continue;
-                        uses_[region.base].push_back(Use{node, nodes[node].space.value()});
-                    }
+                for (const AccessPiece& piece : pieces_of(nodes[node]))
+                    for (const std::vector<BufferRegion>* regions : {piece.reads, piece.writes})
+                        for (const BufferRegion& region : *regions)
+                        {
+                            if (!region.valid() || state_of(region.base) == nullptr)
+                                continue;
+                            uses_[region.base].push_back(Use{node, piece.space.value()});
+                        }
             }
         }
 

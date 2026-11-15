@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <set>
 #include <vector>
 
 #include <SushiRuntime/coherence/partition_problem.hpp>
@@ -57,12 +58,13 @@ namespace SushiRuntime
          *
          * Borrowed and HostOnly buffers are left out; an owned buffer keeps its device, any other is
          * planned. A stated or FixedToHome-and-owned node stays where placement_of() puts it.
-         * @param nodes Nodes in recording order; must outlive the result.
+         * @param assigned Nodes an earlier partition placed; they count as unstated. nodes outlive the result.
          * @return The problem, or the placement error of a fixed node.
          */
         [[nodiscard]] Result<GraphPartitionProblem>
         make_graph_partition_problem(const std::vector<sushi_ptr<Graph::Node>>& nodes,
                                      const Graph::PlacementMemory& memory, const Memory::ResidencyView& directory,
-                                     const std::vector<PartitionDevice>& devices);
+                                     const std::vector<PartitionDevice>& devices,
+                                     const std::set<const Graph::Node*>& assigned = {});
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

@@ -51,6 +51,7 @@
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node_profiling.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
+#include <SushiRuntime/task/placed_split.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/task/region_link.hpp>
 #include <SushiRuntime/task/small_event_vector.hpp>
@@ -192,6 +193,12 @@ namespace SushiRuntime
             std::shared_ptr<const NodeSplit> declared_split;
 
             /**
+             * @brief The parts the partitioner cut this node into; null for a node that runs whole.
+             * @see modules/engine/task/README.md
+             */
+            std::shared_ptr<const PlacedSplit> placed_split;
+
+            /**
              * @brief Says what a recorded command graph may keep of this node's submission.
              * @see docs/design/GRAPH_REPLAY/README.md
              */
@@ -243,6 +250,12 @@ namespace SushiRuntime
                               .c_str());
 
                 placement_ = static_cast<std::uint16_t>(device);
+            }
+
+            /** @brief Returns the pointers the kernel receives, or null for a kernel that takes none. */
+            [[nodiscard]] KernelPointers* kernel_pointers() noexcept
+            {
+                return kernel_pointers_.get();
             }
 
             /** @brief Returns the device place_on() stated, or nothing when none was stated. */

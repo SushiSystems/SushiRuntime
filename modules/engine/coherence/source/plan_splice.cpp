@@ -33,9 +33,13 @@
 #include <atomic>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 #include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include <SushiRuntime/task/placed_split.hpp>
 
 namespace SushiRuntime
 {
@@ -88,10 +92,22 @@ namespace SushiRuntime
                     keys.push_back({step.handle, step.source.value()});
                 return keys;
             }
+
+            /** @brief Returns the parts of split as the planner reads them, each on its device's space. */
+            std::vector<NodeAccessPart> parts_of(const Graph::PlacedSplit& split, const SpaceOfDevice& space_of_device)
+            {
+                std::vector<NodeAccessPart> parts;
+                parts.reserve(split.parts.size());
+                for (std::size_t part = 0; part < split.parts.size() && part < split.access.size(); ++part)
+                    parts.push_back(NodeAccessPart{space_of_device(split.parts[part].device), split.access[part].reads,
+                                                   split.access[part].writes});
+                return parts;
+            }
         } // namespace
 
         Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Node>>& nodes, const SpaceOfNode& space_of,
-                                 CoherencePlanner& planner, PlannedNodeFactory& factory)
+                                 CoherencePlanner& planner, PlannedNodeFactory& factory,
+                                 const SpaceOfDevice& space_of_device)
         {
             std::vector<NodeAccess> accesses(nodes.size());
             for (std::size_t index = 0; index < nodes.size(); ++index)
@@ -99,7 +115,10 @@ namespace SushiRuntime
                 const std::optional<MemorySpaceID> space = space_of(*nodes[index]);
                 if (!space)
                     continue;
-                accesses[index] = NodeAccess{true, *space, nodes[index]->io_reads_, nodes[index]->io_writes_};
+                accesses[index] = NodeAccess{true, *space, nodes[index]->io_reads_, nodes[index]->io_writes_, {}};
+                const std::shared_ptr<const Graph::PlacedSplit>& split = nodes[index]->placed_split;
+                if (split && space_of_device)
+                    accesses[index].parts = parts_of(*split, space_of_device);
             }
 
             Result<CopyPlan> planned = planner.plan(accesses);
@@ -163,16 +182,24 @@ namespace SushiRuntime
 
                 if (!accesses[index].planned)
                     continue;
-                const std::uint32_t space = accesses[index].space.value();
-                for (const BufferRegion& region : accesses[index].reads)
+                const auto use = [&edges, &touching, &users, target](std::uint32_t space,
+                                                                    const std::vector<BufferRegion>& regions)
                 {
-                    edges.link_all(touching[{region.base, space}], target);
-                    users[{region.base, space}].push_back(target);
+                    for (const BufferRegion& region : regions)
+                    {
+                        edges.link_all(touching[{region.base, space}], target);
+                        users[{region.base, space}].push_back(target);
+                    }
+                };
+                if (accesses[index].parts.empty())
+                {
+                    use(accesses[index].space.value(), accesses[index].reads);
+                    use(accesses[index].space.value(), accesses[index].writes);
                 }
-                for (const BufferRegion& region : accesses[index].writes)
+                for (const NodeAccessPart& part : accesses[index].parts)
                 {
-                    edges.link_all(touching[{region.base, space}], target);
-                    users[{region.base, space}].push_back(target);
+                    use(part.space.value(), part.reads);
+                    use(part.space.value(), part.writes);
                 }
             }
 

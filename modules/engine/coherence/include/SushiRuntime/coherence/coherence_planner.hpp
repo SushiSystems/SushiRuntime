@@ -53,13 +53,27 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        /** @brief Holds what one node of a graph touches and the space it runs on. */
+        /** @brief Holds what one part of a split node touches and the space it runs on. */
+        struct NodeAccessPart
+        {
+            MemorySpaceID space;               /**< Space the part runs on. */
+            std::vector<BufferRegion> reads;   /**< Byte ranges the part reads. */
+            std::vector<BufferRegion> writes;  /**< Byte ranges the part writes. */
+        };
+
+        /**
+         * @brief Holds what one node of a graph touches and the space it runs on.
+         *
+         * A node with parts runs as those parts, all at once: the planner reads parts and not
+         * space, reads or writes.
+         */
         struct NodeAccess
         {
             bool planned = false;              /**< False for a node the planner leaves alone. */
             MemorySpaceID space;               /**< Space the node runs on. */
             std::vector<BufferRegion> reads;   /**< Byte ranges the node reads. */
             std::vector<BufferRegion> writes;  /**< Byte ranges the node writes. */
+            std::vector<NodeAccessPart> parts; /**< Parts of a split node in slice order; empty for a whole node. */
         };
 
         /**
@@ -124,6 +138,17 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> ensure_instance(GlobalHandle handle, BufferState& state,
                                                            MemorySpaceID space, std::size_t node,
                                                            CopyPlan& plan);
+
+                /**
+                 * @brief Makes each of reads valid on space, before node.
+                 * @return Unsupported when no path reaches space.
+                 */
+                [[nodiscard]] Result<void> plan_reads(MemorySpaceID space, const std::vector<BufferRegion>& reads,
+                                                      std::size_t node, CopyPlan& plan);
+
+                /** @brief Records each of writes on space, after an instance is made there. */
+                [[nodiscard]] Result<void> plan_writes(MemorySpaceID space, const std::vector<BufferRegion>& writes,
+                                                       std::size_t node, CopyPlan& plan);
 
                 /** @brief Records the nodes that use each buffer; runs only with residency options. */
                 void record_uses(const std::vector<NodeAccess>& nodes);

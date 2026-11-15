@@ -164,6 +164,16 @@ a freshly planned one. `AHostWriteAfterASteadyPlanIsPlannedAgainBeforeTheNextRun
 test's row for the composer: a `write_range()` after a steady plan rebuilds the region once and the
 node reads the written bytes.
 
+## test_region_composer/test_graph_partition.cpp
+
+`Medium_GraphPartition` creates a runtime with a profile file in a directory of its own and skips,
+naming what is missing, without a CPU and a second device. A two-region graph over planned buffers
+is partitioned as one problem: the report counts both nodes, has a measured step, the bytes equal a
+host computation, and after two horizons the profile file holds a throughput line for the nodes'
+kind. The split test also needs a device with memory of its own; it rewrites each capacity so no
+pool holds the node whole, and the node then runs as parts, at least two slices, with the bytes of
+the host computation.
+
 ## test_step_driver/test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types

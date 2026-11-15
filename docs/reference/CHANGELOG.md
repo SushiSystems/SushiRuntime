@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Changed a `DynamicGraph` to partition all its regions as one problem, again only when the problem changed (GLOBAL_HANDLE H7).
+- 2026-11-15 — runtime: Changed an asynchronous step to feed the partition ledger as a synchronous run does (GLOBAL_HANDLE H7).
+- 2026-11-15 — runtime: Added running a cut node as its parts, each on its own device through `dispatch_split()`, with its reads copied and its written range planned back (GLOBAL_HANDLE H8).
+- 2026-11-15 — runtime: Changed a `DynamicGraph` to partition the nodes of all its regions as one problem, partitioning again only when the problem changed, so `partition_report()` holds the graph-wide plan (GLOBAL_HANDLE T53).
+- 2026-11-15 — runtime: Changed an asynchronous step to add its step, seconds and dispatches to the partition ledger, as a synchronous run does (GLOBAL_HANDLE T53).
+- 2026-11-15 — runtime: Added running a node the partitioner cut as its parts, each on its own device through `dispatch_split()`, with each part's reads copied to its device and its written range planned back (GLOBAL_HANDLE T50).
 - 2026-11-15 — handle: Added `LocalHandleSpace`, a lock-free minter of handles for host-only memory that needs no runtime, in the reserved universe `K_LOCAL_HANDLE_UNIVERSE` (GLOBAL_HANDLE H2).
 - 2026-11-15 — memory: Changed `ResidencyDirectory` to refuse the local universe, so a runtime answers `ForeignUniverse` for a local handle (GLOBAL_HANDLE H2).
 - 2026-11-15 — runtime: Changed `NodeSplit::slice` to receive the part's `sycl::queue` and the pointers bound on its device (GLOBAL_HANDLE H8).

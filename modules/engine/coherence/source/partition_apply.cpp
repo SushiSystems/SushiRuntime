@@ -31,11 +31,13 @@
 #include <SushiRuntime/coherence/partition_apply.hpp>
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/task/placed_split.hpp>
 
 namespace SushiRuntime
 {
@@ -53,6 +55,39 @@ namespace SushiRuntime
                         return index;
                 }
                 return std::nullopt;
+            }
+
+            /** @brief Returns the regions that name ranges. */
+            [[nodiscard]] std::vector<BufferRegion> regions_of(const std::vector<BufferRange>& ranges)
+            {
+                std::vector<BufferRegion> regions;
+                regions.reserve(ranges.size());
+                for (const BufferRange& range : ranges)
+                    regions.emplace_back(range.handle, static_cast<std::size_t>(range.begin),
+                                         static_cast<std::size_t>(range.end - range.begin));
+                return regions;
+            }
+
+            /**
+             * @brief Returns the placed form of split, each part's device named by its index among devices.
+             * @return InvalidArgument when a part runs on a device the problem does not hold.
+             */
+            [[nodiscard]] Result<std::shared_ptr<const Graph::PlacedSplit>>
+            place_split(const PlannedSplit& split, const std::vector<PartitionDevice>& devices)
+            {
+                auto placed = std::make_shared<Graph::PlacedSplit>();
+                for (const PlannedSplitPart& part : split.parts)
+                {
+                    const std::optional<std::size_t> device = index_of(devices, part.device);
+                    if (!device)
+                        return make_error(Error{ErrorCode::InvalidArgument,
+                                                "the assignment runs a part of node " + std::to_string(split.node) +
+                                                    " on " + to_text(part.device) +
+                                                    ", which is not a device of the problem."});
+                    placed->parts.push_back(Graph::SplitDispatchPart{*device, part.part});
+                    placed->access.push_back(Graph::PlacedSplitAccess{regions_of(part.reads), regions_of(part.writes)});
+                }
+                return std::shared_ptr<const Graph::PlacedSplit>(std::move(placed));
             }
         } // namespace
 
@@ -78,10 +113,24 @@ namespace SushiRuntime
                                                 " on " + to_text(assignment.node_devices[node]) +
                                                 ", which is not a device of the problem."});
             }
+            std::vector<std::shared_ptr<const Graph::PlacedSplit>> splits(problem.nodes.size());
+            for (const PlannedSplit& split : assignment.splits)
+            {
+                if (split.node >= problem.nodes.size() || split.parts.size() < 2)
+                    return make_error(Error{ErrorCode::InvalidArgument,
+                                            "the assignment splits node " + std::to_string(split.node) + " into " +
+                                                std::to_string(split.parts.size()) +
+                                                " parts; a split names a node of the problem and two parts or more."});
+                Result<std::shared_ptr<const Graph::PlacedSplit>> placed = place_split(split, problem.devices);
+                if (!placed)
+                    return make_error(std::move(placed.error()));
+                splits[split.node] = std::move(placed.value());
+            }
             for (std::size_t node = 0; node < problem.nodes.size(); ++node)
             {
                 if (targets[node])
                     graph.nodes[node]->place_on(*targets[node]);
+                graph.nodes[node]->placed_split = std::move(splits[node]);
             }
             return {};
         }

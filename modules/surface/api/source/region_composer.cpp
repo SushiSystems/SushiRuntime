@@ -60,6 +60,7 @@
 #include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "graph_partition.hpp"
 #include "host_write_watch.hpp"
 #include "region_coherence.hpp"
 #include "rule_stamp.hpp"
@@ -108,18 +109,15 @@ namespace SushiRuntime
                     const RuleStamp stamp(placement->rules.get(), runtime.machine_facts(),
                                           !placement->offload_installed);
                     std::map<RegionKey, RegionState> built;
-                    for (RegionKey k : rebuilt)
+                    Result<void> stamped = build_regions(rebuilt, recorder_of, stamp, built);
+                    if (!stamped)
+                        return stamped;
+                    Result<void> partitioned = partition_graph(rebuilt, dropped, recorder_of, stamp, built, runtime);
+                    if (!partitioned)
+                        return partitioned;
+                    for (auto& kv : built)
                     {
-                        const Recorder* recorder = recorder_of(k);
-                        if (recorder == nullptr)
-                            continue;
-                        RegionState state = build_region(*recorder);
-                        for (auto& np : state.nodes)
-                        {
-                            Result<void> stamped = stamp.stamp(*np);
-                            if (!stamped)
-                                return make_error(std::move(stamped.error()));
-                        }
+                        RegionState& state = kv.second;
                         // The planned copies join the region before its degrees and boundary are read.
                         Result<std::optional<Internal::Coherence::CopyPlan>> coherent =
                             plan_region_coherence(state.nodes, runtime);
@@ -131,7 +129,6 @@ namespace SushiRuntime
                         if (state.copy_plan)
                             state.host_writes.emplace(state.nodes, runtime.handles());
                         finish_region(state);
-                        built.emplace(k, std::move(state));
                     }
                     prepare_offload(built, placement->rules, runtime);
 
@@ -262,6 +259,8 @@ namespace SushiRuntime
                 struct RegionState
                 {
                     std::vector<sushi_ptr<Node>> nodes;
+                    /** @brief The recorded nodes, without the planned ones; what the partition reads. */
+                    std::vector<sushi_ptr<Node>> work_nodes;
                     std::vector<Node*>           intra_roots;
                     std::map<Base, BaseAccess>   access;
                     std::vector<const Node*>     rule_nodes;     /**< Last node of each rule. */
@@ -639,6 +638,95 @@ namespace SushiRuntime
                 }
 
                 /**
+                 * @brief Builds and stamps each region of keys that still has a recorder into built.
+                 * @return The first stamp's refusal; no region held by the composer is changed.
+                 */
+                [[nodiscard]] Result<void> build_regions(const std::set<RegionKey>& keys,
+                                                         const std::function<const Recorder*(RegionKey)>& recorder_of,
+                                                         const RuleStamp& stamp, std::map<RegionKey, RegionState>& built)
+                {
+                    for (RegionKey k : keys)
+                    {
+                        const Recorder* recorder = recorder_of(k);
+                        if (recorder == nullptr || built.count(k) != 0)
+                            continue;
+                        RegionState state = build_region(*recorder);
+                        for (auto& np : state.nodes)
+                        {
+                            Result<void> stamped = stamp.stamp(*np);
+                            if (!stamped)
+                                return make_error(std::move(stamped.error()));
+                        }
+                        state.work_nodes = state.nodes;
+                        built.emplace(k, std::move(state));
+                    }
+                    return {};
+                }
+
+                /**
+                 * @brief Returns the work nodes of every region the commit leaves live, in region key
+                 *        then recording order: built ones from built, the others from the composer.
+                 */
+                [[nodiscard]] std::vector<sushi_ptr<Node>>
+                graph_work_nodes(const std::set<RegionKey>& rebuilt, const std::set<RegionKey>& dropped,
+                                 const std::map<RegionKey, RegionState>& built) const
+                {
+                    std::set<RegionKey> live;
+                    for (const auto& kv : states_)
+                        if (rebuilt.count(kv.first) == 0 && dropped.count(kv.first) == 0)
+                            live.insert(kv.first);
+                    for (const auto& kv : built)
+                        live.insert(kv.first);
+                    std::vector<sushi_ptr<Node>> work;
+                    for (RegionKey k : live)
+                    {
+                        const auto fresh = built.find(k);
+                        const RegionState& state = fresh != built.end() ? fresh->second : states_.at(k);
+                        work.insert(work.end(), state.work_nodes.begin(), state.work_nodes.end());
+                    }
+                    return work;
+                }
+
+                /**
+                 * @brief Partitions every live region as one graph and states the answer on its nodes.
+                 *
+                 * A kept region a new answer moves a node of is built again into built, and added to
+                 * rebuilt, so its copy plan is made for its new devices.
+                 * @return The refusal, with each pool's shortfall, of a job no plan fits.
+                 * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
+                 */
+                [[nodiscard]] Result<void> partition_graph(std::set<RegionKey>& rebuilt, const std::set<RegionKey>& dropped,
+                                                           const std::function<const Recorder*(RegionKey)>& recorder_of,
+                                                           const RuleStamp& stamp, std::map<RegionKey, RegionState>& built,
+                                                           Internal::Execution::RuntimeContext& runtime)
+                {
+                    Result<std::set<const Node*>> moved =
+                        partition_.moved(graph_work_nodes(rebuilt, dropped, built), runtime);
+                    if (!moved)
+                        return make_error(std::move(moved.error()));
+                    std::set<RegionKey> moved_regions;
+                    for (const auto& kv : states_)
+                    {
+                        if (rebuilt.count(kv.first) != 0 || dropped.count(kv.first) != 0)
+                            continue;
+                        for (const sushi_ptr<Node>& node : kv.second.work_nodes)
+                            if (moved.value().count(node.get()) != 0)
+                            {
+                                moved_regions.insert(kv.first);
+                                break;
+                            }
+                    }
+                    if (!moved_regions.empty())
+                    {
+                        Result<void> stamped = build_regions(moved_regions, recorder_of, stamp, built);
+                        if (!stamped)
+                            return stamped;
+                        rebuilt.insert(moved_regions.begin(), moved_regions.end());
+                    }
+                    return partition_.place(graph_work_nodes(rebuilt, dropped, built), runtime);
+                }
+
+                /**
                  * @brief Builds one region's sub-graph from its recorder, in O(region); finish_region()
                  *        completes it.
                  * @return The state to install; no region held by the composer is changed.
@@ -768,6 +856,9 @@ namespace SushiRuntime
 
                 /** @brief Set by a commit that threw after it changed a region. */
                 bool recompose_everything_ = false;
+
+                /** @brief Places the nodes of every region from one partition of the whole graph. */
+                GraphPartition partition_;
 
                 /** @brief The graph's label at the last commit; stamped into the plan. */
                 std::string label_;

@@ -41,8 +41,9 @@ namespace SushiRuntime
         /**
          * @brief States the assigned device on every node the partitioner was free to move.
          *
-         * A placed node keeps its placement. The planner then allocates each planned buffer on its
-         * first writer's device, its assigned home. A failed call changes nothing.
+         * A placed node keeps its placement; a cut node gets its parts as a Graph::PlacedSplit. The
+         * planner then allocates each planned buffer on its first writer's device, its assigned
+         * home. A failed call changes nothing.
          * @return InvalidArgument when the assignment does not fit the problem.
          */
         [[nodiscard]] Result<void> apply_partition(const GraphPartitionProblem& graph,

@@ -67,6 +67,7 @@ namespace SushiRuntime
             std::size_t task_count = 0;                /**< Tasks this step dispatched. */
             ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that ran the step, set at submit. */
             std::uint32_t serial = 0;                  /**< Number the driver gave the step. */
+            std::uint64_t submitted_ns = 0;            /**< Engine clock at submit; the ledger's step time starts here. */
         };
 
         /**

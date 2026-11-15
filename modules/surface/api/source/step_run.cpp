@@ -448,6 +448,7 @@ namespace SushiRuntime
 
             // The engine hands the observation over when the step's device work completes, not when it is waited for.
             state.layer = ExecutionLayer::Scheduler;
+            state.submitted_ns = engine.clock().now_ns();
             return engine.submit_observed(plan);
         }
 
@@ -476,6 +477,8 @@ namespace SushiRuntime
 
             report.layer = state.layer;
             engine.write_run_values();
+            const double step_seconds = static_cast<double>(engine.clock().now_ns() - state.submitted_ns) * 1e-9;
+            measure_partitioned_run(context, *engine_plan(target.plan), 1, step_seconds);
             // The step has ended, so no plan reads the coherence maps now.
             if (context.coherence_horizon().advance(context.handles(), 1))
                 fold_partition_ledger(context);

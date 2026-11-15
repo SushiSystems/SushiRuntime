@@ -14,6 +14,7 @@ sushiruntime_add_module(
         dispatch_events.cpp
         emit_dynamic.cpp
         graph_id.cpp
+        graph_partition.cpp
         host_write_watch.cpp
         interop.cpp
         late_window.cpp

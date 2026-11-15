@@ -48,16 +48,20 @@ namespace SushiRuntime
         /** @brief Returns the space a node runs on, or nothing for a node the planner leaves alone. */
         using SpaceOfNode = std::function<std::optional<MemorySpaceID>(const Graph::Node&)>;
 
+        /** @brief Returns the space of a device index; a split node's parts name their devices by index. */
+        using SpaceOfDevice = std::function<MemorySpaceID(std::size_t)>;
+
         /**
          * @brief Plans the coherence of nodes and adds the planned nodes and their edges.
          *
-         * A step takes its node's predecessors and precedes it and every later user of its
-         * instances; a step at the graph end follows every leaf. The README lists the edges.
+         * A step follows its node's predecessors and precedes later users of its instances (README).
          * @param nodes Nodes whose edges are baked; gains the planned nodes.
+         * @param space_of_device Space of a cut node's part's device; empty plans every node whole.
          * @return The spliced plan, or the error the planner or the factory gave; nodes is then unchanged.
          */
         [[nodiscard]] Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Graph::Node>>& nodes,
                                                const SpaceOfNode& space_of, CoherencePlanner& planner,
-                                               PlannedNodeFactory& factory);
+                                               PlannedNodeFactory& factory,
+                                               const SpaceOfDevice& space_of_device = {});
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

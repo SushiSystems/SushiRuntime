@@ -506,7 +506,9 @@ It then hands the run's observation to the runtime's observers when any is added
 pairings and the drop counts when the run was timed, and with the node table alone when the observer was
 added after the run was armed. Each run reads the runtime's answer once, when it is armed. A run that failed hands over nothing. A step that failed and that nobody waited for is logged by `log_dropped_outcome()`. An asynchronous step is
 different: `submit_step()` starts it through the engine's `submit_observed()`, so the sentinel hands the
-observation over when the step's device work completes, and `finish_step()` only fills the report.
+observation over when the step's device work completes, and `finish_step()` fills the report. Both
+drivers feed the partition ledger through `measure_partitioned_run()`: run_steps() with its steps and
+seconds, `finish_step()` with one step and the seconds since `submit_step()` read the engine clock.
 
 Last, run_steps() advances the runtime's `CoherenceHorizon` by the steps it ran, and `finish_step()` by
 one, so the directory's coherence history is retired every `K_STEPS_PER_HORIZON` steps. Both are

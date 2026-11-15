@@ -115,6 +115,11 @@ generation and the device in the message. A death test starts a child process.
 | `EachPartRunsOnItsDeviceWithThePointersBoundThere` | The part on device 0 gets its queue and the home address, the part on device 1 gets its own queue and the instance there, and the combine sees both parts in order. |
 | `ANodeWithNoPointersGivesAnEmptyTable` | A node with no pointer table gives the slice an empty span. |
 
+## test_placed_split.cpp
+
+A node holds no `placed_split` and no kernel pointers until given them, and keeps the parts it is
+given in slice order with each part's bytes.
+
 ## test_node.cpp
 
 The file tests Node: successors inline and spilled, readiness on completion, placement and offload

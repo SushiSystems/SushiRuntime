@@ -28,6 +28,7 @@ sushiruntime_add_module_tests(
         test_refusing_offload_sink.cpp
         test_region_link.cpp
         test_small_event_vector.cpp
+        test_placed_split.cpp
         test_split_dispatch.cpp
         test_task.cpp
         test_task_submission.cpp
