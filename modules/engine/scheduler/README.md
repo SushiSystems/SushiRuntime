@@ -196,7 +196,7 @@ polled event and under profiling snapshots widths and thread and keeps the stead
 the submit call. skipped_dispatch_event() builds the ready, not executed event of a skipped or failed task.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
-work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device. A node with a `placed_split` runs through `run_split_node()` (`source/split_node_run.cpp`) instead of `submit_dispatch()`: it waits for the node's dependency events (a slice receives a queue and no event), calls `dispatch_split()` with each part's device queue and waits for those queues; the worker then pushes a ready event. The in-order chain refuses a plan with a cut node, so the scheduler runs it.
+work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device. A node with a `placed_split` runs through `run_split_node()` (`source/split_node_run.cpp`) instead of `submit_dispatch()`: it calls `dispatch_split()`, which submits every part on its device's queue, each depending on the node's dependency events, before anything is waited on; `join_split()` then waits on the parts' own events, never on a whole queue, and runs the combine. That wait, on the worker thread, is the node's only one and also drives AdaptiveCpp's lazy events; the worker then pushes a ready event. The in-order chain refuses a plan with a cut node, so the scheduler runs it.
 
 ## failure_naming.hpp
 

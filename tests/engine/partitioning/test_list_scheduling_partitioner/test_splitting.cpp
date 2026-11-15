@@ -194,21 +194,24 @@ namespace
         std::vector<std::uint32_t> output(K_EXTENT, 0);
         NodeSplit split;
         split.extent = K_EXTENT;
-        split.slice = [&](const SplitPart& part, sycl::queue&, span<void* const>)
+        split.slice = [&](const SplitPart& part, sycl::queue&, span<const sycl::event>, span<void* const>)
         {
             for (std::uint64_t index = part.begin; index < part.end; ++index)
                 output[index] = input[index] * 3u + 1u;
+            return sycl::event();
         };
 
         std::vector<Internal::Graph::SplitDispatchPart> parts;
         for (const PlannedSplitPart& planned : result.value().splits[0].parts)
             parts.push_back(Internal::Graph::SplitDispatchPart{planned.device.ordinal - 1u, planned.part});
-        Internal::Graph::dispatch_split(split, span<const Internal::Graph::SplitDispatchPart>(parts.data(), parts.size()),
-                                        nullptr, [&](std::size_t) -> sycl::queue& { return *queue; });
+        const span<const Internal::Graph::SplitDispatchPart> placed(parts.data(), parts.size());
+        const std::vector<sycl::event> part_events = Internal::Graph::dispatch_split(
+            split, placed, span<const sycl::event>(), nullptr, [&](std::size_t) -> sycl::queue& { return *queue; });
+        Internal::Graph::join_split(split, placed, span<const sycl::event>(part_events.data(), part_events.size()));
         const std::vector<std::uint32_t> split_bytes = output;
 
         std::fill(output.begin(), output.end(), 0u);
-        split.slice(SplitPart{0, 0, K_EXTENT, 0, 1}, *queue, span<void* const>());
+        (void)split.slice(SplitPart{0, 0, K_EXTENT, 0, 1}, *queue, span<const sycl::event>(), span<void* const>());
 
         EXPECT_EQ(split_bytes, output);
     }
@@ -236,13 +239,16 @@ namespace
                     outputs_.push_back(sycl::malloc_device<std::uint32_t>(K_PRODUCT_EXTENT, queues_.back()));
                 }
                 split_.extent = K_PRODUCT_EXTENT;
-                split_.slice = [this](const SplitPart& part, sycl::queue& queue, span<void* const>)
+                split_.slice = [this](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
+                                      span<void* const>)
                 {
                     std::uint32_t* output = outputs_[&queue == &queues_[0] ? 0 : 1];
                     const std::uint64_t begin = part.begin;
                     const sycl::range<1> range(static_cast<std::size_t>(part.end - part.begin));
-                    queue.submit([=](sycl::handler& handler)
+                    const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
+                    return queue.submit([=](sycl::handler& handler)
                     {
+                        handler.depends_on(after);
                         handler.parallel_for(range, [=](sycl::id<1> id)
                         {
                             const std::uint64_t index = begin + id[0];
@@ -269,10 +275,11 @@ namespace
             [[nodiscard]] double run(const std::vector<Internal::Graph::SplitDispatchPart>& parts)
             {
                 const auto start = std::chrono::steady_clock::now();
-                Internal::Graph::dispatch_split(split_, span<const Internal::Graph::SplitDispatchPart>(parts.data(), parts.size()),
-                                                nullptr, [this](std::size_t device) -> sycl::queue& { return queues_[device]; });
-                for (sycl::queue& queue : queues_)
-                    queue.wait();
+                const span<const Internal::Graph::SplitDispatchPart> placed(parts.data(), parts.size());
+                const std::vector<sycl::event> part_events = Internal::Graph::dispatch_split(
+                    split_, placed, span<const sycl::event>(), nullptr,
+                    [this](std::size_t device) -> sycl::queue& { return queues_[device]; });
+                Internal::Graph::join_split(split_, placed, span<const sycl::event>(part_events.data(), part_events.size()));
                 return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
             }
 

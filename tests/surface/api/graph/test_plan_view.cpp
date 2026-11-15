@@ -278,7 +278,7 @@ TEST_F(Small_PlanView, ANodeThatDeclaresASplitRecordsIt)
     split->axis = 0;
     split->extent = K_WIDTH;
     split->regions = [](const SplitPart&) { return SplitRegions{}; };
-    split->slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
+    split->slice = [](const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const>) { return sycl::event(); };
     NodeOptions splittable;
     splittable.split = split;
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; },

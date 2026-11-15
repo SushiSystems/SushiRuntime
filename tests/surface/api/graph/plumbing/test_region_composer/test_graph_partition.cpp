@@ -372,18 +372,20 @@ namespace GraphPartitionTests
             return regions;
         };
         auto slices = std::make_shared<std::atomic<std::size_t>>(0);
-        split->slice = [slices](const SplitPart& part, sycl::queue& queue, span<void* const> pointers)
+        split->slice = [slices](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
+                                span<void* const> pointers)
         {
             slices->fetch_add(1);
             const std::uint32_t* source = static_cast<const std::uint32_t*>(pointers[0]);
             std::uint32_t* target = static_cast<std::uint32_t*>(pointers[1]);
             const std::size_t begin = static_cast<std::size_t>(part.begin);
-            queue.parallel_for(sycl::range<1>(static_cast<std::size_t>(part.end - part.begin)),
-                               [=](sycl::id<1> id)
-                               {
-                                   const std::size_t index = begin + id[0];
-                                   target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index);
-                               });
+            const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
+            return queue.parallel_for(sycl::range<1>(static_cast<std::size_t>(part.end - part.begin)), after,
+                                      [=](sycl::id<1> id)
+                                      {
+                                          const std::size_t index = begin + id[0];
+                                          target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index);
+                                      });
         };
         NodeOptions options = costed();
         options.split = split;

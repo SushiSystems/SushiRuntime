@@ -37,4 +37,5 @@ sushiruntime_add_module_tests(
     BENCHMARK_SOURCES
         benchmark_residency_resolve.cpp
     DEVICE_SOURCES
+        test_split_dispatch.cpp
         test_task_submission.cpp)

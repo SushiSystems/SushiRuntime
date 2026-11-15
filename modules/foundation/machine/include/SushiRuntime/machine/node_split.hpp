@@ -63,12 +63,13 @@ namespace SushiRuntime
         std::function<SplitRegions(const SplitPart&)> regions;
 
         /**
-         * @brief Submits the node's work over one part to the queue of the part's device.
+         * @brief Submits the node's work over one part to the queue of the part's device and returns its event.
          *
-         * The pointers are the node's kernel pointers bound on that device, in the order the node
+         * The work depends on the given events and on nothing else, and the call never waits. The
+         * pointers are the node's kernel pointers bound on that device, in the order the node
          * recorded them; they stay valid for the call only, so a kernel copies the ones it reads.
          */
-        std::function<void(const SplitPart&, sycl::queue&, span<void* const>)> slice;
+        std::function<sycl::event(const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const>)> slice;
 
         /** @brief Joins the parts, given in slice order; empty when the parts need no join. */
         std::function<void(span<const SplitPart>)> combine;

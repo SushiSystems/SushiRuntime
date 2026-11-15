@@ -100,7 +100,7 @@ TEST(Small_NodeSplitRefusal, ASplitWithoutRegionsIsRefused)
 {
     auto split = std::make_shared<NodeSplit>();
     split->extent = 8;
-    split->slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
+    split->slice = [](const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const>) { return sycl::event(); };
     NodeOptions options;
     options.split = split;
 

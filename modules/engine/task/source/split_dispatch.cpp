@@ -23,7 +23,7 @@
 
 /**
  * @file split_dispatch.cpp
- * @brief Defines dispatch_split().
+ * @brief Defines dispatch_split() and join_split().
  * @see modules/engine/task/README.md
  * @author Mustafa Garip
  */
@@ -36,11 +36,14 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
-        void dispatch_split(const NodeSplit& split, span<const SplitDispatchPart> parts, KernelPointers* pointers,
-                            const std::function<sycl::queue&(std::size_t)>& queue_of)
+        std::vector<sycl::event> dispatch_split(const NodeSplit& split, span<const SplitDispatchPart> parts,
+                                                span<const sycl::event> dependencies, KernelPointers* pointers,
+                                                const std::function<sycl::queue&(std::size_t)>& queue_of)
         {
-            std::vector<SplitPart> order;
-            order.reserve(parts.size());
+            std::vector<sycl::event> part_events;
+            if (!split.slice)
+                return part_events;
+            part_events.reserve(parts.size());
             for (const SplitDispatchPart& entry : parts)
             {
                 span<void* const> bound;
@@ -49,12 +52,25 @@ namespace SushiRuntime
                     pointers->bind(entry.device);
                     bound = span<void* const>(pointers->table(), pointers->size());
                 }
-                if (split.slice)
-                    split.slice(entry.part, queue_of(entry.device), bound);
-                order.push_back(entry.part);
+                part_events.push_back(split.slice(entry.part, queue_of(entry.device), dependencies, bound));
             }
-            if (split.combine)
-                split.combine(span<const SplitPart>(order.data(), order.size()));
+            return part_events;
+        }
+
+        void join_split(const NodeSplit& split, span<const SplitDispatchPart> parts, span<const sycl::event> part_events)
+        {
+            for (const sycl::event& part_event : part_events)
+            {
+                sycl::event waited = part_event;
+                waited.wait_and_throw();
+            }
+            if (!split.combine)
+                return;
+            std::vector<SplitPart> order;
+            order.reserve(parts.size());
+            for (const SplitDispatchPart& entry : parts)
+                order.push_back(entry.part);
+            split.combine(span<const SplitPart>(order.data(), order.size()));
         }
     } // namespace Internal::Graph
 } // namespace SushiRuntime

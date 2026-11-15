@@ -23,13 +23,18 @@
 
 /**
  * @file test_split_dispatch.cpp
- * @brief Tests dispatch_split(): each part runs with its device's queue and the pointers bound there.
+ * @brief Tests dispatch_split() and join_split(): parts run at once on their devices and the join waits on their events only.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
+#include <mutex>
 #include <optional>
+#include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -86,16 +91,22 @@ namespace
         std::vector<SplitPart> combined;
         NodeSplit split;
         split.extent = 10;
-        split.slice = [&calls](const SplitPart& part, sycl::queue& queue, span<void* const> bound)
+        split.slice = [&calls](const SplitPart& part, sycl::queue& queue, span<const sycl::event>, span<void* const> bound)
         {
             calls.push_back(SliceCall{part, &queue, std::vector<void*>(bound.begin(), bound.end())});
+            return sycl::event();
         };
         split.combine = [&combined](span<const SplitPart> parts) { combined.assign(parts.begin(), parts.end()); };
         const std::vector<SplitDispatchPart> parts = {{0, SplitPart{0, 0, 6, 0, 2}}, {1, SplitPart{0, 6, 10, 1, 2}}};
+        const span<const SplitDispatchPart> placed(parts.data(), parts.size());
 
-        dispatch_split(split, span<const SplitDispatchPart>(parts.data(), parts.size()), &pointers,
-                       [&](std::size_t device) -> sycl::queue& { return device == 0 ? *first : *second; });
+        const std::vector<sycl::event> events = dispatch_split(
+            split, placed, span<const sycl::event>(), &pointers,
+            [&](std::size_t device) -> sycl::queue& { return device == 0 ? *first : *second; });
+        EXPECT_TRUE(combined.empty());
+        join_split(split, placed, span<const sycl::event>(events.data(), events.size()));
 
+        ASSERT_EQ(events.size(), 2u);
         ASSERT_EQ(calls.size(), 2u);
         EXPECT_EQ(calls[0].part, parts[0].part);
         EXPECT_EQ(calls[0].queue, &*first);
@@ -115,12 +126,184 @@ namespace
         std::vector<std::size_t> sizes;
         NodeSplit split;
         split.extent = 4;
-        split.slice = [&sizes](const SplitPart&, sycl::queue&, span<void* const> bound) { sizes.push_back(bound.size()); };
+        split.slice = [&sizes](const SplitPart&, sycl::queue&, span<const sycl::event>, span<void* const> bound)
+        {
+            sizes.push_back(bound.size());
+            return sycl::event();
+        };
         const std::vector<SplitDispatchPart> parts = {{0, SplitPart{0, 0, 4, 0, 1}}};
 
-        dispatch_split(split, span<const SplitDispatchPart>(parts.data(), parts.size()), nullptr,
-                       [&](std::size_t) -> sycl::queue& { return *queue; });
+        (void)dispatch_split(split, span<const SplitDispatchPart>(parts.data(), parts.size()), span<const sycl::event>(),
+                             nullptr, [&](std::size_t) -> sycl::queue& { return *queue; });
 
         EXPECT_EQ(sizes, std::vector<std::size_t>{0});
+    }
+
+    /** @brief Opens once and lets every host step that waits on it run. */
+    class Gate final
+    {
+        public:
+            /** @brief Lets the waiting steps run. */
+            void open() noexcept
+            {
+                open_.store(true, std::memory_order_release);
+            }
+
+            /** @brief Returns once the gate is open; the size's timeout ends a test that never opens it. */
+            void pass() const noexcept
+            {
+                while (!open_.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+            }
+
+        private:
+            std::atomic<bool> open_{false}; /**< Whether the gate is open. */
+    };
+
+    /** @brief Submits a host step that passes the gate and then calls done, and returns its event. */
+    template <typename Done>
+    sycl::event gated_step(sycl::queue& queue, span<const sycl::event> dependencies, const Gate& gate, Done done)
+    {
+        const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
+        return queue.submit([&](sycl::handler& handler)
+        {
+            handler.depends_on(after);
+            const auto step = [&gate, done]()
+            {
+                gate.pass();
+                done();
+            };
+#if defined(__ACPP__) || defined(__HIPSYCL__)
+            handler.AdaptiveCpp_enqueue_custom_operation([step](auto&&) { step(); });
+#else
+            handler.host_task(step);
+#endif
+        });
+    }
+
+    /** @brief Appends entries to a log from several threads. */
+    class Log final
+    {
+        public:
+            /** @brief Appends entry. */
+            void add(std::string entry)
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                entries_.push_back(std::move(entry));
+            }
+
+            /** @brief Returns the entries so far. */
+            [[nodiscard]] std::vector<std::string> entries()
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return entries_;
+            }
+
+        private:
+            std::mutex mutex_;                 /**< Guards entries_. */
+            std::vector<std::string> entries_; /**< The entries in arrival order. */
+    };
+
+    /** @brief Tests that every part is submitted before any completes, and that the combine runs after all of them. */
+    TEST(Medium_SplitDispatch, EveryPartIsSubmittedBeforeAnyCompletes)
+    {
+        std::optional<sycl::queue> first = cpu_queue();
+        std::optional<sycl::queue> second = cpu_queue();
+        if (!first || !second)
+            GTEST_SKIP() << "No CPU device.";
+        Gate gate;
+        Log log;
+        NodeSplit split;
+        split.extent = 3;
+        split.slice = [&gate, &log](const SplitPart& part, sycl::queue& queue, span<const sycl::event> dependencies,
+                                    span<void* const>)
+        {
+            const std::string index = std::to_string(part.index);
+            log.add("submit " + index);
+            return gated_step(queue, dependencies, gate, [&log, index] { log.add("complete " + index); });
+        };
+        split.combine = [&log](span<const SplitPart>) { log.add("combine"); };
+        const std::vector<SplitDispatchPart> parts = {
+            {0, SplitPart{0, 0, 1, 0, 3}}, {1, SplitPart{0, 1, 2, 1, 3}}, {0, SplitPart{0, 2, 3, 2, 3}}};
+        const span<const SplitDispatchPart> placed(parts.data(), parts.size());
+
+        const std::vector<sycl::event> events = dispatch_split(
+            split, placed, span<const sycl::event>(), nullptr,
+            [&](std::size_t device) -> sycl::queue& { return device == 0 ? *first : *second; });
+        EXPECT_EQ(log.entries(), (std::vector<std::string>{"submit 0", "submit 1", "submit 2"}));
+        gate.open();
+        join_split(split, placed, span<const sycl::event>(events.data(), events.size()));
+
+        const std::vector<std::string> entries = log.entries();
+        ASSERT_EQ(entries.size(), 7u);
+        const std::vector<std::string> completions(entries.begin() + 3, entries.begin() + 6);
+        const std::vector<std::string> every_part = {"complete 0", "complete 1", "complete 2"};
+        EXPECT_TRUE(std::is_permutation(completions.begin(), completions.end(), every_part.begin()));
+        EXPECT_EQ(entries.back(), "combine");
+    }
+
+    /** @brief Tests that a part waits on the events it is given before it runs. */
+    TEST(Medium_SplitDispatch, APartRunsAfterItsDependencies)
+    {
+        std::optional<sycl::queue> queue = cpu_queue();
+        if (!queue)
+            GTEST_SKIP() << "No CPU device.";
+        Gate producer_gate;
+        Gate open_gate;
+        open_gate.open();
+        Log log;
+        const sycl::event producer = gated_step(*queue, span<const sycl::event>(), producer_gate,
+                                                [&log] { log.add("producer"); });
+        NodeSplit split;
+        split.extent = 1;
+        split.slice = [&open_gate, &log](const SplitPart&, sycl::queue& on, span<const sycl::event> dependencies,
+                                         span<void* const>)
+        {
+            return gated_step(on, dependencies, open_gate, [&log] { log.add("part"); });
+        };
+        const std::vector<SplitDispatchPart> parts = {{0, SplitPart{0, 0, 1, 0, 1}}};
+        const span<const SplitDispatchPart> placed(parts.data(), parts.size());
+
+        const std::vector<sycl::event> events = dispatch_split(
+            split, placed, span<const sycl::event>(&producer, 1), nullptr, [&](std::size_t) -> sycl::queue& { return *queue; });
+        producer_gate.open();
+        join_split(split, placed, span<const sycl::event>(events.data(), events.size()));
+
+        EXPECT_EQ(log.entries(), (std::vector<std::string>{"producer", "part"}));
+    }
+
+    /** @brief Tests that the join waits on the parts' events only, not on unrelated work in flight on the same queue. */
+    TEST(Medium_SplitDispatch, TheJoinDoesNotWaitOnUnrelatedWorkOnThePartsQueue)
+    {
+        std::optional<sycl::queue> queue = cpu_queue();
+        if (!queue)
+            GTEST_SKIP() << "No CPU device.";
+        Gate unrelated_gate;
+        std::atomic<bool> unrelated_done{false};
+        const sycl::event unrelated = gated_step(*queue, span<const sycl::event>(), unrelated_gate,
+                                                 [&unrelated_done] { unrelated_done.store(true); });
+        NodeSplit split;
+        split.extent = 1;
+        split.slice = [](const SplitPart&, sycl::queue& on, span<const sycl::event> dependencies, span<void* const>)
+        {
+            const std::vector<sycl::event> after(dependencies.begin(), dependencies.end());
+            return on.submit([&](sycl::handler& handler)
+            {
+                handler.depends_on(after);
+                handler.single_task([] {});
+            });
+        };
+        const std::vector<SplitDispatchPart> parts = {{0, SplitPart{0, 0, 1, 0, 1}}};
+        const span<const SplitDispatchPart> placed(parts.data(), parts.size());
+
+        const std::vector<sycl::event> events = dispatch_split(
+            split, placed, span<const sycl::event>(), nullptr, [&](std::size_t) -> sycl::queue& { return *queue; });
+        join_split(split, placed, span<const sycl::event>(events.data(), events.size()));
+
+        EXPECT_FALSE(unrelated_done.load());
+        unrelated_gate.open();
+        sycl::event finished = unrelated;
+        finished.wait();
+        EXPECT_TRUE(unrelated_done.load());
     }
 } // namespace

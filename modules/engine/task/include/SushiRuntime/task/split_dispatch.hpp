@@ -23,7 +23,7 @@
 
 /**
  * @file split_dispatch.hpp
- * @brief Declares SplitDispatchPart and dispatch_split(), which run a split node's parts.
+ * @brief Declares SplitDispatchPart and dispatch_split() and join_split(), which run a split node's parts.
  * @see modules/engine/task/README.md
  * @author Mustafa Garip
  */
@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <vector>
 
 #include <sycl/sycl.hpp>
 
@@ -52,15 +53,25 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Runs @p split over @p parts, each on its device, then joins them.
+         * @brief Submits every part of @p split, each on its device, and returns their events in slice order.
          *
-         * Each slice receives its part, the device's queue and the pointers bound on that device;
-         * the combine then receives the parts in slice order. Binding takes no lock.
-         * @param pointers The node's kernel pointers, or null for a node whose kernel takes none.
+         * Each slice gets its part, the device's queue, @p dependencies and @p pointers bound there
+         * (null for a node with no pointers); nothing is waited on, so all parts are in flight at once.
+         * @param dependencies The node's input events, the only ones each part depends on.
          * @param queue_of Returns the queue of a device index.
          */
-        SUSHIRUNTIME_API void dispatch_split(const NodeSplit& split, span<const SplitDispatchPart> parts,
-                                             KernelPointers* pointers,
-                                             const std::function<sycl::queue&(std::size_t)>& queue_of);
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<sycl::event>
+        dispatch_split(const NodeSplit& split, span<const SplitDispatchPart> parts, span<const sycl::event> dependencies,
+                       KernelPointers* pointers, const std::function<sycl::queue&(std::size_t)>& queue_of);
+
+        /**
+         * @brief Waits on @p part_events, then hands the parts to the split's combine in slice order.
+         *
+         * Only these events are waited on, never a whole queue, so other work on a part's queue
+         * does not hold the node. The wait also drives a lazy event model such as AdaptiveCpp's.
+         * @param part_events The events dispatch_split() returned for @p parts.
+         */
+        SUSHIRUNTIME_API void join_split(const NodeSplit& split, span<const SplitDispatchPart> parts,
+                                         span<const sycl::event> part_events);
     } // namespace Internal::Graph
 } // namespace SushiRuntime

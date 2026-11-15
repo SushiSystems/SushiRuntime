@@ -31,8 +31,8 @@
 #include "split_node_run.hpp"
 
 #include <cstddef>
-#include <set>
 #include <string>
+#include <vector>
 
 #include <sycl/sycl.hpp>
 
@@ -55,22 +55,16 @@ namespace SushiRuntime
                                         std::string("node ") + node.name() + " was cut into " + std::to_string(placed.parts.size()) +
                                             " parts but declares no split to run them; declare one with its slice."});
 
-            // A slice receives a queue and no event, so the node's predecessors end first.
-            for (const sycl::event& dependency : node.sycl_deps)
-            {
-                sycl::event waited = dependency;
-                waited.wait();
-            }
-            Internal::Graph::dispatch_split(
-                *node.declared_split,
-                span<const Internal::Graph::SplitDispatchPart>(placed.parts.data(), placed.parts.size()),
+            // Every part is submitted before any is waited on; each depends only on the node's input events.
+            const span<const Internal::Graph::SplitDispatchPart> parts(placed.parts.data(), placed.parts.size());
+            const std::vector<sycl::event> dependencies = node.sycl_deps.to_vector();
+            const std::vector<sycl::event> part_events = Internal::Graph::dispatch_split(
+                *node.declared_split, parts, span<const sycl::event>(dependencies.data(), dependencies.size()),
                 node.kernel_pointers(), [&devices](std::size_t device) -> sycl::queue& { return devices.queue(device); });
 
-            std::set<std::size_t> used;
-            for (const Internal::Graph::SplitDispatchPart& part : placed.parts)
-                used.insert(part.device);
-            for (const std::size_t device : used)
-                devices.queue(device).wait();
+            // The node's one wait: its parts' events, never a whole queue (modules/engine/scheduler/README.md).
+            Internal::Graph::join_split(*node.declared_split, parts,
+                                        span<const sycl::event>(part_events.data(), part_events.size()));
             return {};
         }
     } // namespace Internal::Scheduler

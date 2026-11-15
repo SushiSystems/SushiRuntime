@@ -273,19 +273,19 @@ job builds on them.
 | --- | --- | --- | --- |
 | R01 | split `engine/coherence` into five modules | T57 | done |
 | R02 | per-part regions from the consumer in `NodeSplit` | R01 | done |
-| R03 | concurrent split parts | R02 | running |
+| R03 | concurrent split parts | R02 | done |
 | R04 | one partition session per graph, ledger keyed by problem | R01 | done |
-| R05 | coherence map: planned state apart from current state, enforced phases | R01 | todo |
+| R05 | coherence map: planned state apart from current state, enforced phases | R01 | running |
 | R06 | `RuntimeContext` narrowed to ports | R01 | done |
 | R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | running |
 | R08 | space and path kinds typed, not strings | R01 | done |
 | R09 | statuses, not exceptions, on worker threads | R01 | done |
 | R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |
 | R11 | unneeded state removed | R01 | todo |
-| R12 | model agrees with plan; insertion EFT; bounded search | R04 | todo |
+| R12 | model agrees with plan; insertion EFT; bounded search | R04 | running |
 | R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | todo |
 | R14 | design and page truth | R12, R13 | todo |
-| R15 | profile fold with smoothing and minimum samples | R04 | todo |
+| R15 | profile fold with smoothing and minimum samples | R04 | running |
 
 | Job | Route | Work | Waits on | Acceptance |
 | --- | --- | --- | --- | --- |

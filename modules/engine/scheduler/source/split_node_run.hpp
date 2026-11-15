@@ -42,7 +42,7 @@ namespace SushiRuntime
         /**
          * @brief Runs node's parts through dispatch_split(), each on its device's queue, and returns once they ended.
          *
-         * The node's dependency events and then the queue of each part's device are waited for.
+         * All parts are submitted before join_split() waits on their own events; no queue is waited on.
          * @param node A node whose placed_split is not null.
          * @param devices The queue set the parts' device indices name.
          * @return InvalidArgument for a node with parts and no declared split to run them.

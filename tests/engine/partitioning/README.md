@@ -116,7 +116,7 @@ A node that writes 1200 bytes, more than a pool's 900 usable, and declares a spl
 runs as two parts on two devices of speed 2 and 1: 8 and 4 indices, writing bytes [0, 800) and
 [800, 1200), the ranges `sliced_split()` of `tests/support/partition_problem_builder.hpp` declares. With `Splitting::Off` the same node is refused, and a node that fits whole has no
 parts. A node with no declared split is not cut, nor is one whose split has no `regions` function, and a split plan hashes equal across runs. The
-parts, run through `dispatch_split()` on a CPU queue, give the bytes of one slice over the whole
+parts, run through `dispatch_split()` and `join_split()` on a CPU queue, give the bytes of one slice over the whole
 extent; the test skips without a CPU device.
 
 `Large_ListSchedulingPartitioner.ASplitProductStepIsShorterThanWithSplittingOff` runs on the first
