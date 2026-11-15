@@ -92,6 +92,21 @@ namespace SushiRuntime::Internal::Coherence
         return problem;
     }
 
+    /** @brief Returns count nodes of 1000 operations over devices pools, each writing a buffer of 100 bytes of its own. */
+    [[nodiscard]] inline PartitionProblem independent_nodes(std::size_t count, std::size_t devices)
+    {
+        PartitionProblem problem;
+        add_devices(problem, devices);
+        for (std::size_t node = 0; node < count; ++node)
+        {
+            PartitionNode entry;
+            entry.cost.operations = 1000;
+            entry.writes.push_back(add_buffer(problem, 100));
+            problem.nodes.push_back(entry);
+        }
+        return problem;
+    }
+
     /**
      * @brief Returns chain(length, buffer_bytes, devices) in which node i also writes buffer i - 1.
      *

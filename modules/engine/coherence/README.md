@@ -67,7 +67,13 @@ It depends on `core`, `handle`, `region`, `report`, `memory` and `task`.
 | `partition_apply.hpp` | `apply_partition()`, which puts the movable nodes where an assignment says |
 | `partition_measurement.hpp` | `PartitionMeasurement`, what the runs of a plan measured per step |
 | `partition_ledger.hpp` | `PartitionLedger`, the dispatches, steps and seconds of a plan's runs |
-| `partition_session.hpp` | `PartitionSession` and `PartitionSessionParts`, a runtime's partitioner, last plan and ledger |
+| `partition_session.hpp` | `PartitionSession` and `PartitionSessionParts`, a runtime's partitioners, plan in force, ledger and journal |
+| `partitioner_factory.hpp` | `PartitionerFactory` and `PartitionerFactories`, which build the scheduler and the floor over a cost model |
+| `floor_partitioner.hpp` | `FloorPartitioner`, which answers every problem with its floor plan |
+| `planned_homes.hpp` | `planned_homes()`, the home device of each planned buffer under a placement |
+| `rebalance_decision.hpp` | `decide_rebalance()`, `RebalanceAction`, `RebalanceState` and `K_DEFAULT_REBALANCE_MARGIN` |
+| `placement_journal.hpp` | `PlacementJournal`, `PlacementJournalEntry`, `PlacementReason` and `PlannedBy`, the record of every plan put in force |
+| `journal_replay.hpp` | `replay_placement()`, which answers a problem again from a journal entry |
 | `transfer_path_tally.hpp` | `TransferPathTally`, `PathTally` and `PathTallies`, the copies counted per destination and path |
 
 ## CoherencePlanner
@@ -325,7 +331,8 @@ gave it its device, so partitioning the graph again gives the same problem.
 
 `problem_hash()` folds every field of a `PartitionProblem` into one FNV-1a value, through the same
 `FNVHash` and `fold_device_key()` that `plan_hash()` and `assignment_hash()` use. The API's
-`GraphPartition` runs the partitioner again only when that hash changed.
+`GraphPartition` runs the partitioner again only when that hash changed, and takes the session's
+answer again when `PartitionSession::generation()` moved for the same hash.
 
 `apply_partition()` states the assigned device on each movable node, or changes nothing and returns
 `InvalidArgument` when the assignment does not fit the problem. The coherence planner then
@@ -342,11 +349,13 @@ part's space, reads and writes. The planner makes every part's reads valid on it
 records any part's writes, since the parts run at once. A later reader on another space then copies
 back only the range each part wrote, and the end of the graph restores the start state as for any node.
 
-`PartitionSession` holds what the runtime keeps: the frozen `CostModel`, the `Partitioner`, the
-devices with their pools and copy paths, the problem and answer of the last plan, its
-`PartitionLedger` and the `TransferPathTally` every transfer path reports to. `partition()` keeps a
-new plan and starts an empty ledger and tally; `report()` gives `make_partition_report()` of the last
-plan with what its runs measured. A session with no cost model is inactive and reports nothing.
+`PartitionSession` holds what the runtime keeps: the `CostModel` in memory, the scheduler that
+`PartitionerFactories::scheduler` built over it, the devices with their pools and copy paths, the
+problem, answer and pricing model of the plan in force, its `PartitionLedger`, the
+`TransferPathTally` every transfer path reports to and the `PlacementJournal`. `partition()` puts a
+new plan in force, starts an empty ledger and tally and journals it; `report()` gives
+`make_partition_report()` of the plan in force with what its runs measured. A session with no cost
+model or no scheduler factory is inactive and reports nothing.
 `PartitionLedger::measurement()` divides by the steps added: the measured step, the summed dispatch
 seconds of each device and the copies into each device by path. `TransferPathTally` takes a lock per
 copy, since paths report from several workers, and forwards each copy to the observer a caller
@@ -390,8 +399,74 @@ run reads them.
 
 The step driver of `surface/api` calls them through the session's `PartitionLedger`: after each blocking run
 of a partitioned plan it adds the run's steps, its seconds and its dispatches, and at each horizon of
-`coherence_horizon()` it folds the dispatches into the file `RuntimeConfig::device_profile_file` names. A
-runtime with no profile file folds nothing. A failed write is logged and the run goes on.
+`coherence_horizon()` it folds the dispatches into the file `RuntimeConfig::device_profile_file` names, then
+calls `PartitionSession::rebalance()`. A runtime with no profile file folds nothing. A failed write is logged
+and the run goes on.
+
+## Rebalancing at a horizon
+
+`PartitionSession::rebalance()` takes the dispatches of the horizon with `PartitionLedger::take_horizon()`
+and folds them with `fold_observations()` into the profiles in memory, which `profiles()` returns; the
+scheduler is built again over them. It then hands the report of the plan in force to `decide_rebalance()`,
+a pure function of the report, the margin and a `RebalanceState`, in this order:
+
+| Case | Action |
+| --- | --- |
+| A floor is on trial | `KeepFloor` when its measured step is below the step of the plan it replaced, else `LeaveFloor` |
+| A device that holds nodes measured above its modelled time by more than the margin | `Replan`: the problem is partitioned again with the folded profiles |
+| The plan is not the floor, its pair was not tried, and its measured step is above the floor's modelled step by more than the margin | `TryFloor`: `PartitionerFactories::floor` answers, and the floor runs for one horizon |
+| Anything else, or nothing measured | `Keep` |
+
+The margin is `PartitionSessionParts::margin`, `K_DEFAULT_REBALANCE_MARGIN` (10%) unless set. `LeaveFloor`
+puts the replaced plan back with the model that priced it, and the pair is not tried again until a `Replan`.
+Every action but `Keep` appends one entry to the journal; every change of plan clears the ledger and the tally
+and raises `generation()`. The API's region composer reports a graph whose answer moved as
+`coherence_replan_due()`, and the next commit rebuilds the regions of the moved nodes. A refused replan or floor
+keeps the plan in force.
+
+`FloorPartitioner` answers with `floor_plan()` alone, its homes from `planned_homes()`, the same function
+`ListSchedulingPartitioner` uses, and `floor_taken` set.
+
+## Placement journal
+
+A `PlacementJournalEntry` records one plan put in force: its sequence, its `PlacementReason`, the
+`PlannedBy` partitioner that answered, `problem_hash()` of the problem, `assignment_hash()` of the answer,
+the modelled, measured and floor step of the report that was judged (zero for `First`), the measured time
+of each device, and the `DeviceProfileSet` that priced the answer. The journal is kept in memory. A
+runtime with a profile file also appends each entry to `<device_profile_file>.journal`; the first entry
+of a runtime starts the file, so the file holds exactly `serialise(entries())`. A failed write is logged
+and the entry stays in memory.
+
+`replay_placement()` builds the named partitioner over the entry's profiles and answers the problem; a
+partitioner is a pure function of both, so the replay gives the recorded assignment, and the bytes a run
+leaves follow from the placement. It refuses another problem with `InvalidArgument` and an answer of
+another hash with `InvalidState`.
+
+```
+placement_journal_version 1
+entry 0 first scheduler
+problem_hash 0123456789abcdef
+assignment_hash 00000000000000ff
+modelled_step 0
+measured_step 0
+floor_step 0
+profiles 9
+format_version 2
+...
+end_entry
+```
+
+| Line | Holds |
+| --- | --- |
+| `placement_journal_version <integer>` | The first line; the reader reads version 1 only. |
+| `entry <sequence> <reason> <planner>` | Opens an entry. The reason is `first`, `replan`, `try_floor`, `keep_floor` or `leave_floor`; the planner `scheduler` or `floor`. |
+| `problem_hash`, `assignment_hash` | Sixteen lower-case hexadecimal digits. |
+| `modelled_step`, `measured_step`, `floor_step` | Seconds, 17 significant digits in the classic locale. |
+| `measured_device <key> <seconds>` | One per device of the judged report, in `DeviceKey` order; a key appears once. |
+| `profiles <count>` | The count of the lines that follow, which are the device profile file text of the entry's profiles. |
+| `end_entry` | Closes the entry. |
+
+A malformed line is `InvalidArgument` and names its number.
 
 ## ProfileMeasurement
 

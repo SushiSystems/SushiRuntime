@@ -50,12 +50,19 @@ namespace SushiRuntime
          * @brief Partitions the nodes of every region of one graph as one problem and states the answer on them.
          *
          * A node this object placed counts as free in the next problem, so a graph partitioned again
-         * gives the same problem. The partitioner runs again only when the problem's hash changed.
+         * gives the same problem. The partitioner runs again only when the problem's hash changed; the
+         * answer is taken again when a horizon of the runtime's session put another plan in force.
          * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
          */
         class GraphPartition final
         {
             public:
+                /**
+                 * @brief Returns whether a horizon put another plan in force for the problem this object
+                 *        placed last, so the graph must be placed again before its next run.
+                 */
+                [[nodiscard]] bool rebalanced(Internal::Execution::RuntimeContext& runtime) const noexcept;
+
                 /**
                  * @brief Returns the nodes this object placed that the partition of nodes now puts
                  *        elsewhere or cuts anew; nothing is placed.
@@ -93,6 +100,9 @@ namespace SushiRuntime
 
                 /// @brief Hash of the last problem answered; nothing before the first.
                 std::optional<std::uint64_t> problem_hash_;
+
+                /// @brief The session's generation when this object took its answer last.
+                std::uint64_t generation_ = 0;
 
                 /// @brief Whether the last answer() ran the partitioner rather than reusing its answer.
                 bool answered_again_ = false;

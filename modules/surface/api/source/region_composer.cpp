@@ -194,6 +194,12 @@ namespace SushiRuntime
                     return false;
                 }
 
+                /** @brief Returns whether a horizon put another partition in force for this graph since the last commit. */
+                [[nodiscard]] bool partition_rebalanced(Internal::Execution::RuntimeContext& runtime) const noexcept
+                {
+                    return partition_.rebalanced(runtime);
+                }
+
                 /** @brief Returns whether the last commit classified the plan for the in-order chain. */
                 [[nodiscard]] bool chain_classified() const noexcept { return chain_classified_; }
 
@@ -940,8 +946,10 @@ namespace SushiRuntime
 
         bool RegionComposer::coherence_replan_due(const ContextHandle& context) const noexcept
         {
-            return state_ != nullptr &&
-                   state_->coherence_replan_due(Internal::ContextAccess::context(context).handles());
+            if (state_ == nullptr)
+                return false;
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            return state_->coherence_replan_due(runtime.handles()) || state_->partition_rebalanced(runtime);
         }
 
         bool RegionComposer::composed() const noexcept

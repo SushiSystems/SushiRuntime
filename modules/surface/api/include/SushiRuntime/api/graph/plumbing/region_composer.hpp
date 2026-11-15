@@ -103,8 +103,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether a region's copy plan is not steady, or the host wrote one
-                 *        of its buffers since it was made, so the next run must commit and plan it
-                 *        again instead of replaying it.
+                 *        of its buffers since it was made, or a horizon put another partition of the
+                 *        graph in force, so the next run must commit and plan it again.
                  */
                 [[nodiscard]] SUSHIRUNTIME_API bool coherence_replan_due(const ContextHandle& context) const noexcept;
 

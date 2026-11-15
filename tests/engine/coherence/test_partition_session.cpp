@@ -34,10 +34,10 @@
 #include <string>
 #include <utility>
 
-#include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
 #include <SushiRuntime/coherence/partition_session.hpp>
 
 #include "partition_problem_builder.hpp"
+#include "rebalancing_parts.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;
@@ -47,20 +47,15 @@ namespace
     /** @brief Returns the parts of an active session over host_key(1) and host_key(2), of speeds 1 and 2. */
     PartitionSessionParts two_device_parts()
     {
-        PartitionProblem devices;
-        add_devices(devices, 2);
-        PartitionSessionParts parts;
-        parts.model = speed_model({1.0, 2.0});
-        parts.partitioner = std::make_unique<ListSchedulingPartitioner>(parts.model);
-        parts.devices = devices.devices;
-        parts.copies = std::make_shared<TransferPathTally>();
-        parts.device_of = [](MemorySpaceID space) -> std::optional<DeviceKey>
-        {
-            if (space == MemorySpaceID(2))
-                return host_key(2);
-            return std::nullopt;
-        };
-        return parts;
+        return session_parts({1.0, 2.0});
+    }
+
+    /** @brief Returns a session of two equal devices with two independent nodes partitioned one per device. */
+    PartitionSession split_session()
+    {
+        PartitionSession session(session_parts({1.0, 1.0}));
+        EXPECT_TRUE(session.partition(independent_nodes(2, 2)).has_value());
+        return session;
     }
 
     /** @brief Returns a problem whose one node writes 2000 bytes, more than any pool of 900 usable bytes holds. */
@@ -125,5 +120,70 @@ namespace
         ASSERT_TRUE(session.partition(chain(2, 100, 2)).has_value());
 
         EXPECT_EQ(session.report().measured_step_seconds, 0.0);
+    }
+
+    TEST(Small_PartitionSession, AThrottledDeviceLosesItsNodeAtTheFirstHorizon)
+    {
+        PartitionSession session = split_session();
+        ASSERT_NE(session.answer().value().node_devices[0], session.answer().value().node_devices[1]);
+
+        // The model gives each node 0.5 s; host_key(2) takes 2.5 s, five times its model.
+        measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        const RebalanceAction action = session.rebalance();
+
+        EXPECT_EQ(action, RebalanceAction::Replan);
+        EXPECT_EQ(session.answer().value().node_devices, (std::vector<DeviceKey>{host_key(1), host_key(1)}));
+    }
+
+    TEST(Small_PartitionSession, AHorizonFoldsTheMeasuredThroughputIntoTheProfilesInMemory)
+    {
+        PartitionSession session = split_session();
+
+        measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        static_cast<void>(session.rebalance());
+
+        // 1000 operations in 2.5 s with no bytes is 400 operations a second.
+        EXPECT_EQ(session.profiles()->find(host_key(2))->base_throughput, 400.0);
+    }
+
+    TEST(Small_PartitionSession, ADoctoredProfileReturnsToTheFloorWithinTwoHorizons)
+    {
+        PartitionSession session = split_session();
+
+        // The devices run at their model, but the step takes 3 s, twice the floor's modelled 1 s and more.
+        measure_step(session, 3.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+        EXPECT_EQ(session.rebalance(), RebalanceAction::TryFloor);
+        measure_step(session, 1.0, {{host_key(1), 0.5}, {host_key(1), 0.5}});
+        EXPECT_EQ(session.rebalance(), RebalanceAction::KeepFloor);
+
+        EXPECT_TRUE(session.answer().value().floor_taken);
+    }
+
+    TEST(Small_PartitionSession, AFloorThatMeasuresSlowerGivesThePlanBackAndIsNotTriedAgain)
+    {
+        PartitionSession session = split_session();
+        const std::vector<DeviceKey> scheduled = session.answer().value().node_devices;
+
+        measure_step(session, 3.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+        ASSERT_EQ(session.rebalance(), RebalanceAction::TryFloor);
+        measure_step(session, 3.5, {{host_key(1), 0.5}, {host_key(1), 0.5}});
+        ASSERT_EQ(session.rebalance(), RebalanceAction::LeaveFloor);
+        measure_step(session, 3.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+
+        EXPECT_EQ(session.rebalance(), RebalanceAction::Keep);
+        EXPECT_EQ(session.answer().value().node_devices, scheduled);
+    }
+
+    TEST(Small_PartitionSession, EveryPlanPutInForceIsJournalledAndRaisesTheGeneration)
+    {
+        PartitionSession session = split_session();
+        measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        static_cast<void>(session.rebalance());
+
+        ASSERT_EQ(session.journal().entries().size(), 2u);
+        EXPECT_EQ(session.journal().entries()[0].reason, PlacementReason::First);
+        EXPECT_EQ(session.journal().entries()[1].reason, PlacementReason::Replan);
+        EXPECT_EQ(session.journal().entries()[1].measured_device_seconds.at(host_key(2)), 2.5);
+        EXPECT_EQ(session.generation(), 2u);
     }
 } // namespace

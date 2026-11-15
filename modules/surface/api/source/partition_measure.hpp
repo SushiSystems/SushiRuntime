@@ -50,9 +50,11 @@ namespace SushiRuntime
                                      const Internal::Graph::CompiledGraph& plan, std::size_t steps, double seconds);
 
         /**
-         * @brief Folds the ledger into the runtime's profile file, when one is set; called at a horizon.
+         * @brief Folds the ledger into the runtime's profile file, when one is set, then rebalances the
+         *        session's plan in memory; called at a horizon.
          *
          * A failed write is logged and the run goes on, since the file only informs the next run.
+         * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
          */
         void fold_partition_ledger(Internal::Execution::RuntimeContext& context);
     } // namespace Detail

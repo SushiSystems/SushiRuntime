@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         compile_partition_measurement.cpp
         compile_partition_problem.cpp
         compile_partitioner.cpp
+        compile_partitioner_factory.cpp
         compile_peer_access.cpp
         compile_pinned_host_memory.cpp
         compile_planned_node_factory.cpp
@@ -34,9 +35,11 @@ sushiruntime_add_module_tests(
         test_dispatch_observation.cpp
         test_file_path.cpp
         test_fill_plan.cpp
+        test_floor_partitioner.cpp
         test_fnv_hash.cpp
         test_graph_partition_problem.cpp
         test_host_staged_path.cpp
+        test_journal_replay.cpp
         test_list_scheduling_partitioner/test_partition_properties.cpp
         test_list_scheduling_partitioner/test_placement_and_refusal.cpp
         test_list_scheduling_partitioner/test_splitting.cpp
@@ -50,14 +53,17 @@ sushiruntime_add_module_tests(
         test_partition_session.cpp
         test_peer_path.cpp
         test_pin_set.cpp
+        test_placement_journal.cpp
         test_plan_hash.cpp
         test_plan_splice.cpp
+        test_planned_homes.cpp
         test_planned_host_access.cpp
         test_pool_occupancy.cpp
         test_problem_hash.cpp
         test_profile_fold.cpp
         test_profile_measurement.cpp
         test_profile_transfer_cost.cpp
+        test_rebalance_decision.cpp
         test_profile_update.cpp
         test_residency_options.cpp
         test_same_context_path.cpp

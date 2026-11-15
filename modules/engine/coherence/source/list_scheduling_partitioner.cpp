@@ -43,6 +43,7 @@
 
 #include <SushiRuntime/coherence/fill_plan.hpp>
 #include <SushiRuntime/coherence/partition_model.hpp>
+#include <SushiRuntime/coherence/planned_homes.hpp>
 #include <SushiRuntime/coherence/split_expansion.hpp>
 #include <SushiRuntime/coherence/split_sizing.hpp>
 
@@ -192,27 +193,6 @@ namespace SushiRuntime
                 }
             }
 
-            /** @brief Returns the home device of every planned buffer a node touches, writers first. */
-            [[nodiscard]] std::map<GlobalHandle, DeviceKey> homes_of(const PartitionModel& model,
-                                                                     const std::vector<std::size_t>& placement)
-            {
-                std::map<GlobalHandle, DeviceKey> homes;
-                const PartitionProblem& problem = model.problem();
-                for (const bool writers : {true, false})
-                {
-                    for (std::size_t node = 0; node < problem.nodes.size(); ++node)
-                    {
-                        const PartitionNode& entry = problem.nodes[node];
-                        for (const std::size_t buffer : writers ? entry.writes : entry.reads)
-                        {
-                            if (!problem.buffers[buffer].device)
-                                homes.emplace(problem.buffers[buffer].handle, model.device_key(placement[node]));
-                        }
-                    }
-                }
-                return homes;
-            }
-
             /** @brief Returns the refusal of a job that fits in no plan, with the bytes it puts in each pool. */
             [[nodiscard]] PartitionRefusal capacity_refusal(const PartitionModel& model)
             {
@@ -288,7 +268,7 @@ namespace SushiRuntime
                 PartitionAssignment assignment;
                 assignment.floor_taken = chosen.floor_taken;
                 assignment.step_time = model.step_time(chosen.placement);
-                assignment.homes = homes_of(model, chosen.placement);
+                assignment.homes = planned_homes(model, chosen.placement);
                 for (std::size_t node = 0; node < chosen.placement.size(); ++node)
                 {
                     if (origin[node] == assignment.node_devices.size())

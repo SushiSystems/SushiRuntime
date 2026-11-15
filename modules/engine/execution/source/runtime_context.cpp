@@ -235,13 +235,17 @@ namespace SushiRuntime
 
             /**
              * @brief Counts the copies of every path and builds the partition session over model.
-             * @param model The frozen cost model; null leaves the session inactive.
+             * @param model The cost model read at create; null leaves the session inactive.
              */
             void start_partitioning(std::shared_ptr<const Internal::Coherence::CostModel> model)
             {
                 transfer_observer.install(path_tally);
-                partitioning = std::make_unique<Internal::Coherence::PartitionSession>(
-                    make_partition_parts(devices, spaces.views, paths.views, std::move(model), path_tally));
+                Internal::Coherence::PartitionSessionParts parts =
+                    make_partition_parts(devices, spaces.views, paths.views, std::move(model), path_tally);
+                // The placement journal sits beside the profile file, the runtime's one settings path.
+                if (!settings.device_profile_file.empty())
+                    parts.journal_file = std::filesystem::path(settings.device_profile_file + ".journal");
+                partitioning = std::make_unique<Internal::Coherence::PartitionSession>(std::move(parts));
             }
 
             /** @brief Stops everything that submits work, then lets the device set drain. */

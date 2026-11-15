@@ -79,7 +79,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T34 | `Runtime::partition_report()` | T25 | done |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | done |
-| T27 | rebalancing and journal | T22, T34, T47 | running |
+| T27 | rebalancing and journal | T22, T34, T47 | done |
 | T28 | wire version 5 | T10 | done |
 | T29 | owner per handle and recovery | T28 | done |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | done |
@@ -90,6 +90,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T50 | split nodes in the step drivers | T36, T47 | done |
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | done |
 | T32 | SushiBLAS conformance kernels | T30 | done |
+| T54 | journal replay into a live runtime, static `Graph` rebalancing | T27 | todo |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
 
 ## Tasks
@@ -199,6 +200,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T50 | `opus` `low` | the problem builder, `placement_of`, the step drivers, `Node`, the coherence planner | T36, T47 | `PartitionNode::split` is filled from the node, each part's device is placed, a cut node runs through `dispatch_split()`, the planner plans each part's read and write ranges, and a node that fits no pool whole runs split in a real step |
 | T49 | `sonnet` `medium` | SushiBLAS worktree `D:/Projects/.worktrees/sushiblas-global_handle`: `tensor.hpp`, `scratch.hpp`, `reduce.hpp`, `counting_sort.cpp`, `prefix_scan.cpp`, host blocks, `gemm_split.hpp` | T30, T36 | Every `BufferRegion` names a handle, a host tensor has a minted host handle, and the GEMM slice runs on the queue and pointers the runtime gives its part |
 | T32 | `sonnet` `medium` | SushiBLAS tests: the conformance kernel set (sum, dot, gemm, softmax, layer norm) on every device | T30 | Each operation gives equal bytes on the 3080 Ti, the integrated GPU and the CPU, or the report names each difference and why |
+| T54 | `opus` `low` | `engine/coherence` session, `surface/api` `plan_cache`, runtime settings | T27 | A runtime given a placement journal replays its placements and its output bytes equal the journalled run's; a static `Graph` rebalances at horizons as a `DynamicGraph` does |
 | T33 | inline | SushiBLAS large test: a file-backed product graph larger than any one device's memory | T19, T27, T30 | On the first machine it runs across every device the plan gives a node, with no file reads after loading, equal bytes over ten runs, and a step time at most 1.05 times that of the floor plan's devices alone |
 
 ## Closing

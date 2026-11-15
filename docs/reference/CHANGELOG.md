@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Added rebalancing at each horizon: the measured dispatches fold into the profiles in memory, and a device slower than its model by more than 10% loses nodes to a new partition (GLOBAL_HANDLE T27).
+- 2026-11-15 — runtime: Added the measured floor check: a plan whose measured step is above its floor's modelled step by more than 10% runs the floor for one horizon, and the faster of the two stays (GLOBAL_HANDLE T27).
+- 2026-11-15 — runtime: Added the placement journal, one entry per plan with its hashes, numbers and profiles, written beside the profile file as `<file>.journal`; a replay gives the same placements (GLOBAL_HANDLE T27).
 - 2026-11-15 — runtime: Changed a `DynamicGraph` to partition all its regions as one problem, again only when the problem changed (GLOBAL_HANDLE H7).
 - 2026-11-15 — runtime: Changed an asynchronous step to feed the partition ledger as a synchronous run does (GLOBAL_HANDLE H7).
 - 2026-11-15 — runtime: Added running a cut node as its parts, each on its own device through `dispatch_split()`, with its reads copied and its written range planned back (GLOBAL_HANDLE H8).

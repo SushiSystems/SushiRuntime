@@ -17,7 +17,13 @@ queue for every space, `FixedPeerAccess` grants or refuses every request and cou
 `CostModel` of `round_profile()` devices, `add_devices()` gives each device a pool of its own and
 the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
 writes buffer `i` and reads buffer `i - 1`; `state_chain()` is that chain with node `i` also writing
-buffer `i - 1`, so every buffer outlives the step and is live for all of it.
+buffer `i - 1`, so every buffer outlives the step and is live for all of it. `independent_nodes()`
+builds nodes of 1000 operations with no edge, each writing a 100-byte buffer of its own.
+
+`rebalancing_parts.hpp` holds the rebalancing tests' builders: `runtime_factories()` gives the list
+scheduler and the floor, as the runtime does; `session_parts()` builds an active session over one
+`round_profile()` per speed; and `measure_step()` adds one measured step and one dispatch per listed
+device to a session's ledger.
 
 `random_partition_case.hpp` holds `SeededDraw`, a portable generator, and `random_partition_case()`,
 which builds from a seed a graph of three to eight nodes with forward edges and a speed per device.
@@ -252,9 +258,39 @@ working directory, streams it window by window onto the GPU, checks the first an
 window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
 with no CUDA GPU or too little disk, and deletes the file.
 
-## compile_partition_problem.cpp and compile_partitioner.cpp
+## compile_partition_problem.cpp, compile_partitioner.cpp and compile_partitioner_factory.cpp
 
 Each file includes one partitioner header alone.
+
+## test_floor_partitioner.cpp
+
+Two independent nodes on two equal devices go to one device at the floor's step of one second, slower
+than the scheduler's plan, with `floor_taken` set; a job no fill plan fits is refused with
+`AllocationFailed`.
+
+## test_planned_homes.cpp
+
+Each buffer of a chain is homed on the device of the node that writes it, and a buffer with a stated
+device has no home.
+
+## test_rebalance_decision.cpp
+
+`Small_RebalanceDecision` is one row per case against a plan modelled at one second and a floor at 1.5:
+nothing measured or a time within the 10% margin keeps; a slower device replans; a step above the
+floor tries the floor unless the floor is in force or the pair was tried; a floor on trial stays when it
+measured faster and leaves when it did not.
+
+## test_placement_journal.cpp
+
+Appending numbers the entries in order. Parsing the text gives the same entries and writing them gives
+the same bytes; an unknown reason is refused with its line. `Medium_PlacementJournal` appends to a file,
+which holds exactly the text of the entries and reads back to them.
+
+## test_journal_replay.cpp
+
+A session over three devices partitions, replans for a throttled device and tries the floor. Every
+journal entry replays to the assignment it records, a journal read back from its text gives the same
+bytes and the same placements, and another problem is refused with `InvalidArgument`.
 
 ## compile_partition_measurement.cpp
 
@@ -285,6 +321,7 @@ the next problem.
 
 Figures come per step: the measured step, each device's dispatch time and the copies into a device by
 path; a copy into a space with no device is left out, and a ledger with no step measures nothing.
+`take_horizon()` gives the dispatches since the last take, once.
 `Medium_PartitionLedger` writes a profile file: a second run reads the throughput the first one folded,
 and a ledger with nothing unfolded leaves the file alone.
 
@@ -293,6 +330,12 @@ and a ledger with nothing unfolded leaves the file alone.
 A session with no partitioner is inactive and reports nothing. An unfitting job is refused with each
 pool's shortfall, in the error and in the report. The report of the last plan carries the measured step,
 each device's measured time and the floor's step, and a new plan starts an empty ledger.
+
+Rebalancing runs over two equal devices with one independent node each. A device measured at five
+times its model loses its node at the first horizon, and the horizon leaves the measured throughput in
+the profiles in memory. A step three times the floor's model, with every device at its model, puts the
+floor on trial and keeps it at the second horizon; a floor that measures slower gives the plan back and
+is not tried again. Every plan put in force is journalled and raises the generation.
 
 ## test_transfer_path_tally.cpp
 

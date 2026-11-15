@@ -88,6 +88,20 @@ namespace
         EXPECT_EQ(measured.copies.at(host_key(1))[0].bytes, 200.0);
     }
 
+    TEST(Small_PartitionLedger, TakeHorizonGivesTheDispatchesSinceTheLastTakeOnce)
+    {
+        PartitionLedger ledger;
+        ledger.add_dispatches({DispatchObservation{host_key(1), NodeCost{}, 0.25}});
+        static_cast<void>(ledger.take_horizon());
+        ledger.add_dispatches({DispatchObservation{host_key(2), NodeCost{}, 0.5}});
+
+        const std::vector<DispatchObservation> taken = ledger.take_horizon();
+
+        ASSERT_EQ(taken.size(), 1u);
+        EXPECT_EQ(taken[0].device, host_key(2));
+        EXPECT_TRUE(ledger.take_horizon().empty());
+    }
+
     TEST(Small_PartitionLedger, ALedgerWithNoStepMeasuresNothing)
     {
         PartitionLedger ledger;

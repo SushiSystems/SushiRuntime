@@ -162,6 +162,13 @@ is the one step that runs planner code, and GRAPH_REPLAY records the new plan. E
 entry of the placement journal. A switch depends on measured times, so two live runs may switch
 differently; a replay of the journal takes the same switches and gives the same bytes.
 
+The journal is kept in memory by the session and, when the runtime has a profile file, appended to
+that file's path with `.journal` added, so it needs no setting of its own. An entry holds the problem
+hash, the assignment hash, the numbers the horizon judged and the whole profile set that priced the
+answer, which is what a replay reads. A runtime starts the file again with its first entry. A device
+that is slower is judged before the floor check, so a throttled device moves its nodes without first
+trying the floor. The margin is fixed at 10% until the consumer has a setting for it.
+
 ## The partition report
 
 `Runtime::partition_report()` returns, for the plan in force, one row per device: the nodes and

@@ -77,12 +77,18 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] Result<bool> fold_into(const std::filesystem::path& path);
 
+                /** @brief Returns the dispatches added since the last call and forgets them, for a horizon's fold in memory. */
+                [[nodiscard]] std::vector<DispatchObservation> take_horizon();
+
                 /** @brief Forgets everything, for a plan made again. */
                 void clear() noexcept;
 
             private:
                 /// @brief Dispatches not yet folded into the profile file.
                 std::vector<DispatchObservation> unfolded_;
+
+                /// @brief Dispatches not yet taken by take_horizon().
+                std::vector<DispatchObservation> horizon_;
 
                 /// @brief Seconds of every dispatch since the last clear(), per device.
                 std::map<DeviceKey, double> device_seconds_;

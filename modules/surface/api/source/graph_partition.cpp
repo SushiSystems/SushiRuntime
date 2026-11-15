@@ -59,18 +59,29 @@ namespace SushiRuntime
             if (graph.value().planned_buffers == 0)
                 return Problem();
 
-            // The same problem gets the same answer, so the partitioner and the ledger's restart are skipped.
+            // The same problem keeps its answer unless a horizon put another plan for it in force.
             const std::uint64_t hash = Internal::Coherence::problem_hash(graph.value().problem);
-            answered_again_ = !problem_hash_ || *problem_hash_ != hash;
+            const bool same_problem = problem_hash_ && *problem_hash_ == hash;
+            const bool rebalanced = same_problem && session.has_plan() && session.problem_hash() == hash &&
+                                    session.generation() != generation_;
+            answered_again_ = !same_problem || rebalanced;
             if (!answered_again_)
                 return Problem(std::move(graph.value()));
             const Result<Internal::Coherence::PartitionAssignment, Internal::Coherence::PartitionRefusal>& answered =
-                session.partition(graph.value().problem);
+                rebalanced ? session.answer() : session.partition(graph.value().problem);
             if (!answered)
                 return make_error(answered.error().to_error());
             problem_hash_ = hash;
+            generation_ = session.generation();
             assignment_ = answered.value();
             return Problem(std::move(graph.value()));
+        }
+
+        bool GraphPartition::rebalanced(Internal::Execution::RuntimeContext& runtime) const noexcept
+        {
+            const Internal::Coherence::PartitionSession& session = runtime.partitioning();
+            return problem_hash_ && session.has_plan() && session.problem_hash() == *problem_hash_ &&
+                   session.generation() != generation_;
         }
 
         Result<std::set<const Internal::Graph::Node*>>

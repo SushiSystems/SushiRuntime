@@ -721,7 +721,7 @@ the allocate, copy and free nodes of `engine/coherence`, and finish_region() rea
 roots, leaves and boundary summary; a refused plan fails the commit the same way. The hook prices
 copies by the context's `transfer_cost()` and evicts by its `eviction_policy()` through
 `ResidencyOptions`, so instances stay resident; the region stores the `CopyPlan` and a `HostWriteWatch`, a commit rebuilds
-each region whose plan is not steady or whose watch saw a host write, as `coherence_replan_due(context)` reports, and each planned region adds one to `coherence_plan_count()`.
+each region whose plan is not steady or whose watch saw a host write, as `coherence_replan_due(context)` reports, and each planned region adds one to `coherence_plan_count()`. `coherence_replan_due(context)` is also true when a horizon's `PartitionSession::rebalance()` put another plan in force for the graph's problem; the commit then rebuilds the regions of the nodes the new answer moves.
 
 The second phase un-wires the allocations of the retired regions (retire_regions()), installs the
 built ones (install_region()), wires every dirty allocation again (rewire_base()) and publishes the

@@ -36,6 +36,7 @@
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/coherence/floor_partitioner.hpp>
 #include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
@@ -103,8 +104,16 @@ namespace SushiRuntime
                 parts.devices.push_back(Coherence::PartitionDevice{listed[index].key, pool,
                                                                    copy_path_of(index, listed.size(), spaces, paths)});
             }
-            if (model != nullptr)
-                parts.partitioner = std::make_unique<Coherence::ListSchedulingPartitioner>(model);
+            parts.partitioners.scheduler = [](std::shared_ptr<const Coherence::CostModel> costs)
+            {
+                return std::unique_ptr<Coherence::Partitioner>(
+                    std::make_unique<Coherence::ListSchedulingPartitioner>(std::move(costs)));
+            };
+            parts.partitioners.floor = [](std::shared_ptr<const Coherence::CostModel> costs)
+            {
+                return std::unique_ptr<Coherence::Partitioner>(
+                    std::make_unique<Coherence::FloorPartitioner>(std::move(costs)));
+            };
             parts.model = std::move(model);
             parts.copies = std::move(copies);
             parts.device_of = make_space_device_resolver(devices);

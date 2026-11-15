@@ -23,7 +23,7 @@
 
 /**
  * @file partition_measure.cpp
- * @brief Implements measure_partitioned_run() and fold_partition_ledger().
+ * @brief Implements measure_partitioned_run() and fold_partition_ledger(), which also rebalances.
  * @see modules/engine/coherence/README.md
  * @author Mustafa Garip
  */
@@ -65,15 +65,18 @@ namespace SushiRuntime
 
         void fold_partition_ledger(Internal::Execution::RuntimeContext& context)
         {
+            Internal::Coherence::PartitionSession& session = context.partitioning();
             const std::string& path = context.settings().device_profile_file;
-            if (path.empty() || !context.partitioning().has_plan())
+            if (path.empty() || !session.has_plan())
                 return;
-            const Result<bool> folded = context.partitioning().ledger().fold_into(std::filesystem::path(path));
+            const Result<bool> folded = session.ledger().fold_into(std::filesystem::path(path));
             if (!folded)
                 SR_LOG_WARN(K_API_LOG_CATEGORY,
                             "The measured device times were not folded into the profile file {}: {}; the next run "
                             "reads the file as it was.",
                             path, folded.error().message);
+            // A changed plan raises the session's generation, and the next commit places the graph again.
+            static_cast<void>(session.rebalance());
         }
     } // namespace Detail
 } // namespace SushiRuntime

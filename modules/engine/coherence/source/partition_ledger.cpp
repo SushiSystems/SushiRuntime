@@ -41,6 +41,7 @@ namespace SushiRuntime
         void PartitionLedger::add_dispatches(const std::vector<DispatchObservation>& observations)
         {
             unfolded_.insert(unfolded_.end(), observations.begin(), observations.end());
+            horizon_.insert(horizon_.end(), observations.begin(), observations.end());
             for (const DispatchObservation& observation : observations)
                 device_seconds_[observation.device] += observation.seconds;
         }
@@ -84,9 +85,17 @@ namespace SushiRuntime
             return written;
         }
 
+        std::vector<DispatchObservation> PartitionLedger::take_horizon()
+        {
+            std::vector<DispatchObservation> taken;
+            taken.swap(horizon_);
+            return taken;
+        }
+
         void PartitionLedger::clear() noexcept
         {
             unfolded_.clear();
+            horizon_.clear();
             device_seconds_.clear();
             steps_ = 0;
             seconds_ = 0.0;

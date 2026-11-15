@@ -687,7 +687,7 @@ is set, else the bytes (`source/runtime_transfer_cost.hpp`); `create()` loads it
 an unreadable file. With the path set and no file, `create()` first measures every device
 (`source/runtime_profile_measurement.hpp`) with `DeviceProfileProbe` and two internal probe kernels
 (`source/runtime_probe_kernels.hpp`), writes the file by a temporary file and a rename, and prices
-by it. `eviction_policy()` is the context's `LogicalTimeEviction`; `partitioning()` its `PartitionSession` (`source/runtime_partition_parts.hpp`), a `ListSchedulingPartitioner` over that `CostModel`.
+by it. `eviction_policy()` is the context's `LogicalTimeEviction`; `partitioning()` its `PartitionSession` (`source/runtime_partition_parts.hpp`), whose factories build a `ListSchedulingPartitioner` and a `FloorPartitioner` over that `CostModel`; with a profile file set, its placement journal is appended to the file's path with `.journal` added.
 The coherence hook of the composer and of `PlanCache` reads all four from the context, so neither builds its own.
 
 `add_file_space()` takes the lowest id a removed file space left vacant, else the next index, so an
