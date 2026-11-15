@@ -150,6 +150,20 @@ It skips on a runtime with fewer than two devices. The first build plans the cop
 build nothing and call no planner, by compile_count() and coherence_plan_count(). The result of the
 first run and of a replayed run both equal a host reference.
 
+`AHostWriteAfterASteadyPlanIsPlannedAgainBeforeTheNextRun` records one node that reads a
+`Residency::Planned` buffer into a buffer on device 1. Once the plan is steady, a `write_range()` on
+the planned buffer makes the next run call the planner once more, and the result holds the written
+values plus one, so the node read the bytes written after the steady plan.
+
+## test_region_composer/test_copy_plan_replay.cpp
+
+`Medium_CopyPlanReplay` records the same two nodes into region 0 of a `DynamicGraph` and skips on a
+runtime with fewer than two devices. The first plan is not steady and is planned again at the next
+run; once steady, four runs call no planner and compose nothing; a replayed step leaves the bytes of
+a freshly planned one. `AHostWriteAfterASteadyPlanIsPlannedAgainBeforeTheNextRun` is the static
+test's row for the composer: a `write_range()` after a steady plan rebuilds the region once and the
+node reads the written bytes.
+
 ## test_step_driver/test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types

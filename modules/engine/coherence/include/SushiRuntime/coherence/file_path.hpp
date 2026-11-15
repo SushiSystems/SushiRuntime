@@ -68,6 +68,13 @@ namespace SushiRuntime
                  */
                 void add(const Memory::FileMemorySpace& space);
 
+                /**
+                 * @brief Stops reading the file space with id; an id never added is left alone.
+                 *
+                 * Called between runs, never while a copy runs.
+                 */
+                void remove(MemorySpaceID id) noexcept;
+
                 [[nodiscard]] std::string_view name() const noexcept override;
 
                 /** @brief Returns whether source is a file space added here and destination is not a file. */

@@ -265,8 +265,8 @@ name, and so does a null `const char*`.
 ### PlanCache
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, whenever the recorder's generation() differs from the one the
-plan was built at, and whenever the context's placement generation differs from the one the plan was
-compiled under, and whenever the plan holds a copy plan that is not steady. stale() therefore takes the ContextHandle beside the recorder; it is defined in
+plan was built at, whenever the context's placement generation differs from the one the plan was
+compiled under, and whenever its copy plan is not steady or covers a buffer the host wrote since. stale() therefore takes the ContextHandle beside the recorder; it is defined in
 `source/plan_cache.cpp`, since the header cannot see the context. The plan and the list of its recorded nodes sit behind one pointer to
 `Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
 first build. compiled_plan() is protected because the test seams of the owning Graph read it; it
@@ -279,7 +279,7 @@ stale, and counts zero compiles and zero coherence plans.
 build() builds a fresh backing graph by replaying the recorder, compiles it, hands the plan to
 `ExecutionEngine::prepare()` and caches it. Its compile calls `plan_region_coherence()`, the
 composer's hook, through a `TaskGraph::NodeSplice`; the plan state keeps the `CopyPlan`, a steady
-one replays with no planner call and one that is not steady makes the plan stale. During the replay it resolves every node once against
+one replays with no planner call and one that is not steady makes the plan stale. A `HostWriteWatch` (`source/host_write_watch.hpp`) over the plan's buffers, armed at the build, makes it stale after a host write to one of them, by the marks `platform/memory`'s README describes. During the replay it resolves every node once against
 the rules in force and stores the winning position in the node's `placement_rule`; the plan state
 also keeps a share of the rule set, so a later `set_placement_rules()` cannot free what a compiled
 plan was resolved against. `describe_plan()` reports the position as `PlanNode::placement_rule`.
@@ -720,8 +720,8 @@ Each built region is stamped, then `plan_region_coherence()` (`source/region_coh
 the allocate, copy and free nodes of `engine/coherence`, and finish_region() reads its in-degrees,
 roots, leaves and boundary summary; a refused plan fails the commit the same way. The hook prices
 copies by the context's `transfer_cost()` and evicts by its `eviction_policy()` through
-`ResidencyOptions`, so instances stay resident; the region stores the `CopyPlan`, a commit rebuilds
-each region whose plan is not steady, and each planned region adds one to `coherence_plan_count()`.
+`ResidencyOptions`, so instances stay resident; the region stores the `CopyPlan` and a `HostWriteWatch`, a commit rebuilds
+each region whose plan is not steady or whose watch saw a host write, as `coherence_replan_due(context)` reports, and each planned region adds one to `coherence_plan_count()`.
 
 The second phase un-wires the allocations of the retired regions (retire_regions()), installs the
 built ones (install_region()), wires every dirty allocation again (rewire_base()) and publishes the

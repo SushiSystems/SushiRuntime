@@ -142,6 +142,12 @@ queue.
 | `AnInstanceKeepsItsKindUntilItIsDroppedOrRetired` | An instance set with a kind reports it through `instance_kind()` and `EntryView::home_kind`; one set without a kind, a dropped one and one on a retired or reused slot report none. |
 | `LiveCountFollowsMintAndRetire` | `live_count()` rises with each mint and falls with each retire; a retire of a stale handle changes nothing. |
 | `ReadersResolveWhileAWriterMints` | Four reader threads resolve one live handle while the test thread mints and retires four chunks of others; every resolve returns the same address. |
+| `CoherenceMapLivesWithTheHandle` | A live handle's map keeps what was written to it; a retired handle has none, and the handle that reuses its slot starts with an empty map. |
+| `WithoutHorizonsEveryStepAddsAnInterval` | 1000 steps that write one byte on one space and copy it to the other leave more than 1000 intervals when no horizon falls. |
+| `CoherenceHistoryStaysFlatOverOneHundredThousandSteps` | With `retire_coherence_history()` every 100 steps, the interval count after 100000 steps equals the count after 1000, four in all, and each byte keeps the spaces that hold it. Medium for its 100000 steps. |
+| `AHostWriteMarksOnlyTheWrittenHandleAtTheNewGeneration` | `record_host_write()` raises the generation to 1 and marks the written handle with it; another handle stays at 0. |
+| `ARetiredHandlesHostWriteIsNotSeenOnItsReusedSlot` | The handle that reuses a written slot reads 0, and so does the retired one. |
+| `AHostWriteOnARetiredHandleIsRefusedAndRaisesNoGeneration` | A host write on a retired handle returns `StaleHandle` and leaves the generation at 0. |
 
 ## test_borrowed_index.cpp
 
@@ -225,6 +231,20 @@ test can check that a space probes once and derives its reserve from the result.
 The tests cover a partial write splitting one interval into three, a write invalidating every
 other space, two copies joining back into one interval, a whole-buffer write leaving one
 interval, and `drop_space()` removing a space and joining equal neighbours.
+
+`RetireHistoryJoinsRunsThatHoldTheSameSpaces`, `RetireHistoryIsIdempotentAndEmptyMapsStayEmpty` and
+`AWriteAfterRetireTakesANewVersion` cover `retire_history()`: neighbours that differ only in version
+join, a second call changes nothing, an empty map stays empty, and a write after it takes a version
+above the ones handed out before.
+
+## test_coherence_horizon.cpp
+
+| Test | What it checks |
+| --- | --- |
+| `NoHorizonFallsBeforeTheIntervalIsReached` | Three steps of an interval of four retire nothing; the map keeps its three intervals. |
+| `TheStepThatReachesTheIntervalRetiresTheHistory` | The fourth step retires the history, and two written bytes on one space join into one interval. |
+| `CountingStartsAgainAfterAHorizon` | After a horizon the next one falls four steps later, not at once. |
+| `AnIntervalOfZeroFallsEveryStep` | An interval of zero counts as one, so every step is a horizon. |
 
 ## test_device_memory_space.cpp and test_host_memory_space.cpp
 

@@ -408,6 +408,8 @@ namespace SushiRuntime
 
             engine.write_run_values();
             observe_run(context, engine, plan, report.layer);
+            // Every step of the run has ended, so no plan reads the coherence maps now.
+            static_cast<void>(context.coherence_horizon().advance(context.handles(), executed));
             return {};
         }
 
@@ -469,6 +471,8 @@ namespace SushiRuntime
 
             report.layer = state.layer;
             engine.write_run_values();
+            // The step has ended, so no plan reads the coherence maps now.
+            static_cast<void>(context.coherence_horizon().advance(context.handles(), 1));
             return {};
         }
 

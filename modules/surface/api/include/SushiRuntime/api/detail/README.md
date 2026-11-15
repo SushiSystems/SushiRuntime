@@ -508,6 +508,11 @@ added after the run was armed. Each run reads the runtime's answer once, when it
 different: `submit_step()` starts it through the engine's `submit_observed()`, so the sentinel hands the
 observation over when the step's device work completes, and `finish_step()` only fills the report.
 
+Last, run_steps() advances the runtime's `CoherenceHorizon` by the steps it ran, and `finish_step()` by
+one, so the directory's coherence history is retired every `K_STEPS_PER_HORIZON` steps. Both are
+called after every step has ended, when no plan is being made, and both step drivers, of `Graph` and
+of `DynamicGraph`, end in them.
+
 ## host_slot_check.hpp
 
 A private header of `source/`.

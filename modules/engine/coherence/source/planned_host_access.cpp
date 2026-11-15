@@ -126,6 +126,8 @@ namespace SushiRuntime
             std::memcpy(*host_bytes + begin, source, bytes);
             // The write leaves the host space the only holder of the range.
             directory_->coherence(handle)->record_write(begin, begin + bytes, host_);
+            // A plan made before this write no longer matches the map, so it must be made again.
+            static_cast<void>(directory_->record_host_write(handle));
             return {};
         }
 
@@ -162,6 +164,19 @@ namespace SushiRuntime
                 std::memcpy(out + (from - begin), *host_bytes + from, to - from);
             }
             return {};
+        }
+
+        std::vector<MemorySpaceID> PlannedHostAccess::held_spaces(GlobalHandle handle) const
+        {
+            std::vector<MemorySpaceID> held;
+            const Memory::EntryView entry = directory_->inspect(handle);
+            if (entry.status != HandleStatus::Ok)
+                return held;
+            for (std::uint32_t space = 0; space < Memory::ResidencyDirectory::K_MAX_MEMORY_SPACES; ++space)
+                if ((entry.valid_spaces & (std::uint64_t{1} << space)) != 0 &&
+                    !directory_->instance_kind(handle, MemorySpaceID(space)).has_value())
+                    held.push_back(MemorySpaceID(space));
+            return held;
         }
 
         void PlannedHostAccess::release(GlobalHandle handle) noexcept

@@ -54,6 +54,7 @@
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "host_write_watch.hpp"
 #include "region_coherence.hpp"
 #include "rule_stamp.hpp"
 
@@ -86,6 +87,9 @@ namespace SushiRuntime
 
             /** @brief Copy plan spliced into plan; nothing when the planner did not run. */
             std::optional<Internal::Coherence::CopyPlan> copy_plan;
+
+            /** @brief Says when the host wrote a buffer of copy_plan; nothing when copy_plan is nothing. */
+            std::optional<HostWriteWatch> host_writes;
         };
 
         PlanCache::PlanCache() noexcept = default;
@@ -150,6 +154,8 @@ namespace SushiRuntime
                     return make_error(std::move(coherent.error()));
                 planned = coherent.value().has_value();
                 built->copy_plan = std::move(coherent.value());
+                if (planned)
+                    built->host_writes.emplace(nodes, runtime.handles());
                 return {};
             };
             // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
@@ -194,6 +200,8 @@ namespace SushiRuntime
                 return "the placement changed";
             if (state_->copy_plan && !state_->copy_plan->steady)
                 return "the copy plan is not steady";
+            if (state_->host_writes && state_->host_writes->written(runtime.handles()))
+                return "the host wrote a buffer of the copy plan";
             return "the plan was marked for a rebuild";
         }
 
@@ -205,6 +213,9 @@ namespace SushiRuntime
             if (state_->copy_plan && !state_->copy_plan->steady)
                 return true;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            // A host write between runs left the directory where the stored copy plan does not hold.
+            if (state_->host_writes && state_->host_writes->written(runtime.handles()))
+                return true;
             return state_->placement->generation != runtime.placement()->generation;
         }
 

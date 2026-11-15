@@ -164,6 +164,7 @@ namespace SushiRuntime
                 entry->element_alignment.store(1, std::memory_order_relaxed);
                 entry->home.store(0, std::memory_order_relaxed);
                 entry->coherence.clear();
+                entry->host_write.store(0, std::memory_order_relaxed);
 
                 // A slot whose generation wrapped to 0 is never reused, so no old handle matches it.
                 if (next_generation != 0)
@@ -334,6 +335,33 @@ namespace SushiRuntime
                     intervals += entry->coherence.retire_history();
             }
             return intervals;
+        }
+
+        HandleStatus ResidencyDirectory::record_host_write(GlobalHandle handle)
+        {
+            std::lock_guard<std::mutex> lock(writer_mutex_);
+            HandleStatus status = HandleStatus::Ok;
+            Entry* const entry = live_entry(handle, status);
+            if (!entry)
+                return status;
+            const std::uint64_t generation = host_write_generation_.load(std::memory_order_relaxed) + 1;
+            // The mark is stored first, so a reader that sees the new generation sees the mark.
+            entry->host_write.store(generation, std::memory_order_release);
+            host_write_generation_.store(generation, std::memory_order_release);
+            return HandleStatus::Ok;
+        }
+
+        std::uint64_t ResidencyDirectory::host_write_of(GlobalHandle handle) const noexcept
+        {
+            HandleStatus status = HandleStatus::Ok;
+            const Entry* const entry = live_entry(handle, status);
+            if (!entry)
+                return 0;
+            const std::uint64_t mark = entry->host_write.load(std::memory_order_acquire);
+            // A retire between the two loads may have cleared the mark of another handle.
+            if (entry->generation.load(std::memory_order_acquire) != handle.generation())
+                return 0;
+            return mark;
         }
 
         ErrorCode error_code_of(HandleStatus status) noexcept

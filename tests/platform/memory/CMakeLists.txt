@@ -13,6 +13,7 @@ sushiruntime_add_module_tests(
         compile_usm_request.cpp
         compile_usm_source.cpp
         test_borrowed_index.cpp
+        test_coherence_horizon.cpp
         test_coherence_intervals.cpp
         test_device_memory_space.cpp
         test_epoch_reclamation.cpp

@@ -329,4 +329,41 @@ namespace
                   K_HOST_MASK | K_DEVICE_MASK);
         EXPECT_EQ(directory.coherence(second)->valid_spaces_at(K_STEPS), K_HOST_MASK);
     }
+
+    TEST(Small_ResidencyDirectory, AHostWriteMarksOnlyTheWrittenHandleAtTheNewGeneration)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle written = mint_buffer(directory);
+        const GlobalHandle untouched = mint_buffer(directory);
+
+        ASSERT_EQ(directory.record_host_write(written), HandleStatus::Ok);
+
+        EXPECT_EQ(directory.host_write_generation(), 1U);
+        EXPECT_EQ(directory.host_write_of(written), 1U);
+        EXPECT_EQ(directory.host_write_of(untouched), 0U);
+    }
+
+    TEST(Small_ResidencyDirectory, ARetiredHandlesHostWriteIsNotSeenOnItsReusedSlot)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle retired = mint_buffer(directory);
+        ASSERT_EQ(directory.record_host_write(retired), HandleStatus::Ok);
+        ASSERT_EQ(directory.retire(retired), HandleStatus::Ok);
+
+        const GlobalHandle reused = mint_buffer(directory);
+
+        ASSERT_EQ(reused.slot(), retired.slot());
+        EXPECT_EQ(directory.host_write_of(reused), 0U);
+        EXPECT_EQ(directory.host_write_of(retired), 0U);
+    }
+
+    TEST(Small_ResidencyDirectory, AHostWriteOnARetiredHandleIsRefusedAndRaisesNoGeneration)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle retired = mint_buffer(directory);
+        ASSERT_EQ(directory.retire(retired), HandleStatus::Ok);
+
+        EXPECT_EQ(directory.record_host_write(retired), HandleStatus::StaleHandle);
+        EXPECT_EQ(directory.host_write_generation(), 0U);
+    }
 } // namespace

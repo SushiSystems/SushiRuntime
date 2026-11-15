@@ -83,9 +83,10 @@ namespace
                 std::free(address);
             }
 
+            /** @brief Returns Host: the directory records a kind with each instance this allocator made. */
             [[nodiscard]] std::optional<Internal::Memory::USMKind> kind_of(MemorySpaceID) const noexcept override
             {
-                return std::nullopt;
+                return Internal::Memory::USMKind::Host;
             }
 
             int held = 0; /**< Allocations not yet released. */
@@ -153,7 +154,8 @@ namespace
                     case PlannedStepKind::Allocate:
                     {
                         void* const address = allocator_.allocate(step.space, step.end, step.alignment);
-                        ASSERT_EQ(directory_.set_instance(step.handle, step.space, address), HandleStatus::Ok);
+                        ASSERT_EQ(directory_.set_instance(step.handle, step.space, address, allocator_.kind_of(step.space)),
+                                  HandleStatus::Ok);
                         break;
                     }
                     case PlannedStepKind::Copy:
@@ -319,12 +321,42 @@ namespace
         const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
         const std::vector<std::int32_t> values = pattern(1);
         ASSERT_TRUE(access_.write(handle, 0, values.data(), K_BYTES));
-        ASSERT_EQ(directory_.set_instance(handle, K_DEVICE_0, allocator_.allocate(K_DEVICE_0, K_BYTES, 4)),
+        ASSERT_EQ(directory_.set_instance(handle, K_DEVICE_0, allocator_.allocate(K_DEVICE_0, K_BYTES, 4),
+                                          allocator_.kind_of(K_DEVICE_0)),
                   HandleStatus::Ok);
         EXPECT_EQ(allocator_.held, 2);
 
         access_.release(handle);
         EXPECT_EQ(allocator_.held, 0);
         EXPECT_TRUE(directory_.is_stale(handle));
+    }
+
+    TEST_F(Small_PlannedHostAccess, ReleaseFreesThePlannedInstancesOfAHeldBufferAndLeavesItsHeldInstance)
+    {
+        std::vector<std::int32_t> held_bytes = pattern(3);
+        const GlobalHandle handle =
+            access_.mint_held(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}, K_DEVICE_1, held_bytes.data()).value();
+        ASSERT_EQ(directory_.set_instance(handle, K_DEVICE_0, allocator_.allocate(K_DEVICE_0, K_BYTES, 4),
+                                          allocator_.kind_of(K_DEVICE_0)),
+                  HandleStatus::Ok);
+        const std::vector<MemorySpaceID> held = access_.held_spaces(handle);
+
+        access_.release(handle);
+
+        EXPECT_EQ(held, std::vector<MemorySpaceID>{K_DEVICE_1});
+        EXPECT_EQ(allocator_.held, 0);
+        EXPECT_EQ(held_bytes, pattern(3));
+    }
+
+    TEST_F(Small_PlannedHostAccess, AHostWriteIsRecordedAsAHostWriteOfTheHandle)
+    {
+        const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
+        const std::uint64_t before = directory_.host_write_generation();
+        const std::vector<std::int32_t> values = pattern(1);
+
+        ASSERT_TRUE(access_.write(handle, 0, values.data(), K_BYTES));
+
+        EXPECT_GT(directory_.host_write_of(handle), before);
+        access_.release(handle);
     }
 } // namespace

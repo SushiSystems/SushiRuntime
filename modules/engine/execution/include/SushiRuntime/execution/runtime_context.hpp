@@ -47,6 +47,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
+#include <SushiRuntime/memory/coherence_horizon.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
@@ -192,12 +193,23 @@ namespace SushiRuntime
                 void install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer);
 
                 /**
-                 * @brief Adds the read-only memory space of a file range, for the life of the
-                 *        context, and lets the file transfer path read it; called between runs.
+                 * @brief Adds the read-only memory space of a file range, under the lowest id a
+                 *        removed file space left, and lets the file transfer path read it; called
+                 *        between runs.
                  * @return The id of the space, InvalidArgument when the file cannot be read or is
                  *         shorter than the range, or AllocationFailed when no space id is left.
                  */
                 [[nodiscard]] Result<MemorySpaceID> add_file_space(Internal::Memory::FileRange range);
+
+                /**
+                 * @brief Frees the file space with id and its id for the next add_file_space();
+                 *        called between runs, once no live handle holds an instance there.
+                 * @return Whether id named a file space; any other id is left alone.
+                 */
+                bool remove_file_space(MemorySpaceID id);
+
+                /** @brief Returns the horizon the step drivers retire the coherence history at. */
+                [[nodiscard]] Internal::Memory::CoherenceHorizon& coherence_horizon() noexcept;
 
                 /** @brief Returns the index that gives one Borrowed handle per range of caller-owned memory. */
                 [[nodiscard]] Internal::Memory::BorrowedIndex& borrowed_handles() noexcept;

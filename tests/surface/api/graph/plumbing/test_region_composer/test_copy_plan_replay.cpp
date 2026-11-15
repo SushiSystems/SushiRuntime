@@ -62,6 +62,15 @@ namespace CopyPlanReplayTests
                 expected[index] = static_cast<std::uint32_t>(index) * K_SPREAD + 1u;
             return expected;
         }
+
+        /** @brief Returns the K_COUNT values index * K_SPREAD + offset, the bytes a host write puts in the planned buffer. */
+        std::vector<std::uint32_t> values_with(std::uint32_t offset)
+        {
+            std::vector<std::uint32_t> values(K_COUNT);
+            for (std::size_t index = 0; index < K_COUNT; ++index)
+                values[index] = static_cast<std::uint32_t>(index) * K_SPREAD + offset;
+            return values;
+        }
     } // namespace
 
     /** @brief Fixture of the replay tests; they skip on a runtime with fewer than two devices. */
@@ -153,5 +162,33 @@ namespace CopyPlanReplayTests
 
         EXPECT_EQ(fresh, reference_result());
         EXPECT_EQ(replayed, fresh);
+    }
+
+    /**
+     * @brief Tests that a write_range() on a planned buffer after a steady plan makes the next
+     *        run plan its copies again, so the node reads the written bytes.
+     */
+    TEST_F(Medium_CopyPlanReplay, AHostWriteAfterASteadyPlanIsPlannedAgainBeforeTheNextRun)
+    {
+        const Runtime& rt = runtime();
+        auto input = rt.buffer<std::uint32_t>(K_COUNT, Residency::Planned).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        ASSERT_TRUE(input.write_range({0, K_COUNT}, values_with(0u)));
+        auto world = rt.dynamic_graph();
+        world.region(0).add(K_COUNT, In(input), Out(result),
+                            [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                            { target[index] = source[index] + 1u; });
+        // The first plan leaves the copy resident and is not steady; the second plans the steady state.
+        ASSERT_TRUE(world.run());
+        ASSERT_TRUE(world.run());
+        const std::size_t steady = world.coherence_plan_count();
+        ASSERT_TRUE(world.run());
+        ASSERT_EQ(world.coherence_plan_count(), steady);
+
+        ASSERT_TRUE(input.write_range({0, K_COUNT}, values_with(7u)));
+        ASSERT_TRUE(world.run());
+
+        EXPECT_EQ(world.coherence_plan_count(), steady + 1);
+        EXPECT_EQ(TestSupport::contents(result), values_with(8u));
     }
 } // namespace CopyPlanReplayTests

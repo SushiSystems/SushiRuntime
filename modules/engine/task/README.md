@@ -148,7 +148,11 @@ the table takes no lock. The scope's pointer is a `thread_local` defined once in
    moved silently. A stated index past the devices is returned as stated, for the dispatch to
    refuse.
 2. No stated device: the owner.
-3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
+3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`. A node whose buffers are all
+   `Residency::Planned` and hold no instance on any device has no owner, and so has one whose only
+   instance is the host's after a `write_range()`, so it runs on the default device until a
+   stated device or the partitioner places it; the coherence planner then allocates its buffers
+   there.
 
 The function needs no queue. It reads both answers through `PlacementMemory`, which is asked about
 a region's `GlobalHandle`; the form that takes a `USMAllocator` and a `ResidencyView` wraps them

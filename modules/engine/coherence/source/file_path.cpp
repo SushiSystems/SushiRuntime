@@ -71,6 +71,17 @@ namespace SushiRuntime
                 spaces_.insert(at, &space);
         }
 
+        void FilePath::remove(MemorySpaceID id) noexcept
+        {
+            const auto at = std::lower_bound(spaces_.begin(), spaces_.end(), id,
+                                             [](const Memory::FileMemorySpace* held, MemorySpaceID wanted)
+                                             {
+                                                 return held->id() < wanted;
+                                             });
+            if (at != spaces_.end() && (*at)->id() == id)
+                spaces_.erase(at);
+        }
+
         std::string_view FilePath::name() const noexcept
         {
             return "file";

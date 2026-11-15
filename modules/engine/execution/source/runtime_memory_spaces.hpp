@@ -30,7 +30,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -47,6 +49,7 @@ namespace SushiRuntime
         {
             std::vector<std::unique_ptr<Memory::MemorySpace>> owned; /**< The spaces. */
             std::vector<const Memory::MemorySpace*> views;           /**< The same spaces, read-only. */
+            std::set<std::uint32_t> vacant_file_ids;                 /**< Ids of removed file spaces, lowest first. */
         };
 
         /**
@@ -60,10 +63,16 @@ namespace SushiRuntime
                                                               const Memory::MemoryProbe& host_probe);
 
         /**
-         * @brief Adds the space of a file range with the next free id: the count of spaces, so a
-         *        space's id stays its index.
+         * @brief Adds the space of a file range under the lowest vacant file id, else under the
+         *        count of spaces, so a space's id stays its index.
          * @return The new space; spaces owns it.
          */
         [[nodiscard]] const Memory::FileMemorySpace& add_file_space_to(RuntimeMemorySpaces& spaces, Memory::FileRange range);
+
+        /**
+         * @brief Replaces the file space with id by an empty one and marks the id vacant.
+         * @return Whether id named a file space that was not vacant; any other id is left alone.
+         */
+        bool remove_file_space_from(RuntimeMemorySpaces& spaces, MemorySpaceID id);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

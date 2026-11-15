@@ -117,11 +117,16 @@ the bytes with no space set; no instance is made. The planner reads such a map a
 nowhere, so the first node that uses it gets an allocation step and no copy.
 
 `write()` copies the bytes into the buffer's host instance, made through the `InstanceAllocator` on
-first use, and calls `record_write()` on the host space, so every other space loses the range.
+first use, and calls `record_write()` on the host space, so every other space loses the range. It
+also calls `ResidencyDirectory::record_host_write()`, so a stored copy plan over the buffer is made
+again before the next run.
 `read()` zeroes the destination, copies to the host instance each range the host space lacks from
 the first space in the planner's order that holds it, over the first path that connects the two,
 and then reads the host instance. A range no path reaches is refused as `Unsupported`. `release()`
-frees every instance the directory records, whoever made it, and retires the handle.
+frees every instance the directory records with a kind of USM, the host instance and each instance
+a planned allocation made on a device, and retires the handle. An instance with no kind is the one
+`mint_held()` gave, which the runtime did not allocate; `held_spaces()` names its spaces before the
+release, so the caller can free what holds it. For a file-backed buffer that is its file space.
 
 The calls write the coherence map, which takes no lock, so they run between runs and never beside
 the planner.
@@ -171,7 +176,8 @@ not part of this path.
 
 `FilePath` reads a file space into any space that is not a file. It connects a source only when the
 source is a `FileMemorySpace` added to it with `add()`; the runtime adds each file space when a
-buffer is made from a file range, between runs. A copy to a space with a queue cuts the range into
+buffer is made from a file range, between runs, and `remove()` lets go of it when the buffer is
+dropped, so its id can name the next file space. A copy to a space with a queue cuts the range into
 chunks of one ring slot, in file order: the path reads a chunk from the file into a slot and copies
 the slot to the destination on the destination's queue, and the read of the next chunk runs while
 that copy does. The host memory a copy holds is therefore the ring, `slot_bytes * slot_count`, and

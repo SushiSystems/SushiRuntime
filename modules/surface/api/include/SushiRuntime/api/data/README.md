@@ -113,13 +113,16 @@ runtime may move is one the host cannot hold. `operator[]` and `host()` refuse i
 memory. The host reaches the bytes through `read_range()` and `write_range()`:
 
 - `write_range()` copies the bytes into an instance on the host space, made on first use, and records
-  the write there, which marks every other space stale for that range.
+  the write there, which marks every other space stale for that range. It also records a host write
+  of the buffer, so a graph whose stored copy plan covers the buffer plans again before its next run.
 - `read_range()` copies what the host space lacks from the first space that holds it, through a
   transfer path, then reads the host instance. Bytes no space holds were never written and read as
   zero.
 
 Both calls run between runs: the coherence map they update takes no lock. Destroying a planned buffer
-frees every instance the directory records for it, then retires the handle.
+frees every instance the runtime allocated for it, on the host and on each device, then retires the
+handle. Destroying a buffer made by `Runtime::buffer_from_file()` also frees its file space, so the
+next file-backed buffer reuses the space's id.
 `source/planned_buffer.cpp` builds a `PlannedHostAccess` over the runtime's directory, spaces,
 paths and USM allocator for each call; the rules themselves live in `engine/coherence`, whose
 README has the section "PlannedHostAccess".

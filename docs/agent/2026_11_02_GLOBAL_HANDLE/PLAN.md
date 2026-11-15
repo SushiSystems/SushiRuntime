@@ -69,7 +69,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T22 | horizons | T21 | done |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | done |
-| T46 | step driver, `platform/memory` retire, `engine/task` placement: host writes force a replan, retired handles free planned instances, planned-only nodes placed | T37, T21 | running |
+| T46 | step driver, `platform/memory` retire, `engine/task` placement: host writes force a replan, retired handles free planned instances, planned-only nodes placed | T37, T21 | done |
 | T24 | device profile and cost model | T04, T23 | done |
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | done |
 | T25 | partitioner | T14, T24, T37 | done |

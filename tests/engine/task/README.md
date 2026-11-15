@@ -153,6 +153,16 @@ two, and an address with no record stands for a region no device owns.
 | `AnUnownedRegionWithNothingStatedRunsOnDeviceZero` | An unowned region with nothing stated runs on device 0. |
 | `AnUnownedRegionLeavesTheStatedPlacementInForce` | A stated device stands for an unowned region. |
 
+### `Small_NodePlacementPlanned`
+
+The fixture holds a real `ResidencyDirectory` and a `USMAllocator` over two host devices, and mints
+planned buffers in it: described, with the host space as home and no device instance.
+
+| Test | What it proves |
+| --- | --- |
+| `ANodeOverPlannedBuffersWithNoInstanceRunsOnTheDefaultDevice` | A node that reads and writes planned buffers with no instance anywhere runs on `K_DEFAULT_PLACEMENT`. |
+| `APlannedBufferHeldOnlyByTheHostRunsOnTheDefaultDevice` | A planned buffer whose one instance is on the host space places its node on `K_DEFAULT_PLACEMENT` too. |
+
 ### `Small_NodePlacementContexts`
 
 The fixture holds an `InMemoryPlacementMemory` of two devices in two SYCL contexts, so the refusal needs no

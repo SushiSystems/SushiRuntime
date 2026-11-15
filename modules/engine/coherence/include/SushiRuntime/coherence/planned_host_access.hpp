@@ -86,8 +86,8 @@ namespace SushiRuntime
                                                              MemorySpaceID space, void* address);
 
                 /**
-                 * @brief Writes host bytes into [begin, begin + bytes) of the host instance and
-                 *        records the write on the host space.
+                 * @brief Writes host bytes into [begin, begin + bytes) of the host instance,
+                 *        records the write on the host space and as a host write of handle.
                  * @return Nothing, AllocationFailed when no host instance can be made, or the
                  *         directory's error for a handle that is not live.
                  * @pre The range lies inside the buffer and source holds bytes bytes.
@@ -105,7 +105,17 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> read(GlobalHandle handle, std::size_t begin,
                                                 void* destination, std::size_t bytes);
 
-                /** @brief Frees every instance the directory records for handle, then retires it. */
+                /**
+                 * @brief Returns the spaces whose instance of handle was recorded with no kind:
+                 *        the held instance mint_held() gave, which release() leaves alone.
+                 * @return The spaces in id order; none for a handle that is not live.
+                 */
+                [[nodiscard]] std::vector<MemorySpaceID> held_spaces(GlobalHandle handle) const;
+
+                /**
+                 * @brief Frees every instance the directory records for handle with a kind, on
+                 *        the devices and the host, then retires it.
+                 */
                 void release(GlobalHandle handle) noexcept;
 
             private:

@@ -392,13 +392,14 @@ namespace SushiRuntime
 
             /**
              * @brief Returns whether a structural change, a new recording, a chain not yet
-             *        classified or a copy plan that is not steady requires a recompose.
+             *        classified, a copy plan that is not steady or a host write to a buffer of a
+             *        copy plan requires a recompose.
              */
             [[nodiscard]] bool needs_commit() const
             {
                 return !composed() || rebuild_every_region_ || !dirty_regions_.empty() ||
                        !dropped_.empty() || (chain_allowed() && chain_unclassified()) ||
-                       coherence_replan_due();
+                       coherence_replan_due(context_);
             }
 
             /** @brief Marks dirty each region written to whose recording really changed. */

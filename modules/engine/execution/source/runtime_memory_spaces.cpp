@@ -80,12 +80,36 @@ namespace SushiRuntime
 
         const Memory::FileMemorySpace& add_file_space_to(RuntimeMemorySpaces& spaces, Memory::FileRange range)
         {
+            if (!spaces.vacant_file_ids.empty())
+            {
+                const std::uint32_t index = *spaces.vacant_file_ids.begin();
+                spaces.vacant_file_ids.erase(spaces.vacant_file_ids.begin());
+                auto space = std::make_unique<Memory::FileMemorySpace>(MemorySpaceID(index), std::move(range));
+                const Memory::FileMemorySpace& added = *space;
+                spaces.owned[index] = std::move(space);
+                spaces.views[index] = &added;
+                return added;
+            }
             const MemorySpaceID id(static_cast<std::uint32_t>(spaces.views.size()));
             auto space = std::make_unique<Memory::FileMemorySpace>(id, std::move(range));
             const Memory::FileMemorySpace& added = *space;
             spaces.owned.push_back(std::move(space));
             spaces.views.push_back(&added);
             return added;
+        }
+
+        bool remove_file_space_from(RuntimeMemorySpaces& spaces, MemorySpaceID id)
+        {
+            const std::uint32_t index = id.value();
+            if (index >= spaces.owned.size() || spaces.vacant_file_ids.count(index) != 0 ||
+                dynamic_cast<const Memory::FileMemorySpace*>(spaces.owned[index].get()) == nullptr)
+                return false;
+            // An empty range keeps the id an index while no buffer can be held there.
+            auto vacant = std::make_unique<Memory::FileMemorySpace>(id, Memory::FileRange{});
+            spaces.views[index] = vacant.get();
+            spaces.owned[index] = std::move(vacant);
+            spaces.vacant_file_ids.insert(index);
+            return true;
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

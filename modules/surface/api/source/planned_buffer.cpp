@@ -33,12 +33,15 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include <SushiRuntime/api/api_log_category.hpp>
 #include <SushiRuntime/coherence/planned_host_access.hpp>
 #include <SushiRuntime/coherence/usm_instance_allocator.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
@@ -130,11 +133,22 @@ namespace SushiRuntime
         {
             if (handle.is_null() || !context)
                 return;
-            // Building the access allocates nothing, so release cannot throw.
-            with_access(context, [handle](Internal::Coherence::PlannedHostAccess& access)
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            const Result<void> released = translate_exceptions([&]()
             {
-                access.release(handle);
+                std::vector<MemorySpaceID> held;
+                with_access(context, [handle, &held](Internal::Coherence::PlannedHostAccess& access)
+                {
+                    held = access.held_spaces(handle);
+                    access.release(handle);
+                });
+                // A file-backed buffer is the only holder of its file space, so the space goes with it.
+                for (MemorySpaceID space : held)
+                    static_cast<void>(runtime.remove_file_space(space));
             });
+            if (!released)
+                SR_LOG_WARN(K_API_LOG_CATEGORY, "A planned buffer's release failed with {}: {}; its instances may stay allocated.",
+                            to_string(released.error().code), released.error().message);
         }
     } // namespace Detail
 } // namespace SushiRuntime

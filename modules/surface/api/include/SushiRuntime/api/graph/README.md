@@ -470,8 +470,9 @@ The returned region records work with the same add() surface as a static graph. 
 a mutation: reading a region (`world.region(k).size()`) between two runs leaves compose_count()
 unchanged. A region is rebuilt at the next run when it was created, when something was recorded on
 it, when it was cleared or when one of its rules was given another name. It is also rebuilt when the
-copy plan of its last build is not steady, so a run on several devices may compose again with no
-recording, and `compose_count()` rises.
+copy plan of its last build is not steady, or when a `write_range()` on a planned buffer its copy
+plan covers ran since that build, so a run on several devices may compose again with no recording,
+and `compose_count()` rises.
 
 ### coherence_plan_count
 

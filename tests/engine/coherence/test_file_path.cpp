@@ -190,6 +190,18 @@ namespace
         EXPECT_EQ(subject_.name(), "file");
     }
 
+    TEST_F(Small_FilePath, ARemovedFileSpaceIsNoLongerConnectedAndItsIdTakesANewSpace)
+    {
+        subject_.remove(K_FILE);
+        const bool removed_connects = subject_.connects(*file_, host_);
+        const FileMemorySpace reused(K_FILE, FileRange{path_, 0, 1});
+        subject_.add(reused);
+
+        EXPECT_FALSE(removed_connects);
+        EXPECT_FALSE(subject_.connects(*file_, host_));
+        EXPECT_TRUE(subject_.connects(reused, host_));
+    }
+
     TEST_F(Small_FilePath, StreamsTheRangeOntoADeviceThroughTheRingWithEqualBytes)
     {
         if (!cpu_queues_.available())

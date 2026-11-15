@@ -60,6 +60,9 @@ namespace DataHandlesTests
         /** @brief Element count of every handle the range tests allocate. */
         constexpr std::size_t K_SIZE = 37;
 
+        /** @brief More file-backed buffers than the 64 memory space ids a runtime has. */
+        constexpr std::size_t K_MORE_THAN_SPACE_IDS = 100;
+
         /**
          * @brief Returns whether the toolchain's aligned shared allocation on device 0 honours
          *        @p alignment.
@@ -204,6 +207,11 @@ namespace DataHandlesTests
 
     /** @brief Fixture of the range tests that allocate handles on a host runtime. */
     class Small_DataHandles : public TestSupport::HostRuntimeTest
+    {
+    };
+
+    /** @brief Runs the file-backed buffer tests, which write a temporary file, on a host runtime. */
+    class Medium_DataHandlesFiles : public TestSupport::HostRuntimeTest
     {
     };
 
@@ -449,6 +457,34 @@ namespace DataHandlesTests
             ASSERT_FALSE(too_long.has_value());
             EXPECT_EQ(too_long.error().code, ErrorCode::InvalidArgument);
         }
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+    }
+
+    /** @brief Returns how many of count file-backed buffers over path were made, each dropped before the next is made. */
+    std::size_t make_and_drop_file_buffers(const Runtime& runtime, const std::string& path, std::size_t count)
+    {
+        std::size_t made = 0;
+        for (std::size_t index = 0; index < count; ++index)
+            if (runtime.buffer_from_file<int>(path, 0, 1).has_value())
+                ++made;
+        return made;
+    }
+
+    /** @brief Tests that dropping a file-backed buffer frees its file space, so more buffers than a runtime has space ids are made one after another. */
+    TEST_F(Medium_DataHandlesFiles, DroppingAFileBackedBufferFreesItsSpaceForTheNext)
+    {
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / "sushiruntime_test_buffer_file_space_reuse.bin";
+        {
+            const int value = 5;
+            std::ofstream out(path, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(&value), sizeof(int));
+        }
+
+        const std::size_t made = make_and_drop_file_buffers(runtime(), path.string(), K_MORE_THAN_SPACE_IDS);
+
+        EXPECT_EQ(made, K_MORE_THAN_SPACE_IDS);
         std::error_code ignored;
         std::filesystem::remove(path, ignored);
     }

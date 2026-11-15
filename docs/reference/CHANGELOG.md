@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Changed a `write_range()` on a planned buffer after a steady plan to make the next run plan its copies again, on `Graph` and `DynamicGraph` (GLOBAL_HANDLE H5).
+- 2026-11-15 — runtime: Changed a dropped file-backed buffer to free its file space for the next one, lowest id first (GLOBAL_HANDLE H4).
+- 2026-11-15 — runtime: Added retirement of the coherence history every 64 steps by both step drivers (GLOBAL_HANDLE H5).
 - 2026-11-15 — coherence: Changed a copy through host memory to be priced from the profile's measured host links; only a copy no link covers is infinite, logged once (GLOBAL_HANDLE H7).
 - 2026-11-15 — coherence: Changed the device profile file to version 2 with host link lines; version 1 is read and upgraded, a newer one refused (GLOBAL_HANDLE H7).
 - 2026-11-15 — runtime: Added measurement of every device on first start when the profile file is absent, written atomically for the next start (GLOBAL_HANDLE H7).

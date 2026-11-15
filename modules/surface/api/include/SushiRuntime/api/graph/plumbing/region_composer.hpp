@@ -102,10 +102,11 @@ namespace SushiRuntime
                 [[nodiscard]] SUSHIRUNTIME_API std::size_t coherence_plan_count() const noexcept;
 
                 /**
-                 * @brief Returns whether a region's copy plan is not steady, so the next run must
-                 *        commit and plan it again instead of replaying it.
+                 * @brief Returns whether a region's copy plan is not steady, or the host wrote one
+                 *        of its buffers since it was made, so the next run must commit and plan it
+                 *        again instead of replaying it.
                  */
-                [[nodiscard]] SUSHIRUNTIME_API bool coherence_replan_due() const noexcept;
+                [[nodiscard]] SUSHIRUNTIME_API bool coherence_replan_due(const ContextHandle& context) const noexcept;
 
                 /**
                  * @brief Returns whether a composed plan stands.

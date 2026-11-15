@@ -303,6 +303,9 @@ namespace SushiRuntime
             /** @brief Gives the Borrowed handles of caller-owned memory; mints in handles. */
             Internal::Memory::BorrowedIndex borrowed{handles};
 
+            /** @brief Counts the steps of every run and retires the coherence history every K_STEPS_PER_HORIZON. */
+            Internal::Memory::CoherenceHorizon coherence_horizon;
+
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
             Internal::Observability::TransferCounters transfers;
 
@@ -521,13 +524,27 @@ namespace SushiRuntime
                                         range.path + " holds " + std::to_string(file_bytes) +
                                             " bytes, fewer than the range of " + std::to_string(range.bytes) +
                                             " bytes at offset " + std::to_string(range.offset) + " needs."});
-            if (impl_->spaces.views.size() >= Internal::Memory::ResidencyDirectory::K_MAX_MEMORY_SPACES)
+            if (impl_->spaces.vacant_file_ids.empty() &&
+                impl_->spaces.views.size() >= Internal::Memory::ResidencyDirectory::K_MAX_MEMORY_SPACES)
                 return make_error(Error{ErrorCode::AllocationFailed,
                                         "every memory space id a residency entry can name is taken."});
             const Internal::Memory::FileMemorySpace& space =
                 add_file_space_to(impl_->spaces, std::move(range));
             impl_->paths.file->add(space);
             return space.id();
+        }
+
+        bool RuntimeContext::remove_file_space(MemorySpaceID id)
+        {
+            // The path lets go of the space before the space is replaced.
+            if (impl_->spaces.vacant_file_ids.count(id.value()) == 0)
+                impl_->paths.file->remove(id);
+            return remove_file_space_from(impl_->spaces, id);
+        }
+
+        Internal::Memory::CoherenceHorizon& RuntimeContext::coherence_horizon() noexcept
+        {
+            return impl_->coherence_horizon;
         }
 
         Internal::Memory::BorrowedIndex& RuntimeContext::borrowed_handles() noexcept

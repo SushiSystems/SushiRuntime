@@ -40,7 +40,9 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
 #include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -276,6 +278,53 @@ TEST_F(Small_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
     node->place_on(1);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
+}
+
+/** @brief Holds a residency directory and an allocator over two host devices, as a runtime gives placement_of(). */
+class Small_NodePlacementPlanned : public ::testing::Test
+{
+    protected:
+        /** @brief Mints a planned buffer: described with the host as its home and no instance anywhere. */
+        SushiRuntime::GlobalHandle mint_planned()
+        {
+            const SushiRuntime::MintOutcome minted =
+                directory_.mint(SushiRuntime::HandleKind::Buffer, SushiRuntime::HandleFlags::None);
+            EXPECT_EQ(minted.status, SushiRuntime::HandleStatus::Ok);
+            EXPECT_EQ(directory_.describe(minted.handle, sizeof(int), {sizeof(int), alignof(int)},
+                                          SushiRuntime::MemorySpaceID(0)),
+                      SushiRuntime::HandleStatus::Ok);
+            return minted.handle;
+        }
+
+        /// @brief Allocates nothing.
+        SushiRuntime::Internal::Memory::USMAllocator allocator_{SushiRuntime::Internal::Memory::make_host_usm_source(2)};
+        /// @brief Holds the planned buffers.
+        SushiRuntime::Internal::Memory::ResidencyDirectory directory_{1};
+};
+
+/** @brief Tests that a node over planned buffers with no instance anywhere runs on the default device. */
+TEST_F(Small_NodePlacementPlanned, ANodeOverPlannedBuffersWithNoInstanceRunsOnTheDefaultDevice)
+{
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_reads_.emplace_back(mint_planned());
+    node->io_writes_.emplace_back(mint_planned());
+
+    EXPECT_EQ(placement_of(*node, allocator_, directory_).value(),
+              SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
+}
+
+/** @brief Tests that a planned buffer the host wrote, whose one instance is on the host, still places its node on the default device. */
+TEST_F(Small_NodePlacementPlanned, APlannedBufferHeldOnlyByTheHostRunsOnTheDefaultDevice)
+{
+    int host_bytes = 0;
+    const SushiRuntime::GlobalHandle planned = mint_planned();
+    ASSERT_EQ(directory_.set_instance(planned, SushiRuntime::MemorySpaceID(0), &host_bytes),
+              SushiRuntime::HandleStatus::Ok);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(planned);
+
+    EXPECT_EQ(placement_of(*node, allocator_, directory_).value(),
+              SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
 }
 
 namespace

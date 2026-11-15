@@ -184,7 +184,7 @@ allocation it makes room for.
 ## test_planned_host_access.cpp
 
 A host space, two device spaces, the fake memcpy path and a heap allocator that counts what it
-holds. `run()` carries out a planned step on them, so a plan runs without SYCL.
+holds and names a kind for each allocation, so the directory records its instances as the runtime's. `run()` carries out a planned step on them, so a plan runs without SYCL.
 
 | Test | What it proves |
 | --- | --- |
@@ -195,6 +195,8 @@ holds. `run()` carries out a planned step on them, so a plan runs without SYCL.
 | `BytesNoSpaceHoldsReadAsZero` | Bytes never written read as zero and make no host instance. |
 | `AGraphWithNoPlannedBufferGetsThePlanItGotBefore` | A buffer with an instance gets the allocate, copy and free of before, and a buffer with no instance and no map is still left alone. |
 | `ReleaseFreesEveryInstanceAndRetiresTheHandle` | `release()` frees the host instance and a device instance and retires the handle. |
+| `ReleaseFreesThePlannedInstancesOfAHeldBufferAndLeavesItsHeldInstance` | For a buffer `mint_held()` made, `held_spaces()` names the held space alone, and `release()` frees the device instance a plan made and leaves the held bytes as they were. |
+| `AHostWriteIsRecordedAsAHostWriteOfTheHandle` | `write()` raises the handle's host-write mark in the directory. |
 
 ## test_profile_measurement.cpp
 
@@ -234,7 +236,8 @@ USM, and a space past the devices is refused.
 `Small_FilePath` writes a temporary file and checks that `FilePath` connects an added file space to
 any space that is not a file, streams ranges onto a SYCL CPU device through a two-slot ring with
 equal bytes and a peak of pinned memory equal to the ring, reads straight into the host with no
-slot, and refuses a space it does not hold or a range past the end of the file.
+slot, and refuses a space it does not hold or a range past the end of the file. After `remove()` the
+path does not connect the removed space, and a new space added under the same id is connected.
 `Large_FilePath` writes a file 1 GiB larger than the first CUDA GPU's memory into `temp` under the
 working directory, streams it window by window onto the GPU, checks the first and last 4 KiB of each
 window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips

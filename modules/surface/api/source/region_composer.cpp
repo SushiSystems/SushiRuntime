@@ -60,6 +60,7 @@
 #include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "host_write_watch.hpp"
 #include "region_coherence.hpp"
 #include "rule_stamp.hpp"
 
@@ -98,9 +99,9 @@ namespace SushiRuntime
                     if (everything)
                         for (const auto& kv : states_)
                             rebuilt.insert(kv.first);
-                    // A copy plan that is not steady left the directory where it cannot run again.
-                    for (const auto& kv : states_)
-                        if (kv.second.copy_plan && !kv.second.copy_plan->steady)
+                    // A copy plan that is not steady, or one over a buffer the host wrote, cannot run again.
+                    for (auto& kv : states_)
+                        if (copy_plan_stale(kv.second, runtime.handles()))
                             rebuilt.insert(kv.first);
 
                     auto placement = runtime.placement();
@@ -127,6 +128,8 @@ namespace SushiRuntime
                         if (coherent.value())
                             ++coherence_plans_;
                         state.copy_plan = std::move(coherent.value());
+                        if (state.copy_plan)
+                            state.host_writes.emplace(state.nodes, runtime.handles());
                         finish_region(state);
                         built.emplace(k, std::move(state));
                     }
@@ -186,10 +189,10 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t coherence_plan_count() const noexcept { return coherence_plans_; }
 
                 /** @brief Returns whether a region holds a copy plan that must be planned again before a run. */
-                [[nodiscard]] bool coherence_replan_due() const noexcept
+                [[nodiscard]] bool coherence_replan_due(const Internal::Memory::ResidencyDirectory& directory) noexcept
                 {
-                    for (const auto& kv : states_)
-                        if (kv.second.copy_plan && !kv.second.copy_plan->steady)
+                    for (auto& kv : states_)
+                        if (copy_plan_stale(kv.second, directory))
                             return true;
                     return false;
                 }
@@ -265,7 +268,21 @@ namespace SushiRuntime
                     std::uint64_t                generation = 0; /**< Recorder generation built. */
                     /** @brief Copy plan spliced into nodes; nothing when the planner did not run. */
                     std::optional<Internal::Coherence::CopyPlan> copy_plan;
+                    /** @brief Says when the host wrote a buffer of copy_plan; nothing when copy_plan is nothing. */
+                    std::optional<HostWriteWatch> host_writes;
                 };
+
+                /**
+                 * @brief Returns whether state's copy plan must be made again: it is not steady,
+                 *        or the host wrote one of its buffers since it was made.
+                 */
+                static bool copy_plan_stale(RegionState& state,
+                                            const Internal::Memory::ResidencyDirectory& directory) noexcept
+                {
+                    if (!state.copy_plan)
+                        return false;
+                    return !state.copy_plan->steady || (state.host_writes && state.host_writes->written(directory));
+                }
 
                 /**
                  * @brief Records one cross-region edge, kept per base so a base can be un-wired
@@ -830,9 +847,10 @@ namespace SushiRuntime
             return state_ != nullptr ? state_->coherence_plan_count() : 0;
         }
 
-        bool RegionComposer::coherence_replan_due() const noexcept
+        bool RegionComposer::coherence_replan_due(const ContextHandle& context) const noexcept
         {
-            return state_ != nullptr && state_->coherence_replan_due();
+            return state_ != nullptr &&
+                   state_->coherence_replan_due(Internal::ContextAccess::context(context).handles());
         }
 
         bool RegionComposer::composed() const noexcept

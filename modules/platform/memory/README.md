@@ -1,7 +1,7 @@
 # memory
 
 The USM allocator and its allocation owner, the residency directory with its retire observer and
-coherence interval map, the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`, `FileMemorySpace`)
+coherence interval map, the horizon that retires coherence history (`CoherenceHorizon`), the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`, `FileMemorySpace`)
 and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
@@ -121,8 +121,24 @@ unknown: memory a caller borrowed has no kind. `set_instance()` takes the kind, 
 and `retire()` clear it, `instance_kind()` reads it without a lock, and `EntryView::home_kind` is the
 kind of the home instance. A caller that asks what kind of USM a buffer is therefore asks the
 handle, and no table of addresses exists to ask. `K_MAX_MEMORY_SPACES` is
-64, one bit of that mask each. The coherence interval map of the design is not in the entry yet; it
-is added as one more member.
+64, one bit of that mask each. The entry also holds the buffer's coherence interval map, which
+`coherence()` returns for a live handle and `retire()` clears, and the generation of the last host
+write on the buffer.
+
+### Host writes
+
+`record_host_write()` raises the directory's host-write generation by one, under the writer mutex,
+and stores the new value in the entry; `host_write_of()` reads it back without a lock, and returns 0
+for a handle the host never wrote or that is not live. `retire()` clears it, so a reused slot starts
+at 0. A stored copy plan keeps the generation it was made at and the buffers it covers: while
+`host_write_generation()` still equals that generation no buffer was written, which is one atomic
+load per check, and otherwise a buffer whose mark is higher was written after the plan.
+
+### retire_coherence_history
+
+`retire_coherence_history()` calls `CoherenceIntervals::retire_history()` on every live entry under
+the writer mutex and returns the intervals left across them. It runs between runs, at a horizon,
+because the maps take no lock and the planner writes them while it plans.
 
 ### mint and retire: the ordered free list
 
@@ -306,6 +322,21 @@ and keeps the version. The map then joins neighbours with equal state, so a buff
 one interval again. `drop_space()` takes a space out of every interval, which is how a plan records
 an eviction. The intervals sit in a sorted vector, so the order never depends on a hash.
 The planner is the only writer of a buffer's map, at plan time, and the map takes no lock.
+
+`retire_history()` sets every interval's version to 0 and joins the neighbours that then hold the
+same spaces, so the history of writes no plan still reads is dropped. It returns the intervals
+left. A later write takes a version above every version the map handed out before.
+
+## coherence_horizon.hpp
+
+### CoherenceHorizon
+
+`CoherenceHorizon` counts the steps a runtime ran. `advance()` adds a run's steps, and when the
+count reaches `steps_per_horizon()` it calls `ResidencyDirectory::retire_coherence_history()` and
+starts the count again from 0. The interval is `K_STEPS_PER_HORIZON`, 64 steps, unless the
+constructor names another; 0 counts as 1. `RuntimeContext` owns one, and both step drivers advance
+it after a run's last step and after a `run_async()` step, when no plan is being made, so the maps
+of a graph that runs forever stay the size of its state, not of its history.
 
 ## memory_space.hpp
 

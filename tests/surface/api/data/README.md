@@ -100,6 +100,12 @@ A planned buffer is not empty, has a handle, its size and the residency `Planned
 null. A planned Buffer and a planned State read back through `read_range()` what `write_range()`
 wrote on the host runtime, with no node in between.
 
+### `Medium_DataHandlesFiles.DroppingAFileBackedBufferFreesItsSpaceForTheNext`
+
+`make_and_drop_file_buffers()` makes 100 file-backed buffers over one temporary file, each dropped
+before the next is made. All 100 are made, more than the 64 memory space ids a runtime has, so each
+dropped buffer gave its file space back. Medium because it writes a file.
+
 ### `Medium_DataHandleResidencyDeathTest.HostOnADeviceResidentHandleStops`
 
 One row for a Buffer and one for a State: `host()` on a device-resident handle stops the process,
