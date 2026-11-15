@@ -33,3 +33,4 @@
 | KI-17 | own | `StateStopsOnAWindowPastTheEnd` fails under four parallel test jobs | the test is quarantined; run it alone | RW-67 |  | 2026-10-26 |
 | KI-28 | own | The warm-up period of a GPU session sometimes holds 2 of its 3 device spans | none | none, cause not yet found | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session_devices.cpp` | 2026-11-10 |
 | KI-33 | toolchain | A process that used the HIP adapter on gfx1036 exits with 0xC0000409 after its work ends | none; results are correct, only teardown fails |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-15 |
+| KI-35 | own | A file space outlives its buffer, and a runtime holds at most 64 memory spaces | Create few file-backed buffers per runtime | none, GLOBAL_HANDLE T46 frees the space on retire | `modules/engine/execution/source/runtime_memory_spaces.cpp` | 2026-11-15 |
