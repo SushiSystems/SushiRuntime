@@ -34,6 +34,12 @@ memory has no room, after it released the slots it had made.
 An empty slot drops every copy, an installed observer hears each copy in order, and installing null
 stops the forwarding.
 
+## test_transfer_path_list.cpp
+
+`admit_path()` lists paths with distinct ids in order. A second `FakeTransferPath`, which has the id
+of the first, is refused with `DuplicateID` and not listed. `admit_paths()` returns `InvalidState` for
+the duplicate and `Ok` for distinct paths.
+
 ## test_transfer_cost.cpp
 
 The uniform cost prices every path by its bytes.

@@ -143,16 +143,24 @@ queue.
 | `NullAndForeignHandlesAreRefused` | The null handle gives `NullHandle`; a handle of another universe gives `ForeignUniverse`. |
 | `AHandleOfTheLocalUniverseIsRefused` | A handle a `LocalHandleSpace` minted gives `ForeignUniverse` and a null address from `resolve()`, and `retire()` gives `ForeignUniverse`. |
 | `AFreedSlotIsReusedLowestFirstUnderTheNextGeneration` | With slots 3 and 5 of 0..5 retired, the next mints get 3 at the next generation, then 5, then 6. |
-| `GrowingPastOneChunkKeepsEarlierEntriesInPlace` | Minting past one chunk makes the second chunk and leaves the first entry at its address. |
+| `GrowingPastOneChunkKeepsEarlierEntriesResolving` | Minting past one chunk leaves the first handle resolving to its address and the new chunk's handle resolvable. |
 | `AnInstanceKeepsItsKindUntilItIsDroppedOrRetired` | An instance set with a kind reports it through `instance_kind()` and `EntryView::home_kind`; one set without a kind, a dropped one and one on a retired or reused slot report none. |
 | `LiveCountFollowsMintAndRetire` | `live_count()` rises with each mint and falls with each retire; a retire of a stale handle changes nothing. |
 | `ReadersResolveWhileAWriterMints` | Four reader threads resolve one live handle while the test thread mints and retires four chunks of others; every resolve returns the same address. |
 | `CoherenceMapLivesWithTheHandle` | A live handle's map keeps what was written to it; a retired handle has none, and the handle that reuses its slot starts with an empty map. |
 | `WithoutHorizonsEveryStepAddsAnInterval` | 1000 steps that write one byte on one space and copy it to the other leave more than 1000 intervals when no horizon falls. |
 | `CoherenceHistoryStaysFlatOverOneHundredThousandSteps` | With `retire_coherence_history()` every 100 steps, the interval count after 100000 steps equals the count after 1000, four in all, and each byte keeps the spaces that hold it. Medium for its 100000 steps. |
+
+## test_host_write_table.cpp
+
+| Test | What it checks |
+| --- | --- |
 | `AHostWriteMarksOnlyTheWrittenHandleAtTheNewGeneration` | `record_host_write()` raises the generation to 1 and marks the written handle with it; another handle stays at 0. |
+| `ASecondWriteRaisesTheMarkOfTheSameHandle` | A second write on one handle moves its mark and the generation to 2. |
 | `ARetiredHandlesHostWriteIsNotSeenOnItsReusedSlot` | The handle that reuses a written slot reads 0, and so does the retired one. |
 | `AHostWriteOnARetiredHandleIsRefusedAndRaisesNoGeneration` | A host write on a retired handle returns `StaleHandle` and leaves the generation at 0. |
+| `TheNullHandleIsRefused` | The null handle gives `NullHandle` and reads 0. |
+| `MarksSurviveGrowthPastOneChunk` | A mark in the first chunk and one in the second both read back. |
 
 ## test_borrowed_index.cpp
 

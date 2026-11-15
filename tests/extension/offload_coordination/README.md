@@ -148,11 +148,10 @@ The test hands `reoffer_nodes()` a real node that no graph runs and a `RefusingO
 
 | Test | What it proves |
 | --- | --- |
-| `AnOwnedHandleIsRecordedWithItsMachine` | A handle minted on the table's machine is admitted as `Owned` and `owner_of()` names that machine. |
-| `AForeignHandleIsRefused` | A handle of another machine is refused as `Foreign` and not recorded. |
-| `TheNullHandleHasNoOwner` | The null handle is refused as `Null`. |
-| `AdmitIsAPureFunctionOfTheHandle` | Two tables of one machine answer the same for the same handle. |
-| `ForgottenHandleHasNoOwner` | `forget()` removes the record. |
+| `AnOwnedHandleIsOwned` | A handle minted on the given machine is `Owned`. |
+| `AForeignHandleIsForeign` | A handle of another machine is `Foreign`. |
+| `TheNullHandleHasNoOwner` | The null handle is `Null`. |
+| `ClassifyIsAPureFunctionOfItsArguments` | The same handle and machine give the same status; the machine argument decides. |
 
 ## test_producer_table.cpp
 

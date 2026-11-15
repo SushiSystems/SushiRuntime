@@ -21,7 +21,7 @@ It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `clus
 | `rule_placement.hpp` | `RulePlacement` |
 | `held_nodes.hpp` | `HeldNodes` |
 | `task_resubmission.hpp` | `resubmit_tasks()`, `order_for_rebuild()`, `reoffer_nodes()` |
-| `handle_ownership.hpp` | `HandleOwnership`, `OwnershipStatus`, `K_MASTER_MACHINE` |
+| `handle_ownership.hpp` | `classify_ownership()`, `OwnershipStatus`, `K_MASTER_MACHINE` |
 | `producer_table.hpp` | `ProducerTable`, `ProducerRecord`, `LostInstance` |
 
 ## worker_directory.hpp
@@ -225,13 +225,12 @@ that task first and returns it itself.
 ## handle_ownership.hpp
 
 Each `GlobalHandle` has one owner, the machine that minted it, read from the handle's `machine`
-field. `HandleOwnership::admit()` records a handle whose machine is the table's own and answers
-`Owned`; it refuses a handle of another machine as `Foreign` and the null handle as `Null`, and
-records neither. The answer depends on the handle alone. The master's table runs for
-`K_MASTER_MACHINE` (0, the machine field every handle the residency directory mints carries).
-`DistributedCoordinator::share()` shares only an owned handle; a foreign one is refused with a
-WARN, so no node that reads or writes it is offloaded and it stays with its owner. `forget()` runs
-when the handle retires.
+field. `classify_ownership(handle, local_machine)` answers `Owned` for a handle whose machine is
+`local_machine`, `Foreign` for a handle of another machine and `Null` for the null handle. It is a
+pure function: no table, no lock. The master runs for `K_MASTER_MACHINE` (0, the machine field every
+handle the residency directory mints carries). `DistributedCoordinator::share()` shares only an
+owned handle; a foreign one is refused with a WARN, so no node that reads or writes it is offloaded
+and it stays with its owner.
 
 ## producer_table.hpp
 

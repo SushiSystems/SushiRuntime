@@ -23,7 +23,7 @@
 
 /**
  * @file handle_ownership.cpp
- * @brief Implements HandleOwnership, which records the owner machine of each shared handle.
+ * @brief Implements HandleOwnership, which decides the owner machine of a shared handle.
  * @author Mustafa Garip
  * @see modules/extension/offload_coordination/README.md
  */
@@ -34,42 +34,13 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
-        HandleOwnership::HandleOwnership(std::uint16_t local_machine) noexcept
-            : local_machine_(local_machine)
-        {
-
-        }
-
-        OwnershipStatus HandleOwnership::admit(GlobalHandle handle)
+        OwnershipStatus classify_ownership(GlobalHandle handle, std::uint16_t local_machine) noexcept
         {
             if (handle.is_null())
                 return OwnershipStatus::Null;
-            if (handle.machine() != local_machine_)
+            if (handle.machine() != local_machine)
                 return OwnershipStatus::Foreign;
-
-            const std::lock_guard<std::mutex> lock(mutex_);
-            owners_.emplace(handle, handle.machine());
             return OwnershipStatus::Owned;
-        }
-
-        void HandleOwnership::forget(GlobalHandle handle) noexcept
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            owners_.erase(handle);
-        }
-
-        std::optional<std::uint16_t> HandleOwnership::owner_of(GlobalHandle handle) const
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            const auto found = owners_.find(handle);
-            if (found == owners_.end())
-                return std::nullopt;
-            return found->second;
-        }
-
-        std::uint16_t HandleOwnership::local_machine() const noexcept
-        {
-            return local_machine_;
         }
 
     } // namespace Distributed

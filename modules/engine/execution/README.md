@@ -680,7 +680,7 @@ explicitly calls `stop_work()` a second time from its destructor. The seam allow
 for it. `memory_spaces()` holds the host's space and one per device (`source/runtime_memory_spaces.hpp`);
 an integrated device names the host's pool and offers at most the host's usable bytes;
 `transfer_paths()` holds `SameContextPath`, `PeerPath`, `HostStagedPath` with its staging ring, and
-`FilePath` (`source/runtime_transfer_paths.hpp`). Both are built once from the device set. Every path
+`FilePath` (`source/runtime_transfer_paths.hpp`). Both are built once from the device set. The path list is built with `admit_paths()`: when a path has the `TransferPathID` of a listed one it is logged, `RuntimeTransferPaths::refusal` records the error and `create()` returns it. Every path
 reports to the context's `TransferObserverSlot`, whose `TransferPathTally` counts each copy and forwards
 it to the observer `install_transfer_observer()` installed, if any. `transfer_cost()` is the profile file's `CostModel` when `RuntimeSettings::device_profile_file`
 is set, else the bytes (`source/runtime_transfer_cost.hpp`); `create()` loads it once and refuses

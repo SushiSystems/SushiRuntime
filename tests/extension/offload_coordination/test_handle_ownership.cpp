@@ -46,57 +46,33 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a handle this machine minted is recorded with this machine as owner. */
-TEST(Small_HandleOwnership, AnOwnedHandleIsRecordedWithItsMachine)
+/** @brief Tests that a handle this machine minted is owned. */
+TEST(Small_HandleOwnership, AnOwnedHandleIsOwned)
 {
-    HandleOwnership ownership(K_MASTER_MACHINE);
-    const GlobalHandle handle = minted_on(K_MASTER_MACHINE, 4);
-
-    EXPECT_EQ(ownership.admit(handle), OwnershipStatus::Owned);
-    ASSERT_TRUE(ownership.owner_of(handle).has_value());
-    EXPECT_EQ(*ownership.owner_of(handle), K_MASTER_MACHINE);
+    EXPECT_EQ(classify_ownership(minted_on(K_MASTER_MACHINE, 4), K_MASTER_MACHINE),
+              OwnershipStatus::Owned);
 }
 
-/** @brief Tests that a handle another machine minted is refused and not recorded. */
-TEST(Small_HandleOwnership, AForeignHandleIsRefused)
+/** @brief Tests that a handle another machine minted is foreign. */
+TEST(Small_HandleOwnership, AForeignHandleIsForeign)
 {
-    HandleOwnership ownership(K_MASTER_MACHINE);
-    const GlobalHandle handle = minted_on(3, 4);
-
-    EXPECT_EQ(ownership.admit(handle), OwnershipStatus::Foreign);
-    EXPECT_FALSE(ownership.owner_of(handle).has_value());
+    EXPECT_EQ(classify_ownership(minted_on(3, 4), K_MASTER_MACHINE), OwnershipStatus::Foreign);
 }
 
 /** @brief Tests that the null handle has no owner. */
 TEST(Small_HandleOwnership, TheNullHandleHasNoOwner)
 {
-    HandleOwnership ownership(K_MASTER_MACHINE);
-
-    EXPECT_EQ(ownership.admit(GlobalHandle::null()), OwnershipStatus::Null);
-    EXPECT_FALSE(ownership.owner_of(GlobalHandle::null()).has_value());
+    EXPECT_EQ(classify_ownership(GlobalHandle::null(), K_MASTER_MACHINE), OwnershipStatus::Null);
 }
 
-/** @brief Tests that the answer depends on the handle only: the same handle, the same status. */
-TEST(Small_HandleOwnership, AdmitIsAPureFunctionOfTheHandle)
+/** @brief Tests that the answer depends on the two arguments only: repeats give the same status. */
+TEST(Small_HandleOwnership, ClassifyIsAPureFunctionOfItsArguments)
 {
-    HandleOwnership first(2);
-    HandleOwnership second(2);
     const GlobalHandle owned = minted_on(2, 9);
     const GlobalHandle foreign = minted_on(0, 9);
 
-    EXPECT_EQ(first.admit(owned), second.admit(owned));
-    EXPECT_EQ(first.admit(owned), OwnershipStatus::Owned);
-    EXPECT_EQ(first.admit(foreign), second.admit(foreign));
-    EXPECT_EQ(first.local_machine(), 2u);
-}
-
-/** @brief Tests that a forgotten handle has no owner until it is admitted again. */
-TEST(Small_HandleOwnership, ForgottenHandleHasNoOwner)
-{
-    HandleOwnership ownership(K_MASTER_MACHINE);
-    const GlobalHandle handle = minted_on(K_MASTER_MACHINE, 1);
-    ASSERT_EQ(ownership.admit(handle), OwnershipStatus::Owned);
-
-    ownership.forget(handle);
-    EXPECT_FALSE(ownership.owner_of(handle).has_value());
+    EXPECT_EQ(classify_ownership(owned, 2), classify_ownership(owned, 2));
+    EXPECT_EQ(classify_ownership(owned, 2), OwnershipStatus::Owned);
+    EXPECT_EQ(classify_ownership(foreign, 2), OwnershipStatus::Foreign);
+    EXPECT_EQ(classify_ownership(foreign, 0), OwnershipStatus::Owned);
 }

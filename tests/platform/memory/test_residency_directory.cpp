@@ -56,6 +56,15 @@ namespace
         return outcome.handle;
     }
 
+    /** @brief Mints count buffers in directory and returns the last. */
+    GlobalHandle mint_buffers(ResidencyDirectory& directory, std::uint32_t count)
+    {
+        GlobalHandle last = GlobalHandle::null();
+        for (std::uint32_t i = 0; i < count; ++i)
+            last = mint_buffer(directory);
+        return last;
+    }
+
     /** @brief Space 0 plays the host and space 1 the device in the write and read pattern. */
     const MemorySpaceID K_HOST_SPACE(0);
     const MemorySpaceID K_DEVICE_SPACE(1);
@@ -240,22 +249,20 @@ namespace
         EXPECT_EQ(mint_buffer(directory).slot(), 6U);
     }
 
-    TEST(Small_ResidencyDirectory, GrowingPastOneChunkKeepsEarlierEntriesInPlace)
+    TEST(Small_ResidencyDirectory, GrowingPastOneChunkKeepsEarlierEntriesResolving)
     {
         ResidencyDirectory directory(K_UNIVERSE);
         const GlobalHandle first = mint_buffer(directory);
-        const void* const first_entry = directory.entry_address(first.slot());
-        ASSERT_NE(first_entry, nullptr);
-        EXPECT_EQ(directory.entry_address(ResidencyDirectory::K_CHUNK_ENTRIES), nullptr);
-
         int storage = 0;
-        EXPECT_EQ(directory.set_instance(first, MemorySpaceID(1), &storage), HandleStatus::Ok);
-        for (std::uint32_t i = 1; i <= ResidencyDirectory::K_CHUNK_ENTRIES; ++i)
-            (void)mint_buffer(directory);
+        ASSERT_EQ(directory.set_instance(first, MemorySpaceID(1), &storage), HandleStatus::Ok);
+        ASSERT_EQ(directory.resolve(first, MemorySpaceID(1)).address, &storage);
 
-        EXPECT_NE(directory.entry_address(ResidencyDirectory::K_CHUNK_ENTRIES), nullptr);
-        EXPECT_EQ(directory.entry_address(first.slot()), first_entry);
+        const GlobalHandle last = mint_buffers(directory, ResidencyDirectory::K_CHUNK_ENTRIES);
+
+        EXPECT_EQ(last.slot(), ResidencyDirectory::K_CHUNK_ENTRIES);
         EXPECT_EQ(directory.resolve(first, MemorySpaceID(1)).address, &storage);
+        EXPECT_EQ(directory.resolve(last, MemorySpaceID(1)).status, HandleStatus::NotResident);
+        EXPECT_EQ(directory.inspect(first).status, HandleStatus::Ok);
     }
 
     TEST(Medium_ResidencyDirectory, ReadersResolveWhileAWriterMints)
@@ -347,42 +354,6 @@ namespace
         EXPECT_EQ(directory.coherence(second)->valid_spaces_at(K_STEPS), K_HOST_MASK);
     }
 
-    TEST(Small_ResidencyDirectory, AHostWriteMarksOnlyTheWrittenHandleAtTheNewGeneration)
-    {
-        ResidencyDirectory directory(K_UNIVERSE);
-        const GlobalHandle written = mint_buffer(directory);
-        const GlobalHandle untouched = mint_buffer(directory);
-
-        ASSERT_EQ(directory.record_host_write(written), HandleStatus::Ok);
-
-        EXPECT_EQ(directory.host_write_generation(), 1U);
-        EXPECT_EQ(directory.host_write_of(written), 1U);
-        EXPECT_EQ(directory.host_write_of(untouched), 0U);
-    }
-
-    TEST(Small_ResidencyDirectory, ARetiredHandlesHostWriteIsNotSeenOnItsReusedSlot)
-    {
-        ResidencyDirectory directory(K_UNIVERSE);
-        const GlobalHandle retired = mint_buffer(directory);
-        ASSERT_EQ(directory.record_host_write(retired), HandleStatus::Ok);
-        ASSERT_EQ(directory.retire(retired), HandleStatus::Ok);
-
-        const GlobalHandle reused = mint_buffer(directory);
-
-        ASSERT_EQ(reused.slot(), retired.slot());
-        EXPECT_EQ(directory.host_write_of(reused), 0U);
-        EXPECT_EQ(directory.host_write_of(retired), 0U);
-    }
-
-    TEST(Small_ResidencyDirectory, AHostWriteOnARetiredHandleIsRefusedAndRaisesNoGeneration)
-    {
-        ResidencyDirectory directory(K_UNIVERSE);
-        const GlobalHandle retired = mint_buffer(directory);
-        ASSERT_EQ(directory.retire(retired), HandleStatus::Ok);
-
-        EXPECT_EQ(directory.record_host_write(retired), HandleStatus::StaleHandle);
-        EXPECT_EQ(directory.host_write_generation(), 0U);
-    }
     /** @brief Returns whether map's intervals are sorted and cover [0, bytes) without a gap. */
     bool covers_without_gap(const CoherenceIntervals& map, std::size_t bytes)
     {

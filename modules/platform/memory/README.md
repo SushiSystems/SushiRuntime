@@ -100,7 +100,23 @@ and `live_count()`: it is the API layer's side. `ResidencyView` is the reading s
 `HostWriteLog` (`host_write_log.hpp`) records and reads the host writes made outside a plan,
 `CoherenceHistory` (`coherence_history.hpp`) drops the history of retired steps, and `RetireSource`
 (`retire_source.hpp`) installs the one `RetireObserver`. `HandlePorts` holds one reference to each;
-`ResidencyDirectory::ports()` builds it. `CoherenceHorizon::advance()` takes a `CoherenceHistory`.
+`ResidencyDirectory::ports()` builds it from the directory and the `HostWriteLog` its caller passes. `CoherenceHorizon::advance()` takes a `CoherenceHistory`.
+
+## host_write_table.hpp
+
+### HostWriteTable
+
+The `HostWriteLog` of a runtime, in a unit of its own so the directory knows residency only.
+`record_host_write()` raises the host-write generation by one, under a writer mutex, and stores it in
+the mark of the handle's slot; `host_write_of()` reads it back without a lock, and returns 0 for a
+handle the host never wrote or that is not live. Liveness comes from `ResidencyView::inspect()`;
+the table holds nothing else of the directory. A mark carries the generation of the handle it was
+made for, so a reused slot starts at 0 without a retire hook. The marks grow in chunks of
+`K_CHUNK_MARKS` that never move. The owner of the handle parts builds the table after the directory
+and passes it to `ResidencyDirectory::ports()`. A stored copy plan keeps the generation it was made
+at and the buffers it covers: while `host_write_generation()` still equals that generation no buffer
+was written, which is one atomic load per check, and otherwise a buffer whose mark is higher was
+written after the plan.
 
 ## residency_view.hpp
 
@@ -145,21 +161,11 @@ a handle that is not live. It rechecks the generation once it holds the lock, so
 between the check and the lock gives an empty object. The planner's snapshot, each planned step and
 effect, `PlannedHostAccess` and `retire_coherence_history()` all go through it. `retire()` clears the
 map and the run count under the same lock. The coherence lock is taken after the writer mutex and
-never before it, so a holder of a `LockedCoherence` calls no writer (`set_instance()`, `retire()`,
-`record_host_write()`) until it has let the lock go.
+never before it, so a holder of a `LockedCoherence` calls no writer (`set_instance()`, `retire()`) until it has let the lock go.
 
 `LockedCoherence::enter_run()` and `leave_run()` count the runs in flight that hold the buffer, and
 `held_by_run()` reads the count. The planned Hold and Leave effects call them; host access reads the
 count and refuses while it is above zero.
-
-### Host writes
-
-`record_host_write()` raises the directory's host-write generation by one, under the writer mutex,
-and stores the new value in the entry; `host_write_of()` reads it back without a lock, and returns 0
-for a handle the host never wrote or that is not live. `retire()` clears it, so a reused slot starts
-at 0. A stored copy plan keeps the generation it was made at and the buffers it covers: while
-`host_write_generation()` still equals that generation no buffer was written, which is one atomic
-load per check, and otherwise a buffer whose mark is higher was written after the plan.
 
 ### retire_coherence_history
 

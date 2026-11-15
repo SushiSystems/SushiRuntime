@@ -179,17 +179,27 @@ namespace SushiRuntime
         {
             RuntimeTransferPaths paths;
             paths.support = std::make_unique<RuntimeTransferPaths::Support>(devices);
-            paths.owned.push_back(
-                std::make_unique<Coherence::SameContextPath>(paths.support->queues, observer));
-            paths.owned.push_back(
-                std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
-            paths.owned.push_back(
-                std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->ring, observer));
             auto file = std::make_unique<Coherence::FilePath>(paths.support->queues, paths.support->ring, observer);
-            paths.file = file.get();
-            paths.owned.push_back(std::move(file));
-            for (const auto& path : paths.owned)
-                paths.views.push_back(path.get());
+            Coherence::FilePath* const file_path = file.get();
+
+            std::vector<std::unique_ptr<Coherence::TransferPath>> built;
+            built.push_back(std::make_unique<Coherence::SameContextPath>(paths.support->queues, observer));
+            built.push_back(
+                std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
+            built.push_back(
+                std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->ring, observer));
+            built.push_back(std::move(file));
+
+            std::vector<Coherence::TransferPath*> candidates;
+            for (std::unique_ptr<Coherence::TransferPath>& path : built)
+            {
+                candidates.push_back(path.get());
+                paths.owned.push_back(std::move(path));
+            }
+            paths.file = file_path;
+            Result<void> admitted = Coherence::admit_paths(candidates, paths.views);
+            if (!admitted)
+                paths.refusal = std::move(admitted.error());
             return paths;
         }
     } // namespace Internal::Execution

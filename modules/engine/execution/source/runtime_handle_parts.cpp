@@ -35,14 +35,14 @@ namespace SushiRuntime
     namespace Internal::Execution
     {
         RuntimeHandleParts::RuntimeHandleParts(std::uint32_t universe)
-            : directory_(universe), borrowed_(directory_)
+            : directory_(universe), host_writes_(directory_), borrowed_(directory_)
         {
 
         }
 
         Memory::HandlePorts RuntimeHandleParts::ports() noexcept
         {
-            return directory_.ports();
+            return directory_.ports(host_writes_);
         }
 
         Memory::BorrowedIndex& RuntimeHandleParts::borrowed() noexcept

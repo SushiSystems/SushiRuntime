@@ -31,12 +31,15 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/transfer/file_path.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
+#include <SushiRuntime/transfer/transfer_path_list.hpp>
 
 namespace SushiRuntime
 {
@@ -46,6 +49,8 @@ namespace SushiRuntime
          * @brief Owns the transfer paths of one runtime and the objects they stand on.
          *
          * A path lists first the cheapest way: the copy inside one context, then the peer copy, then the copy staged through pinned host memory, then the read out of a file.
+         * A path whose id a listed path has is refused when the list is built: it is logged and
+         * recorded in refusal.
          */
         struct RuntimeTransferPaths
         {
@@ -61,6 +66,7 @@ namespace SushiRuntime
             std::vector<std::unique_ptr<Coherence::TransferPath>> owned; /**< The paths. */
             std::vector<Coherence::TransferPath*> views;               /**< The same paths, in the order they are tried. */
             Coherence::FilePath* file = nullptr;                       /**< The path that reads file spaces; owned holds it. */
+            std::optional<Error> refusal;                              /**< Set when two paths share an id; the runtime is not created. */
         };
 
         /**

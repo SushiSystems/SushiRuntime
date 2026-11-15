@@ -18,4 +18,5 @@ sushiruntime_add_module_tests(
         test_same_context_path.cpp
         test_staging_ring.cpp
         test_transfer_cost.cpp
-        test_transfer_observer_slot.cpp)
+        test_transfer_observer_slot.cpp
+        test_transfer_path_list.cpp)

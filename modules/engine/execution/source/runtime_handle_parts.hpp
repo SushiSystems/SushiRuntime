@@ -35,6 +35,7 @@
 #include <SushiRuntime/memory/borrowed_index.hpp>
 #include <SushiRuntime/memory/coherence_horizon.hpp>
 #include <SushiRuntime/memory/handle_ports.hpp>
+#include <SushiRuntime/memory/host_write_table.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 namespace SushiRuntime
@@ -42,7 +43,7 @@ namespace SushiRuntime
     namespace Internal::Execution
     {
         /**
-         * @brief Owns the residency directory of one runtime, the index of its Borrowed handles and
+         * @brief Owns the residency directory of one runtime, its host-write table, the index of its Borrowed handles and
          *        the horizon that retires its coherence history.
          *
          * Only this unit names ResidencyDirectory; everything else takes ports().
@@ -76,6 +77,9 @@ namespace SushiRuntime
             private:
                 /// @brief Mints, retires and resolves the handles; declared first, destroyed last.
                 Memory::ResidencyDirectory directory_;
+
+                /// @brief Records the host writes; reads the directory for liveness, so declared after it.
+                Memory::HostWriteTable host_writes_;
 
                 /// @brief Gives the Borrowed handles of caller-owned memory; mints in directory_.
                 Memory::BorrowedIndex borrowed_;

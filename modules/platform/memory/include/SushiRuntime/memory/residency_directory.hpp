@@ -69,7 +69,6 @@ namespace SushiRuntime
          */
         class ResidencyDirectory final : public HandleRegistry,
                                          public ResidencyView,
-                                         public HostWriteLog,
                                          public CoherenceHistory,
                                          public RetireSource
         {
@@ -150,10 +149,13 @@ namespace SushiRuntime
                     return live_count_.load(std::memory_order_relaxed);
                 }
 
-                /** @brief Returns the ports of this directory, valid for its lifetime. */
-                [[nodiscard]] HandlePorts ports() noexcept
+                /**
+                 * @brief Returns the ports of this directory, valid for its lifetime.
+                 * @param host_writes The host-write log the ports hand out; the directory keeps none.
+                 */
+                [[nodiscard]] HandlePorts ports(HostWriteLog& host_writes) noexcept
                 {
-                    return HandlePorts{*this, *this, *this, *this, *this};
+                    return HandlePorts{*this, *this, host_writes, *this, *this};
                 }
 
                 /** @brief Returns the universe this directory mints handles in. */
@@ -173,28 +175,6 @@ namespace SushiRuntime
                  * @return The intervals left across the live handles.
                  */
                 [[nodiscard]] std::size_t retire_coherence_history() override;
-
-                /**
-                 * @brief Records that the host wrote bytes of handle outside a plan, under the
-                 *        next host-write generation.
-                 * @return Ok, or the status of a handle that is not live.
-                 */
-                [[nodiscard]] HandleStatus record_host_write(GlobalHandle handle) override;
-
-                /** @brief Returns the generation of the last host write on any handle; 0 before the first. */
-                [[nodiscard]] std::uint64_t host_write_generation() const noexcept override
-                {
-                    return host_write_generation_.load(std::memory_order_acquire);
-                }
-
-                /**
-                 * @brief Returns the generation of the last host write on handle, without taking a lock.
-                 * @return 0 when the host never wrote handle or handle is not live.
-                 */
-                [[nodiscard]] std::uint64_t host_write_of(GlobalHandle handle) const noexcept override;
-
-                /** @brief Returns the address of the entry of slot, or null when its chunk is absent. */
-                [[nodiscard]] const void* entry_address(std::uint32_t slot) const noexcept;
 
             private:
                 /** @brief Holds one slot of the table. */
@@ -233,9 +213,6 @@ namespace SushiRuntime
                     CoherenceIntervals coherence;
                     /// @brief Runs in flight of graphs that hold the buffer.
                     std::uint32_t runs_holding = 0;
-
-                    /// @brief Host-write generation of the last host write on the buffer, or 0.
-                    std::atomic<std::uint64_t> host_write{0};
                 };
 
                 /** @brief Holds K_CHUNK_ENTRIES entries; a chunk never moves once made. */
@@ -277,9 +254,6 @@ namespace SushiRuntime
 
                 /// @brief Counts the retire() calls between their observer load and its return.
                 std::atomic<std::size_t> observer_calls_in_flight_{0};
-
-                /// @brief Generation of the last host write on any handle; raised under the writer mutex.
-                std::atomic<std::uint64_t> host_write_generation_{0};
         };
     } // namespace Internal::Memory
 } // namespace SushiRuntime

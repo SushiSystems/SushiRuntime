@@ -380,6 +380,12 @@ namespace SushiRuntime
                 context = std::shared_ptr<RuntimeContext>(new RuntimeContext(make_sushi<Impl>(
                     settings, *provider, std::move(distance_model), std::move(*descriptors), collector)));
 
+                if (context->impl_->coherence->paths.refusal)
+                {
+                    refused = std::move(context->impl_->coherence->paths.refusal);
+                    return;
+                }
+
                 Result<RuntimeCost> cost =
                     load_transfer_cost(settings.device_profile_file, context->impl_->devices,
                                        context->impl_->coherence->spaces.views,

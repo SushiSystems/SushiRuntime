@@ -23,7 +23,7 @@
 
 /**
  * @file handle_ownership.hpp
- * @brief Declares HandleOwnership, which records the owner machine of each shared handle.
+ * @brief Declares HandleOwnership, which decides the owner machine of a shared handle.
  * @author Mustafa Garip
  * @see modules/extension/offload_coordination/README.md
  */
@@ -31,9 +31,6 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
-#include <mutex>
-#include <optional>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
@@ -46,7 +43,7 @@ namespace SushiRuntime
         inline constexpr std::uint16_t K_MASTER_MACHINE = 0;
 
         /**
-         * @brief Names what HandleOwnership::admit() decided for a handle.
+         * @brief Names what classify_ownership() decided for a handle.
          */
         enum class OwnershipStatus : std::uint8_t
         {
@@ -56,48 +53,15 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Records, per handle, the one machine that owns it: the machine that minted it.
+         * @brief Decides whether the machine @p local_machine owns @p handle.
          *
-         * The owner is the handle's machine field, so the answer is a pure function of the
-         * handle. Only an owned handle is recorded; a foreign one is refused, and the caller
-         * leaves its operations to the owner. One mutex covers the table.
+         * The owner is the handle's machine field, so the answer is a pure function of the two
+         * arguments and no table is kept. The caller shares an owned handle and leaves the
+         * operations of a foreign one to its owner.
+         * @return Owned, Foreign or Null.
          */
-        class SUSHIRUNTIME_API HandleOwnership final
-        {
-            public:
-                /** @brief Builds an empty table for the machine @p local_machine. */
-                explicit HandleOwnership(std::uint16_t local_machine) noexcept;
-
-                HandleOwnership(const HandleOwnership&) = delete;
-                HandleOwnership& operator=(const HandleOwnership&) = delete;
-                HandleOwnership(HandleOwnership&&) = delete;
-                HandleOwnership& operator=(HandleOwnership&&) = delete;
-
-                /**
-                 * @brief Records a handle this machine owns, or refuses one it does not.
-                 * @return Owned when recorded; Foreign or Null when refused and not recorded.
-                 */
-                [[nodiscard]] OwnershipStatus admit(GlobalHandle handle);
-
-                /** @brief Forgets a handle; one never admitted changes nothing. */
-                void forget(GlobalHandle handle) noexcept;
-
-                /** @brief Returns the owner machine of a recorded handle, or nothing. */
-                [[nodiscard]] std::optional<std::uint16_t> owner_of(GlobalHandle handle) const;
-
-                /** @brief Returns the machine id this table admits handles for. */
-                [[nodiscard]] std::uint16_t local_machine() const noexcept;
-
-            private:
-                /// @brief The machine this table runs on.
-                std::uint16_t local_machine_;
-
-                /// @brief Guards the table.
-                mutable std::mutex mutex_;
-
-                /// @brief Owner machine by handle, in handle order.
-                std::map<GlobalHandle, std::uint16_t> owners_;
-        };
+        [[nodiscard]] SUSHIRUNTIME_API OwnershipStatus classify_ownership(
+            GlobalHandle handle, std::uint16_t local_machine) noexcept;
 
     } // namespace Distributed
 } // namespace SushiRuntime

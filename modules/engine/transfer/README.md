@@ -24,6 +24,7 @@ It depends on `handle`, `log` and `memory`.
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
 | `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
 | `transfer_observer_slot.hpp` | `TransferObserverSlot`, the observer the runtime's paths hold, which forwards to one a caller installs |
+| `transfer_path_list.hpp` | `admit_path()` and `PathListStatus`, which add a path to a list unless its `TransferPathID` is taken |
 | `transfer_log_category.hpp` | `K_TRANSFER_LOG_CATEGORY`, the log category of the module |
 
 ## Path identity and space kinds
@@ -50,6 +51,13 @@ The runtime builds the paths once, in `engine/execution`'s `build_transfer_paths
 context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`, `PeerPath`,
 `HostStagedPath`, then `FilePath`. The planner takes the first path that connects, so each later path serves only
 what the earlier ones refuse.
+
+`admit_path()` builds the list of paths a runtime tries. It adds a path unless a listed path has the
+same `TransferPathID`, then returns `DuplicateID` and logs the refused path and the listed one at
+error level; the path is not listed. `admit_paths()` builds a list from candidates and returns
+`InvalidState` when one was refused; `RuntimeContext::create()` returns that error, so a runtime with
+two paths of one id is not created. `TransferPathTally` keys on the id, so two paths with one id
+would share a count.
 
 ## Failure
 

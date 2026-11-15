@@ -18,7 +18,7 @@ the accessor alone.
 ## Owned parts
 
 The context owns its subsystems as parts, each built by one factory in its own unit.
-`RuntimeHandleParts` holds the directory, the Borrowed index and the coherence horizon.
+`RuntimeHandleParts` holds the directory, the host-write table, the Borrowed index and the coherence horizon.
 `RuntimeCoherenceParts` holds the memory spaces, the transfer paths and the observer they report to,
 the copy cost, the eviction policy and the partitioner; `make_coherence_parts()` builds it. A new
 subsystem is one more part, held by one member of `Impl` and reached by one accessor. The existing

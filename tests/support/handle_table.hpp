@@ -39,6 +39,7 @@
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/memory/handle_ports.hpp>
+#include <SushiRuntime/memory/host_write_table.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -58,7 +59,8 @@ class HandleTable
     public:
         /** @brief Mints in a directory of its own. */
         HandleTable() : owned_(std::make_unique<SushiRuntime::Internal::Memory::ResidencyDirectory>(0)),
-                        ports_(owned_->ports())
+                        owned_writes_(std::make_unique<SushiRuntime::Internal::Memory::HostWriteTable>(*owned_)),
+                        ports_(owned_->ports(*owned_writes_))
         {
         }
 
@@ -130,6 +132,9 @@ class HandleTable
     private:
         /// @brief The directory this table made, when it was given none.
         std::unique_ptr<SushiRuntime::Internal::Memory::ResidencyDirectory> owned_;
+
+        /// @brief The host-write table this table made, when it was given none.
+        std::unique_ptr<SushiRuntime::Internal::Memory::HostWriteTable> owned_writes_;
 
         /// @brief The ports the handles are minted through.
         SushiRuntime::Internal::Memory::HandlePorts ports_;

@@ -13,6 +13,7 @@ sushiruntime_add_module(
         same_context_path.cpp
         staging_ring.cpp
         transfer_observer_slot.cpp
+        transfer_path_list.cpp
     DEPENDS
         core
         handle

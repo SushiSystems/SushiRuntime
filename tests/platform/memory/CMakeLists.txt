@@ -26,6 +26,7 @@ sushiruntime_add_module_tests(
         test_file_memory_space.cpp
         test_host_memory_space.cpp
         test_host_usm_source.cpp
+        test_host_write_table.cpp
         test_memory_pool_capacity.cpp
         test_residency_directory.cpp
         test_retire_observer.cpp

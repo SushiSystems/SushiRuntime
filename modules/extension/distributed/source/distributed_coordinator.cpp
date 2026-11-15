@@ -193,7 +193,6 @@ namespace SushiRuntime
                   transport(require_transport(std::move(master_transport))),
                   directory(options.secret.bytes(), policy_or_default(options.policy)),
                   exchange(buffers, options.chunk_bytes),
-                  ownership(K_MASTER_MACHINE),
                   dispatcher(buffers, directory, pending, *transport, held, producers,
                              std::move(master)),
                   monitor(directory, pending, held, buffers, exchange, *transport,
@@ -638,9 +637,6 @@ namespace SushiRuntime
             /// @brief Pull streams and the progress of incoming outputs.
             BufferExchange exchange;
 
-            /// @brief The owner machine of each shared handle; only owned handles are shared.
-            HandleOwnership ownership;
-
             /// @brief The producer of each handle's current version and who holds it.
             ProducerTable producers;
 
@@ -839,13 +835,13 @@ namespace SushiRuntime
 
         void DistributedCoordinator::share(GlobalHandle handle, std::size_t bytes)
         {
-            const OwnershipStatus status = impl_->ownership.admit(handle);
+            const OwnershipStatus status = classify_ownership(handle, K_MASTER_MACHINE);
             if (status != OwnershipStatus::Owned)
             {
                 SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
                             "a handle of machine {} was not shared: machine {} does not own it; "
                             "its nodes stay with their owner",
-                            handle.machine(), impl_->ownership.local_machine());
+                            handle.machine(), K_MASTER_MACHINE);
                 return;
             }
             impl_->buffers.share(handle, bytes);
@@ -878,7 +874,6 @@ namespace SushiRuntime
                     return;
 
                 impl.producers.forget(released);
-                impl.ownership.forget(released);
 
                 std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);

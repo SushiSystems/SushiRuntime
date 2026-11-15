@@ -45,6 +45,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/host_memory_space.hpp>
+#include <SushiRuntime/memory/host_write_table.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 #include "support/fake_transfer_path.hpp"
@@ -212,13 +213,14 @@ namespace
             }
 
             ResidencyDirectory directory_{0};
+            Internal::Memory::HostWriteTable host_writes_{directory_};
             FixedMemoryProbe probe_;
             std::vector<std::unique_ptr<MemorySpace>> owned_;
             std::vector<const MemorySpace*> spaces_;
             FakeTransferPath path_;
             std::vector<TransferPath*> paths_;
             HeapAllocator allocator_;
-            PlannedHostAccess access_{directory_.ports(), spaces_, paths_, allocator_, K_HOST};
+            PlannedHostAccess access_{directory_.ports(host_writes_), spaces_, paths_, allocator_, K_HOST};
     };
 
     TEST_F(Small_PlannedHostAccess, APlannedBufferIsMintedWithItsSizeAndNoInstance)
@@ -381,12 +383,12 @@ namespace
     TEST_F(Small_PlannedHostAccess, AHostWriteIsRecordedAsAHostWriteOfTheHandle)
     {
         const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
-        const std::uint64_t before = directory_.host_write_generation();
+        const std::uint64_t before = host_writes_.host_write_generation();
         const std::vector<std::int32_t> values = pattern(1);
 
         ASSERT_TRUE(access_.write(handle, 0, values.data(), K_BYTES));
 
-        EXPECT_GT(directory_.host_write_of(handle), before);
+        EXPECT_GT(host_writes_.host_write_of(handle), before);
         access_.release(handle);
     }
     TEST_F(Small_PlannedHostAccess, AHostReadBetweenAPlanAndItsRunSeesTheStateBeforeTheRun)

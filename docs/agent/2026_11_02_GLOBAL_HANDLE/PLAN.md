@@ -280,10 +280,10 @@ job builds on them.
 | R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | done |
 | R08 | space and path kinds typed, not strings | R01 | done |
 | R09 | statuses, not exceptions, on worker threads | R01 | done |
-| R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |
-| R11 | unneeded state removed | R01 | todo |
+| R10 | `ResidencyView` split by role; one bound-operand view | R01 | running |
+| R11 | unneeded state removed | R01 | done |
 | R12 | model agrees with plan; insertion EFT; bounded search | R04 | done |
-| R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | todo |
+| R13 | copies keyed to producers, prefetch, non-blocking staging, pinned ring per context | R05 | running |
 | R14 | design and page truth | R12, R13 | todo |
 | R15 | profile fold with smoothing and minimum samples | R04 | done |
 
