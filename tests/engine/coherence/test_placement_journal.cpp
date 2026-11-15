@@ -35,6 +35,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <SushiRuntime/coherence/placement_journal.hpp>
@@ -68,8 +69,58 @@ namespace
     {
         PlacementJournal journal;
         EXPECT_TRUE(journal.append(sample_entry(PlacementReason::Replan, PlannedBy::Scheduler)).has_value());
-        EXPECT_TRUE(journal.append(sample_entry(PlacementReason::TryFloor, PlannedBy::Floor)).has_value());
+        PlacementJournalEntry floor = sample_entry(PlacementReason::TryFloor, PlannedBy::Floor);
+        floor.horizon = 3;
+        EXPECT_TRUE(journal.append(std::move(floor)).has_value());
         return journal.entries();
+    }
+
+    /** @brief Returns text with every line that opens with prefix removed. */
+    std::string without_lines(const std::string& text, const std::string& prefix)
+    {
+        std::istringstream lines(text);
+        std::string kept;
+        std::string line;
+        while (std::getline(lines, line))
+            if (line.rfind(prefix, 0) != 0)
+                kept += line + '\n';
+        return kept;
+    }
+
+    TEST(Small_PlacementJournal, TheWriterWritesVersionTwoWithTheHorizonOfEachEntry)
+    {
+        const std::string text = PlacementJournal::serialise(two_decisions()).value();
+
+        EXPECT_EQ(text.rfind("placement_journal_version 2\n", 0), 0u) << text;
+        EXPECT_NE(text.find("horizon next\n"), std::string::npos) << text;
+        EXPECT_NE(text.find("horizon 3\n"), std::string::npos) << text;
+    }
+
+    TEST(Small_PlacementJournal, AVersionOneJournalIsReadWithEveryEntryAtTheNextHorizon)
+    {
+        std::string text = without_lines(PlacementJournal::serialise(two_decisions()).value(), "horizon ");
+        text.replace(0, std::string("placement_journal_version 2").size(), "placement_journal_version 1");
+
+        const Result<std::vector<PlacementJournalEntry>> parsed = PlacementJournal::parse(text);
+
+        ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+        ASSERT_EQ(parsed.value().size(), 2u);
+        EXPECT_FALSE(parsed.value()[0].horizon.has_value());
+        EXPECT_FALSE(parsed.value()[1].horizon.has_value());
+        EXPECT_EQ(parsed.value()[1].reason, PlacementReason::TryFloor);
+    }
+
+    TEST(Small_PlacementJournal, AVersionAboveTheReadersIsRefusedNamingBothVersions)
+    {
+        std::string text = PlacementJournal::serialise(two_decisions()).value();
+        text.replace(0, std::string("placement_journal_version 2").size(), "placement_journal_version 3");
+
+        const Result<std::vector<PlacementJournalEntry>> parsed = PlacementJournal::parse(text);
+
+        ASSERT_FALSE(parsed.has_value());
+        EXPECT_EQ(parsed.error().code, ErrorCode::Unsupported);
+        EXPECT_NE(parsed.error().message.find("version 3, this reader knows versions 1 to 2"), std::string::npos)
+            << parsed.error().message;
     }
 
     TEST(Small_PlacementJournal, AppendNumbersTheEntriesInOrder)

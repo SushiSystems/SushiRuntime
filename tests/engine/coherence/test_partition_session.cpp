@@ -29,6 +29,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -185,5 +187,105 @@ namespace
         EXPECT_EQ(session.journal().entries()[1].reason, PlacementReason::Replan);
         EXPECT_EQ(session.journal().entries()[1].measured_device_seconds.at(host_key(2)), 2.5);
         EXPECT_EQ(session.generation(), 2u);
+    }
+
+    TEST(Small_PartitionSession, AReplayingSessionPutsTheJournalledPlansInForceAtTheSameHorizons)
+    {
+        PartitionSession recorded = split_session();
+        measure_step(recorded, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        ASSERT_EQ(recorded.rebalance(), RebalanceAction::Replan);
+
+        PartitionSession replayed(session_parts({1.0, 1.0}));
+        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
+        ASSERT_TRUE(replayed.is_active());
+        ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
+        // The replay ignores what the horizon measured: both devices ran at their model.
+        measure_step(replayed, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+
+        EXPECT_EQ(replayed.rebalance(), RebalanceAction::Replan);
+        EXPECT_EQ(replayed.answer().value().node_devices, recorded.answer().value().node_devices);
+        ASSERT_EQ(replayed.journal().entries().size(), 2u);
+        for (std::size_t index = 0; index < 2; ++index)
+        {
+            EXPECT_EQ(replayed.journal().entries()[index].reason, recorded.journal().entries()[index].reason);
+            EXPECT_EQ(replayed.journal().entries()[index].assignment_hash,
+                      recorded.journal().entries()[index].assignment_hash);
+        }
+        measure_step(replayed, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        EXPECT_EQ(replayed.rebalance(), RebalanceAction::Keep);
+    }
+
+    TEST(Small_PartitionSession, AReplayPutsEachChangeInForceAtTheHorizonItWasMadeAt)
+    {
+        // The recorded run keeps its plan at horizon 1 and replans at horizon 2.
+        PartitionSession recorded = split_session();
+        measure_step(recorded, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+        ASSERT_EQ(recorded.rebalance(), RebalanceAction::Keep);
+        measure_step(recorded, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        ASSERT_EQ(recorded.rebalance(), RebalanceAction::Replan);
+        ASSERT_EQ(recorded.journal().entries().size(), 2u);
+        ASSERT_EQ(recorded.journal().entries()[1].horizon, std::optional<std::uint64_t>(2));
+
+        PartitionSession replayed(session_parts({1.0, 1.0}));
+        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
+        ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
+        const std::vector<DeviceKey> first = replayed.answer().value().node_devices;
+
+        // Horizon 1 keeps the plan, whatever it measured.
+        measure_step(replayed, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        EXPECT_EQ(replayed.rebalance(), RebalanceAction::Keep);
+        EXPECT_EQ(replayed.answer().value().node_devices, first);
+        EXPECT_EQ(replayed.generation(), 1u);
+
+        measure_step(replayed, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+        EXPECT_EQ(replayed.rebalance(), RebalanceAction::Replan);
+        EXPECT_EQ(replayed.answer().value().node_devices, recorded.answer().value().node_devices);
+        ASSERT_EQ(replayed.journal().entries().size(), 2u);
+        EXPECT_EQ(replayed.journal().entries()[1].horizon, recorded.journal().entries()[1].horizon);
+    }
+
+    TEST(Small_PartitionSession, AnEntryWithNoHorizonIsReplayedAtTheNextHorizon)
+    {
+        PartitionSession recorded = split_session();
+        measure_step(recorded, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+        ASSERT_EQ(recorded.rebalance(), RebalanceAction::Keep);
+        measure_step(recorded, 2.5, {{host_key(1), 0.5}, {host_key(2), 2.5}});
+        ASSERT_EQ(recorded.rebalance(), RebalanceAction::Replan);
+        // A version 1 journal holds no horizon.
+        std::vector<PlacementJournalEntry> entries = recorded.journal().entries();
+        for (PlacementJournalEntry& entry : entries)
+            entry.horizon.reset();
+
+        PartitionSession replayed(session_parts({1.0, 1.0}));
+        ASSERT_TRUE(replayed.replay(std::move(entries)).has_value());
+        ASSERT_TRUE(replayed.partition(independent_nodes(2, 2)).has_value());
+        measure_step(replayed, 1.0, {{host_key(1), 0.5}, {host_key(2), 0.5}});
+
+        EXPECT_EQ(replayed.rebalance(), RebalanceAction::Replan);
+        EXPECT_EQ(replayed.answer().value().node_devices, recorded.answer().value().node_devices);
+    }
+
+    TEST(Small_PartitionSession, AReplayOfAnotherProblemIsRefusedNamingTheEntry)
+    {
+        PartitionSession recorded = split_session();
+        PartitionSession replayed(session_parts({1.0, 1.0}));
+        ASSERT_TRUE(replayed.replay(recorded.journal().entries()).has_value());
+
+        const Result<PartitionAssignment, PartitionRefusal>& answer = replayed.partition(independent_nodes(3, 2));
+
+        ASSERT_FALSE(answer.has_value());
+        EXPECT_EQ(answer.error().error.code, ErrorCode::InvalidArgument);
+        EXPECT_NE(answer.error().error.message.find("entry 0"), std::string::npos) << answer.error().error.message;
+        EXPECT_FALSE(replayed.has_plan());
+    }
+
+    TEST(Small_PartitionSession, AReplayAfterAPlanIsInForceIsRefused)
+    {
+        PartitionSession session = split_session();
+
+        const Result<void> replay = session.replay(session.journal().entries());
+
+        ASSERT_FALSE(replay.has_value());
+        EXPECT_EQ(replay.error().code, ErrorCode::InvalidState);
     }
 } // namespace

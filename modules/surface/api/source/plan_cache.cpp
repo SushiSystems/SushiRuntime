@@ -147,11 +147,15 @@ namespace SushiRuntime
                 return make_error(std::move(*refusal));
             // The planned copies join the nodes before compile() finds the roots and leaves.
             bool planned = false;
+            if (partition_ == nullptr)
+                partition_ = std::make_unique<Detail::GraphPartition>();
+            Detail::GraphPartition& partition = *partition_;
             const TaskGraph::NodeSplice coherence =
-                [&built, &runtime, &planned](std::vector<sushi_ptr<Internal::Graph::Node>>& nodes) -> Result<void>
+                [&built, &runtime, &planned, &partition](std::vector<sushi_ptr<Internal::Graph::Node>>& nodes)
+                -> Result<void>
             {
                 // A static graph is one region, so a partition of its nodes is the graph-wide one.
-                Result<void> placed = Detail::GraphPartition().place(nodes, runtime);
+                Result<void> placed = partition.place(nodes, runtime);
                 if (!placed)
                     return placed;
                 Result<std::optional<Internal::Coherence::CopyPlan>> coherent = plan_region_coherence(nodes, runtime);
@@ -207,6 +211,8 @@ namespace SushiRuntime
                 return "the copy plan is not steady";
             if (state_->host_writes && state_->host_writes->written(runtime.handles()))
                 return "the host wrote a buffer of the copy plan";
+            if (partition_ != nullptr && partition_->rebalanced(runtime))
+                return "a horizon rebalanced the partition";
             return "the plan was marked for a rebuild";
         }
 
@@ -220,6 +226,9 @@ namespace SushiRuntime
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
             // A host write between runs left the directory where the stored copy plan does not hold.
             if (state_->host_writes && state_->host_writes->written(runtime.handles()))
+                return true;
+            // A horizon put another plan in force for the problem this graph was placed by.
+            if (partition_ != nullptr && partition_->rebalanced(runtime))
                 return true;
             return state_->placement->generation != runtime.placement()->generation;
         }
@@ -274,6 +283,8 @@ namespace SushiRuntime
         void PlanCache::discard() noexcept
         {
             state_.reset();
+            // The partition holds the placed nodes, and with them what their bodies captured.
+            partition_.reset();
             registrations_.clear();
             built_generation_ = 0;
             dirty_ = true;
@@ -282,6 +293,7 @@ namespace SushiRuntime
         void PlanCache::take(PlanCache& other) noexcept
         {
             state_ = std::move(other.state_);
+            partition_ = std::move(other.partition_);
             registrations_ = std::exchange(other.registrations_, {});
             built_generation_ = std::exchange(other.built_generation_, 0);
             compiles_ = std::exchange(other.compiles_, 0);

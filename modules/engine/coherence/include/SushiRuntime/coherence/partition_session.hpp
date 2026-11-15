@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -77,11 +78,27 @@ namespace SushiRuntime
                 /** @brief Builds a session from its parts. */
                 explicit PartitionSession(PartitionSessionParts parts);
 
-                /** @brief Returns whether the session has a cost model and a scheduler to price and plan with. */
+                /** @brief Returns whether the session plans: it has a cost model and a scheduler, or replays a journal. */
                 [[nodiscard]] bool is_active() const noexcept
                 {
-                    return scheduler_ != nullptr;
+                    return scheduler_ != nullptr || replaying();
                 }
+
+                /** @brief Returns whether the session answers from a placement journal rather than its partitioners. */
+                [[nodiscard]] bool replaying() const noexcept
+                {
+                    return replay_.has_value();
+                }
+
+                /**
+                 * @brief Makes the session answer from entries, in order, and stop planning on its own.
+                 *
+                 * Each partition() takes the next entry, which must be a First entry for the same problem.
+                 * A horizon takes the next entry when it is not a First entry and was made at this horizon,
+                 * or carries no horizon, and puts its plan in force; any other horizon keeps the plan.
+                 * @return InvalidState when a plan is already in force.
+                 */
+                [[nodiscard]] Result<void> replay(std::vector<PlacementJournalEntry> entries);
 
                 /** @brief Returns the devices of the runtime, device i at index i. */
                 [[nodiscard]] const std::vector<PartitionDevice>& devices() const noexcept
@@ -166,6 +183,15 @@ namespace SushiRuntime
                 /** @brief Appends the plan in force to the journal with the numbers of judged. */
                 void journal_plan(PlacementReason reason, const PartitionReport& judged);
 
+                /** @brief Answers problem from the next journal entry; the replay form of partition(). */
+                [[nodiscard]] const Result<PartitionAssignment, PartitionRefusal>& replay_partition(PartitionProblem problem);
+
+                /** @brief Puts the next journal entry in force when it is not a First entry; the replay form of rebalance(). */
+                RebalanceAction replay_rebalance(const PartitionReport& judged);
+
+                /** @brief Returns the plan entry gives problem, priced by the entry's profiles. */
+                [[nodiscard]] Result<Plan> replay_plan(const PlacementJournalEntry& entry, PartitionProblem problem) const;
+
                 /// @brief The parts the session was built from.
                 PartitionSessionParts parts_;
 
@@ -192,6 +218,18 @@ namespace SushiRuntime
 
                 /// @brief Every plan put in force, in order.
                 PlacementJournal journal_;
+
+                /// @brief The entries a replay answers from; nothing when the session plans on its own.
+                std::optional<std::vector<PlacementJournalEntry>> replay_;
+
+                /// @brief Horizons judged with an answered plan in force; each journal entry records the count.
+                std::uint64_t horizons_ = 0;
+
+                /// @brief The next entry of replay_ to answer from.
+                std::size_t replay_next_ = 0;
+
+                /// @brief The refusal partition() returned last in replay, kept so the returned reference stays valid.
+                std::optional<Result<PartitionAssignment, PartitionRefusal>> replay_refusal_;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

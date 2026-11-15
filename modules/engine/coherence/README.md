@@ -430,7 +430,7 @@ keeps the plan in force.
 ## Placement journal
 
 A `PlacementJournalEntry` records one plan put in force: its sequence, its `PlacementReason`, the
-`PlannedBy` partitioner that answered, `problem_hash()` of the problem, `assignment_hash()` of the answer,
+`PlannedBy` partitioner that answered, the horizon it was made at, `problem_hash()` of the problem, `assignment_hash()` of the answer,
 the modelled, measured and floor step of the report that was judged (zero for `First`), the measured time
 of each device, and the `DeviceProfileSet` that priced the answer. The journal is kept in memory. A
 runtime with a profile file also appends each entry to `<device_profile_file>.journal`; the first entry
@@ -442,9 +442,22 @@ partitioner is a pure function of both, so the replay gives the recorded assignm
 leaves follow from the placement. It refuses another problem with `InvalidArgument` and an answer of
 another hash with `InvalidState`.
 
+`PartitionSession::replay()` hands a live session a journal, before its first plan; the API reaches it
+through `AdvancedControls::replay_placements()`, which reads the file. A replaying session is active with
+or without a cost model. Each `partition()` takes the next entry, which must be a `First` entry; an entry of
+another reason, an exhausted journal, or `replay_placement()`'s refusal is returned as the refusal, naming
+the entry, and nothing is put in force. Each horizon folds nothing and judges nothing: it takes the next entry
+when that entry is not a `First` one and was made at this horizon, puts the plan it replays in force (a `KeepFloor` entry changes no plan),
+and returns the action the entry's reason names; a replay that fails there is logged as an error and the plan
+in force stays. A horizon whose number no entry names keeps the plan, so each change is put in force at the
+horizon it was made at. The session counts a horizon when a plan with an answer is in force, the same way in
+both runs. An entry with no horizon, from a version 1 journal, applies at the next horizon. The
+replaying session journals what it puts in force as it would have planned it.
+
 ```
-placement_journal_version 1
+placement_journal_version 2
 entry 0 first scheduler
+horizon 0
 problem_hash 0123456789abcdef
 assignment_hash 00000000000000ff
 modelled_step 0
@@ -458,7 +471,8 @@ end_entry
 
 | Line | Holds |
 | --- | --- |
-| `placement_journal_version <integer>` | The first line; the reader reads version 1 only. |
+| `placement_journal_version <integer>` | The first line. The writer writes version 2. |
+| `horizon <integer>` or `horizon next` | Version 2: the horizons the session had judged when the plan was put in force; `next` for an entry read from version 1. |
 | `entry <sequence> <reason> <planner>` | Opens an entry. The reason is `first`, `replan`, `try_floor`, `keep_floor` or `leave_floor`; the planner `scheduler` or `floor`. |
 | `problem_hash`, `assignment_hash` | Sixteen lower-case hexadecimal digits. |
 | `modelled_step`, `measured_step`, `floor_step` | Seconds, 17 significant digits in the classic locale. |
@@ -467,6 +481,12 @@ end_entry
 | `end_entry` | Closes the entry. |
 
 A malformed line is `InvalidArgument` and names its number.
+
+| Version | Reader |
+| --- | --- |
+| 1 | Reads it. Its entries have no `horizon` line, and each is upgraded in memory to an entry with no horizon, which applies at the next horizon. |
+| 2 | Reads it; the current version. |
+| Any other | Refuses it with `Unsupported`, naming the file's version and the versions the reader knows. |
 
 ## ProfileMeasurement
 

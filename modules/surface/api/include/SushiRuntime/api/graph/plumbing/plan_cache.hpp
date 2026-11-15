@@ -52,6 +52,7 @@ namespace SushiRuntime
     namespace Detail
     {
         struct PlanCacheState;
+        class GraphPartition;
 
         /**
          * @brief Keeps the plan compiled from one recorder and tells when it must be rebuilt.
@@ -124,7 +125,8 @@ namespace SushiRuntime
                 /**
                  * @brief Returns whether the plan is missing or older than what recorder holds,
                  *        than the context's placement record or than its device timing request,
-                 *        or holds a copy plan that is not steady.
+                 *        holds a copy plan that is not steady, or was placed by a partition a
+                 *        horizon has since rebalanced.
                  * @param context The runtime whose rule set the plan was compiled under.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -191,6 +193,9 @@ namespace SushiRuntime
 
                 /** @brief The plan and the nodes it names; null until the first build. */
                 std::unique_ptr<Detail::PlanCacheState> state_;
+
+                /** @brief Partitions the graph at each build and keeps its answer across builds; null until the first. */
+                std::unique_ptr<Detail::GraphPartition> partition_;
 
                 /** @brief Registration index of each rule, as the last build stamped it. */
                 std::vector<std::uint32_t> registrations_;

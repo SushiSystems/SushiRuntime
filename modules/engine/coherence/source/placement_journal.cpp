@@ -53,6 +53,8 @@ namespace SushiRuntime
             /** @brief Holds the keywords of the format. */
             constexpr const char* K_VERSION_KEY = "placement_journal_version";
             constexpr const char* K_ENTRY_KEY = "entry";
+            constexpr const char* K_HORIZON_KEY = "horizon";
+            constexpr const char* K_NEXT_HORIZON = "next";
             constexpr const char* K_PROBLEM_KEY = "problem_hash";
             constexpr const char* K_ASSIGNMENT_KEY = "assignment_hash";
             constexpr const char* K_MODELLED_KEY = "modelled_step";
@@ -137,6 +139,11 @@ namespace SushiRuntime
                 text << std::setprecision(17);
                 text << K_ENTRY_KEY << ' ' << entry.sequence << ' ' << K_REASONS[static_cast<std::size_t>(entry.reason)]
                      << ' ' << K_PLANNERS[static_cast<std::size_t>(entry.planned_by)] << '\n';
+                text << K_HORIZON_KEY << ' ';
+                if (entry.horizon)
+                    text << *entry.horizon << '\n';
+                else
+                    text << K_NEXT_HORIZON << '\n';
                 text << K_PROBLEM_KEY << ' ' << std::hex << std::setw(16) << std::setfill('0') << entry.problem_hash << '\n';
                 text << K_ASSIGNMENT_KEY << ' ' << std::setw(16) << entry.assignment_hash << std::dec << std::setfill(' ')
                      << '\n';
@@ -170,10 +177,11 @@ namespace SushiRuntime
                     {
                         std::vector<PlacementJournalEntry> entries;
                         std::string line;
-                        if (!next(line) || line != version_line().substr(0, version_line().size() - 1))
-                            return make_error(fault(number_, "the first line must be '" + std::string(K_VERSION_KEY) +
-                                                                 " " + std::to_string(PlacementJournal::K_CURRENT_VERSION) +
-                                                                 "'"));
+                        if (!next(line))
+                            return make_error(fault(number_, "the text is empty"));
+                        Result<void> versioned = read_version(line);
+                        if (!versioned)
+                            return make_error(std::move(versioned.error()));
                         while (next(line))
                         {
                             Result<PlacementJournalEntry> entry = read_entry(line);
@@ -185,6 +193,54 @@ namespace SushiRuntime
                     }
 
                 private:
+                    /**
+                     * @brief Reads the version line into version_.
+                     * @return InvalidArgument for a malformed line, Unsupported for a version this reader does
+                     *         not know, naming it and the versions it reads.
+                     */
+                    [[nodiscard]] Result<void> read_version(const std::string& line)
+                    {
+                        const std::vector<std::string> words = words_of(line);
+                        if (words.size() != 2 || words[0] != K_VERSION_KEY)
+                            return make_error(fault(number_, "the first line must be '" + std::string(K_VERSION_KEY) +
+                                                                 " <number>'"));
+                        const std::optional<std::uint64_t> version = to_unsigned(words[1], 10);
+                        if (!version)
+                            return make_error(fault(number_, "the version is not a number"));
+                        if (*version < static_cast<std::uint64_t>(PlacementJournal::K_OLDEST_VERSION) ||
+                            *version > static_cast<std::uint64_t>(PlacementJournal::K_CURRENT_VERSION))
+                            return make_error(Error{ErrorCode::Unsupported,
+                                                    "placement journal has version " + words[1] +
+                                                        ", this reader knows versions " +
+                                                        std::to_string(PlacementJournal::K_OLDEST_VERSION) + " to " +
+                                                        std::to_string(PlacementJournal::K_CURRENT_VERSION)});
+                        version_ = *version;
+                        return {};
+                    }
+
+                    /**
+                     * @brief Reads the horizon line of a version 2 entry into entry.
+                     *
+                     * A version 1 entry has no such line; it keeps no horizon, which is its upgrade to
+                     * version 2: it applies at the next horizon.
+                     */
+                    [[nodiscard]] Result<void> read_horizon(PlacementJournalEntry& entry)
+                    {
+                        if (version_ < 2)
+                            return {};
+                        Result<std::vector<std::string>> words = keyed(K_HORIZON_KEY, 1);
+                        if (!words)
+                            return make_error(std::move(words.error()));
+                        const std::string& value = words.value()[1];
+                        if (value == K_NEXT_HORIZON)
+                            return {};
+                        const std::optional<std::uint64_t> horizon = to_unsigned(value, 10);
+                        if (!horizon)
+                            return make_error(fault(number_, "'horizon' holds a bad number"));
+                        entry.horizon = *horizon;
+                        return {};
+                    }
+
                     /** @brief Reads the next line into line; false at the end of the text. */
                     bool next(std::string& line)
                     {
@@ -248,6 +304,9 @@ namespace SushiRuntime
                         entry.sequence = *sequence;
                         entry.reason = static_cast<PlacementReason>(*reason);
                         entry.planned_by = static_cast<PlannedBy>(*planner);
+                        Result<void> horizon = read_horizon(entry);
+                        if (!horizon)
+                            return make_error(std::move(horizon.error()));
 
                         for (const Result<void>& read :
                              {read_hash(K_PROBLEM_KEY, entry.problem_hash), read_hash(K_ASSIGNMENT_KEY, entry.assignment_hash),
@@ -306,6 +365,9 @@ namespace SushiRuntime
 
                     /// @brief Number of the last line read, from one.
                     std::size_t number_ = 0;
+
+                    /// @brief The version the text declares.
+                    std::uint64_t version_ = 0;
             };
         } // namespace
 

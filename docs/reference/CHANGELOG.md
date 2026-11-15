@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `AdvancedControls::replay_placements()`, which places a runtime's graphs from a placement journal, each change at the horizon it was made at (GLOBAL_HANDLE H7).
+- 2026-11-15 — runtime: Changed a static `Graph` to keep its partition across builds and build again when a horizon rebalances it (GLOBAL_HANDLE H7).
+- 2026-11-15 — coherence: Changed the placement journal to version 2, which records each entry's horizon; version 1 is read and upgraded (GLOBAL_HANDLE H7).
 - 2026-11-15 — runtime: Added rebalancing at each horizon: the measured dispatches fold into the profiles in memory, and a device slower than its model by more than 10% loses nodes to a new partition (GLOBAL_HANDLE T27).
 - 2026-11-15 — runtime: Added the measured floor check: a plan whose measured step is above its floor's modelled step by more than 10% runs the floor for one horizon, and the faster of the two stays (GLOBAL_HANDLE T27).
 - 2026-11-15 — runtime: Added the placement journal, one entry per plan with its hashes, numbers and profiles, written beside the profile file as `<file>.journal`; a replay gives the same placements (GLOBAL_HANDLE T27).

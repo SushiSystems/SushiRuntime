@@ -31,13 +31,18 @@
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
 
 #include <cstddef>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/coherence/partition_session.hpp>
+#include <SushiRuntime/coherence/placement_journal.hpp>
 #include <SushiRuntime/coherence/transfer_observer.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -100,5 +105,14 @@ namespace SushiRuntime
         std::shared_ptr<Internal::Coherence::TransferObserver> observer) const
     {
         Internal::ContextAccess::context(context_).install_transfer_observer(std::move(observer));
+    }
+
+    Result<void> AdvancedControls::replay_placements(const std::string& journal_file) const
+    {
+        Result<std::vector<Internal::Coherence::PlacementJournalEntry>> entries =
+            Internal::Coherence::PlacementJournal::read(std::filesystem::path(journal_file));
+        if (!entries)
+            return make_error(std::move(entries.error()));
+        return Internal::ContextAccess::context(context_).partitioning().replay(std::move(entries.value()));
     }
 } // namespace SushiRuntime

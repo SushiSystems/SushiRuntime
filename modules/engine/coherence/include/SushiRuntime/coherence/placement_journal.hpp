@@ -69,7 +69,8 @@ namespace SushiRuntime
             std::uint64_t sequence = 0;                          /**< Place of the entry in its journal, from zero. */
             PlacementReason reason = PlacementReason::First;     /**< Why the plan was put in force. */
             PlannedBy planned_by = PlannedBy::Scheduler;         /**< The partitioner that answered. */
-            std::uint64_t problem_hash = 0;                      /**< problem_hash() of the problem answered. */
+            std::optional<std::uint64_t> horizon;                /**< Horizons the session had passed when the plan was put in force; nothing applies at the next horizon. */
+            std::uint64_t problem_hash = 0;                     /**< problem_hash() of the problem answered. */
             std::uint64_t assignment_hash = 0;                   /**< assignment_hash() of the answer. */
             double modelled_step_seconds = 0.0;                  /**< Modelled step of the plan the horizon judged. */
             double measured_step_seconds = 0.0;                  /**< Measured step of that plan; zero for First. */
@@ -81,7 +82,7 @@ namespace SushiRuntime
             [[nodiscard]] bool operator==(const PlacementJournalEntry& other) const
             {
                 return sequence == other.sequence && reason == other.reason && planned_by == other.planned_by &&
-                       problem_hash == other.problem_hash && assignment_hash == other.assignment_hash &&
+                       horizon == other.horizon && problem_hash == other.problem_hash && assignment_hash == other.assignment_hash &&
                        modelled_step_seconds == other.modelled_step_seconds &&
                        measured_step_seconds == other.measured_step_seconds &&
                        floor_step_seconds == other.floor_step_seconds &&
@@ -98,8 +99,11 @@ namespace SushiRuntime
         class PlacementJournal final
         {
             public:
-                /** @brief Holds the version the writer writes and the reader reads. */
-                static constexpr int K_CURRENT_VERSION = 1;
+                /** @brief Holds the version the writer writes. */
+                static constexpr int K_CURRENT_VERSION = 2;
+
+                /** @brief Holds the oldest version the reader reads; its entries carry no horizon. */
+                static constexpr int K_OLDEST_VERSION = 1;
 
                 /** @brief Builds a journal kept in memory, and in file when one is named. */
                 explicit PlacementJournal(std::optional<std::filesystem::path> file = std::nullopt);

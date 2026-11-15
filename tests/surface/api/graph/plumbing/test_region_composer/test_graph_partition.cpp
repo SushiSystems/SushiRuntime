@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <locale>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -114,6 +115,69 @@ namespace GraphPartitionTests
             std::ofstream(path, std::ios::binary | std::ios::trunc) << rewritten.str();
         }
 
+        /**
+         * @brief Multiplies every throughput and memory bandwidth of the profile file at path by factor.
+         *
+         * A large factor makes every device model far faster than it runs, so the first horizon that
+         * measures a device replans.
+         */
+        void scale_rates(const std::filesystem::path& path, double factor)
+        {
+            std::istringstream lines(read_text(path));
+            std::ostringstream rewritten;
+            rewritten.imbue(std::locale::classic());
+            rewritten.precision(17);
+            std::string line;
+            while (std::getline(lines, line))
+            {
+                std::istringstream words(line);
+                words.imbue(std::locale::classic());
+                std::string key;
+                words >> key;
+                if (key == "base_throughput" || key == "memory_bandwidth")
+                {
+                    double value = 0.0;
+                    words >> value;
+                    rewritten << key << ' ' << value * factor << '\n';
+                }
+                else if (key == "throughput")
+                {
+                    std::string kind;
+                    double value = 0.0;
+                    words >> kind >> value;
+                    rewritten << key << ' ' << kind << ' ' << value * factor << '\n';
+                }
+                else
+                {
+                    rewritten << line << '\n';
+                }
+            }
+            std::ofstream(path, std::ios::binary | std::ios::trunc) << rewritten.str();
+        }
+
+        /** @brief Returns the lines of the placement journal at path that name a decision: entry, problem and answer. */
+        std::vector<std::string> journal_decisions(const std::filesystem::path& path)
+        {
+            std::istringstream lines(read_text(path));
+            std::vector<std::string> decisions;
+            std::string line;
+            while (std::getline(lines, line))
+                if (line.rfind("entry ", 0) == 0 || line.rfind("problem_hash ", 0) == 0 ||
+                    line.rfind("assignment_hash ", 0) == 0)
+                    decisions.push_back(line);
+            return decisions;
+        }
+
+        /** @brief Returns how many decisions name reason, such as "first" or "replan". */
+        std::size_t count_reason(const std::vector<std::string>& decisions, const std::string& reason)
+        {
+            std::size_t count = 0;
+            for (const std::string& line : decisions)
+                if (line.rfind("entry ", 0) == 0 && line.find(" " + reason + " ") != std::string::npos)
+                    ++count;
+            return count;
+        }
+
         /** @brief Returns the index of the first device of kind CPU, or nothing. */
         std::optional<std::size_t> cpu_device(const std::vector<DeviceDescription>& devices)
         {
@@ -167,9 +231,21 @@ namespace GraphPartitionTests
             /** @brief Returns a runtime that reads, or measures and writes, the profile file. */
             Runtime create_runtime() const
             {
+                return create_runtime(profile_);
+            }
+
+            /** @brief Returns a runtime that reads, or measures and writes, the profile file at path. */
+            static Runtime create_runtime(const std::filesystem::path& path)
+            {
                 RuntimeConfig config;
-                config.device_profile_file = profile_.string();
+                config.device_profile_file = path.string();
                 return Runtime::create(config).value();
+            }
+
+            /** @brief Returns the placement journal a runtime over the profile file at path writes. */
+            static std::filesystem::path journal_of(const std::filesystem::path& path)
+            {
+                return std::filesystem::path(path.string() + ".journal");
             }
 
             /** @brief Returns the reason the machine cannot run the test, or nothing when it can. */
@@ -291,6 +367,103 @@ namespace GraphPartitionTests
         ASSERT_FALSE(report.refused) << report.refusal;
         // The node ran as parts, one slice per part, not as its whole kernel.
         EXPECT_GE(slices->load(), 2u) << report.to_text();
+        EXPECT_EQ(output.read_range({0, K_OUTPUT}).value(), host_reference());
+    }
+
+    /**
+     * @brief Tests that a second runtime given the placement journal of a run that rebalanced puts the
+     *        same plans in force and leaves the same bytes.
+     */
+    TEST_F(Medium_GraphPartition, ARuntimeReplayingAJournalPlacesAsTheJournalledRunAndLeavesItsBytes)
+    {
+        {
+            const Runtime measuring = create_runtime();
+            if (const std::optional<std::string> reason = missing(measuring, false))
+                GTEST_SKIP() << *reason;
+        }
+        scale_rates(profile_, 1.0e6);
+        const std::filesystem::path replay_profile = directory_ / "replay_profile.txt";
+        std::filesystem::copy_file(profile_, replay_profile);
+
+        // Runs the two-region graph on rt for two runs of K_STEPS and returns the output bytes.
+        const auto run_graph = [](const Runtime& rt)
+        {
+            auto input = rt.buffer<std::uint32_t>(K_INPUT, Residency::Planned).value();
+            auto middle = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+            auto output = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+            EXPECT_TRUE(input.write_range({0, K_INPUT}, input_values()));
+            auto world = rt.dynamic_graph();
+            world.region(0).add(K_OUTPUT, In(input), Out(middle),
+                                [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                                { target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index); },
+                                costed());
+            world.region(1).add(K_OUTPUT, In(middle), Out(output),
+                                [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                                { target[index] = source[index]; },
+                                costed());
+            // The second run commits the plan the first run's horizons put in force.
+            EXPECT_TRUE(world.run(K_STEPS));
+            EXPECT_TRUE(world.run(K_STEPS));
+            return output.read_range({0, K_OUTPUT}).value();
+        };
+
+        std::vector<std::uint32_t> journalled_bytes;
+        {
+            const Runtime rt = create_runtime();
+            journalled_bytes = run_graph(rt);
+        }
+        const std::vector<std::string> journalled = journal_decisions(journal_of(profile_));
+        ASSERT_GE(count_reason(journalled, "first"), 1u) << read_text(journal_of(profile_));
+        // The doctored profile models every device a million times faster than it runs.
+        ASSERT_GE(journalled.size(), 6u) << "no horizon rebalanced: " << read_text(journal_of(profile_));
+
+        std::vector<std::uint32_t> replayed_bytes;
+        {
+            const Runtime rt = create_runtime(replay_profile);
+            ASSERT_TRUE(rt.advanced().replay_placements(journal_of(profile_).string()));
+            replayed_bytes = run_graph(rt);
+        }
+
+        EXPECT_EQ(journal_decisions(journal_of(replay_profile)), journalled);
+        EXPECT_EQ(replayed_bytes, journalled_bytes);
+        EXPECT_EQ(replayed_bytes, host_reference());
+    }
+
+    /**
+     * @brief Tests that a static graph keeps its partition across builds and, after a horizon
+     *        rebalanced it, builds again from the plan put in force rather than partitioning anew.
+     */
+    TEST_F(Medium_GraphPartition, AStaticGraphRebuildsFromThePlanAHorizonPutInForce)
+    {
+        {
+            const Runtime measuring = create_runtime();
+            if (const std::optional<std::string> reason = missing(measuring, false))
+                GTEST_SKIP() << *reason;
+        }
+        scale_rates(profile_, 1.0e6);
+        const Runtime rt = create_runtime();
+
+        auto input = rt.buffer<std::uint32_t>(K_INPUT, Residency::Planned).value();
+        auto output = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
+        ASSERT_TRUE(input.write_range({0, K_INPUT}, input_values()));
+        auto graph = rt.graph();
+        graph.add(K_OUTPUT, In(input), Out(output),
+                  [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
+                  { target[index] = source[index % K_INPUT] + static_cast<std::uint32_t>(index); },
+                  costed());
+
+        ASSERT_TRUE(graph.run(K_STEPS));
+        ASSERT_EQ(graph.compile_count(), 1u);
+        const std::vector<std::string> after_horizons = journal_decisions(journal_of(profile_));
+        ASSERT_GE(after_horizons.size(), 6u) << "no horizon rebalanced: " << read_text(journal_of(profile_));
+
+        ASSERT_TRUE(graph.run());
+
+        // The rebalanced plan made the graph stale, and the build took the plan in force.
+        EXPECT_EQ(graph.compile_count(), 2u);
+        EXPECT_EQ(count_reason(journal_decisions(journal_of(profile_)), "first"), 1u)
+            << read_text(journal_of(profile_));
+        EXPECT_FALSE(rt.partition_report().refused) << rt.partition_report().refusal;
         EXPECT_EQ(output.read_range({0, K_OUTPUT}).value(), host_reference());
     }
 } // namespace GraphPartitionTests

@@ -67,14 +67,18 @@ namespace SushiRuntime
         {
             Internal::Coherence::PartitionSession& session = context.partitioning();
             const std::string& path = context.settings().device_profile_file;
-            if (path.empty() || !session.has_plan())
+            if (!session.has_plan())
                 return;
-            const Result<bool> folded = session.ledger().fold_into(std::filesystem::path(path));
-            if (!folded)
-                SR_LOG_WARN(K_API_LOG_CATEGORY,
-                            "The measured device times were not folded into the profile file {}: {}; the next run "
-                            "reads the file as it was.",
-                            path, folded.error().message);
+            // A replaying runtime may have no profile file; its horizons still put the journal's next plan in force.
+            if (!path.empty())
+            {
+                const Result<bool> folded = session.ledger().fold_into(std::filesystem::path(path));
+                if (!folded)
+                    SR_LOG_WARN(K_API_LOG_CATEGORY,
+                                "The measured device times were not folded into the profile file {}: {}; the next "
+                                "run reads the file as it was.",
+                                path, folded.error().message);
+            }
             // A changed plan raises the session's generation, and the next commit places the graph again.
             static_cast<void>(session.rebalance());
         }

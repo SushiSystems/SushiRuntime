@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,7 @@
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/worker_pool.hpp>
 
 namespace SushiRuntime
@@ -138,6 +140,15 @@ namespace SushiRuntime
              */
             SUSHIRUNTIME_API void
             install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer) const;
+
+            /**
+             * @brief Makes this runtime place its graphs from the placement journal at journal_file.
+             * @return InvalidArgument for a file that cannot be read or holds a malformed line,
+             *         InvalidState when a graph of this runtime was already partitioned.
+             * @pre No run of this runtime is in flight.
+             * @see modules/engine/coherence/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<void> replay_placements(const std::string& journal_file) const;
 
         private:
             friend class Runtime;

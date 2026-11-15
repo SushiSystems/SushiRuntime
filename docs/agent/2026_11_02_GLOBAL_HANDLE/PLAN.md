@@ -90,7 +90,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T50 | split nodes in the step drivers | T36, T47 | done |
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | done |
 | T32 | SushiBLAS conformance kernels | T30 | done |
-| T54 | journal replay into a live runtime, static `Graph` rebalancing | T27 | running |
+| T54 | journal replay into a live runtime, static `Graph` rebalancing | T27 | done |
 | T55 | SushiBLAS tensors over planned and file-backed buffers | T52 | done |
 | T56 | `Recorder::task` binds its operands' handles | T39 | running |
 | T57 | SushiBLAS records operations by handle | T55, T56 | todo |

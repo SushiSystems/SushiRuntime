@@ -30,14 +30,17 @@
 
 #include <SushiRuntime/coherence/partition_session.hpp>
 
+#include <string>
 #include <utility>
 
 #include <SushiRuntime/coherence/assignment_hash.hpp>
 #include <SushiRuntime/coherence/coherence_log_category.hpp>
+#include <SushiRuntime/coherence/journal_replay.hpp>
 #include <SushiRuntime/coherence/partition_report_builder.hpp>
 #include <SushiRuntime/coherence/problem_hash.hpp>
 #include <SushiRuntime/coherence/profile_fold.hpp>
 #include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
 
 namespace SushiRuntime
@@ -55,6 +58,8 @@ namespace SushiRuntime
         const Result<PartitionAssignment, PartitionRefusal>& PartitionSession::partition(PartitionProblem problem)
         {
             SR_VERIFY(is_active(), "PartitionSession::partition(): the session has no partitioner; check is_active().");
+            if (replaying())
+                return replay_partition(std::move(problem));
             Result<PartitionAssignment, PartitionRefusal> answer = scheduler_->partition(problem);
             const std::uint64_t hash = Internal::Coherence::problem_hash(problem);
             install(Plan{std::move(problem), hash, std::move(answer), model_, PlannedBy::Scheduler});
@@ -75,7 +80,10 @@ namespace SushiRuntime
             const std::vector<DispatchObservation> observed = ledger_.take_horizon();
             if (!is_active() || !in_force_ || !in_force_->answer)
                 return RebalanceAction::Keep;
+            ++horizons_;
             const PartitionReport judged = report();
+            if (replaying())
+                return replay_rebalance(judged);
             if (!observed.empty())
             {
                 model_ = std::make_shared<const CostModel>(fold_observations(model_->profiles(), observed));
@@ -132,6 +140,94 @@ namespace SushiRuntime
             return RebalanceAction::Keep;
         }
 
+        Result<void> PartitionSession::replay(std::vector<PlacementJournalEntry> entries)
+        {
+            if (in_force_)
+                return make_error(Error{ErrorCode::InvalidState,
+                                        "PartitionSession::replay(): a plan is already in force; replay before the "
+                                        "first partition"});
+            replay_ = std::move(entries);
+            replay_next_ = 0;
+            return {};
+        }
+
+        const Result<PartitionAssignment, PartitionRefusal>& PartitionSession::replay_partition(PartitionProblem problem)
+        {
+            const auto refuse = [this](Error error) -> const Result<PartitionAssignment, PartitionRefusal>&
+            {
+                replay_refusal_.emplace(make_error(PartitionRefusal{std::move(error), {}}));
+                return *replay_refusal_;
+            };
+            if (replay_next_ >= replay_->size())
+                return refuse(Error{ErrorCode::InvalidState,
+                                    "PartitionSession: the placement journal holds no entry " +
+                                        std::to_string(replay_next_) + " to answer a partition with"});
+            const PlacementJournalEntry& entry = (*replay_)[replay_next_];
+            if (entry.reason != PlacementReason::First)
+                return refuse(Error{ErrorCode::InvalidState,
+                                    "PartitionSession: entry " + std::to_string(entry.sequence) +
+                                        " of the placement journal is not a first partition"});
+            Result<Plan> plan = replay_plan(entry, std::move(problem));
+            if (!plan)
+                return refuse(std::move(plan.error()));
+            ++replay_next_;
+            install(std::move(plan.value()));
+            replaced_.reset();
+            state_ = RebalanceState{};
+            journal_plan(PlacementReason::First, PartitionReport{});
+            return in_force_->answer;
+        }
+
+        RebalanceAction PartitionSession::replay_rebalance(const PartitionReport& judged)
+        {
+            if (replay_next_ >= replay_->size() || (*replay_)[replay_next_].reason == PlacementReason::First)
+                return RebalanceAction::Keep;
+            const PlacementJournalEntry& entry = (*replay_)[replay_next_];
+            // An entry of a version 1 journal carries no horizon and applies at the next one.
+            if (entry.horizon && *entry.horizon != horizons_)
+                return RebalanceAction::Keep;
+            ++replay_next_;
+            if (entry.reason == PlacementReason::KeepFloor)
+            {
+                journal_plan(PlacementReason::KeepFloor, judged);
+                return RebalanceAction::KeepFloor;
+            }
+            Result<Plan> plan = replay_plan(entry, in_force_->problem);
+            if (!plan)
+            {
+                SR_LOG_ERROR(K_COHERENCE_LOG_CATEGORY,
+                             "The placement journal could not be replayed at a horizon, so the plan in force stays: "
+                             "{}.",
+                             plan.error().message);
+                return RebalanceAction::Keep;
+            }
+            install(std::move(plan.value()));
+            journal_plan(entry.reason, judged);
+            switch (entry.reason)
+            {
+                case PlacementReason::Replan:
+                    return RebalanceAction::Replan;
+                case PlacementReason::TryFloor:
+                    return RebalanceAction::TryFloor;
+                case PlacementReason::LeaveFloor:
+                    return RebalanceAction::LeaveFloor;
+                case PlacementReason::First:
+                case PlacementReason::KeepFloor:
+                    break;
+            }
+            return RebalanceAction::Keep;
+        }
+
+        Result<PartitionSession::Plan> PartitionSession::replay_plan(const PlacementJournalEntry& entry,
+                                                                     PartitionProblem problem) const
+        {
+            Result<PartitionAssignment> answer = replay_placement(entry, problem, parts_.partitioners);
+            if (!answer)
+                return make_error(std::move(answer.error()));
+            return Plan{std::move(problem), entry.problem_hash, std::move(answer.value()),
+                        std::make_shared<const CostModel>(entry.profiles), entry.planned_by};
+        }
+
         PartitionReport PartitionSession::report() const
         {
             if (!in_force_ || in_force_->model == nullptr)
@@ -154,6 +250,7 @@ namespace SushiRuntime
             PlacementJournalEntry entry;
             entry.reason = reason;
             entry.planned_by = in_force_->planned_by;
+            entry.horizon = horizons_;
             entry.problem_hash = in_force_->problem_hash;
             entry.assignment_hash = in_force_->answer ? assignment_hash(in_force_->answer.value()) : 0;
             entry.modelled_step_seconds = judged.step_seconds;

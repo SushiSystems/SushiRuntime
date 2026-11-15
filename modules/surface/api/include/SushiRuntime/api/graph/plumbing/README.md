@@ -277,7 +277,7 @@ stale, and counts zero compiles and zero coherence plans.
 ### build
 
 build() builds a fresh backing graph by replaying the recorder, compiles it, hands the plan to
-`ExecutionEngine::prepare()` and caches it. Its compile places the nodes through a `GraphPartition` and calls `plan_region_coherence()`, the composer's hook, through a `TaskGraph::NodeSplice`; the plan state keeps the `CopyPlan`, a steady
+`ExecutionEngine::prepare()` and caches it. Its compile places the nodes through the `GraphPartition` the cache keeps across builds, so the same problem keeps its answer and a horizon that put another plan in force makes the plan stale, as `coherence_replan_due()` does for a `DynamicGraph`; `discard()` drops it with the plan. The compile then calls `plan_region_coherence()`, the composer's hook, through a `TaskGraph::NodeSplice`; the plan state keeps the `CopyPlan`, a steady
 one replays with no planner call and one that is not steady makes the plan stale. A `HostWriteWatch` (`source/host_write_watch.hpp`) over the plan's buffers, armed at the build, makes it stale after a host write to one of them, by the marks `platform/memory`'s README describes. During the replay it resolves every node once against
 the rules in force and stores the winning position in the node's `placement_rule`; the plan state
 also keeps a share of the rule set, so a later `set_placement_rules()` cannot free what a compiled

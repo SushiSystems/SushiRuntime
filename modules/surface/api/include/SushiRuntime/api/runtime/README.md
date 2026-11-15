@@ -114,6 +114,16 @@ removes it, and a runtime starts with none. A test installs one to see which pat
 took. The observer is called from the worker that runs the copy, so it must be safe to call from
 several threads. The call is made between runs; the caller makes sure none is in flight.
 
+### replay_placements
+
+`replay_placements()` reads a placement journal, the `<device_profile_file>.journal` another run wrote,
+and makes the runtime place its graphs from it: each partition takes the journal's next first entry
+and each change of plan comes at the horizon the journalled run made it at, and the runtime does not rebalance on its own. The runtime needs
+no profile file for it. A file that cannot be read or holds a malformed line is `InvalidArgument`; a
+call after a graph of the runtime was partitioned is `InvalidState`. A problem that differs from the
+entry's fails the graph's commit with the error, which names the entry.
+`modules/engine/coherence/README.md`, "Placement journal", holds the rule.
+
 ## placement_scope.hpp
 
 ### PlacementScope
