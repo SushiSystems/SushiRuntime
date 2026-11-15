@@ -11,6 +11,7 @@ sushiruntime_add_module_tests(
         compile_device_kind.cpp
         compile_operating_system.cpp
         compile_pin_policy.cpp
+        compile_split_regions.cpp
         compile_worker_pool.cpp
         test_device_filter.cpp
         test_node_facts.cpp

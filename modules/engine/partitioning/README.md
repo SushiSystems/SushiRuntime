@@ -78,15 +78,20 @@ modelled slower than that plan or its floor. A consumer-placed node is never cut
   goes to the fastest device (the first of equals), a device with no share gets no part, and parts
   follow `DeviceKey` order.
 - `expand_splits()` replaces the node with one node per part, placed on the part's device, costing
-  its share of the operations and bytes. A part reads every buffer the node reads whole and writes
-  a buffer of its own that holds its share of each written buffer, so capacity counts only that
-  share. An edge into the node reaches every part whole; an edge out of it carries each part's
-  share. A later reader of a buffer the parts wrote reads their slices in its place, so each slice is
-  live until its last reader. The expanded problem is scheduled like any other.
+  its share of the operations. Its read and written bytes are the sums of the ranges the split's
+  `regions` function returns for that part, and it writes a buffer of its own per written buffer
+  that holds the bytes its regions name there, so capacity counts only those bytes. An edge into
+  the node reaches every part whole; an edge out of it carries the bytes the part's writes leave in
+  the buffers the reader reads, at most the edge's bytes. A later reader of a buffer the parts wrote
+  reads their slices in its place, so each slice is live until its last reader. The expanded problem
+  is scheduled like any other.
 - `planned_splits()` gives the assignment one `PlannedSplit` per cut node: per part the device, the
-  `SplitPart`, the whole range of each buffer read and the bytes `[bytes * begin / extent, bytes *
-  end / extent)` of each buffer written. The written ranges of one node are disjoint and cover the
-  buffer; reads may overlap. `node_devices` names the first part's device for a cut node.
+  `SplitPart`, and the ranges the split's `regions` returns for it, read and written, verbatim and
+  in their order; a `BufferRegion::K_WHOLE` length ends at the buffer's declared size. The runtime
+  holds no layout rule: a strided part, such as a column panel of a row-major matrix, arrives as
+  several ranges from the consumer. The written ranges of one node are disjoint, as the consumer
+  promises; reads may overlap. A node whose split has no `regions` function is never cut.
+  `node_devices` names the first part's device for a cut node.
 
 The step drivers, the composer and the copy planner do not read `splits` yet; a cut node runs as
 parts through `Internal::Graph::dispatch_split()` (`engine/task`) once they do.

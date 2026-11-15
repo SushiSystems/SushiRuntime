@@ -86,6 +86,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     machine         handle
     region          handle
     machine         core
+    machine         region
     test_runner     log
     test_runner     report
     dependency_tracking task

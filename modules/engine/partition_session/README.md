@@ -28,7 +28,7 @@ and `partitioning`, and its sources on `coherence` for `byte_range()`.
 
 `make_graph_partition_problem()` turns a graph's nodes into a `PartitionProblem` over the runtime's
 devices, device i standing for device index i. A node's cost is its `NodeCost`, none counting as
-zero, and its split is the axis and extent of its `declared_split`. A `Borrowed` or `HostOnly` buffer is left out; a buffer a device owns keeps that device, and
+zero, and its split is the axis, extent and regions function of its `declared_split`. A `Borrowed` or `HostOnly` buffer is left out; a buffer a device owns keeps that device, and
 any other is planned. An edge joins the last earlier writer of a buffer to each reader and carries
 the bytes the reader's region names; the edges are ordered by writer, then reader. A node with a
 stated device, or a `FixedToHome` node whose anchor a device owns, is placed where `placement_of()`

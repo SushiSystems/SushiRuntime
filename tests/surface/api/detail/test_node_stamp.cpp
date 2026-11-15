@@ -31,6 +31,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -92,6 +94,33 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(ParameterRow{"AtTheLimit", NodeOptions::K_MAX_PARAMETERS, false, 1},
                       ParameterRow{"OnePastTheLimit", NodeOptions::K_MAX_PARAMETERS + 1, true, 0}),
     row_name);
+
+/** @brief Tests that a split without a regions function is refused with InvalidArgument. */
+TEST(Small_NodeSplitRefusal, ASplitWithoutRegionsIsRefused)
+{
+    auto split = std::make_shared<NodeSplit>();
+    split->extent = 8;
+    split->slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
+    NodeOptions options;
+    options.split = split;
+
+    const std::optional<Error> refused = Detail::split_refusal(options, 0);
+
+    ASSERT_TRUE(refused.has_value());
+    EXPECT_EQ(refused->code, ErrorCode::InvalidArgument);
+}
+
+/** @brief Tests that a split whose regions function is set is admitted. */
+TEST(Small_NodeSplitRefusal, ASplitWithRegionsIsAdmitted)
+{
+    auto split = std::make_shared<NodeSplit>();
+    split->extent = 8;
+    split->regions = [](const SplitPart&) { return SplitRegions{}; };
+    NodeOptions options;
+    options.split = split;
+
+    EXPECT_FALSE(Detail::split_refusal(options, 0).has_value());
+}
 
 /** @brief Tests that a stamp holds the parameters of the options, in order, and how many there were. */
 TEST(Small_NodeStamp, TheStampHoldsTheParametersOfTheOptionsInOrder)

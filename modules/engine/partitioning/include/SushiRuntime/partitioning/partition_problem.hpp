@@ -31,6 +31,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -38,6 +39,8 @@
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/transfer_path_id.hpp>
+#include <SushiRuntime/machine/split_part.hpp>
+#include <SushiRuntime/machine/split_regions.hpp>
 
 namespace SushiRuntime
 {
@@ -52,15 +55,16 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Holds the split a node declared: the axis it may be cut along and that axis's length.
+         * @brief Holds the split a node declared: the axis, its length and the regions of each part.
          *
-         * A part reads every buffer the node reads whole and writes the share of each written buffer
-         * that its range of the axis covers.
+         * A part reads and writes exactly the regions the consumer's function returns for it; the
+         * partitioner cuts no node whose split has no such function.
          */
         struct PartitionSplit
         {
             std::uint32_t axis = 0;    /**< The axis, as the consumer numbers it. */
             std::uint64_t extent = 0;  /**< Length of the axis; zero states no split. */
+            std::function<SplitRegions(const SplitPart&)> regions = {}; /**< Bytes each part reads and writes. */
         };
 
         /**

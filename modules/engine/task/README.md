@@ -130,7 +130,8 @@ queue of a device comes from the caller, so the function reads no device set.
 `Node::placed_split` holds the parts `apply_partition()` gave a node, null for a node that runs
 whole. `PlacedSplit::parts` is contiguous so the step driver hands it to `dispatch_split()` as is, with
 `Node::kernel_pointers()`, the narrow accessor of the node's table. `PlacedSplit::access` holds the
-bytes each part reads and writes, which the coherence planner plans part by part.
+bytes each part reads and writes, exactly the regions the consumer's `NodeSplit::regions` returned
+for that part, which the coherence planner plans part by part.
 
 ### Which nodes may leave their home device
 

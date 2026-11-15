@@ -693,6 +693,13 @@ stated here and asserted equal to the engine's `TaskMetadata::K_MAX_PARAMS` at c
 parameters_refusal() returns an `InvalidGraph` error for more parameters than a node carries.
 Recorder::record() asks it before it touches the recorder, so a refused node leaves no trace.
 
+### split_refusal
+
+split_refusal() returns an `InvalidArgument` error for a `NodeOptions::split` whose
+`NodeSplit::regions` is empty: without it the runtime cannot tell which bytes a part reads and
+writes, and it has no layout rule to guess them. Recorder::record() asks it with
+parameters_refusal(), so a refused node leaves no trace.
+
 ## Exception translation
 
 The headers of the surface call `Detail::translate_exceptions()` of `core/error_translation.hpp`

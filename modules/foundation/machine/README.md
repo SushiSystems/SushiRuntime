@@ -5,7 +5,7 @@ pin policy a caller sets, the device descriptions and the worker pool a runtime 
 facts a machine states about itself. The
 module is header-only and its headers are installed.
 
-It depends on the C++ standard library, on `core` for `span` and on `handle`. `device_description.hpp`
+It depends on the C++ standard library, on `core` for `span`, on `handle` and on `region` for the `BufferRegion` a part's regions name. `device_description.hpp`
 includes the SYCL headers for the `sycl::backend` a device description names, and `node_split.hpp`
 for the `sycl::queue` a slice receives; the other headers include no SYCL header.
 
@@ -22,6 +22,7 @@ for the `sycl::queue` a slice receives; the other headers include no SYCL header
 | `node_label.hpp` | `NodeLabel`, one `key`/`value` pair a machine reports |
 | `device_facts.hpp` | `DeviceFacts`, a device's kind, name and memory in bytes |
 | `node_split.hpp` | `NodeSplit`, how a node states that it may be cut along one axis |
+| `split_regions.hpp` | `SplitRegions`, the byte regions one part reads and writes, as the consumer states them |
 | `split_part.hpp` | `SplitPart`, the range and slice-order place of one part; it includes no SYCL header, so `partitioning` reads it without SYCL |
 | `node_facts.hpp` | `NodeFacts`, the name, system, labels and devices of one machine |
 
@@ -78,9 +79,18 @@ against its own request, because a reservation is only worth something if it act
 ### NodeSplit
 
 A node states that it may run in parts with a `NodeSplit` in `NodeOptions::split`: the axis to cut,
-an index the consumer defines, its extent, the slice that runs once per part with that part's
+an index the consumer defines, its extent, the regions function that returns each part's
+`SplitRegions`, the slice that runs once per part with that part's
 `SplitPart`, the `sycl::queue` of the part's device and the node's kernel pointers bound on that
 device, and an optional combine that joins the parts in slice order. The runtime decides
 how many parts and where each runs; the consumer owns every kernel. `NodeOptions` holds it as a
 `std::shared_ptr<const NodeSplit>`, so a node without a split carries one null pointer and a node
 with one shares the caller's declaration.
+
+The regions are the only place a part's bytes come from. For a `SplitPart` they return the
+`BufferRegion`s the part reads and the ones it writes; a strided slice, such as a column panel of
+a row-major matrix or one panel of each batch, is several contiguous regions, coalesced by the
+consumer. The partitioner prices and the planner moves exactly those bytes, and the runtime holds
+no layout rule of its own. The function is a pure function of the part, and the parts of one
+node write disjoint bytes. Recording a node whose split has no regions function is refused with
+`InvalidArgument`.

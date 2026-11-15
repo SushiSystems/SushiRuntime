@@ -30,9 +30,12 @@
 
 #include <SushiRuntime/partitioning/split_expansion.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <utility>
+
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -84,6 +87,78 @@ namespace SushiRuntime
             {
                 return parts.back().part.end;
             }
+
+            /** @brief Holds the byte ranges one part reads and writes, in the order its regions gave them. */
+            struct PartRanges
+            {
+                std::vector<BufferRange> reads;   /**< Ranges the part reads. */
+                std::vector<BufferRange> writes;  /**< Ranges the part writes. */
+            };
+
+            /** @brief Returns the declared size of every buffer of problem, by handle. */
+            [[nodiscard]] std::map<GlobalHandle, std::uint64_t> sizes_of(const PartitionProblem& problem)
+            {
+                std::map<GlobalHandle, std::uint64_t> sizes;
+                for (const PartitionBuffer& buffer : problem.buffers)
+                    sizes.emplace(buffer.handle, buffer.bytes);
+                return sizes;
+            }
+
+            /** @brief Returns region as a range; a BufferRegion::K_WHOLE length ends at the buffer's declared size. */
+            [[nodiscard]] BufferRange range_of(const BufferRegion& region,
+                                               const std::map<GlobalHandle, std::uint64_t>& sizes)
+            {
+                const std::uint64_t begin = region.offset;
+                if (region.length != BufferRegion::K_WHOLE)
+                    return BufferRange{region.base, begin, begin + region.length};
+                const auto found = sizes.find(region.base);
+                const std::uint64_t bytes = found == sizes.end() ? begin : found->second;
+                return BufferRange{region.base, begin, std::max(begin, bytes)};
+            }
+
+            /** @brief Returns the ranges the consumer's regions give part, unchanged but for K_WHOLE lengths. */
+            [[nodiscard]] PartRanges ranges_of(const PartitionSplit& split, const SplitPart& part,
+                                               const std::map<GlobalHandle, std::uint64_t>& sizes)
+            {
+                const SplitRegions regions = split.regions(part);
+                PartRanges ranges;
+                ranges.reads.reserve(regions.reads.size());
+                for (const BufferRegion& region : regions.reads)
+                    ranges.reads.push_back(range_of(region, sizes));
+                ranges.writes.reserve(regions.writes.size());
+                for (const BufferRegion& region : regions.writes)
+                    ranges.writes.push_back(range_of(region, sizes));
+                return ranges;
+            }
+
+            /** @brief Returns the bytes ranges name, summed. */
+            [[nodiscard]] std::uint64_t total(const std::vector<BufferRange>& ranges)
+            {
+                std::uint64_t bytes = 0;
+                for (const BufferRange& range : ranges)
+                    bytes += range.end - range.begin;
+                return bytes;
+            }
+
+            /** @brief Returns the bytes ranges name in the buffer of handle, summed. */
+            [[nodiscard]] std::uint64_t total_on(const std::vector<BufferRange>& ranges, const GlobalHandle& handle)
+            {
+                std::uint64_t bytes = 0;
+                for (const BufferRange& range : ranges)
+                    if (range.handle == handle)
+                        bytes += range.end - range.begin;
+                return bytes;
+            }
+
+            /** @brief Returns the bytes a part's writes leave in the buffers reader reads. */
+            [[nodiscard]] std::uint64_t bytes_read_from(const PartRanges& part, const PartitionNode& reader,
+                                                        const PartitionProblem& problem)
+            {
+                std::uint64_t bytes = 0;
+                for (const std::size_t buffer : reader.reads)
+                    bytes += total_on(part.writes, problem.buffers[buffer].handle);
+                return bytes;
+            }
         } // namespace
 
         SplitExpansion expand_splits(const PartitionProblem& problem,
@@ -96,6 +171,8 @@ namespace SushiRuntime
             expanded.devices = problem.devices;
 
             std::vector<std::size_t> first(problem.nodes.size(), 0);
+            const std::map<GlobalHandle, std::uint64_t> sizes = sizes_of(problem);
+            std::vector<std::vector<PartRanges>> part_ranges(problem.nodes.size());
             // The slices each cut node wrote last into a buffer; a later reader reads them in its place.
             std::map<std::size_t, std::vector<std::size_t>> slices_of;
             const auto sliced_reads = [&slices_of](const std::vector<std::size_t>& reads)
@@ -130,17 +207,19 @@ namespace SushiRuntime
                 std::map<std::size_t, std::vector<std::size_t>> written;
                 for (const SizedPart& sized : parts[node])
                 {
+                    part_ranges[node].push_back(ranges_of(*entry.split, sized.part, sizes));
+                    const PartRanges& ranges = part_ranges[node].back();
                     PartitionNode part_node;
                     part_node.cost = entry.cost;
                     part_node.cost.operations = share_of(entry.cost.operations, sized.part, extent);
-                    part_node.cost.read_bytes = share_of(entry.cost.read_bytes, sized.part, extent);
-                    part_node.cost.written_bytes = share_of(entry.cost.written_bytes, sized.part, extent);
+                    part_node.cost.read_bytes = total(ranges.reads);
+                    part_node.cost.written_bytes = total(ranges.writes);
                     part_node.placed = devices[sized.device];
                     part_node.reads = reads;
                     for (const std::size_t buffer : entry.writes)
                     {
                         PartitionBuffer slice = problem.buffers[buffer];
-                        slice.bytes = share_of(slice.bytes, sized.part, extent);
+                        slice.bytes = total_on(ranges.writes, slice.handle);
                         written[buffer].push_back(expanded.buffers.size());
                         part_node.writes.push_back(expanded.buffers.size());
                         expanded.buffers.push_back(slice);
@@ -160,7 +239,8 @@ namespace SushiRuntime
                 {
                     std::uint64_t bytes = edge.bytes;
                     if (from_count > 1)
-                        bytes = share_of(edge.bytes, parts[edge.from][from].part, extent_of(parts[edge.from]));
+                        bytes = std::min(edge.bytes, bytes_read_from(part_ranges[edge.from][from],
+                                                                     problem.nodes[edge.to], problem));
                     for (std::size_t to = 0; to < to_count; ++to)
                         expanded.edges.push_back(PartitionEdge{first[edge.from] + from, first[edge.to] + to, bytes});
                 }
@@ -173,12 +253,12 @@ namespace SushiRuntime
                                                  const std::vector<DeviceKey>& devices)
         {
             std::vector<PlannedSplit> splits;
+            const std::map<GlobalHandle, std::uint64_t> sizes = sizes_of(problem);
             for (std::size_t node = 0; node < problem.nodes.size(); ++node)
             {
                 if (!is_split(parts, node))
                     continue;
                 const PartitionNode& entry = problem.nodes[node];
-                const std::uint64_t extent = extent_of(parts[node]);
                 PlannedSplit split;
                 split.node = node;
                 for (const SizedPart& sized : parts[node])
@@ -186,15 +266,9 @@ namespace SushiRuntime
                     PlannedSplitPart planned;
                     planned.device = devices[sized.device];
                     planned.part = sized.part;
-                    for (const std::size_t buffer : entry.reads)
-                        planned.reads.push_back(BufferRange{problem.buffers[buffer].handle, 0, problem.buffers[buffer].bytes});
-                    for (const std::size_t buffer : entry.writes)
-                    {
-                        const PartitionBuffer& written = problem.buffers[buffer];
-                        planned.writes.push_back(BufferRange{written.handle,
-                                                             scaled(written.bytes, sized.part.begin, extent),
-                                                             scaled(written.bytes, sized.part.end, extent)});
-                    }
+                    PartRanges ranges = ranges_of(*entry.split, sized.part, sizes);
+                    planned.reads = std::move(ranges.reads);
+                    planned.writes = std::move(ranges.writes);
                     split.parts.push_back(std::move(planned));
                 }
                 splits.push_back(std::move(split));

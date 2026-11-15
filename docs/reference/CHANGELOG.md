@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — machine: Added `NodeSplit::regions`, the bytes each part reads and writes; the planner and pricing use exactly those ranges, and a split without regions is refused (GLOBAL_HANDLE R02).
 - 2026-11-15 — handle: Added `TransferPathID`, the stable identity of a transfer path (GLOBAL_HANDLE R08).
 - 2026-11-15 — memory: Added `MemorySpace::is_host_memory()` and `is_file_backed()`; no code compares a space's kind name (GLOBAL_HANDLE R08).
 - 2026-11-15 — runtime: Changed transfer paths to carry a `TransferPathID`; selection, pricing, measurement and the partition problem key on it, and the profile file keeps path names as its keys, mapped once at load (GLOBAL_HANDLE R08).

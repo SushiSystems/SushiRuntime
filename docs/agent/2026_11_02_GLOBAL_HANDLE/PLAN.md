@@ -272,12 +272,12 @@ job builds on them.
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
 | R01 | split `engine/coherence` into five modules | T57 | done |
-| R02 | per-part regions from the consumer in `NodeSplit` | R01 | running |
+| R02 | per-part regions from the consumer in `NodeSplit` | R01 | done |
 | R03 | concurrent split parts | R02 | todo |
 | R04 | one partition session per graph, ledger keyed by problem | R01 | running |
 | R05 | coherence map: planned state apart from current state, enforced phases | R01 | todo |
 | R06 | `RuntimeContext` narrowed to ports | R01 | done |
-| R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | todo |
+| R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | running |
 | R08 | space and path kinds typed, not strings | R01 | done |
 | R09 | statuses, not exceptions, on worker threads | R01 | running |
 | R10 | `ResidencyView` split by role; one bound-operand view | R01 | todo |
@@ -300,7 +300,7 @@ job builds on them.
 | R09 | `sonnet` `medium` | planned nodes, paths, staging ring, file path | R01 | Worker-thread code reports failure as a status the scheduler surfaces, and no exception crosses a worker boundary |
 | R10 | `sonnet` `medium` | `ResidencyView`, `KernelPointers`, `bound_operands`, SushiBLAS `OperandPointers` | R01 | Readers and writers of the directory see separate ports, `task`'s public header names no private dependency, and one typed bound-operand view serves the runtime and SushiBLAS |
 | R11 | `sonnet` `low` | `HandleOwnership`, `entry_address`, host-write tracking | R01 | Ownership is a function of the handle, the test seam is gone from the public header, and host writes are tracked outside the directory; two transfer paths whose ids collide are refused when the path list is built, and the tally keys on `TransferPathID` |
-| R12 | `opus` `low` | `partitioning` | R04 | The model charges a copy once per interval and space as the planner does, split parts are priced by what they copy, step time follows the scheduled order, placement is insertion-based EFT, and refinement and the floor search are bounded |
+| R12 | `opus` `low` | `partitioning` | R04 | The model charges a copy once per interval and space as the planner does, split parts are priced by what they copy, step time follows the scheduled order, placement is insertion-based EFT, and refinement and the floor search are bounded; `problem_hash` folds each split's declared regions |
 | R13 | `opus` `low` | `coherence` splice, `transfer` staged path and ring | R05 | A copy waits only on the producer of the version it moves, two copies from one source run together, the staged path does not block a worker, and each context stages through its own pinned ring |
 | R14 | `sonnet` `low` | design pages, module READMEs | R12, R13 | The design status, phases, modules line, margin and copy-model claims state what the code does |
 | R15 | `sonnet` `low` | `device_profile` fold | R04 | A fold needs a minimum sample count and smooths toward the new median, so one noisy horizon does not move a plan |

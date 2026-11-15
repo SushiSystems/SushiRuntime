@@ -138,7 +138,8 @@ namespace SushiRuntime
                 PartitionNode entry;
                 entry.cost = node.metadata.cost.value_or(NodeCost{});
                 if (node.declared_split != nullptr)
-                    entry.split = PartitionSplit{node.declared_split->axis, node.declared_split->extent};
+                    entry.split = PartitionSplit{node.declared_split->axis, node.declared_split->extent,
+                                                 node.declared_split->regions};
                 for (const BufferRegion& region : node.io_reads_)
                 {
                     const std::optional<std::size_t> buffer = buffers.index_of(region.base);

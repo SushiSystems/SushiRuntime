@@ -232,8 +232,8 @@ and returns rule_count() from it. refusal() returns the stored error, or null wh
 refused. Its message opens with the call as the caller wrote it and the position the rule would
 have had, such as `add_rule(launch, state, kernel), rule 1: `.
 
-Three checks refuse a recording, each a function that returns `std::optional<Error>`:
-launch_refusal() and parameters_refusal() of `api/detail/`, and the recorder's own
+Four checks refuse a recording, each a function that returns `std::optional<Error>`:
+launch_refusal(), parameters_refusal() and split_refusal() of `api/detail/`, and the recorder's own
 empty_state_refusal(), which answers `InvalidAccess` for a rule over a State that owns no
 memory. admit() keeps what they return. A verb that changes the step machinery beyond its node
 asks them before it changes anything, so a refused State rule registers no advance.
@@ -403,7 +403,7 @@ nothing.
 | `operation` | The `operation` of the node's row in the `NodeTable`, and the engine's metadata of the node | No operation |
 | `origin` | The `origin` of the node's row in the `NodeTable` and `PlanNode::origin`; the device source writes it as the span attribute `origin` | Empty: the spans carry no `origin` |
 | `cost` | An `std::optional<NodeCost>` in the node's metadata, `PlanNode::cost` and the node's row in the `NodeTable`; the device source writes it as the span attributes `flops` (the operations), `bytes` (read and written together), `read_bytes`, `written_bytes`, `operation_kind` and `dtype` | Absent: the spans carry none of them. A stated zero is written as zero |
-| `split` | A `std::shared_ptr<const NodeSplit>` the node shares with the caller: the axis, its extent, the slice kernel each part runs and the optional combine. `PlanNode::splittable` reports it. The runtime decides how many parts and where each runs | Null: the node runs whole and carries one null pointer |
+| `split` | A `std::shared_ptr<const NodeSplit>` the node shares with the caller: the axis, its extent, the regions each part reads and writes, the slice kernel each part runs and the optional combine; a split without regions is refused with `InvalidArgument`. `PlanNode::splittable` reports it. The runtime decides how many parts and where each runs | Null: the node runs whole and carries one null pointer |
 | `parameters` | The engine's metadata of the node | No parameter |
 | `placement_class` | The engine's metadata of the node, and `PlanNode::placement_class` | No class |
 | `placement_key` | The engine's metadata of the node, and `PlanNode::placement_key` | No key; 0 is a key |

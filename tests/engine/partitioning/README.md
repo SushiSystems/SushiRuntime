@@ -63,8 +63,11 @@ On a three-node chain whose middle node is cut 7 to 3, `expand_splits()` gives o
 part with its share of the operations and of the written bytes, edges into the cut node reach each
 part whole and edges out of it carry each part's share, and every edge still runs forward. The reader
 of the cut node's output reads the parts' slices.
-`planned_splits()` gives disjoint written ranges that cover the buffer and whole read ranges. A
-node with one part stays whole.
+`planned_splits()` gives disjoint written ranges that cover the buffer and whole read ranges, as
+`sliced_split()` declares them. When the split's regions name a column panel of a 2 x 10 row-major
+matrix, one range per row, the planned parts read and write exactly those ranges, and a part is
+priced by their sum: 14 bytes written and 50 read for the 7-column part, its slice and its outgoing
+edge 14 bytes. A node with one part stays whole.
 
 ## test_pool_occupancy.cpp
 
@@ -111,8 +114,8 @@ times slower added, that device gets no node. The search counts `devices ^ nodes
 
 A node that writes 1200 bytes, more than a pool's 900 usable, and declares a split of extent 12
 runs as two parts on two devices of speed 2 and 1: 8 and 4 indices, writing bytes [0, 800) and
-[800, 1200). With `Splitting::Off` the same node is refused, and a node that fits whole has no
-parts. A node with no declared split is not cut, and a split plan hashes equal across runs. The
+[800, 1200), the ranges `sliced_split()` of `tests/support/partition_problem_builder.hpp` declares. With `Splitting::Off` the same node is refused, and a node that fits whole has no
+parts. A node with no declared split is not cut, nor is one whose split has no `regions` function, and a split plan hashes equal across runs. The
 parts, run through `dispatch_split()` on a CPU queue, give the bytes of one slice over the whole
 extent; the test skips without a CPU device.
 

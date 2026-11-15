@@ -92,6 +92,37 @@ namespace SushiRuntime::Internal::Coherence
         return problem;
     }
 
+    /**
+     * @brief Returns a split of node along axis whose parts read the node's buffers whole and write
+     *        the contiguous bytes [bytes * begin / extent, bytes * end / extent) of each written buffer.
+     */
+    [[nodiscard]] inline PartitionSplit sliced_split(const PartitionProblem& problem, std::size_t node,
+                                                     std::uint32_t axis, std::uint64_t extent)
+    {
+        std::vector<PartitionBuffer> reads;
+        for (const std::size_t buffer : problem.nodes[node].reads)
+            reads.push_back(problem.buffers[buffer]);
+        std::vector<PartitionBuffer> writes;
+        for (const std::size_t buffer : problem.nodes[node].writes)
+            writes.push_back(problem.buffers[buffer]);
+        PartitionSplit split{axis, extent};
+        split.regions = [reads, writes, extent](const SplitPart& part)
+        {
+            SplitRegions regions;
+            for (const PartitionBuffer& buffer : reads)
+                regions.reads.push_back(BufferRegion(buffer.handle, 0, static_cast<std::size_t>(buffer.bytes)));
+            for (const PartitionBuffer& buffer : writes)
+            {
+                const std::uint64_t begin = buffer.bytes * part.begin / extent;
+                const std::uint64_t end = buffer.bytes * part.end / extent;
+                regions.writes.push_back(BufferRegion(buffer.handle, static_cast<std::size_t>(begin),
+                                                      static_cast<std::size_t>(end - begin)));
+            }
+            return regions;
+        };
+        return split;
+    }
+
     /** @brief Returns count nodes of 1000 operations over devices pools, each writing a buffer of 100 bytes of its own. */
     [[nodiscard]] inline PartitionProblem independent_nodes(std::size_t count, std::size_t devices)
     {

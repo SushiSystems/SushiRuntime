@@ -109,7 +109,8 @@ the graph end follows every leaf. Each edge raises the target's in-degree, and t
 appended in plan order.
 
 `splice_plan()` given a `SpaceOfDevice` plans a cut node as its parts: `NodeAccess::parts` holds each
-part's space, reads and writes. The planner makes every part's reads valid on its space before it
+part's space, reads and writes, the regions the consumer's `NodeSplit::regions` gave that part,
+which may be several ranges of one buffer for a strided part. The planner makes every part's reads valid on its space before it
 records any part's writes, since the parts run at once. A later reader on another space then copies
 back only the range each part wrote, and the end of the graph restores the start state as for any node.
 

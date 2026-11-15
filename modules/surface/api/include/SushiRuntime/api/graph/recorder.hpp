@@ -1051,7 +1051,8 @@ namespace SushiRuntime
             /** @brief Keeps the refusal of options a node cannot carry; true when they fit. */
             bool admits(const NodeOptions& options)
             {
-                return admit(Detail::parameters_refusal(options, next_rule()));
+                return admit(Detail::parameters_refusal(options, next_rule())) &&
+                       admit(Detail::split_refusal(options, next_rule()));
             }
 
             /**

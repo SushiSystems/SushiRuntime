@@ -312,6 +312,8 @@ parameters into a `Detail::NodeStamp`, which the stamp's constructor makes.
 | `Small_NodeStamp.TheStampHoldsTheParametersOfTheOptionsInOrder` | The stamp holds the parameters of the options in order, their count, and 0 in the slot after the last. |
 | `Small_NodeStamp.TheStampHoldsACopyAndNotTheCallersStorage` | A source that changes after the stamp is made does not reach the stamp. |
 | `Small_NodeStamp.ParametersUpToTheLimitAllReachTheStamp` | `NodeOptions::K_MAX_PARAMETERS` parameters all reach the stamp. |
+| `Small_NodeSplitRefusal.ASplitWithoutRegionsIsRefused` | `split_refusal()` answers `InvalidArgument` for a split whose `NodeSplit::regions` is empty. |
+| `Small_NodeSplitRefusal.ASplitWithRegionsIsAdmitted` | `split_refusal()` answers nothing for a split whose regions function is set. |
 
 The copy of the operation, the placement, the determinism and the name into a node is read from the
 plan in `graph/test_plan_view.cpp`, and the width in `graph/test_node_options.cpp`. The copy of the

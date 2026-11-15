@@ -22,4 +22,6 @@ sushiruntime_add_module(
         handle
         machine
         report
-        device_profile)
+        device_profile
+    PRIVATE_DEPENDS
+        region)

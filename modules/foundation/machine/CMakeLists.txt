@@ -8,4 +8,5 @@ sushiruntime_add_module(
     HEADER_ONLY SYCL
     DEPENDS
         core
-        handle)
+        handle
+        region)

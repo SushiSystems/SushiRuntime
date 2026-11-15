@@ -61,8 +61,8 @@ namespace SushiRuntime
         {
             DeviceKey device;                 /**< Device the part runs on. */
             SplitPart part;                   /**< Range of the axis and place in slice order. */
-            std::vector<BufferRange> reads;   /**< Bytes the part reads, in the node's read order. */
-            std::vector<BufferRange> writes;  /**< Bytes the part writes, in the node's write order. */
+            std::vector<BufferRange> reads;   /**< Bytes the part reads, as the split's regions gave them. */
+            std::vector<BufferRange> writes;  /**< Bytes the part writes, as the split's regions gave them. */
         };
 
         /** @brief Holds the parts one split node runs as, in slice order. */

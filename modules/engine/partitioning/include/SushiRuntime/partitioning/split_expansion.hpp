@@ -52,8 +52,8 @@ namespace SushiRuntime
         /**
          * @brief Returns problem with each node that has parts replaced by one node per part.
          *
-         * A part node is placed on its device, costs and writes its share, and reads whole; edges
-         * follow the parts, and a later reader of a buffer the parts wrote reads their slices.
+         * A part node costs the bytes its split's regions give it; edges follow the parts.
+         * @pre Every node with two parts or more has a split with a regions function.
          * @param parts   Parts of each node of problem; fewer than two leaves the node whole.
          * @param devices Key of each device index the parts name.
          */
@@ -64,8 +64,8 @@ namespace SushiRuntime
         /**
          * @brief Returns the PlannedSplit of each node that has two parts or more, in recording order.
          *
-         * A part reads its node's buffers whole and writes the bytes its range covers, so the
-         * written ranges of one node are disjoint and cover the buffer.
+         * A part reads and writes exactly the ranges its split's regions give it, in their order.
+         * @pre Every node with two parts or more has a split with a regions function.
          * @param parts   Parts of each node of problem, as expand_splits() took them.
          * @param devices Key of each device index the parts name.
          */

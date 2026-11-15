@@ -37,6 +37,7 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/machine/split_part.hpp>
+#include <SushiRuntime/machine/split_regions.hpp>
 
 namespace SushiRuntime
 {
@@ -44,14 +45,22 @@ namespace SushiRuntime
      * @brief States that a node may be cut along one axis into parts the runtime places.
      *
      * The runtime picks how many parts there are and where each runs; the consumer owns the
-     * kernels. The slice runs once per part on the part's device; the combine, when given, joins
-     * the parts in slice order. A node states it through NodeOptions::split.
+     * kernels, the layout and the bytes each part touches. A node states it through
+     * NodeOptions::split, which refuses a split without regions.
      * @see modules/foundation/machine/README.md
      */
     struct NodeSplit
     {
         std::uint32_t axis = 0;   /**< The axis to cut along, an index the consumer defines. */
         std::uint64_t extent = 0; /**< Length of that axis; the parts cover [0, extent). */
+
+        /**
+         * @brief Returns the bytes one part reads and writes.
+         *
+         * The runtime places, moves and prices exactly these regions; it must be a pure function
+         * of the part, and the parts of one node must write disjoint bytes.
+         */
+        std::function<SplitRegions(const SplitPart&)> regions;
 
         /**
          * @brief Submits the node's work over one part to the queue of the part's device.

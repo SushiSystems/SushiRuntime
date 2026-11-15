@@ -28,12 +28,15 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/machine/split_regions.hpp>
 #include <SushiRuntime/partitioning/split_expansion.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 #include "support/partition_problem_builder.hpp"
 
@@ -51,7 +54,7 @@ namespace
 
         CutChain()
         {
-            problem.nodes[1].split = PartitionSplit{0, 10};
+            problem.nodes[1].split = sliced_split(problem, 1, 0, 10);
             parts[1] = {SizedPart{0, SplitPart{0, 0, 7, 0, 2}}, SizedPart{1, SplitPart{0, 7, 10, 1, 2}}};
         }
     };
@@ -133,6 +136,68 @@ namespace
         EXPECT_EQ(first.reads[0].end, 1000u);
         EXPECT_EQ(second.reads[0].handle, first.reads[0].handle);
         EXPECT_EQ(second.reads[0].end, 1000u);
+    }
+
+    /**
+     * @brief Returns the regions of a column panel of a 2 x 10 row-major matrix of bytes: one range
+     *        per row of output, as written by the middle node of a CutChain.
+     */
+    SplitRegions column_panel(const GlobalHandle& input, const GlobalHandle& output, const SplitPart& part)
+    {
+        const std::size_t columns = static_cast<std::size_t>(part.end - part.begin);
+        SplitRegions regions;
+        regions.reads.push_back(BufferRegion(input, 100, 50));
+        regions.writes.push_back(BufferRegion(output, static_cast<std::size_t>(part.begin), columns));
+        regions.writes.push_back(BufferRegion(output, 500 + static_cast<std::size_t>(part.begin), columns));
+        return regions;
+    }
+
+    /** @brief Returns a CutChain whose middle node writes column panels, as column_panel() gives them. */
+    CutChain strided_chain()
+    {
+        CutChain cut;
+        const GlobalHandle input = cut.problem.buffers[0].handle;
+        const GlobalHandle output = cut.problem.buffers[1].handle;
+        cut.problem.nodes[1].split->regions = [input, output](const SplitPart& part)
+        {
+            return column_panel(input, output, part);
+        };
+        return cut;
+    }
+
+    /** @brief Tests that the planned parts read and write exactly the ranges the split's regions declare. */
+    TEST(Small_SplitExpansion, PlannedPartsUseTheDeclaredRegionsVerbatim)
+    {
+        const CutChain cut = strided_chain();
+        const GlobalHandle output = cut.problem.buffers[1].handle;
+
+        const std::vector<PlannedSplit> splits = planned_splits(cut.problem, cut.parts, cut.devices);
+
+        ASSERT_EQ(splits.size(), 1u);
+        const PlannedSplitPart& second = splits[0].parts[1];
+        ASSERT_EQ(second.writes.size(), 2u);
+        EXPECT_EQ(second.writes[0].handle, output);
+        EXPECT_EQ(second.writes[0].begin, 7u);
+        EXPECT_EQ(second.writes[0].end, 10u);
+        EXPECT_EQ(second.writes[1].begin, 507u);
+        EXPECT_EQ(second.writes[1].end, 510u);
+        ASSERT_EQ(second.reads.size(), 1u);
+        EXPECT_EQ(second.reads[0].begin, 100u);
+        EXPECT_EQ(second.reads[0].end, 150u);
+    }
+
+    /** @brief Tests that a part is priced by the sum of its declared ranges, not by a share of the buffer. */
+    TEST(Small_SplitExpansion, APartIsPricedByTheSumOfItsDeclaredRanges)
+    {
+        const CutChain cut = strided_chain();
+
+        const SplitExpansion expansion = expand_splits(cut.problem, cut.parts, cut.devices);
+
+        const PartitionNode& first = expansion.problem.nodes[1];
+        EXPECT_EQ(first.cost.read_bytes, 50u);
+        EXPECT_EQ(first.cost.written_bytes, 14u);
+        EXPECT_EQ(expansion.problem.buffers[first.writes[0]].bytes, 14u);
+        EXPECT_EQ(expansion.problem.edges[2].bytes, 14u);
     }
 
     /** @brief Tests that a node with fewer than two parts stays whole. */

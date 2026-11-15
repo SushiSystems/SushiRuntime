@@ -303,7 +303,7 @@ namespace SushiRuntime
             [[nodiscard]] std::vector<SizedPart> declared_parts(const PartitionModel& model, std::size_t node)
             {
                 const PartitionNode& entry = model.problem().nodes[node];
-                if (!entry.split || entry.split->extent < 2 || model.fixed_device(node))
+                if (!entry.split || !entry.split->regions || entry.split->extent < 2 || model.fixed_device(node))
                     return {};
                 std::vector<double> times(model.device_count(), 0.0);
                 for (std::size_t device = 0; device < model.device_count(); ++device)

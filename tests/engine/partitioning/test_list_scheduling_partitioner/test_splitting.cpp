@@ -62,9 +62,9 @@ namespace
         node.cost.operations = 1200;
         node.reads.push_back(add_buffer(problem, 100));
         node.writes.push_back(add_buffer(problem, 1200));
-        if (extent != 0)
-            node.split = PartitionSplit{0, extent};
         problem.nodes.push_back(node);
+        if (extent != 0)
+            problem.nodes[0].split = sliced_split(problem, 0, 0, extent);
         return problem;
     }
 
@@ -118,6 +118,19 @@ namespace
         EXPECT_EQ(result.error().error.code, ErrorCode::AllocationFailed);
     }
 
+    /** @brief Tests that a split without a regions function is never cut, so a node no pool holds whole is refused. */
+    TEST(Small_ListSchedulingPartitioner, ASplitWithoutRegionsIsNeverCut)
+    {
+        PartitionProblem problem = wide_node(12);
+        problem.nodes[0].split->regions = nullptr;
+
+        const ListSchedulingPartitioner partitioner(speed_model({2.0, 1.0}));
+        const Result<PartitionAssignment, PartitionRefusal> result = partitioner.partition(problem);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().error.code, ErrorCode::AllocationFailed);
+    }
+
     /** @brief Tests that with splitting turned off a node that fits whole has no parts. */
     TEST(Small_ListSchedulingPartitioner, SplittingTurnedOffLeavesAFittingNodeWhole)
     {
@@ -126,8 +139,8 @@ namespace
         PartitionNode node;
         node.cost.operations = 100000;
         node.writes.push_back(add_buffer(problem, 10));
-        node.split = PartitionSplit{0, 100};
         problem.nodes.push_back(node);
+        problem.nodes[0].split = sliced_split(problem, 0, 0, 100);
 
         const ListSchedulingPartitioner partitioner(speed_model({1.0, 1.0}),
                                                     ListSchedulingPartitioner::Splitting::Off);
@@ -293,8 +306,8 @@ namespace
         PartitionNode node;
         node.cost.operations = K_PRODUCT_EXTENT * K_PRODUCT_ITERATIONS;
         node.writes.push_back(add_buffer(problem, K_PRODUCT_EXTENT * sizeof(std::uint32_t)));
-        node.split = PartitionSplit{0, K_PRODUCT_EXTENT};
         problem.nodes.push_back(node);
+        problem.nodes[0].split = sliced_split(problem, 0, 0, K_PRODUCT_EXTENT);
 
         const Result<PartitionAssignment, PartitionRefusal> result = ListSchedulingPartitioner(model, splitting).partition(problem);
         EXPECT_TRUE(result.has_value());

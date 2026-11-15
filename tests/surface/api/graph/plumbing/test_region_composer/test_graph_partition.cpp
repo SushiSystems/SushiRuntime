@@ -338,6 +338,17 @@ namespace GraphPartitionTests
         auto split = std::make_shared<NodeSplit>();
         split->axis = 0;
         split->extent = K_OUTPUT;
+        const GlobalHandle source_handle = input.handle();
+        const GlobalHandle target_handle = output.handle();
+        split->regions = [source_handle, target_handle](const SplitPart& part)
+        {
+            constexpr std::size_t K_WORD = sizeof(std::uint32_t);
+            SplitRegions regions;
+            regions.reads.push_back(BufferRegion(source_handle, 0, K_INPUT * K_WORD));
+            regions.writes.push_back(BufferRegion(target_handle, static_cast<std::size_t>(part.begin) * K_WORD,
+                                                  static_cast<std::size_t>(part.end - part.begin) * K_WORD));
+            return regions;
+        };
         auto slices = std::make_shared<std::atomic<std::size_t>>(0);
         split->slice = [slices](const SplitPart& part, sycl::queue& queue, span<void* const> pointers)
         {

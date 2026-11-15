@@ -277,6 +277,7 @@ TEST_F(Small_PlanView, ANodeThatDeclaresASplitRecordsIt)
     auto split = std::make_shared<NodeSplit>();
     split->axis = 0;
     split->extent = K_WIDTH;
+    split->regions = [](const SplitPart&) { return SplitRegions{}; };
     split->slice = [](const SplitPart&, sycl::queue&, span<void* const>) {};
     NodeOptions splittable;
     splittable.split = split;

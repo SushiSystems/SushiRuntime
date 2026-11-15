@@ -72,6 +72,23 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Returns the refusal of a split that names no regions function.
+         * @return An InvalidArgument error naming the rule, or nothing for no split or a split
+         *         whose NodeSplit::regions is set.
+         */
+        [[nodiscard]] inline std::optional<Error> split_refusal(const NodeOptions& options,
+                                                                std::size_t rule)
+        {
+            if (options.split == nullptr || options.split->regions)
+                return std::nullopt;
+            return Error{
+                ErrorCode::InvalidArgument,
+                "NodeOptions::split, rule " + std::to_string(rule) +
+                    ": the split has no regions function, so the runtime cannot tell which bytes "
+                    "each part reads and writes; set NodeSplit::regions."};
+        }
+
+        /**
          * @brief Holds what a recorded node keeps of its NodeOptions, with nothing borrowed
          *        from the caller.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
@@ -86,7 +103,7 @@ namespace SushiRuntime
              * @param owned_name The recorder's own copy of options.name, or null for none;
              *        it outlives every plan built from the recorder.
              * @param owned_origin The recorder's own copy of options.origin, held the same way.
-             * @pre parameters_refusal() returned nothing for options.
+             * @pre parameters_refusal() and split_refusal() returned nothing for options.
              */
             NodeStamp(const NodeOptions& options, const char* owned_name,
                       const char* owned_origin = nullptr) noexcept

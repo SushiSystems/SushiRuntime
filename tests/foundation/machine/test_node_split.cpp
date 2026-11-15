@@ -43,6 +43,7 @@ TEST(Small_NodeSplit, ADefaultSplitHoldsNoKernel)
 
     EXPECT_EQ(split.axis, 0u);
     EXPECT_EQ(split.extent, 0u);
+    EXPECT_FALSE(split.regions);
     EXPECT_FALSE(split.slice);
     EXPECT_FALSE(split.combine);
 }
