@@ -490,8 +490,14 @@ namespace SushiRuntime
                 if (hand_to_funnel(*task, node, queue, profiling, dispatch_step, dispatch_device, worker_id))
                     return;
 
-                events.push(submit_dispatch(queue, *task, node, profiling, dispatch_step, dispatch_device,
-                                            run_.collector));
+                Result<EventPolling::PolledEvent> dispatched =
+                    submit_dispatch(queue, *task, node, profiling, dispatch_step, dispatch_device, run_.collector);
+                if (!dispatched)
+                {
+                    abort_run(name_failure(*task, dispatched.error()));
+                    return;
+                }
+                events.push(std::move(dispatched.value()));
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));

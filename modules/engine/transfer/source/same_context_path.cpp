@@ -31,7 +31,9 @@
 #include <SushiRuntime/transfer/same_context_path.hpp>
 
 #include <algorithm>
-#include <stdexcept>
+
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -61,13 +63,19 @@ namespace SushiRuntime
                    queues_->queue_of(destination.id()) != nullptr;
         }
 
-        sycl::event SameContextPath::copy(const TransferRequest& request,
-                                          const std::vector<sycl::event>& dependencies)
+        Result<sycl::event> SameContextPath::copy(const TransferRequest& request,
+                                                  const std::vector<sycl::event>& dependencies)
         {
             sycl::queue* const queue = queues_->queue_of(request.destination);
             if (queue == nullptr)
-                throw std::runtime_error("same_context: the destination space has no queue.");
-            const sycl::event done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
+                return make_error(Error{ErrorCode::InvalidArgument, "same_context: the destination space has no queue."});
+            sycl::event done;
+            const Result<void> submitted = Internal::SYCL::translate_exceptions([&]()
+            {
+                done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
+            });
+            if (!submitted)
+                return make_error(Error{submitted.error()});
             if (observer_ != nullptr)
                 observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;

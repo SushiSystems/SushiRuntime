@@ -32,7 +32,9 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <stdexcept>
+
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -69,18 +71,23 @@ namespace SushiRuntime
             return queues_->queue_of(source.id()) != nullptr && queues_->queue_of(destination.id()) != nullptr;
         }
 
-        sycl::event HostStagedPath::copy(const TransferRequest& request, const std::vector<sycl::event>& dependencies)
+        Result<sycl::event> HostStagedPath::copy(const TransferRequest& request, const std::vector<sycl::event>& dependencies)
         {
             sycl::queue* const from_queue = queues_->queue_of(request.source);
             sycl::queue* const to_queue = queues_->queue_of(request.destination);
             if (from_queue == nullptr && to_queue == nullptr)
-                throw std::runtime_error("host staged: neither space has a queue.");
+                return make_error(Error{ErrorCode::InvalidArgument, "host staged: neither space has a queue."});
 
             sycl::event done;
             if (from_queue == nullptr || to_queue == nullptr || request.bytes == 0)
             {
                 sycl::queue* const device_queue = to_queue != nullptr ? to_queue : from_queue;
-                done = device_queue->memcpy(request.to, request.from, request.bytes, dependencies);
+                const Result<void> submitted = Internal::SYCL::translate_exceptions([&]()
+                {
+                    done = device_queue->memcpy(request.to, request.from, request.bytes, dependencies);
+                });
+                if (!submitted)
+                    return make_error(Error{submitted.error()});
             }
             else
             {
@@ -91,16 +98,19 @@ namespace SushiRuntime
                 for (std::size_t offset = 0; offset < request.bytes; offset += slot_bytes)
                 {
                     const std::size_t chunk = std::min(slot_bytes, request.bytes - offset);
-                    const StagingSlot slot = ring_->acquire();
-                    try
+                    const Result<StagingSlot> acquired = ring_->acquire();
+                    if (!acquired)
+                        return make_error(Error{acquired.error()});
+                    const StagingSlot slot = acquired.value();
+                    const Result<void> staged = Internal::SYCL::translate_exceptions([&]()
                     {
                         from_queue->memcpy(slot.data, from + offset, chunk, dependencies).wait();
                         done = to_queue->memcpy(to + offset, slot.data, chunk, after_previous_chunk);
-                    }
-                    catch (...)
+                    });
+                    if (!staged)
                     {
                         ring_->retire(slot, sycl::event{});
-                        throw;
+                        return make_error(Error{staged.error()});
                     }
                     ring_->retire(slot, done);
                     after_previous_chunk.assign(1, done);

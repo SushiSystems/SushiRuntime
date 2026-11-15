@@ -34,8 +34,10 @@
 #include <cstdint>
 #include <fstream>
 #include <ios>
-#include <stdexcept>
 #include <string>
+
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -43,12 +45,15 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Reads bytes from file into destination, or throws naming path. */
-            void read_exactly(std::ifstream& file, void* destination, std::size_t bytes, const std::string& path)
+            /** @brief Reads bytes from file into destination, or returns an error naming path. */
+            [[nodiscard]] Result<void> read_exactly(std::ifstream& file, void* destination, std::size_t bytes,
+                                                    const std::string& path)
             {
                 file.read(static_cast<char*>(destination), static_cast<std::streamsize>(bytes));
                 if (static_cast<std::size_t>(file.gcount()) != bytes)
-                    throw std::runtime_error("file path: " + path + " ends before the range of its buffer does.");
+                    return make_error(Error{ErrorCode::InvalidState, "file path: " + path +
+                                                                         " ends before the range of its buffer does."});
+                return {};
             }
         } // namespace
 
@@ -97,18 +102,20 @@ namespace SushiRuntime
             return space_with(source.id()) == &source && !destination.is_file_backed();
         }
 
-        sycl::event FilePath::copy(const TransferRequest& request, const std::vector<sycl::event>& dependencies)
+        Result<sycl::event> FilePath::copy(const TransferRequest& request,
+                                           const std::vector<sycl::event>& dependencies)
         {
             const Memory::FileMemorySpace* const space = space_with(request.source);
             if (space == nullptr)
-                throw std::runtime_error("file path: the source space is not a file space of this path.");
+                return make_error(Error{ErrorCode::InvalidArgument,
+                                        "file path: the source space is not a file space of this path."});
             const std::string& path = space->range().path;
             std::ifstream file(path, std::ios::binary);
             if (!file)
-                throw std::runtime_error("file path: cannot open " + path + ".");
+                return make_error(Error{ErrorCode::InvalidState, "file path: cannot open " + path + "."});
             file.seekg(static_cast<std::streamoff>(space->file_offset(request.from)));
             if (!file)
-                throw std::runtime_error("file path: cannot seek in " + path + ".");
+                return make_error(Error{ErrorCode::InvalidState, "file path: cannot seek in " + path + "."});
 
             auto* const to = static_cast<std::byte*>(request.to);
             const std::size_t slot_bytes = ring_->shape().slot_bytes;
@@ -116,10 +123,19 @@ namespace SushiRuntime
             sycl::event done;
             if (to_queue == nullptr)
             {
-                std::vector<sycl::event> pending = dependencies;
-                sycl::event::wait(pending);
+                const Result<void> waited = Internal::SYCL::translate_exceptions([&dependencies]()
+                {
+                    sycl::event::wait(dependencies);
+                });
+                if (!waited)
+                    return make_error(Error{waited.error()});
                 for (std::size_t offset = 0; offset < request.bytes; offset += slot_bytes)
-                    read_exactly(file, to + offset, std::min(slot_bytes, request.bytes - offset), path);
+                {
+                    const std::size_t chunk = std::min(slot_bytes, request.bytes - offset);
+                    const Result<void> read = read_exactly(file, to + offset, chunk, path);
+                    if (!read)
+                        return make_error(Error{read.error()});
+                }
             }
             else
             {
@@ -127,16 +143,22 @@ namespace SushiRuntime
                 for (std::size_t offset = 0; offset < request.bytes; offset += slot_bytes)
                 {
                     const std::size_t chunk = std::min(slot_bytes, request.bytes - offset);
-                    const StagingSlot slot = ring_->acquire();
-                    try
+                    const Result<StagingSlot> acquired = ring_->acquire();
+                    if (!acquired)
+                        return make_error(Error{acquired.error()});
+                    const StagingSlot slot = acquired.value();
+                    Result<void> staged = read_exactly(file, slot.data, chunk, path);
+                    if (staged)
                     {
-                        read_exactly(file, slot.data, chunk, path);
-                        done = to_queue->memcpy(to + offset, slot.data, chunk, after_previous_chunk);
+                        staged = Internal::SYCL::translate_exceptions([&]()
+                        {
+                            done = to_queue->memcpy(to + offset, slot.data, chunk, after_previous_chunk);
+                        });
                     }
-                    catch (...)
+                    if (!staged)
                     {
                         ring_->retire(slot, sycl::event{});
-                        throw;
+                        return make_error(Error{staged.error()});
                     }
                     ring_->retire(slot, done);
                     after_previous_chunk.assign(1, done);

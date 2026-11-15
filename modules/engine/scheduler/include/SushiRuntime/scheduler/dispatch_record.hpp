@@ -35,6 +35,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -82,14 +83,14 @@ namespace SushiRuntime
                          std::vector<sycl::event> handed_over, std::uint64_t submit_steady_ns);
 
         /**
-         * @brief Submits @p task to @p queue, or runs its host body there, and builds the event its dispatch polls on.
+         * @brief Submits @p task to @p queue, or runs its host body there, and builds its polled event.
          *
          * The one submit sequence of the scheduler: a worker and a submit funnel both call it.
          * @param node The task as a graph node, or nullptr; its sycl_deps are the dependencies.
          * @param collector Takes the dispatch.submit zone of the calling thread.
-         * @return What dispatched_event() builds; a submission that throws leaves this call with the exception.
+         * @return What dispatched_event() builds, or the error a host body returned.
          */
-        [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent
+        [[nodiscard]] SUSHIRUNTIME_API Result<EventPolling::PolledEvent>
         submit_dispatch(sycl::queue& queue, Task& task, Internal::Graph::Node* node, bool profiling,
                         std::uint32_t step, std::uint32_t device_index, Profile::Collector& collector);
 

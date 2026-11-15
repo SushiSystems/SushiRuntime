@@ -85,37 +85,40 @@ namespace SushiRuntime
         /**
          * @brief Submits @p task to @p queue after @p dependencies and returns its event.
          */
-        sycl::event submit_task(sycl::queue& queue, Scheduler::Task& task,
-                                const SmallEventVector* dependencies,
-                                std::vector<sycl::event>* handed_over)
+        Result<sycl::event> submit_task(sycl::queue& queue, Scheduler::Task& task,
+                                        const SmallEventVector* dependencies,
+                                        std::vector<sycl::event>* handed_over)
         {
             if (task.execution_mode() != Scheduler::Task::ExecutionMode::Host)
                 return queue.submit(kernel_group(task, dependencies));
 
             const std::vector<sycl::event> copied = host_dependencies(dependencies);
             if (handed_over == nullptr)
-                return task.execute_host(queue, copied);
+                return task.execute_host_checked(queue, copied);
             // A body that submits several kernels hands each event over (task/dispatch_events.hpp).
             DispatchEvents::DispatchEventScope handing(*handed_over);
-            return task.execute_host(queue, copied);
+            return task.execute_host_checked(queue, copied);
         }
 
         /**
          * @brief Submits @p task to @p queue after @p dependencies and keeps no event for it.
          */
-        void submit_task_discarding(sycl::queue& queue, Scheduler::Task& task,
-                                    const SmallEventVector* dependencies)
+        Result<void> submit_task_discarding(sycl::queue& queue, Scheduler::Task& task,
+                                            const SmallEventVector* dependencies)
         {
             if (task.execution_mode() == Scheduler::Task::ExecutionMode::Host)
             {
-                static_cast<void>(task.execute_host(queue, host_dependencies(dependencies)));
-                return;
+                Result<sycl::event> ran = task.execute_host_checked(queue, host_dependencies(dependencies));
+                if (!ran)
+                    return make_error(std::move(ran.error()));
+                return {};
             }
 #if defined(SR_HAS_ENQUEUE_FUNCTIONS)
             sycl::ext::oneapi::experimental::submit(queue, kernel_group(task, dependencies));
 #else
             static_cast<void>(queue.submit(kernel_group(task, dependencies)));
 #endif
+            return {};
         }
 
     } // namespace Internal::Graph

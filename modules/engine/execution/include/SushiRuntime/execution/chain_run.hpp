@@ -99,22 +99,25 @@ namespace SushiRuntime
                  * @brief Submits one node's device work to the queue.
                  * @param node The node to submit.
                  * @param handed_over Receives the events a host body handed over for its timing.
-                 * @return The submission's event, or an empty event when host work submitted nothing.
+                 * @return The submission's event, or an empty event when host work submitted nothing;
+                 *         the error a host body returned.
                  */
-                sycl::event submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over);
+                [[nodiscard]] Result<sycl::event> submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over);
 
                 /**
                  * @brief Submits one node's device work without keeping an event for it.
                  * @param node The node to submit.
+                 * @return Nothing, or the error a host body returned.
                  */
-                void submit_node_discarding(Internal::Graph::Node& node);
+                [[nodiscard]] Result<void> submit_node_discarding(Internal::Graph::Node& node);
 
                 /**
                  * @brief Submits one node and keeps its event for the ledger.
                  * @param node The node to submit.
                  * @param step Zero-based step index within the run.
+                 * @return Nothing, or the error a host body returned.
                  */
-                void submit_profiled(Internal::Graph::Node& node, std::uint32_t step);
+                [[nodiscard]] Result<void> submit_profiled(Internal::Graph::Node& node, std::uint32_t step);
 
                 /**
                  * @brief Writes every kept event's timestamps into the plan's ledger.

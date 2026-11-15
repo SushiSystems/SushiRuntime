@@ -93,6 +93,12 @@ namespace SushiRuntime
             /** @brief The host work to be executed in this node if it's a HOST task. */
             HostWork host_work;
 
+            /**
+             * @brief The host work that reports its failure as a status; it runs before host_work
+             *        when set.
+             */
+            CheckedHostWork checked_host_work;
+
             /** @brief Pure-CPU work run natively on the worker thread (no SYCL queue). */
             std::function<void()> native_work;
 
@@ -451,6 +457,24 @@ namespace SushiRuntime
                 kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
                 const KernelPointerScope scope(*kernel_pointers_);
                 return host_work(queue, dependencies);
+            }
+
+            /**
+             * @brief Executes the checked host work when the node has it, else the queue body,
+             *        with the operands' pointers bound as execute_host() binds them.
+             * @return The event, or the error the checked work returned.
+             * @see modules/engine/task/README.md
+             */
+            Result<sycl::event> execute_host_checked(sycl::queue& queue,
+                                                     const std::vector<sycl::event>& dependencies) override
+            {
+                if (!checked_host_work)
+                    return execute_host(queue, dependencies);
+                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                    return checked_host_work(queue, dependencies);
+                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
+                const KernelPointerScope scope(*kernel_pointers_);
+                return checked_host_work(queue, dependencies);
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */

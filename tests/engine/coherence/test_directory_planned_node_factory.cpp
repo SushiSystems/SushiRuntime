@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 #include "support/fake_transfer_path.hpp"
@@ -76,6 +77,26 @@ namespace
             }
 
             int held = 0; /**< Allocations not yet released. */
+    };
+
+    /** @brief Refuses every allocation. */
+    class RefusingAllocator final : public InstanceAllocator
+    {
+        public:
+            [[nodiscard]] void* allocate(MemorySpaceID, std::size_t, std::size_t) override
+            {
+                return nullptr;
+            }
+
+            void release(MemorySpaceID, void*) noexcept override
+            {
+
+            }
+
+            [[nodiscard]] std::optional<Internal::Memory::USMKind> kind_of(MemorySpaceID) const noexcept override
+            {
+                return std::nullopt;
+            }
     };
 
     /** @brief Holds a buffer on device 0, the factory and a step of each kind on device 1. */
@@ -154,16 +175,65 @@ namespace
         const Result<sushi_ptr<Node>> free = factory_.make(step(PlannedStepKind::Free));
         ASSERT_TRUE(allocate && copy && free);
 
-        static_cast<void>(allocate.value()->host_work(*queue, {}));
+        ASSERT_TRUE(allocate.value()->execute_host_checked(*queue, {}));
         const ResolveOutcome made = directory_.resolve(buffer_, K_DEVICE_1);
         ASSERT_EQ(made.status, HandleStatus::Ok);
 
-        static_cast<void>(copy.value()->host_work(*queue, {}));
+        ASSERT_TRUE(copy.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(path_.copies(), 1);
         EXPECT_EQ(static_cast<unsigned char*>(made.address)[7], 8);
 
-        static_cast<void>(free.value()->host_work(*queue, {}));
+        ASSERT_TRUE(free.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(directory_.resolve(buffer_, K_DEVICE_1).status, HandleStatus::NotResident);
         EXPECT_EQ(allocator_->held, 0);
+    }
+
+    TEST_F(Small_DirectoryPlannedNodeFactory, AnAllocationTheSpaceRefusesIsAnAllocationFailedStatus)
+    {
+        std::optional<sycl::queue> queue = any_queue();
+        if (!queue)
+            GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
+        DirectoryPlannedNodeFactory refusing(directory_, std::make_shared<RefusingAllocator>(), {&path_});
+        const Result<sushi_ptr<Node>> allocate = refusing.make(step(PlannedStepKind::Allocate));
+        ASSERT_TRUE(allocate);
+
+        const Result<sycl::event> ran = allocate.value()->execute_host_checked(*queue, {});
+
+        ASSERT_FALSE(ran);
+        EXPECT_EQ(ran.error().code, ErrorCode::AllocationFailed);
+        EXPECT_EQ(directory_.resolve(buffer_, K_DEVICE_1).status, HandleStatus::NotResident);
+    }
+
+    TEST_F(Small_DirectoryPlannedNodeFactory, ACopyBetweenAMissingInstanceIsAnInvalidStateStatus)
+    {
+        std::optional<sycl::queue> queue = any_queue();
+        if (!queue)
+            GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
+        const Result<sushi_ptr<Node>> copy = factory_.make(step(PlannedStepKind::Copy));
+        ASSERT_TRUE(copy);
+
+        const Result<sycl::event> ran = copy.value()->execute_host_checked(*queue, {});
+
+        ASSERT_FALSE(ran);
+        EXPECT_EQ(ran.error().code, ErrorCode::InvalidState);
+        EXPECT_EQ(path_.copies(), 0);
+    }
+
+    TEST_F(Small_DirectoryPlannedNodeFactory, ACopyTheFailingPathRefusesReturnsThePathsError)
+    {
+        std::optional<sycl::queue> queue = any_queue();
+        if (!queue)
+            GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
+        const Result<sushi_ptr<Node>> allocate = factory_.make(step(PlannedStepKind::Allocate));
+        const Result<sushi_ptr<Node>> copy = factory_.make(step(PlannedStepKind::Copy));
+        ASSERT_TRUE(allocate && copy);
+        ASSERT_TRUE(allocate.value()->execute_host_checked(*queue, {}));
+        path_.fail_with(Error{ErrorCode::InvalidState, "file path: ends early"});
+
+        const Result<sycl::event> ran = copy.value()->execute_host_checked(*queue, {});
+
+        ASSERT_FALSE(ran);
+        EXPECT_EQ(ran.error().code, ErrorCode::InvalidState);
+        EXPECT_EQ(ran.error().message, "file path: ends early");
     }
 } // namespace

@@ -37,7 +37,7 @@ as with the funnel off.
 ### The thread
 
 The thread, named `sr-funnel-<device>` so the profiler records its zones, pops records in order and
-calls `submit_dispatch()` (`dispatch_record.hpp`), the same submit sequence a worker runs, which calls
+calls `submit_dispatch()` (`dispatch_record.hpp`), the same submit sequence a worker runs, whose `Result` error is recorded like a thrown one, and which calls
 `Internal::Graph::submit_task()` with the record's queue and the node's `sycl_deps` inside a
 `dispatch.submit` zone. For a HOST node that call runs the body on the funnel thread, and under
 profiling it collects the events the body hands over, as the worker does. Under profiling the thread

@@ -104,7 +104,7 @@ namespace
         const std::array<unsigned char, 5> from{5, 4, 3, 2, 1};
         std::array<unsigned char, 5> to{};
 
-        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_2, from.data(), to.data(), to.size()}, {}).wait();
+        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_2, from.data(), to.data(), to.size()}, {}).value().wait();
 
         EXPECT_EQ(to, from);
         ASSERT_EQ(observer_.heard().size(), 1U);
@@ -152,7 +152,7 @@ namespace
             ASSERT_EQ(step.kind, PlannedStepKind::Copy);
             Result<sushi_ptr<Internal::Graph::Node>> node = factory.make(step);
             ASSERT_TRUE(node);
-            node.value()->host_work(*queue, {}).wait();
+            node.value()->execute_host_checked(*queue, {}).value().wait();
         }
 
         EXPECT_EQ(on_1, on_0);

@@ -36,6 +36,7 @@ only the five tests that submit or read a real event need a queue.
 | `Medium_DispatchRecord.ASubmittedKernelWaitsOnItsEventAndCarriesItsStepAndDevice` | `submit_dispatch()` of a kernel node returns its event, not ready, with the task, step and device it was given. |
 | `Medium_DispatchRecord.AHostBodyThatSubmitsNothingIsReady` | `submit_dispatch()` runs a HOST body, and a body that returns a default event is pushed ready. |
 | `Medium_DispatchRecord.ATimedDispatchCarriesASubmitReading` | A timed `submit_dispatch()` carries the steady reading taken before its submit call. |
+| `Medium_DispatchRecord.ACheckedHostBodyThatFailsReturnsItsError` | A host body that returns an error leaves `submit_dispatch()` with that error and no exception. |
 | `Medium_DispatchRecord.AThrowingCommandGroupLeavesWithItsException` | A command group that throws leaves `submit_dispatch()` with its exception, which the caller names. |
 
 The fixture derives its profiling queue from the context and device of the program's queue, once per
@@ -245,6 +246,7 @@ count follows the row.
 | `AKernelNodeRunsOnceAndIsCountedOnlyWhenFunnelled` | A kernel node runs once, and `funnelled_task_count()` is 1 with the funnel and 0 without. |
 | `ACancelledRunSubmitsNoKernelNode` | After `request_cancellation()` the node does not run and nothing is funnelled. |
 | `ADisabledKernelNodeIsSubmittedNowhere` | A late-bound node disabled for the step does not run and nothing is funnelled. |
+| `ACheckedHostBodyThatFailsFailsTheRunWithItsCode` | A host body that returns `AllocationFailed` fails the run with that code and the node's name, on the worker or on the funnel thread. |
 | `AThrowingSubmissionFailsTheRunNamingTheNode` | A command group that throws fails the run with an error naming the node, on the worker or on the funnel thread. |
 | `AKernelNodeAfterAFailedSubmissionIsSkipped` | After that failure, a later kernel node of the run does not run and is not funnelled. |
 | `StopEndsAPoolWhoseFunnelIsIdle` | `stop()` after `disarm()` ends the pool with its funnel idle, and the run and the count stand. |

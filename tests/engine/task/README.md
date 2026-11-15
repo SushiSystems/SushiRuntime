@@ -302,6 +302,7 @@ The file covers `submit_task()` and `submit_task_discarding()` on the program's 
 | `Medium_TaskSubmission.AKernelTaskHandsNoEventOver` | A kernel task hands nothing over. |
 | `Medium_TaskSubmission.TheDiscardingPathRunsAHostTask` | The discarding path runs a host task once, behind its dependencies. |
 | `Medium_TaskSubmission.TheDiscardingPathRunsAKernelTask` | The discarding path runs a kernel task once. |
+| `Medium_TaskSubmission.ACheckedHostBodyThatFailsReturnsItsError` | A checked host body that returns `AllocationFailed` hands that error back through both paths, with no throw. |
 
 ## test_task_types.cpp
 

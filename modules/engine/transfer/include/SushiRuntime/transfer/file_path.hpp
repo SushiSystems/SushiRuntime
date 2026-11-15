@@ -90,10 +90,10 @@ namespace SushiRuntime
                                             const Memory::MemorySpace& destination) const override;
 
                 /**
-                 * @throws std::runtime_error when the source space was not added, the file cannot be
-                 *         opened or ends before the range does, or the ring has no slots.
+                 * @return An error when the source space was not added, the file cannot be opened or
+                 *         ends before the range does, the ring has no slots or a device call fails.
                  */
-                [[nodiscard]] sycl::event copy(const TransferRequest& request,
+                [[nodiscard]] Result<sycl::event> copy(const TransferRequest& request,
                                                const std::vector<sycl::event>& dependencies) override;
 
             private:

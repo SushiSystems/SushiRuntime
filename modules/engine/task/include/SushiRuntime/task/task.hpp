@@ -36,6 +36,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 
 namespace SushiRuntime
@@ -98,6 +99,20 @@ namespace SushiRuntime
                                              const std::vector<sycl::event>& /*dependencies*/)
             {
                 return {};
+            }
+
+            /**
+             * @brief Runs the host body and returns its failure as a status.
+             *
+             * The default wraps execute_host(); a task whose body can fail overrides it.
+             * @param queue SYCL queue to submit work to.
+             * @param dependencies List of event dependencies.
+             * @return The body's event, or the error the run fails with.
+             */
+            virtual Result<sycl::event> execute_host_checked(sycl::queue& queue,
+                                                             const std::vector<sycl::event>& dependencies)
+            {
+                return execute_host(queue, dependencies);
             }
 
             /**

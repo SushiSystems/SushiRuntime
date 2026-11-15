@@ -71,8 +71,9 @@ Two steps compare equal only when every field is equal.
 ## test_directory_planned_node_factory.cpp
 
 A node runs on the device of its space and declares its byte range. A copy naming an unknown path
-is refused. Allocate, copy and free run through `host_work` and move the bytes; the test skips when
-SYCL offers no queue.
+is refused. Allocate, copy and free run through `checked_host_work` and move the bytes; the test skips when
+SYCL offers no queue. An allocator that returns null gives `AllocationFailed`, a copy between a
+missing instance gives `InvalidState`, and a failing path's error is passed on.
 
 ## test_plan_splice.cpp
 

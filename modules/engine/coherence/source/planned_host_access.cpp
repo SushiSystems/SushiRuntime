@@ -40,6 +40,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -240,16 +241,16 @@ namespace SushiRuntime
                     const TransferRequest request{
                         source->id(), host_, static_cast<const unsigned char*>(from.address) + begin,
                         host_bytes + begin, end - begin};
-                    try
-                    {
-                        path->copy(request, {}).wait();
-                    }
-                    catch (const std::exception& failure)
-                    {
-                        return make_error(Error{ErrorCode::KernelFailed,
-                                                std::string("the copy of a planned buffer to the host failed: ") +
-                                                    failure.what()});
-                    }
+                    Result<sycl::event> copied = path->copy(request, {});
+                    Result<void> finished = copied ? Internal::SYCL::translate_exceptions([&copied]()
+                                                     {
+                                                         copied.value().wait();
+                                                     })
+                                                   : Result<void>(make_error(Error{copied.error()}));
+                    if (!finished)
+                        return make_error(Error{finished.error().code,
+                                                "the copy of a planned buffer to the host failed: " +
+                                                    finished.error().message});
                     ports_.residency.coherence(handle)->record_copy(begin, end, host_);
                     return {};
                 }

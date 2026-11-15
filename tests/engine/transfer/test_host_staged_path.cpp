@@ -109,7 +109,7 @@ namespace
             const std::vector<std::uint8_t> from = pattern(bytes);
             std::vector<std::uint8_t> to(bytes, 0);
 
-            subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), bytes}, {}).wait();
+            subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), bytes}, {}).value().wait();
 
             EXPECT_EQ(to, from) << "bytes: " << bytes;
         }
@@ -120,8 +120,8 @@ namespace
         const std::vector<std::uint8_t> from = pattern(K_SLOT_BYTES * 9);
         std::vector<std::uint8_t> to(from.size(), 0);
 
-        subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}).wait();
-        subject_.copy(TransferRequest{K_DEVICE_1, K_DEVICE_0, to.data(), to.data(), 0}, {}).wait();
+        subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}).value().wait();
+        subject_.copy(TransferRequest{K_DEVICE_1, K_DEVICE_0, to.data(), to.data(), 0}, {}).value().wait();
 
         EXPECT_EQ(to, from);
         EXPECT_EQ(memory_.allocated(), static_cast<int>(K_SLOT_COUNT));
@@ -132,7 +132,7 @@ namespace
         const std::vector<std::uint8_t> from = pattern(K_SLOT_BYTES * 3);
         std::vector<std::uint8_t> to(from.size(), 0);
 
-        subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}).wait();
+        subject_.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), from.size()}, {}).value().wait();
 
         ASSERT_EQ(observer_.heard().size(), 1U);
         EXPECT_EQ(observer_.heard()[0].path, "host_staged");
@@ -148,8 +148,8 @@ namespace
         std::vector<std::uint8_t> on_host(from.size(), 0);
         std::vector<std::uint8_t> back(from.size(), 0);
 
-        subject_.copy(TransferRequest{K_DEVICE_0, K_HOST, from.data(), on_host.data(), from.size()}, {}).wait();
-        subject_.copy(TransferRequest{K_HOST, K_DEVICE_1, on_host.data(), back.data(), from.size()}, {}).wait();
+        subject_.copy(TransferRequest{K_DEVICE_0, K_HOST, from.data(), on_host.data(), from.size()}, {}).value().wait();
+        subject_.copy(TransferRequest{K_HOST, K_DEVICE_1, on_host.data(), back.data(), from.size()}, {}).value().wait();
 
         EXPECT_EQ(on_host, from);
         EXPECT_EQ(back, from);
@@ -164,7 +164,9 @@ namespace
         HostStagedPath path(neither, ring_);
         std::uint8_t byte = 0;
 
-        EXPECT_THROW(static_cast<void>(path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, &byte, &byte, 1}, {})),
-                     std::runtime_error);
+        const Result<sycl::event> refused = path.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, &byte, &byte, 1}, {});
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
     }
 } // namespace

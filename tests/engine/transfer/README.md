@@ -20,12 +20,14 @@ copy nodes move the bytes, and the observer records which path each copy took.
 The path connects any two devices and the host with a device, never two host spaces. A copy
 between two spaces with no direct path matches bytes for sizes below, at and several times one ring
 slot, makes the ring once and reuses it, and the report names `host_staged` once per copy. A copy to
-or from the host is one memcpy with no slot. A copy with no queue on either side is refused.
+or from the host is one memcpy with no slot. A copy with no queue on either side returns
+`InvalidArgument`.
 
 ## test_staging_ring.cpp
 
 The ring makes no slot before the first acquire, makes all slots once, hands them out in ring
-order, skips a held slot, frees every slot with the ring and refuses when the memory has no room.
+order, skips a held slot, frees every slot with the ring, and returns `AllocationFailed` when the
+memory has no room, after it released the slots it had made.
 
 ## test_transfer_observer_slot.cpp
 
@@ -41,7 +43,8 @@ The uniform cost prices every path by its bytes.
 `Small_FilePath` writes a temporary file and checks that `FilePath` connects an added file space to
 any space that is not a file, streams ranges onto a SYCL CPU device through a two-slot ring with
 equal bytes and a peak of pinned memory equal to the ring, reads straight into the host with no
-slot, and refuses a space it does not hold or a range past the end of the file. After `remove()` the
+slot, and returns `InvalidArgument` for a space it does not hold and `InvalidState` for a range past
+the end of the file. After `remove()` the
 path does not connect the removed space, and a new space added under the same id is connected.
 `Large_FilePath` writes a file 1 GiB larger than the first CUDA GPU's memory into `temp` under the
 working directory, streams it window by window onto the GPU, checks the first and last 4 KiB of each

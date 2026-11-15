@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/handle/transfer_path_id.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
@@ -82,8 +83,9 @@ namespace SushiRuntime
                 /**
                  * @brief Starts the copy after dependencies and returns the event that ends it.
                  * @pre connects() holds for the two spaces of request.
+                 * @return The event of the copy, or the error that stopped it; a path never throws.
                  */
-                [[nodiscard]] virtual sycl::event copy(const TransferRequest& request,
+                [[nodiscard]] virtual Result<sycl::event> copy(const TransferRequest& request,
                                                        const std::vector<sycl::event>& dependencies) = 0;
         };
     } // namespace Internal::Coherence

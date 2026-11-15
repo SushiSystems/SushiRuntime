@@ -79,8 +79,8 @@ namespace SushiRuntime
                 [[nodiscard]] bool connects(const Memory::MemorySpace& source,
                                             const Memory::MemorySpace& destination) const override;
 
-                /** @throws std::runtime_error when neither space has a queue, or the ring has no slots. */
-                [[nodiscard]] sycl::event copy(const TransferRequest& request,
+                /** @return An error when neither space has a queue, the ring has no slots or a device call fails. */
+                [[nodiscard]] Result<sycl::event> copy(const TransferRequest& request,
                                                const std::vector<sycl::event>& dependencies) override;
 
             private:

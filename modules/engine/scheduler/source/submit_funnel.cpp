@@ -31,6 +31,7 @@
 #include "submit_funnel.hpp"
 
 #include <chrono>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -155,12 +156,20 @@ namespace SushiRuntime
             Task& task = *record.task;
 
             EventPolling::PolledEvent dispatched;
+            std::optional<Error> failed;
             Result<void> ran = SYCL::translate_exceptions([&]()
             {
-                dispatched = submit_dispatch(*record.queue, task, record.node, record.profiling, record.step,
-                                             record.device_index, collector_);
+                Result<EventPolling::PolledEvent> submitted =
+                    submit_dispatch(*record.queue, task, record.node, record.profiling, record.step,
+                                    record.device_index, collector_);
+                if (submitted)
+                    dispatched = std::move(submitted.value());
+                else
+                    failed = std::move(submitted.error());
             });
             funnelled_.fetch_add(1, std::memory_order_relaxed);
+            if (ran && failed)
+                ran = make_error(std::move(*failed));
 
             if (!ran)
             {

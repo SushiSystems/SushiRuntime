@@ -101,13 +101,13 @@ namespace SushiRuntime
                     !node->bindings_->enabled.load(std::memory_order_relaxed))
                     continue;
 
-                Result<void> submitted = SYCL::translate_exceptions([this, node, step]()
+                Result<void> checked;
+                Result<void> submitted = SYCL::translate_exceptions([this, node, step, &checked]()
                 {
-                    if (profiling_)
-                        submit_profiled(*node, step);
-                    else
-                        submit_node_discarding(*node);
+                    checked = profiling_ ? submit_profiled(*node, step) : submit_node_discarding(*node);
                 });
+                if (submitted && !checked)
+                    submitted = make_error(std::move(checked.error()));
                 if (!submitted)
                     return make_error(
                         Internal::Scheduler::name_failure(*node, submitted.error()));
@@ -155,7 +155,7 @@ namespace SushiRuntime
         /**
          * @brief Submits one node's device work to the queue.
          */
-        sycl::event ChainRun::submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over)
+        Result<sycl::event> ChainRun::submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over)
         {
             return Internal::Graph::submit_task(queue_, node, &node.sycl_deps, &handed_over);
         }
@@ -167,25 +167,29 @@ namespace SushiRuntime
          * the run waits once in @ref wait, so no caller reads a per-node event
          * on this path.
          */
-        void ChainRun::submit_node_discarding(Internal::Graph::Node& node)
+        Result<void> ChainRun::submit_node_discarding(Internal::Graph::Node& node)
         {
-            Internal::Graph::submit_task_discarding(queue_, node, &node.sycl_deps);
+            return Internal::Graph::submit_task_discarding(queue_, node, &node.sycl_deps);
         }
 
         /**
          * @brief Submits one node and keeps its event for the ledger (modules/engine/execution/source/chain_run.md).
          */
-        void ChainRun::submit_profiled(Internal::Graph::Node& node, std::uint32_t step)
+        Result<void> ChainRun::submit_profiled(Internal::Graph::Node& node, std::uint32_t step)
         {
             // The node's work cannot start before this reading.
             const std::uint64_t submit_steady_ns = Internal::Observability::steady_now_ns();
             std::vector<sycl::event> handed_over;
-            sycl::event event = submit_node(node, handed_over);
+            Result<sycl::event> submitted = submit_node(node, handed_over);
+            if (!submitted)
+                return make_error(std::move(submitted.error()));
 
             graph_.chain.pending_events.push_back(
-                Internal::Graph::PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node),
+                Internal::Graph::PendingEvent{&node, step, std::move(submitted.value()),
+                                              Internal::Graph::snapshot_widths(node),
                                               Internal::Profile::current_thread_index(), std::move(handed_over),
                                               submit_steady_ns});
+            return {};
         }
 
         /**

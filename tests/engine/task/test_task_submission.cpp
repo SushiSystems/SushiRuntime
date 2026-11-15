@@ -34,6 +34,8 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/dispatch_events.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -115,7 +117,7 @@ TEST_F(Medium_TaskSubmission, AHostTaskGetsItsDependencies)
     const sushi_ptr<Node> task = host_node(log);
     std::vector<sycl::event> handed_over;
 
-    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).wait();
+    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).value().wait();
 
     EXPECT_EQ(log.runs, 1);
     EXPECT_EQ(log.seen_dependencies, 3u);
@@ -128,7 +130,7 @@ TEST_F(Medium_TaskSubmission, AHostTaskHandsItsEventOver)
     const sushi_ptr<Node> task = host_node(log);
     std::vector<sycl::event> handed_over;
 
-    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).wait();
+    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).value().wait();
 
     EXPECT_EQ(handed_over.size(), 1u) << "the scope did not collect the handed-over event";
 }
@@ -141,7 +143,7 @@ TEST_F(Medium_TaskSubmission, ANullSinkCollectsNothing)
     std::vector<sycl::event> outer;
     Internal::DispatchEvents::DispatchEventScope enclosing(outer);
 
-    Internal::Graph::submit_task(queue(), *task, nullptr, nullptr).wait();
+    Internal::Graph::submit_task(queue(), *task, nullptr, nullptr).value().wait();
 
     EXPECT_EQ(log.seen_dependencies, 0u);
     EXPECT_EQ(outer.size(), 1u) << "a null sink must leave the enclosing scope in force";
@@ -155,7 +157,7 @@ TEST_F(Medium_TaskSubmission, AKernelTaskReturnsAnEvent)
     const sushi_ptr<Node> task = kernel_node(log);
     std::vector<sycl::event> handed_over;
 
-    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).wait();
+    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).value().wait();
 
     EXPECT_EQ(log.runs, 1);
 }
@@ -167,7 +169,7 @@ TEST_F(Medium_TaskSubmission, AKernelTaskHandsNoEventOver)
     const sushi_ptr<Node> task = kernel_node(log);
     std::vector<sycl::event> handed_over;
 
-    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).wait();
+    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).value().wait();
 
     EXPECT_TRUE(handed_over.empty()) << "a kernel task handed an event over";
 }
@@ -179,7 +181,7 @@ TEST_F(Medium_TaskSubmission, TheDiscardingPathRunsAHostTask)
     BodyLog log;
     const sushi_ptr<Node> host = host_node(log);
 
-    Internal::Graph::submit_task_discarding(queue(), *host, &dependencies);
+    ASSERT_TRUE(Internal::Graph::submit_task_discarding(queue(), *host, &dependencies));
     queue().wait();
 
     EXPECT_EQ(log.runs, 1);
@@ -192,8 +194,27 @@ TEST_F(Medium_TaskSubmission, TheDiscardingPathRunsAKernelTask)
     BodyLog log;
     const sushi_ptr<Node> kernel = kernel_node(log);
 
-    Internal::Graph::submit_task_discarding(queue(), *kernel, nullptr);
+    ASSERT_TRUE(Internal::Graph::submit_task_discarding(queue(), *kernel, nullptr));
     queue().wait();
 
     EXPECT_EQ(log.runs, 1);
+}
+
+/** @brief Tests that a checked host body that fails hands its error back through both paths. */
+TEST_F(Medium_TaskSubmission, ACheckedHostBodyThatFailsReturnsItsError)
+{
+    const sushi_ptr<Node> task = make_sushi<Node>();
+    task->mode = Node::ExecutionMode::Host;
+    task->checked_host_work = [](sycl::queue&, const std::vector<sycl::event>&) -> Result<sycl::event>
+    {
+        return make_error(Error{ErrorCode::AllocationFailed, "no room"});
+    };
+
+    const Result<sycl::event> submitted = Internal::Graph::submit_task(queue(), *task, nullptr, nullptr);
+    const Result<void> discarded = Internal::Graph::submit_task_discarding(queue(), *task, nullptr);
+
+    ASSERT_FALSE(submitted);
+    EXPECT_EQ(submitted.error().code, ErrorCode::AllocationFailed);
+    ASSERT_FALSE(discarded);
+    EXPECT_EQ(discarded.error().code, ErrorCode::AllocationFailed);
 }

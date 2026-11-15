@@ -28,15 +28,19 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <memory>
-#include <stdexcept>
+#include <new>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/transfer/staging_ring.hpp>
 
 #include "support/transfer_path_doubles.hpp"
 
+using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;
 
 namespace
@@ -55,6 +59,60 @@ namespace
 
             }
     };
+
+    /** @brief Makes a fixed number of slots, then refuses, and counts what it made and freed. */
+    class LimitedPinnedHostMemory final : public PinnedHostMemory
+    {
+        public:
+            explicit LimitedPinnedHostMemory(int capacity) noexcept : capacity_(capacity)
+            {
+
+            }
+
+            [[nodiscard]] void* allocate(std::size_t bytes) override
+            {
+                if (allocated_ == capacity_)
+                    return nullptr;
+                ++allocated_;
+                return ::operator new(bytes);
+            }
+
+            void release(void* address) noexcept override
+            {
+                ++released_;
+                ::operator delete(address);
+            }
+
+            /** @brief Returns how many slots were made. */
+            [[nodiscard]] int allocated() const noexcept
+            {
+                return allocated_;
+            }
+
+            /** @brief Returns how many slots were freed. */
+            [[nodiscard]] int released() const noexcept
+            {
+                return released_;
+            }
+
+        private:
+            /// @brief Slots made before every later call is refused.
+            int capacity_;
+
+            /// @brief Slots made.
+            int allocated_ = 0;
+
+            /// @brief Slots freed.
+            int released_ = 0;
+    };
+
+    /** @brief Takes a slot from ring and fails the test when it has none. */
+    StagingSlot take(StagingRing& ring)
+    {
+        Result<StagingSlot> acquired = ring.acquire();
+        EXPECT_TRUE(acquired);
+        return acquired ? acquired.value() : StagingSlot{};
+    }
 
     TEST(Small_StagingRing, MakesNoSlotBeforeTheFirstAcquire)
     {
@@ -80,9 +138,9 @@ namespace
         HeapPinnedHostMemory memory;
         StagingRing ring(memory, StagingRingShape{16, 3});
 
-        const StagingSlot first = ring.acquire();
-        const StagingSlot second = ring.acquire();
-        const StagingSlot third = ring.acquire();
+        const StagingSlot first = take(ring);
+        const StagingSlot second = take(ring);
+        const StagingSlot third = take(ring);
         EXPECT_EQ(memory.allocated(), 3);
         EXPECT_EQ(first.index, 0U);
         EXPECT_EQ(second.index, 1U);
@@ -93,7 +151,7 @@ namespace
         ring.retire(first, sycl::event{});
         ring.retire(second, sycl::event{});
         ring.retire(third, sycl::event{});
-        const StagingSlot again = ring.acquire();
+        const StagingSlot again = take(ring);
         EXPECT_EQ(again.index, 0U);
         EXPECT_EQ(again.data, first.data);
         EXPECT_EQ(memory.allocated(), 3);
@@ -105,10 +163,10 @@ namespace
         HeapPinnedHostMemory memory;
         StagingRing ring(memory, StagingRingShape{16, 2});
 
-        const StagingSlot held = ring.acquire();
-        const StagingSlot other = ring.acquire();
+        const StagingSlot held = take(ring);
+        const StagingSlot other = take(ring);
         ring.retire(other, sycl::event{});
-        const StagingSlot next = ring.acquire();
+        const StagingSlot next = take(ring);
 
         EXPECT_EQ(next.index, other.index);
         ring.retire(next, sycl::event{});
@@ -120,7 +178,7 @@ namespace
         HeapPinnedHostMemory memory;
         {
             StagingRing ring(memory, StagingRingShape{16, 4});
-            ring.retire(ring.acquire(), sycl::event{});
+            ring.retire(take(ring), sycl::event{});
         }
 
         EXPECT_EQ(memory.allocated(), 4);
@@ -132,6 +190,21 @@ namespace
         EmptyPinnedHostMemory memory;
         StagingRing ring(memory);
 
-        EXPECT_THROW(static_cast<void>(ring.acquire()), std::runtime_error);
+        const Result<StagingSlot> refused = ring.acquire();
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::AllocationFailed);
+    }
+
+    TEST(Small_StagingRing, ReleasesTheSlotsItMadeWhenALaterOneIsRefused)
+    {
+        LimitedPinnedHostMemory memory(2);
+        StagingRing ring(memory, StagingRingShape{16, 3});
+
+        const Result<StagingSlot> refused = ring.acquire();
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::AllocationFailed);
+        EXPECT_EQ(memory.allocated(), memory.released());
     }
 } // namespace

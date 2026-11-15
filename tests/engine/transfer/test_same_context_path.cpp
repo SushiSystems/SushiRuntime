@@ -84,7 +84,7 @@ namespace
         const std::array<unsigned char, 6> from{1, 2, 3, 4, 5, 6};
         std::array<unsigned char, 6> to{};
 
-        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), to.size()}, {}).wait();
+        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), to.size()}, {}).value().wait();
 
         EXPECT_EQ(to, from);
         ASSERT_EQ(observer_.heard().size(), 1U);
@@ -102,7 +102,7 @@ namespace
         const std::array<unsigned char, 3> from{9, 8, 7};
         std::array<unsigned char, 3> to{};
 
-        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), to.size()}, {}).wait();
+        subject.copy(TransferRequest{K_DEVICE_0, K_DEVICE_1, from.data(), to.data(), to.size()}, {}).value().wait();
 
         EXPECT_EQ(to, from);
     }

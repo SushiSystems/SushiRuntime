@@ -130,9 +130,10 @@ namespace SushiRuntime
         /**
          * @brief Submits a task, or runs its host body, and builds the event its dispatch polls on.
          */
-        EventPolling::PolledEvent submit_dispatch(sycl::queue& queue, Task& task, Internal::Graph::Node* node,
-                                                  bool profiling, std::uint32_t step, std::uint32_t device_index,
-                                                  Profile::Collector& collector)
+        Result<EventPolling::PolledEvent> submit_dispatch(sycl::queue& queue, Task& task,
+                                                          Internal::Graph::Node* node, bool profiling,
+                                                          std::uint32_t step, std::uint32_t device_index,
+                                                          Profile::Collector& collector)
         {
             const bool host = task.execution_mode() == Task::ExecutionMode::Host;
 
@@ -140,13 +141,16 @@ namespace SushiRuntime
             const std::uint64_t submit_steady_ns = profiling ? Internal::Observability::steady_now_ns() : 0;
 
             // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
-            sycl::event event;
+            Result<sycl::event> submission = sycl::event{};
             std::vector<sycl::event> handed_over;
             {
                 SR_ZONE_FINE(collector, "dispatch.submit");
-                event = Internal::Graph::submit_task(queue, task, node ? &node->sycl_deps : nullptr,
-                                                     (profiling && host) ? &handed_over : nullptr);
+                submission = Internal::Graph::submit_task(queue, task, node ? &node->sycl_deps : nullptr,
+                                                          (profiling && host) ? &handed_over : nullptr);
             }
+            if (!submission)
+                return make_error(std::move(submission.error()));
+            const sycl::event& event = submission.value();
             const bool submitted = submitted_device_work(host, profiling, event, handed_over);
 
             // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).

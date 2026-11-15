@@ -124,7 +124,10 @@ namespace SushiRuntime
                 const Result<sushi_ptr<Graph::Node>> node = factory.make(step);
                 if (!node)
                     throw std::runtime_error("the factory refused a planned step: " + node.error().message);
-                node.value()->host_work(queue, {}).wait();
+                Result<sycl::event> ran = node.value()->execute_host_checked(queue, {});
+                if (!ran)
+                    throw std::runtime_error("a planned step failed: " + ran.error().message);
+                ran.value().wait();
             }
         } // namespace Detail
 

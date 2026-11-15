@@ -31,9 +31,13 @@
 #pragma once
 
 #include <cstring>
+#include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
@@ -61,12 +65,20 @@ namespace SushiRuntime
                     return true;
                 }
 
-                [[nodiscard]] sycl::event copy(const TransferRequest& request,
-                                               const std::vector<sycl::event>&) override
+                [[nodiscard]] Result<sycl::event> copy(const TransferRequest& request,
+                                                       const std::vector<sycl::event>&) override
                 {
+                    if (failure_)
+                        return make_error(Error{*failure_});
                     std::memcpy(request.to, request.from, request.bytes);
                     ++copies_;
                     return sycl::event{};
+                }
+
+                /** @brief Makes every later copy return failure, and none when set to nothing. */
+                void fail_with(std::optional<Error> failure)
+                {
+                    failure_ = std::move(failure);
                 }
 
                 /** @brief Returns how many copies ran. */
@@ -78,6 +90,9 @@ namespace SushiRuntime
             private:
                 /// @brief Copies run.
                 int copies_ = 0;
+
+                /// @brief The error every copy returns, or nothing.
+                std::optional<Error> failure_;
         };
 
         /** @brief Connects no pair of spaces. */
@@ -100,8 +115,8 @@ namespace SushiRuntime
                     return false;
                 }
 
-                [[nodiscard]] sycl::event copy(const TransferRequest&,
-                                               const std::vector<sycl::event>&) override
+                [[nodiscard]] Result<sycl::event> copy(const TransferRequest&,
+                                                       const std::vector<sycl::event>&) override
                 {
                     return sycl::event{};
                 }

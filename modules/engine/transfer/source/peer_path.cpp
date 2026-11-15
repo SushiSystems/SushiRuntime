@@ -31,7 +31,9 @@
 #include <SushiRuntime/transfer/peer_path.hpp>
 
 #include <algorithm>
-#include <stdexcept>
+
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -61,12 +63,19 @@ namespace SushiRuntime
             return queues_->queue_of(destination.id()) != nullptr && access_->grant(destination.id(), source.id());
         }
 
-        sycl::event PeerPath::copy(const TransferRequest& request, const std::vector<sycl::event>& dependencies)
+        Result<sycl::event> PeerPath::copy(const TransferRequest& request,
+                                           const std::vector<sycl::event>& dependencies)
         {
             sycl::queue* const queue = queues_->queue_of(request.destination);
             if (queue == nullptr)
-                throw std::runtime_error("peer: the destination space has no queue.");
-            const sycl::event done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
+                return make_error(Error{ErrorCode::InvalidArgument, "peer: the destination space has no queue."});
+            sycl::event done;
+            const Result<void> submitted = Internal::SYCL::translate_exceptions([&]()
+            {
+                done = queue->memcpy(request.to, request.from, request.bytes, dependencies);
+            });
+            if (!submitted)
+                return make_error(Error{submitted.error()});
             if (observer_ != nullptr)
                 observer_->copied(TransferRecord{name(), request.source, request.destination, request.bytes, K_ID});
             return done;

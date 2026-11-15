@@ -110,6 +110,16 @@ namespace SushiRuntime
                     bool ended_ = false;                     /**< Whether end() ran. */
             };
 
+            /**
+             * @brief Submits one node to the recording queue.
+             *
+             * node_refusal() keeps host bodies out of a recording, so the submission cannot return an error.
+             */
+            void submit_recorded(sycl::queue& recording, Node& node)
+            {
+                static_cast<void>(Internal::Graph::submit_task(recording, node, nullptr, nullptr).value());
+            }
+
             /** @brief Hands a late-bound node its host words for one submission, and takes them back. */
             class WordsLoan
             {
@@ -173,11 +183,11 @@ namespace SushiRuntime
                         {
                             if (node->submit_form != SubmitForm::LateWindow)
                             {
-                                static_cast<void>(Internal::Graph::submit_task(recording, *node, nullptr, nullptr));
+                                submit_recorded(recording, *node);
                                 continue;
                             }
                             const WordsLoan loan(*node->bindings_, words_of(window++));
-                            static_cast<void>(Internal::Graph::submit_task(recording, *node, nullptr, nullptr));
+                            submit_recorded(recording, *node);
                         }
                         scope.end();
                         executable_.emplace(graph.finalize());

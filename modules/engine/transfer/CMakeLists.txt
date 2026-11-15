@@ -14,6 +14,9 @@ sushiruntime_add_module(
         staging_ring.cpp
         transfer_observer_slot.cpp
     DEPENDS
+        core
         handle
         log
-        memory)
+        memory
+    PRIVATE_DEPENDS
+        sycl)

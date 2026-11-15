@@ -30,11 +30,12 @@
 
 #include <SushiRuntime/transfer/staging_ring.hpp>
 
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/transfer/transfer_log_category.hpp>
 
 #include <algorithm>
-#include <stdexcept>
 #include <utility>
 
 namespace SushiRuntime
@@ -70,7 +71,7 @@ namespace SushiRuntime
             return shape_;
         }
 
-        void StagingRing::allocate_slots()
+        Result<void> StagingRing::allocate_slots()
         {
             std::vector<void*> made;
             made.reserve(shape_.slot_count);
@@ -81,16 +82,18 @@ namespace SushiRuntime
                 {
                     for (void* const done : made)
                         memory_->release(done);
-                    throw std::runtime_error("staging ring: the pinned host memory has no room for the slots.");
+                    return make_error(Error{ErrorCode::AllocationFailed,
+                                            "staging ring: the pinned host memory has no room for the slots."});
                 }
                 made.push_back(slot);
             }
             slots_ = std::move(made);
             last_use_.assign(shape_.slot_count, sycl::event{});
             held_.assign(shape_.slot_count, false);
+            return {};
         }
 
-        StagingSlot StagingRing::acquire()
+        Result<StagingSlot> StagingRing::acquire()
         {
             std::size_t index = 0;
             sycl::event previous;
@@ -98,7 +101,11 @@ namespace SushiRuntime
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (slots_.empty())
-                    allocate_slots();
+                {
+                    Result<void> made = allocate_slots();
+                    if (!made)
+                        return make_error(std::move(made.error()));
+                }
                 const auto free_slot = [this]
                 {
                     for (std::size_t step = 0; step < shape_.slot_count; ++step)
@@ -120,14 +127,11 @@ namespace SushiRuntime
                 previous = last_use_[index];
                 data = slots_[index];
             }
-            try
-            {
-                previous.wait();
-            }
-            catch (...)
+            Result<void> waited = Internal::SYCL::translate_exceptions([&previous]() { previous.wait(); });
+            if (!waited)
             {
                 retire(StagingSlot{index, data}, sycl::event{});
-                throw;
+                return make_error(std::move(waited.error()));
             }
             return StagingSlot{index, data};
         }

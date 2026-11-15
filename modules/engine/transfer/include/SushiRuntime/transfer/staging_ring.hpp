@@ -37,6 +37,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/transfer/pinned_host_memory.hpp>
 
 namespace SushiRuntime
@@ -93,9 +94,10 @@ namespace SushiRuntime
                  * @brief Takes the next free slot, in ring order, and waits until its last use ended.
                  *
                  * Blocks while every slot is held.
-                 * @throws std::runtime_error when the pinned memory has no room for the slots.
+                 * @return The slot; AllocationFailed when the pinned memory has no room for the slots;
+                 *         the error of a failed last use of the slot.
                  */
-                [[nodiscard]] StagingSlot acquire();
+                [[nodiscard]] Result<StagingSlot> acquire();
 
                 /**
                  * @brief Gives a slot back.
@@ -106,7 +108,7 @@ namespace SushiRuntime
 
             private:
                 /** @brief Makes every slot on the first call. Must run under mutex_. */
-                void allocate_slots();
+                [[nodiscard]] Result<void> allocate_slots();
 
                 /// @brief Makes and frees the slots.
                 PinnedHostMemory* memory_;

@@ -32,6 +32,7 @@
 #include <functional>
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
 {
@@ -42,6 +43,14 @@ namespace SushiRuntime
         
         /** @brief Work definition for a host-side library call node. */
         using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
+
+        /**
+         * @brief Work definition for a host node that reports its failure as a status.
+         *
+         * The scheduler records a returned error as the run's failure, so the body never throws.
+         */
+        using CheckedHostWork =
+            std::function<Result<sycl::event>(sycl::queue&, const std::vector<sycl::event>&)>;
 
     } // namespace Graph
 } // namespace SushiRuntime

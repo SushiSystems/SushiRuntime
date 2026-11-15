@@ -32,6 +32,7 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
 {
@@ -50,9 +51,9 @@ namespace SushiRuntime
          * @param task The task to run.
          * @param dependencies The events the task waits on, or null for none.
          * @param handed_over Sink for the events a host body hands over, or null for no scope.
-         * @return The task's event; empty when a host body submitted nothing.
+         * @return The task's event, or the error a host body returned.
          */
-        SUSHIRUNTIME_API sycl::event submit_task(sycl::queue& queue, Scheduler::Task& task,
+        [[nodiscard]] SUSHIRUNTIME_API Result<sycl::event> submit_task(sycl::queue& queue, Scheduler::Task& task,
                                                  const SmallEventVector* dependencies,
                                                  std::vector<sycl::event>* handed_over);
 
@@ -61,8 +62,9 @@ namespace SushiRuntime
          * @param queue The queue the task submits to.
          * @param task The task to run.
          * @param dependencies The events the task waits on, or null for none.
+         * @return Nothing, or the error a host body returned.
          */
-        SUSHIRUNTIME_API void submit_task_discarding(sycl::queue& queue, Scheduler::Task& task,
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> submit_task_discarding(sycl::queue& queue, Scheduler::Task& task,
                                                      const SmallEventVector* dependencies);
 
     } // namespace Graph

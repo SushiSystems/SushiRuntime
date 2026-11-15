@@ -31,12 +31,13 @@
 #include <SushiRuntime/coherence/directory_planned_node_factory.hpp>
 
 #include <cstddef>
-#include <new>
 #include <optional>
-#include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
@@ -61,6 +62,81 @@ namespace SushiRuntime
                     return *device;
                 const std::optional<std::size_t> source = Graph::device_of_space(step.source);
                 return step.kind == PlannedStepKind::Copy && source ? *source : 0;
+            }
+
+            /** @brief Waits for dependencies, and returns what the wait throws as an error. */
+            [[nodiscard]] Result<void> wait_for(const std::vector<sycl::event>& dependencies)
+            {
+                return Internal::SYCL::translate_exceptions([&dependencies]()
+                {
+                    sycl::event::wait(dependencies);
+                });
+            }
+
+            /** @brief Makes the instance step names, unless the directory holds one already. */
+            [[nodiscard]] Result<sycl::event> allocate_instance(Memory::ResidencyView& directory,
+                                                                InstanceAllocator& allocator,
+                                                                const PlannedStep& step,
+                                                                const std::vector<sycl::event>& dependencies)
+            {
+                const Result<void> waited = wait_for(dependencies);
+                if (!waited)
+                    return make_error(Error{waited.error()});
+                if (instance_on(directory, step.handle, step.space) != nullptr)
+                    return sycl::event{};
+                void* address = nullptr;
+                const Result<void> allocated = Internal::SYCL::translate_exceptions([&]()
+                {
+                    address = allocator.allocate(step.space, step.end, step.alignment);
+                });
+                if (!allocated)
+                    return make_error(Error{allocated.error()});
+                if (address == nullptr)
+                    return make_error(Error{ErrorCode::AllocationFailed,
+                                            "coherence.allocate: the space refused the instance."});
+                if (directory.set_instance(step.handle, step.space, address, allocator.kind_of(step.space)) !=
+                    HandleStatus::Ok)
+                {
+                    allocator.release(step.space, address);
+                    return make_error(Error{ErrorCode::InvalidState,
+                                            "coherence.allocate: the residency directory refused the new instance."});
+                }
+                return sycl::event{};
+            }
+
+            /** @brief Copies the bytes step names between the instances of its two spaces. */
+            [[nodiscard]] Result<sycl::event> copy_instance(const Memory::ResidencyView& directory,
+                                                            TransferPath& path, const PlannedStep& step,
+                                                            const std::vector<sycl::event>& dependencies)
+            {
+                const auto* const from =
+                    static_cast<const unsigned char*>(instance_on(directory, step.handle, step.source));
+                auto* const to = static_cast<unsigned char*>(instance_on(directory, step.handle, step.space));
+                if (from == nullptr || to == nullptr)
+                    return make_error(Error{ErrorCode::InvalidState,
+                                            "coherence.copy: an instance the plan copies between is missing."});
+                const TransferRequest request{step.source, step.space, from + step.begin, to + step.begin,
+                                              step.end - step.begin};
+                return path.copy(request, dependencies);
+            }
+
+            /** @brief Drops the instance step names and frees what was allocated here. */
+            [[nodiscard]] Result<sycl::event> free_instance(Memory::ResidencyView& directory,
+                                                            InstanceAllocator& allocator, const PlannedStep& step,
+                                                            const std::vector<sycl::event>& dependencies)
+            {
+                const Result<void> waited = wait_for(dependencies);
+                if (!waited)
+                    return make_error(Error{waited.error()});
+                void* const address = instance_on(directory, step.handle, step.space);
+                if (address == nullptr)
+                    return sycl::event{};
+                // An instance with no kind, such as a file range, was not allocated here.
+                const bool allocated = directory.instance_kind(step.handle, step.space).has_value();
+                static_cast<void>(directory.drop_instance(step.handle, step.space));
+                if (allocated)
+                    allocator.release(step.space, address);
+                return sycl::event{};
             }
 
             /** @brief Returns the label a planned node of kind carries. */
@@ -107,59 +183,29 @@ namespace SushiRuntime
             switch (step.kind)
             {
                 case PlannedStepKind::Allocate:
-                    node->host_work = [directory, allocator, step](sycl::queue&,
-                                                                   const std::vector<sycl::event>& dependencies)
+                    node->checked_host_work = [directory, allocator, step](
+                                                  sycl::queue&, const std::vector<sycl::event>& dependencies)
                     {
-                        sycl::event::wait(dependencies);
-                        if (instance_on(*directory, step.handle, step.space) != nullptr)
-                            return sycl::event{};
-                        void* const address = allocator->allocate(step.space, step.end, step.alignment);
-                        if (address == nullptr)
-                            throw std::bad_alloc();
-                        if (directory->set_instance(step.handle, step.space, address,
-                                                    allocator->kind_of(step.space)) != HandleStatus::Ok)
-                        {
-                            allocator->release(step.space, address);
-                            throw std::runtime_error("coherence.allocate: the residency directory "
-                                                     "refused the new instance.");
-                        }
-                        return sycl::event{};
+                        return allocate_instance(*directory, *allocator, step, dependencies);
                     };
                     break;
 
                 case PlannedStepKind::Copy:
                 {
                     TransferPath* const path = paths_[step.path];
-                    node->host_work = [directory, path, step](sycl::queue&,
-                                                              const std::vector<sycl::event>& dependencies)
+                    node->checked_host_work = [directory, path, step](sycl::queue&,
+                                                                      const std::vector<sycl::event>& dependencies)
                     {
-                        const auto* const from =
-                            static_cast<const unsigned char*>(instance_on(*directory, step.handle, step.source));
-                        auto* const to = static_cast<unsigned char*>(instance_on(*directory, step.handle, step.space));
-                        if (from == nullptr || to == nullptr)
-                            throw std::runtime_error("coherence.copy: an instance the plan copies "
-                                                     "between is missing.");
-                        const TransferRequest request{step.source, step.space, from + step.begin,
-                                                      to + step.begin, step.end - step.begin};
-                        return path->copy(request, dependencies);
+                        return copy_instance(*directory, *path, step, dependencies);
                     };
                     break;
                 }
 
                 case PlannedStepKind::Free:
-                    node->host_work = [directory, allocator, step](sycl::queue&,
-                                                                   const std::vector<sycl::event>& dependencies)
+                    node->checked_host_work = [directory, allocator, step](
+                                                  sycl::queue&, const std::vector<sycl::event>& dependencies)
                     {
-                        sycl::event::wait(dependencies);
-                        void* const address = instance_on(*directory, step.handle, step.space);
-                        if (address == nullptr)
-                            return sycl::event{};
-                        // An instance with no kind, such as a file range, was not allocated here.
-                        const bool allocated = directory->instance_kind(step.handle, step.space).has_value();
-                        static_cast<void>(directory->drop_instance(step.handle, step.space));
-                        if (allocated)
-                            allocator->release(step.space, address);
-                        return sycl::event{};
+                        return free_instance(*directory, *allocator, step, dependencies);
                     };
                     break;
             }

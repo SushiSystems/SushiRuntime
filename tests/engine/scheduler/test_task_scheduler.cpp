@@ -855,6 +855,21 @@ namespace
         return node;
     }
 
+    /** @brief Builds a host node named @p name whose checked body returns AllocationFailed. */
+    sushi_ptr<Node> make_refusing_host_node(const char* name)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->metadata.name = name;
+        node->mode = Node::ExecutionMode::Host;
+        node->checked_host_work = [](sycl::queue&, const std::vector<sycl::event>&)
+            -> SushiRuntime::Result<sycl::event>
+        {
+            return SushiRuntime::make_error(
+                SushiRuntime::Error{SushiRuntime::ErrorCode::AllocationFailed, "no room"});
+        };
+        return node;
+    }
+
     /** @brief Builds @p count counting kernel nodes that add to @p runs. */
     std::vector<sushi_ptr<Node>> counting_kernel_nodes(std::atomic<int>& runs, int count)
     {
@@ -1001,6 +1016,20 @@ TEST_P(Medium_TaskSchedulerFunnel, AThrowingSubmissionFailsTheRunNamingTheNode)
     const std::optional<SushiRuntime::Error> error = scheduler_->run_error();
     ASSERT_TRUE(error.has_value());
     EXPECT_NE(error->message.find("node 'refused'"), std::string::npos) << error->message;
+}
+
+/** @brief Tests that a host body that returns AllocationFailed fails the run with that code, with no throw. */
+TEST_P(Medium_TaskSchedulerFunnel, ACheckedHostBodyThatFailsFailsTheRunWithItsCode)
+{
+    const sushi_ptr<Node> node = make_refusing_host_node("planned");
+
+    run(*node);
+
+    ASSERT_TRUE(scheduler_->run_failed());
+    const std::optional<SushiRuntime::Error> error = scheduler_->run_error();
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->code, SushiRuntime::ErrorCode::AllocationFailed) << error->message;
+    EXPECT_NE(error->message.find("node 'planned'"), std::string::npos) << error->message;
 }
 
 /** @brief Tests that a kernel node submitted after a failed submission of the same run is skipped. */

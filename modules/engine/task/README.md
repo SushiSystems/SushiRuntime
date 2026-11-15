@@ -30,7 +30,7 @@ fields it stores behind `OffloadState::payload`.
 | `task.hpp` | `Internal::Scheduler::Task` |
 | `ready_sink.hpp` | `Internal::Scheduler::ReadySink` |
 | `task_types.hpp` | `Internal::Graph::TaskType`, `Internal::Graph::TaskMetadata` |
-| `task_work.hpp` | `Internal::Graph::TaskWork`, `Internal::Graph::HostWork` |
+| `task_work.hpp` | `Internal::Graph::TaskWork`, `Internal::Graph::HostWork`, `Internal::Graph::CheckedHostWork` |
 | `late_bindings.hpp` | `Internal::Graph::LateBindings`, with the `replay_words` a recording hands a late-bound node |
 | `submit_form.hpp` | `Internal::Graph::SubmitForm`, what a recorded command graph may keep of a node's submission (`docs/design/GRAPH_REPLAY/README.md`) |
 | `small_event_vector.hpp` | `Internal::Graph::SmallEventVector` |
@@ -45,7 +45,7 @@ fields it stores behind `OffloadState::payload`.
 | `refusing_offload_sink.hpp` | `Internal::Graph::RefusingOffloadSink`, a test double of the sink that refuses every resubmitted node |
 | `recording_task.hpp` | `Internal::Scheduler::RecordingTask`, a host task that counts its runs and completions and submits nothing |
 | `node_widths.hpp` | `Internal::Graph::NodeWidths`, `Internal::Graph::snapshot_widths` (defined in `modules/engine/task/source/node_widths.cpp`) |
-| `task_submission.hpp` | `Internal::Graph::submit_task`, `Internal::Graph::submit_task_discarding` (defined in `modules/engine/task/source/task_submission.cpp`): submit one task behind its event dependencies, the one path `ChainRun` and `TaskScheduler` share |
+| `task_submission.hpp` | `Internal::Graph::submit_task`, `Internal::Graph::submit_task_discarding` (defined in `modules/engine/task/source/task_submission.cpp`): submit one task behind its event dependencies, the one path `ChainRun` and `TaskScheduler` share; both return a `Result`, which holds the error a host body returned |
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of`, `Internal::Graph::anchor_of` and `Internal::Graph::anchor_device` (defined in `modules/engine/task/source/node_placement.cpp`): the one anchor rule, the handle a node is anchored to and its owning device, and the device a node runs on |
 | `handle_location.hpp` | The memory space of each device (host 0, device i at i + 1), `locate()`, the lowest device instance of a handle, and `resolve_on_device()`, the pointer a node dispatched on a device works on; both read a `HandleResolver` only |
@@ -93,6 +93,12 @@ node on another device, the kernel must read the instance there. `Node::kernel_p
 opens a `KernelPointerScope` around the work; the capture launch's command group reads the table
 from the scope while it is built. `Node::execute_host()` does the same around a task's queue body,
 which reads the table through `bound_operands()` for every kernel it submits. A node with no table, or not yet placed, runs its work as before.
+
+A host node whose body can fail sets `Node::checked_host_work`, a `CheckedHostWork` that returns
+`Result<sycl::event>`. `Task::execute_host_checked()` is the one entry the submission calls for a
+host task: the default wraps `execute_host()`, and `Node` runs `checked_host_work` when it is set,
+inside the same `KernelPointerScope`. The error it returns reaches `submit_task()` and the scheduler
+without a throw.
 
 `bind()` keeps the home address of a slot whose home device is the node's device and reads no
 directory. Any other slot is resolved with `resolve_on_device()`, which is lock-free. A buffer with

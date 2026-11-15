@@ -124,3 +124,8 @@ Each node is a host node pinned to the device of the space it makes, writes or f
 node makes the instance only when the directory has none; a copy node resolves both instances when
 it runs and hands them to its `TransferPath`; a free node drops the instance and releases it. The
 nodes share the allocator; the directory and the paths must outlive them.
+
+A node runs `Node::checked_host_work`, which returns a `Result<sycl::event>`, so no planned node
+throws on a worker. An allocator that returns null gives `AllocationFailed`, a directory that refuses
+the instance or a copy between an instance that is missing gives `InvalidState`, and a path's error is
+passed on as it is. The scheduler records the error as the run's failure.

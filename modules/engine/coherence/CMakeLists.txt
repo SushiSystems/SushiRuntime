@@ -23,4 +23,5 @@ sushiruntime_add_module(
         task
         transfer
     PRIVATE_DEPENDS
-        partitioning)
+        partitioning
+        sycl)

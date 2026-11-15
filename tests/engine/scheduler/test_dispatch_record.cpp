@@ -30,11 +30,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -218,7 +221,10 @@ TEST_F(Medium_DispatchRecord, ASubmittedKernelWaitsOnItsEventAndCarriesItsStepAn
     Internal::Graph::Node node;
     make_empty_kernel(node);
 
-    EventPolling::PolledEvent pe = submit_dispatch(queue(), node, &node, false, 4, 2, test_collector());
+    Result<EventPolling::PolledEvent> dispatched =
+        submit_dispatch(queue(), node, &node, false, 4, 2, test_collector());
+    ASSERT_TRUE(dispatched);
+    EventPolling::PolledEvent pe = std::move(dispatched.value());
     pe.event.wait();
 
     EXPECT_FALSE(pe.ready);
@@ -240,7 +246,10 @@ TEST_F(Medium_DispatchRecord, AHostBodyThatSubmitsNothingIsReady)
         return sycl::event{};
     };
 
-    const EventPolling::PolledEvent pe = submit_dispatch(queue(), node, &node, false, 0, 0, test_collector());
+    const Result<EventPolling::PolledEvent> dispatched =
+        submit_dispatch(queue(), node, &node, false, 0, 0, test_collector());
+    ASSERT_TRUE(dispatched);
+    const EventPolling::PolledEvent& pe = dispatched.value();
 
     EXPECT_TRUE(ran);
     EXPECT_TRUE(pe.ready);
@@ -253,10 +262,30 @@ TEST_F(Medium_DispatchRecord, ATimedDispatchCarriesASubmitReading)
     Internal::Graph::Node node;
     make_empty_kernel(node);
 
-    EventPolling::PolledEvent pe = submit_dispatch(profiling_queue(), node, &node, true, 0, 0, test_collector());
+    Result<EventPolling::PolledEvent> dispatched =
+        submit_dispatch(profiling_queue(), node, &node, true, 0, 0, test_collector());
+    ASSERT_TRUE(dispatched);
+    EventPolling::PolledEvent pe = std::move(dispatched.value());
     pe.event.wait();
 
     EXPECT_NE(pe.submit_steady_ns, 0u);
+}
+
+/** @brief Tests that a host body that returns an error leaves submit_dispatch() with that error and no exception. */
+TEST_F(Medium_DispatchRecord, ACheckedHostBodyThatFailsReturnsItsError)
+{
+    Internal::Graph::Node node;
+    node.mode = Internal::Graph::Node::ExecutionMode::Host;
+    node.checked_host_work = [](sycl::queue&, const std::vector<sycl::event>&) -> Result<sycl::event>
+    {
+        return make_error(Error{ErrorCode::AllocationFailed, "no room"});
+    };
+
+    const Result<EventPolling::PolledEvent> dispatched =
+        submit_dispatch(queue(), node, &node, false, 0, 0, test_collector());
+
+    ASSERT_FALSE(dispatched);
+    EXPECT_EQ(dispatched.error().code, ErrorCode::AllocationFailed);
 }
 
 /** @brief Tests that a command group that throws leaves submit_dispatch() with its exception, for the caller to name. */

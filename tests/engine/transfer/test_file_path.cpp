@@ -44,6 +44,8 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/memory/host_memory_space.hpp>
@@ -214,7 +216,7 @@ namespace
             std::vector<std::uint8_t> on_device(lengths[index], 0);
 
             subject_.copy(TransferRequest{K_FILE, K_DEVICE, in_file(starts[index]), on_device.data(),
-                                          lengths[index]}, {}).wait();
+                                          lengths[index]}, {}).value().wait();
 
             EXPECT_EQ(on_device, expected(starts[index], lengths[index])) << "case " << index;
         }
@@ -225,7 +227,7 @@ namespace
     {
         std::vector<std::uint8_t> on_host(K_RANGE_BYTES, 0);
 
-        subject_.copy(TransferRequest{K_FILE, K_HOST, in_file(0), on_host.data(), K_RANGE_BYTES}, {}).wait();
+        subject_.copy(TransferRequest{K_FILE, K_HOST, in_file(0), on_host.data(), K_RANGE_BYTES}, {}).value().wait();
 
         EXPECT_EQ(on_host, expected(0, K_RANGE_BYTES));
         EXPECT_EQ(memory_.peak(), 0U);
@@ -239,12 +241,15 @@ namespace
     {
         std::vector<std::uint8_t> on_host(K_RANGE_BYTES + 64, 0);
 
-        EXPECT_THROW(static_cast<void>(subject_.copy(
-                         TransferRequest{MemorySpaceID(9), K_HOST, in_file(0), on_host.data(), 1}, {})),
-                     std::runtime_error);
-        EXPECT_THROW(static_cast<void>(subject_.copy(
-                         TransferRequest{K_FILE, K_HOST, in_file(0), on_host.data(), on_host.size()}, {})),
-                     std::runtime_error);
+        const Result<sycl::event> unknown = subject_.copy(
+            TransferRequest{MemorySpaceID(9), K_HOST, in_file(0), on_host.data(), 1}, {});
+        const Result<sycl::event> short_file = subject_.copy(
+            TransferRequest{K_FILE, K_HOST, in_file(0), on_host.data(), on_host.size()}, {});
+
+        ASSERT_FALSE(unknown);
+        EXPECT_EQ(unknown.error().code, ErrorCode::InvalidArgument);
+        ASSERT_FALSE(short_file);
+        EXPECT_EQ(short_file.error().code, ErrorCode::InvalidState);
     }
 
     /** @brief Names the queue of one CUDA GPU for its space and none for any other. */
@@ -365,7 +370,7 @@ namespace
                     std::min<std::uint64_t>(K_WINDOW_BYTES, file_bytes - begin));
                 const void* const from =
                     static_cast<const unsigned char*>(FileMemorySpace::instance_address()) + begin;
-                subject.copy(TransferRequest{file_space, device_space, from, window, bytes}, {}).wait();
+                subject.copy(TransferRequest{file_space, device_space, from, window, bytes}, {}).value().wait();
                 const std::size_t checked = std::min(K_CHECK_BYTES, bytes);
                 queue.memcpy(head.data(), window, checked).wait();
                 queue.memcpy(tail.data(), window + bytes - checked, checked).wait();

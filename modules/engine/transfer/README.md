@@ -51,6 +51,15 @@ context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`,
 `HostStagedPath`, then `FilePath`. The planner takes the first path that connects, so each later path serves only
 what the earlier ones refuse.
 
+## Failure
+
+`TransferPath::copy()` returns a `Result<sycl::event>`; no path throws. A path with no queue for its
+destination returns `InvalidArgument`. A file that cannot be opened, cannot be sought or ends before
+its range returns `InvalidState`. A ring that cannot make its slots returns `AllocationFailed`.
+What a SYCL call throws is caught inside the path and returned as the error of
+`Internal::SYCL::translate_exceptions()`. A path that fails after it took a ring slot retires the
+slot before it returns.
+
 ## HostStagedPath and StagingRing
 
 `HostStagedPath` connects any two spaces that have a queue, and the host space with any space that
@@ -67,7 +76,9 @@ queue, with no slot. A space `SpaceQueues` gives no queue is read as host memory
 `StagingRing` holds `slot_count` pinned buffers of `slot_bytes` each. The defaults,
 `K_DEFAULT_STAGING_SLOT_BYTES` (4 MiB) and `K_DEFAULT_STAGING_SLOT_COUNT` (4), are in
 `staging_ring.hpp` and nowhere else; the runtime builds the ring with them. The slots are made
-through `PinnedHostMemory` on the first `acquire()`, never again, and freed with the ring. A slot
+through `PinnedHostMemory` on the first `acquire()`, never again, and freed with the ring. `acquire()`
+returns `Result<StagingSlot>`: `AllocationFailed` when the memory has no room for every slot, after
+it released the slots it had made. A slot
 has one holder; the holder retires it with the event of its last read, and the next holder waits
 for that event. The ring locks only to hand a slot out or take it back.
 

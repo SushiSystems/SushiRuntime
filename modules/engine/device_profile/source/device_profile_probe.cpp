@@ -184,10 +184,23 @@ namespace SushiRuntime
             request.from = from.address();
             request.to = to.address();
             request.bytes = length;
-            chosen->copy(request, {}).wait();
+            Result<sycl::event> warm_up = chosen->copy(request, {});
+            if (!warm_up)
+                return make_error(std::move(warm_up.error()));
+            warm_up.value().wait();
             CopySample sample;
             sample.bytes = bytes;
-            sample.seconds = seconds_of([&]() { chosen->copy(request, {}).wait(); });
+            std::optional<Error> failure;
+            sample.seconds = seconds_of([&]()
+            {
+                Result<sycl::event> timed = chosen->copy(request, {});
+                if (timed)
+                    timed.value().wait();
+                else
+                    failure = std::move(timed.error());
+            });
+            if (failure)
+                return make_error(std::move(*failure));
             return sample;
         }
 

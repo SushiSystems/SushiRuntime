@@ -722,7 +722,7 @@ a `sycl::event{}` to compare against.
 
 ##### A throwing task
 
-A task that throws fails only its run. The dispatch runs inside
+A task that throws fails only its run; so does a host node that returns an error from `Node::checked_host_work`, with its own code and no throw. The dispatch runs inside
 `Internal::SYCL::translate_exceptions()` of `modules/foundation/sycl`, which turns what is
 thrown into an `Error`: `KernelFailed`, or `AllocationFailed` for refused memory. name_failure()
 puts the task's name in the message, and an `Error` a dispatch step returned keeps its code. The
