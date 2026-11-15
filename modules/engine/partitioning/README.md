@@ -16,6 +16,7 @@ It depends on `core`, `handle`, `machine` (for `split_part.hpp` only), `report` 
 | --- | --- |
 | `problem_hash.hpp` | `problem_hash()`, the FNV-1a hash of a partition problem |
 | `partition_problem.hpp` | `PartitionProblem`, `PartitionNode`, `PartitionBuffer`, `PartitionEdge` and `PartitionDevice` |
+| `buffer_range.hpp` | `BufferRange`, the bytes `[begin, end)` of one buffer |
 | `partition_assignment.hpp` | `PartitionAssignment`, the device of each node, the parts of each split node and the home of each planned buffer, with `PlannedSplit`, `PlannedSplitPart` and `BufferRange` |
 | `split_sizing.hpp` | `size_split()` and `SizedPart`: an axis cut into parts sized by device speed, at most one per device |
 | `split_expansion.hpp` | `expand_splits()`, `planned_splits()` and `SplitExpansion`: a split node as one placed node per part, and the byte ranges each part reads and writes |
@@ -23,6 +24,9 @@ It depends on `core`, `handle`, `machine` (for `split_part.hpp` only), `report` 
 | `partitioner.hpp` | `Partitioner`, the port that shares a graph across devices |
 | `list_scheduling_partitioner.hpp` | `ListSchedulingPartitioner`, rank, place, refine and the floor check |
 | `partition_model.hpp` | `PartitionModel`, which prices a placement and counts its bytes per pool |
+| `step_simulation.hpp` | `StepSimulation`, the device timelines and copies of one modelled step |
+| `list_schedule.hpp` | `list_schedule()`, `place_by_rank()`, `refine_schedule()`, `rank_order()` and `ScheduledPlan` |
+| `range_max_tree.hpp` | `RangeMaxTree`, slots with range addition and range maximum, under `PoolOccupancy` |
 | `pool_occupancy.hpp` | `PoolOccupancy`, the bytes a placement holds in each pool |
 | `fill_plan.hpp` | `fill_plan()`, `floor_plan()`, `FillWalk` and `FloorPlan` |
 | `assignment_hash.hpp` | `assignment_hash()`, the FNV-1a hash of an assignment |
@@ -42,20 +46,41 @@ with their declared size, edges, devices with their pool and copy path) and retu
 
 - `PartitionModel` keeps the devices that have a profile, in `DeviceKey` order, and numbers the
   pools in the order their first device appears. A pool's usable bytes are its first device's
-  capacity less its reserve, so a pool that several devices share is counted once. A step runs the
-  nodes in recording order, each device one after another; an edge between two pools waits for the
-  copy over the source device's path, an edge inside one pool does not.
+  capacity less its reserve, so a pool that several devices share is counted once. It resolves each
+  node's reads and writes to byte ranges: `PartitionNode::read_ranges` and `write_ranges` when set,
+  otherwise each listed buffer whole.
+- `PartitionModel::step_time(placement, order)` is the makespan of a `StepSimulation` that commits
+  the nodes in `order`; the one-argument form uses recording order. A node starts once its
+  predecessors finish and its read bytes are valid in its pool, in the earliest idle gap of its
+  device that holds it. A range not valid there is copied once per version and pool, from the device
+  that wrote it, over that device's path; a second reader in the pool waits for the same copy and
+  pays nothing. A write leaves its bytes valid only in the writer's pool. A stated buffer starts
+  valid at its home; a planned buffer starts valid at the device of the node `planned_home_nodes()`
+  names, the one rule `planned_homes()` also uses (first writer in recording order, else first
+  reader). While the list scheduler places nodes, a read before that node is placed counts as
+  local; the plan's step is priced again once every node is placed. Edge bytes feed only the ranks.
 - `PoolOccupancy` counts the peak of the live instances of each pool. An instance is live from the
   first to the last node of its pool that touches the buffer, in recording order; a buffer read
   before any node writes it, or written by the last node that touches it, is carried across steps
   and live for the whole step, in every pool it has an instance in. A buffer with a stated device
-  holds its home instance for the whole step. Nodes may be added in any order.
+  holds its home instance for the whole step. Nodes may be added in any order. Each pool's live bytes
+  sit in a `RangeMaxTree`, so `added_bytes()` costs O(k log n) for a node of k buffers and copies
+  nothing.
 - `fill_plan()` orders a device subset by the time each takes alone, walks the nodes in recording
-  order and moves to the next device when a pool is full, never back. `floor_plan()` is the fitting
-  fill plan of least step time over every subset, so the model takes at most sixteen devices.
-- `ListSchedulingPartitioner` ranks the nodes upward, places each on the device that finishes it
-  earliest within capacity, moves a node to a neighbour's device while the step falls, and takes the
-  floor when the floor is faster. Ties go to recording order and to the lower `DeviceKey`.
+  order and moves to the next device when a pool is full, never back. `floor_plan()` orders all
+  devices by that time (ties by `DeviceKey`) and takes the fitting fill plan of least step time over
+  each prefix of that order and each prefix less one device: `floor_candidate_count(D)` =
+  D + D(D-1)/2 walks, 136 for the sixteen devices a model takes at most. A device added to a machine
+  keeps every prefix of the old machine a candidate (as a prefix, or as a prefix less the new
+  device), so the floor never rises above the best old prefix; it may rise above an old
+  prefix-less-one candidate.
+- `ListSchedulingPartitioner` runs `list_schedule()`: nodes by descending upward rank (equal ranks in
+  recording order, so every edge runs forward), each committed to the device of earliest finish in
+  a `StepSimulation` within capacity, which may put it in an idle gap (Topcuoglu's insertion
+  policy). Equal finishes go to the lower `DeviceKey`. `refine_schedule()` then moves a node to a
+  neighbour's device while the step in that order falls, for at most `K_REFINE_PASSES` (8) passes
+  of at most two moves per edge. The floor replaces the plan when it is faster. The assignment's
+  `step_time` is `step_time(placement, order)` of the plan taken.
 - A job that fits in no plan is refused as `AllocationFailed` with one `PoolShortfall` row per
   pool. When one node needs more than any pool holds, each row holds that node's bytes; otherwise
   each row holds what the fill plan over every device puts in the pool.
@@ -79,7 +104,9 @@ modelled slower than that plan or its floor. A consumer-placed node is never cut
   follow `DeviceKey` order.
 - `expand_splits()` replaces the node with one node per part, placed on the part's device, costing
   its share of the operations. Its read and written bytes are the sums of the ranges the split's
-  `regions` function returns for that part, and it writes a buffer of its own per written buffer
+  `regions` function returns for that part, and those ranges become its `read_ranges` and
+  `write_ranges`, so the step prices a part by the bytes it reads that its pool lacks, not by a
+  share of the edge; a whole node gets its buffers whole. It writes a buffer of its own per written buffer
   that holds the bytes its regions name there, so capacity counts only those bytes. An edge into
   the node reaches every part whole; an edge out of it carries the bytes the part's writes leave in
   the buffers the reader reads, at most the edge's bytes. A later reader of a buffer the parts wrote
@@ -99,7 +126,11 @@ parts through `Internal::Graph::dispatch_split()` (`engine/task`) once they do.
 ## Hashes
 
 `problem_hash()` folds every field of a `PartitionProblem` into one FNV-1a value, through the same
-`FNVHash` and `fold_device_key()` that `plan_hash()` and `assignment_hash()` use. The API's
+`FNVHash` and `fold_device_key()` that `plan_hash()` and `assignment_hash()` use. A split's
+`regions` function is opaque, so the hash folds the regions it returns for the whole axis and for
+the equal cut into one part per listed device: D + 1 calls per split node. The parts the
+partitioner asks for depend on the cost model, which the hash does not see; a layout change that
+shows in none of these probes is not caught. The API's
 `GraphPartition` runs the partitioner again only when that hash changed, and takes the session's
 answer again when the generation of the graph's own `PartitionSession` moved for the same hash.
 

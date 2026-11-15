@@ -6,6 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE partitioning
     SOURCES
+        compile_buffer_range.cpp
         compile_partition_measurement.cpp
         compile_partition_problem.cpp
         compile_partitioner.cpp
@@ -13,6 +14,7 @@ sushiruntime_add_module_tests(
         test_fill_plan.cpp
         test_floor_partitioner.cpp
         test_fnv_hash.cpp
+        test_list_schedule.cpp
         test_list_scheduling_partitioner/test_partition_properties.cpp
         test_list_scheduling_partitioner/test_placement_and_refusal.cpp
         test_list_scheduling_partitioner/test_splitting.cpp
@@ -23,7 +25,9 @@ sushiruntime_add_module_tests(
         test_planned_homes.cpp
         test_pool_occupancy.cpp
         test_problem_hash.cpp
+        test_range_max_tree.cpp
         test_split_expansion.cpp
         test_split_sizing.cpp
+        test_step_simulation.cpp
     DEVICE_SOURCES
         test_list_scheduling_partitioner/test_splitting.cpp)

@@ -30,6 +30,7 @@
 #include <SushiRuntime/partitioning/fill_plan.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -97,23 +98,37 @@ namespace SushiRuntime
 
         std::optional<FloorPlan> floor_plan(const PartitionModel& model)
         {
+            std::vector<std::pair<double, std::size_t>> speed;
+            speed.reserve(model.device_count());
+            for (std::size_t device = 0; device < model.device_count(); ++device)
+                speed.emplace_back(alone_time(model, device), device);
+            std::sort(speed.begin(), speed.end());
+
             std::optional<FloorPlan> best;
-            const std::uint32_t masks = 1U << model.device_count();
-            for (std::uint32_t mask = 1; mask < masks; ++mask)
+            const auto try_subset = [&](std::vector<std::size_t> subset)
             {
-                std::vector<std::size_t> subset;
-                for (std::size_t device = 0; device < model.device_count(); ++device)
-                {
-                    if ((mask >> device) & 1U)
-                        subset.push_back(device);
-                }
+                std::sort(subset.begin(), subset.end());
                 FillWalk walk = fill_plan(model, subset);
                 if (!walk.fits)
-                    continue;
+                    return;
                 const double step = model.step_time(walk.placement);
                 if (best && !(step < best->step_time))
-                    continue;
+                    return;
                 best = FloorPlan{std::move(walk.placement), std::move(subset), step};
+            };
+
+            std::vector<std::size_t> prefix;
+            for (std::size_t length = 1; length <= speed.size(); ++length)
+            {
+                prefix.push_back(speed[length - 1].second);
+                try_subset(prefix);
+                // Removing the last member leaves the shorter prefix, which was tried already.
+                for (std::size_t removed = 0; removed + 1 < length; ++removed)
+                {
+                    std::vector<std::size_t> subset = prefix;
+                    subset.erase(subset.begin() + static_cast<std::ptrdiff_t>(removed));
+                    try_subset(std::move(subset));
+                }
             }
             return best;
         }

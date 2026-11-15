@@ -18,8 +18,9 @@ buffer with a stated device counted at it, a refusal with the shortfall of each 
 
 ## test_problem_hash.cpp
 
-Equal problems hash equal; a node's cost, placement or split, a buffer's bytes, an edge's bytes and
-a device's copy path each change the hash.
+Equal problems hash equal; a node's cost, placement, split or stated read ranges, a buffer's bytes,
+an edge's bytes and a device's copy path each change the hash. Two splits whose `regions` functions
+read from different offsets hash apart, and the same function hashes equal.
 
 ## test_floor_partitioner.cpp
 
@@ -31,6 +32,27 @@ than the scheduler's plan, with `floor_taken` set; a job no fill plan fits is re
 
 Each buffer of a chain is homed on the device of the node that writes it, and a buffer with a stated
 device has no home.
+
+## test_step_simulation.cpp
+
+Two readers of one 100-byte range in one pool cost one copy of 100 bytes, the second waiting for the
+first's copy. A node with no reads fills the idle gap before a node waiting on a copy, finishing at
+0.5 s instead of after it, and `step_time()` in that order gives the same makespan. A planned buffer
+read before its first write starts at the home `planned_homes()` names, the writer's device, so the
+reader on the other device copies its 100 bytes. A split part on the device that holds its input
+half copies nothing, and the other part copies only its 50 bytes.
+
+## test_list_schedule.cpp
+
+For each of 32 seeds, the step `place_by_rank()` and `list_schedule()` report equals
+`step_time(placement, order)` of their plan, refining never raises it, and two runs of the
+partitioner hash equal. `Medium_ListSchedule` partitions 64 nodes over sixteen devices in under 5
+wall seconds, hashes equal over two runs, and is never modelled slower than its floor.
+
+## test_range_max_tree.cpp
+
+Against a plain row of slots, random range additions and range maxima agree, and `peak_with()`
+answers the peak under four further additions without changing the row.
 
 ## test_fnv_hash.cpp
 
@@ -86,7 +108,9 @@ fixed to it, and a node placed on a device with no profile is refused.
 A seven-node `state_chain()` over three devices whose pools hold three nodes' buffers fills the fastest device,
 then the next, then the slowest, and crosses each device boundary once. When nothing is left, the
 last device takes the rest and the walk reports that it does not fit. The floor is a fitting plan,
-and there is none when no subset fits.
+and there is none when no subset fits. `floor_candidate_count()` is 1, 6 and 136 for one, three and
+sixteen devices. With a third device added, the floor is no slower than the fill plan of either
+prefix of the old two devices.
 
 ## test_list_scheduling_partitioner/
 
@@ -105,8 +129,8 @@ device with no profile receives no node.
 
 For each of 64 fixed seeds, `Small_PartitionProperties` builds a graph of three to eight nodes over
 two or three devices whose buffers fit one pool, and checks three properties; a failure names its
-seed. The partitioner's modelled step time is within 10% of the best that an exhaustive search over
-every fitting placement finds. No plan is modelled slower than its floor. With a device a thousand
+seed. The partitioner's modelled step time, in the order its schedule runs the nodes, is within
+10% of the best that an exhaustive search over every fitting placement, in recording order, finds. No plan is modelled slower than its floor. With a device a thousand
 times slower added, that device gets no node. The search counts `devices ^ nodes` placements, at most
 6561 here, and prices each with `PartitionModel`.
 
@@ -124,6 +148,6 @@ machine and skips with fewer than two GPUs. It times a product kernel whole on e
 profiles from those times, and runs the parts the partitioner gives with splitting allowed and
 with it turned off; the split run, best of three after a warm-up, must take less wall time.
 
-## compile_partition_measurement.cpp, compile_partition_problem.cpp, compile_partitioner.cpp and compile_partitioning_log_category.cpp
+## compile_buffer_range.cpp, compile_partition_measurement.cpp, compile_partition_problem.cpp, compile_partitioner.cpp and compile_partitioning_log_category.cpp
 
 Each file includes one header alone.

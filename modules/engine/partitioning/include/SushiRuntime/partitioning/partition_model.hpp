@@ -55,7 +55,15 @@ namespace SushiRuntime
         class PartitionModel
         {
             public:
-                /** @brief The most devices a model takes, so the floor's subsets stay few. */
+                /** @brief Holds the bytes [begin, end) of the handle of dense index handle. */
+                struct Range
+                {
+                    std::size_t handle = 0;   /**< Dense handle index, below handle_count(). */
+                    std::uint64_t begin = 0;  /**< First byte. */
+                    std::uint64_t end = 0;    /**< One past the last byte. */
+                };
+
+                /** @brief The most devices a model takes. */
                 static constexpr std::size_t K_MAX_DEVICES = 16;
 
                 /**
@@ -123,7 +131,41 @@ namespace SushiRuntime
                     return node_times_[node * devices_.size() + device];
                 }
 
-                /** @brief Returns the modelled seconds edge takes from source_device to target_device. */
+                /** @brief Returns the number of distinct buffer handles the nodes name. */
+                [[nodiscard]] std::size_t handle_count() const noexcept
+                {
+                    return handle_device_.size();
+                }
+
+                /** @brief Returns the device a handle's home is stated on, or nothing for a planned one. */
+                [[nodiscard]] std::optional<std::size_t> stated_device(std::size_t handle) const
+                {
+                    return handle_device_[handle];
+                }
+
+                /** @brief Returns the node whose device is a planned handle's home, as planned_home_nodes() names it. */
+                [[nodiscard]] std::optional<std::size_t> home_node(std::size_t handle) const
+                {
+                    return home_node_[handle];
+                }
+
+                /** @brief Returns the byte ranges node reads, duplicates kept. */
+                [[nodiscard]] const std::vector<Range>& reads_of(std::size_t node) const
+                {
+                    return node_reads_[node];
+                }
+
+                /** @brief Returns the byte ranges node writes. */
+                [[nodiscard]] const std::vector<Range>& writes_of(std::size_t node) const
+                {
+                    return node_writes_[node];
+                }
+
+                /** @brief Returns the modelled seconds of copying bytes from source_device to target_device; zero inside one pool. */
+                [[nodiscard]] double copy_time(std::size_t source_device, std::size_t target_device,
+                                               std::uint64_t bytes) const;
+
+                /** @brief Returns the modelled seconds of an edge's declared bytes; ranks read it, steps do not. */
                 [[nodiscard]] double edge_time(std::size_t edge, std::size_t source_device,
                                                std::size_t target_device) const;
 
@@ -145,7 +187,17 @@ namespace SushiRuntime
                     return PoolOccupancy(*problem_, pool_ids_.size(), buffer_pool_);
                 }
 
-                /** @brief Returns the modelled seconds of one step under placement. */
+                /**
+                 * @brief Returns the modelled seconds of one step under placement, nodes run in order.
+                 *
+                 * The step is the makespan of a StepSimulation that commits the nodes in order, the
+                 * function the list scheduler optimizes.
+                 * @pre order is a permutation of the nodes that runs every edge forward.
+                 */
+                [[nodiscard]] double step_time(const std::vector<std::size_t>& placement,
+                                               const std::vector<std::size_t>& order) const;
+
+                /** @brief Returns step_time() with the nodes run in recording order. */
                 [[nodiscard]] double step_time(const std::vector<std::size_t>& placement) const;
 
                 /** @brief Returns, per pool in pool order, the bytes placement puts there and the usable bytes. */
@@ -191,6 +243,18 @@ namespace SushiRuntime
 
                 /// @brief Seconds of node n on device d, at n * device_count() + d.
                 std::vector<double> node_times_;
+
+                /// @brief Device index of each handle's stated home, nothing for a planned handle.
+                std::vector<std::optional<std::size_t>> handle_device_;
+
+                /// @brief Node naming each planned handle's home; nothing for a stated handle or one no buffer lists.
+                std::vector<std::optional<std::size_t>> home_node_;
+
+                /// @brief Byte ranges each node reads.
+                std::vector<std::vector<Range>> node_reads_;
+
+                /// @brief Byte ranges each node writes.
+                std::vector<std::vector<Range>> node_writes_;
 
                 /// @brief Edges into each node.
                 std::vector<std::vector<std::size_t>> edges_into_;

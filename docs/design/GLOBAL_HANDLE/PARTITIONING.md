@@ -88,9 +88,11 @@ recording order and places each on the current device; when the current device's
 the next node's instances, the walk moves to the next device and never returns. A node the
 consumer placed stays where it was placed.
 
-The floor is the fill plan with the least modelled step time among the fill plans of every subset
-of the devices that the job fits on. A machine holds few devices, so the subsets are few. Every
-plan open to a smaller machine is open to a larger one, so adding a device cannot raise the floor.
+The floor is the fill plan with the least modelled step time among the fill plans of the device
+subsets that the job fits on, taken from the devices ordered by time alone: each prefix of that
+order and each prefix less one device, D + D(D-1)/2 subsets for D devices. Every prefix of a
+smaller machine's order is still a candidate on a larger one, as a prefix or as a prefix less the
+added device, so adding a device cannot raise the floor above the smaller machine's best prefix.
 
 The partitioner's plan is discarded when its modelled step time is above the floor's, and the
 floor is taken. H9 holds this in the model. H10 holds it in measurement as well; see "Rebalancing".
@@ -105,12 +107,14 @@ cost-model scheduler:
 1. **Rank.** Each node gets an upward rank: its mean time over the devices plus the largest rank
    among its successors with the mean transfer between them. Nodes are taken in descending rank;
    equal ranks in recording order.
-2. **Place.** Each node goes to the device that finishes it earliest, counting when the device
-   becomes free, the delay of the edges that cross, and whether the pool holds its instances. Equal
-   finish times resolve by `DeviceKey`. A node the consumer placed is not moved.
+2. **Place.** Each node goes to the device that finishes it earliest, counting the earliest idle
+   gap of the device that holds it (insertion), the copies of the bytes it reads that its pool
+   lacks, and whether the pool holds its instances. A byte range is copied once per version and
+   pool, as the coherence planner copies it. Equal finish times resolve by `DeviceKey`. A node the
+   consumer placed is not moved. The step time of a plan is this same simulation run in this order.
 3. **Refine.** A node with an edge to a node on another device is moved to that device when the
-   modelled step time falls and the plan still fits. The moves are tried in recording order until
-   none helps.
+   modelled step time falls and the plan still fits. The moves are tried in recording order, for at
+   most eight passes.
 4. **Check.** The result is held against the floor.
 
 The plan is a pure function of the graph, the declared costs, the device set and the profile file.

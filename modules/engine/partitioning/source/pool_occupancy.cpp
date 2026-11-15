@@ -44,7 +44,7 @@ namespace SushiRuntime
               intervals_(problem.buffers.size() * pool_count),
               carried_in_(problem.buffers.size(), false),
               carried_out_(problem.buffers.size(), false),
-              live_(pool_count, std::vector<std::int64_t>(slots_, 0)),
+              live_(pool_count, RangeMaxTree(slots_)),
               used_(pool_count, 0)
         {
             std::vector<bool> written(problem.buffers.size(), false);
@@ -75,29 +75,26 @@ namespace SushiRuntime
                 if (!buffer_pool[buffer])
                     continue;
                 intervals_[buffer * pool_count_ + *buffer_pool[buffer]] = whole;
-                apply(live_[*buffer_pool[buffer]], whole, static_cast<std::int64_t>(problem.buffers[buffer].bytes));
+                live_[*buffer_pool[buffer]].add(RangeMaxTree::Delta{
+                    whole.first, whole.last, static_cast<std::int64_t>(problem.buffers[buffer].bytes)});
             }
             for (std::size_t pool = 0; pool < pool_count_; ++pool)
-                used_[pool] = peak(live_[pool]);
+                used_[pool] = static_cast<std::uint64_t>(std::max<std::int64_t>(0, live_[pool].max_all()));
         }
 
         std::uint64_t PoolOccupancy::added_bytes(std::size_t node, std::size_t pool) const
         {
-            std::vector<std::int64_t> live = live_[pool];
-            apply_node(live, node, pool);
-            return peak(live) - used_[pool];
+            const std::int64_t peak = std::max<std::int64_t>(0, live_[pool].peak_with(deltas_of(node, pool)));
+            return static_cast<std::uint64_t>(peak) - used_[pool];
         }
 
         void PoolOccupancy::add(std::size_t node, std::size_t pool)
         {
-            apply_node(live_[pool], node, pool);
-            const PartitionNode& entry = problem_->nodes[node];
-            for (const std::vector<std::size_t>* list : {&entry.reads, &entry.writes})
-            {
-                for (const std::size_t buffer : *list)
-                    intervals_[buffer * pool_count_ + pool] = widened(buffer, pool, node);
-            }
-            used_[pool] = peak(live_[pool]);
+            for (const RangeMaxTree::Delta& delta : deltas_of(node, pool))
+                live_[pool].add(delta);
+            for (const std::size_t buffer : buffers_of(node))
+                intervals_[buffer * pool_count_ + pool] = widened(buffer, pool, node);
+            used_[pool] = static_cast<std::uint64_t>(std::max<std::int64_t>(0, live_[pool].max_all()));
         }
 
         PoolOccupancy::Interval PoolOccupancy::widened(std::size_t buffer, std::size_t pool, std::size_t node) const
@@ -116,40 +113,29 @@ namespace SushiRuntime
             return interval;
         }
 
-        void PoolOccupancy::apply(std::vector<std::int64_t>& live, const Interval& interval, std::int64_t bytes)
+        std::vector<std::size_t> PoolOccupancy::buffers_of(std::size_t node) const
         {
-            for (std::size_t slot = interval.first; slot <= interval.last; ++slot)
-                live[slot] += bytes;
-        }
-
-        std::uint64_t PoolOccupancy::peak(const std::vector<std::int64_t>& live)
-        {
-            std::int64_t highest = 0;
-            for (const std::int64_t bytes : live)
-                highest = std::max(highest, bytes);
-            return static_cast<std::uint64_t>(highest);
-        }
-
-        void PoolOccupancy::apply_node(std::vector<std::int64_t>& live, std::size_t node, std::size_t pool) const
-        {
-            // A buffer a node lists twice is counted once.
-            std::vector<bool> seen(problem_->buffers.size(), false);
             const PartitionNode& entry = problem_->nodes[node];
-            for (const std::vector<std::size_t>* list : {&entry.reads, &entry.writes})
+            std::vector<std::size_t> buffers(entry.reads);
+            buffers.insert(buffers.end(), entry.writes.begin(), entry.writes.end());
+            std::sort(buffers.begin(), buffers.end());
+            buffers.erase(std::unique(buffers.begin(), buffers.end()), buffers.end());
+            return buffers;
+        }
+
+        std::vector<RangeMaxTree::Delta> PoolOccupancy::deltas_of(std::size_t node, std::size_t pool) const
+        {
+            std::vector<RangeMaxTree::Delta> deltas;
+            for (const std::size_t buffer : buffers_of(node))
             {
-                for (const std::size_t buffer : *list)
-                {
-                    if (seen[buffer])
-                        continue;
-                    const std::optional<Interval>& held = intervals_[buffer * pool_count_ + pool];
-                    const Interval grown = widened(buffer, pool, node);
-                    const auto bytes = static_cast<std::int64_t>(problem_->buffers[buffer].bytes);
-                    if (held)
-                        apply(live, *held, -bytes);
-                    apply(live, grown, bytes);
-                    seen[buffer] = true;
-                }
+                const std::optional<Interval>& held = intervals_[buffer * pool_count_ + pool];
+                const Interval grown = widened(buffer, pool, node);
+                const auto bytes = static_cast<std::int64_t>(problem_->buffers[buffer].bytes);
+                if (held)
+                    deltas.push_back(RangeMaxTree::Delta{held->first, held->last, -bytes});
+                deltas.push_back(RangeMaxTree::Delta{grown.first, grown.last, bytes});
             }
+            return deltas;
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

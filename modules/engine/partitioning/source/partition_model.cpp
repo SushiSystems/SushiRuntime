@@ -33,8 +33,12 @@
 #include <initializer_list>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <string>
 #include <utility>
+
+#include <SushiRuntime/partitioning/planned_homes.hpp>
+#include <SushiRuntime/partitioning/step_simulation.hpp>
 
 namespace SushiRuntime
 {
@@ -144,6 +148,54 @@ namespace SushiRuntime
                 model.fixed_[node] = fixed;
             }
 
+            std::map<GlobalHandle, std::size_t> handles;
+            const auto handle_index = [&](const GlobalHandle& handle)
+            {
+                const auto inserted = handles.emplace(handle, model.handle_device_.size());
+                if (inserted.second)
+                {
+                    model.handle_device_.push_back(std::nullopt);
+                    model.home_node_.push_back(std::nullopt);
+                }
+                return inserted.first->second;
+            };
+            for (std::size_t buffer = 0; buffer < problem.buffers.size(); ++buffer)
+            {
+                const std::size_t handle = handle_index(problem.buffers[buffer].handle);
+                if (buffer_device[buffer])
+                    model.handle_device_[handle] = buffer_device[buffer];
+            }
+            for (const auto& home : planned_home_nodes(problem))
+                model.home_node_[handles.at(home.first)] = home.second;
+            const auto resolve_ranges =[&](const std::optional<std::vector<BufferRange>>& stated,
+                                            const std::vector<std::size_t>& buffers,
+                                            std::vector<Range>& resolved) -> bool
+            {
+                if (!stated)
+                {
+                    for (const std::size_t buffer : buffers)
+                        resolved.push_back(Range{handle_index(problem.buffers[buffer].handle), 0,
+                                                 problem.buffers[buffer].bytes});
+                    return true;
+                }
+                for (const BufferRange& range : *stated)
+                {
+                    if (range.begin > range.end)
+                        return false;
+                    resolved.push_back(Range{handle_index(range.handle), range.begin, range.end});
+                }
+                return true;
+            };
+            model.node_reads_.assign(problem.nodes.size(), {});
+            model.node_writes_.assign(problem.nodes.size(), {});
+            for (std::size_t node = 0; node < problem.nodes.size(); ++node)
+            {
+                const PartitionNode& entry = problem.nodes[node];
+                if (!resolve_ranges(entry.read_ranges, entry.reads, model.node_reads_[node]) ||
+                    !resolve_ranges(entry.write_ranges, entry.writes, model.node_writes_[node]))
+                    return make_error(refusal(ErrorCode::InvalidArgument, "a node names a byte range that ends before it begins"));
+            }
+
             model.edges_into_.assign(problem.nodes.size(), {});
             model.edges_out_of_.assign(problem.nodes.size(), {});
             for (std::size_t edge = 0; edge < problem.edges.size(); ++edge)
@@ -178,25 +230,31 @@ namespace SushiRuntime
             return seconds.value_or(std::numeric_limits<double>::infinity());
         }
 
+        double PartitionModel::copy_time(std::size_t source_device, std::size_t target_device,
+                                         std::uint64_t bytes) const
+        {
+            if (device_pool_[source_device] == device_pool_[target_device] || bytes == 0)
+                return 0.0;
+            const std::optional<double> seconds =
+                costs_->transfer_time(devices_[source_device], devices_[target_device], copy_paths_[source_device],
+                                      static_cast<std::size_t>(bytes));
+            return seconds.value_or(std::numeric_limits<double>::infinity());
+        }
+
+        double PartitionModel::step_time(const std::vector<std::size_t>& placement,
+                                         const std::vector<std::size_t>& order) const
+        {
+            StepSimulation simulation(*this, placement);
+            for (const std::size_t node : order)
+                simulation.commit(node, placement[node]);
+            return simulation.makespan();
+        }
+
         double PartitionModel::step_time(const std::vector<std::size_t>& placement) const
         {
-            std::vector<double> device_free(devices_.size(), 0.0);
-            std::vector<double> finish(placement.size(), 0.0);
-            double step = 0.0;
-            for (std::size_t node = 0; node < placement.size(); ++node)
-            {
-                const std::size_t device = placement[node];
-                double start = device_free[device];
-                for (const std::size_t edge : edges_into_[node])
-                {
-                    const std::size_t source = problem_->edges[edge].from;
-                    start = std::max(start, finish[source] + edge_time(edge, placement[source], device));
-                }
-                finish[node] = start + node_time(node, device);
-                device_free[device] = finish[node];
-                step = std::max(step, finish[node]);
-            }
-            return step;
+            std::vector<std::size_t> order(placement.size());
+            std::iota(order.begin(), order.end(), std::size_t{0});
+            return step_time(placement, order);
         }
 
         std::vector<PoolShortfall> PartitionModel::pool_demand(const std::vector<std::size_t>& placement) const

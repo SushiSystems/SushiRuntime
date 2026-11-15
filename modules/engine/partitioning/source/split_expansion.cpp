@@ -131,6 +131,17 @@ namespace SushiRuntime
                 return ranges;
             }
 
+            /** @brief Returns each of buffers of problem as one range over its declared size. */
+            [[nodiscard]] std::vector<BufferRange> whole_ranges(const PartitionProblem& problem,
+                                                                const std::vector<std::size_t>& buffers)
+            {
+                std::vector<BufferRange> ranges;
+                ranges.reserve(buffers.size());
+                for (const std::size_t buffer : buffers)
+                    ranges.push_back(BufferRange{problem.buffers[buffer].handle, 0, problem.buffers[buffer].bytes});
+                return ranges;
+            }
+
             /** @brief Returns the bytes ranges name, summed. */
             [[nodiscard]] std::uint64_t total(const std::vector<BufferRange>& ranges)
             {
@@ -195,6 +206,10 @@ namespace SushiRuntime
                 if (!is_split(parts, node))
                 {
                     PartitionNode whole = entry;
+                    if (!whole.read_ranges)
+                        whole.read_ranges = whole_ranges(problem, entry.reads);
+                    if (!whole.write_ranges)
+                        whole.write_ranges = whole_ranges(problem, entry.writes);
                     whole.reads = sliced_reads(entry.reads);
                     for (const std::size_t buffer : entry.writes)
                         slices_of.erase(buffer);
@@ -215,6 +230,8 @@ namespace SushiRuntime
                     part_node.cost.read_bytes = total(ranges.reads);
                     part_node.cost.written_bytes = total(ranges.writes);
                     part_node.placed = devices[sized.device];
+                    part_node.read_ranges = ranges.reads;
+                    part_node.write_ranges = ranges.writes;
                     part_node.reads = reads;
                     for (const std::size_t buffer : entry.writes)
                     {

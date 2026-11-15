@@ -41,6 +41,7 @@
 #include <SushiRuntime/handle/transfer_path_id.hpp>
 #include <SushiRuntime/machine/split_part.hpp>
 #include <SushiRuntime/machine/split_regions.hpp>
+#include <SushiRuntime/partitioning/buffer_range.hpp>
 
 namespace SushiRuntime
 {
@@ -79,6 +80,8 @@ namespace SushiRuntime
             std::vector<std::size_t> reads;    /**< Indices into PartitionProblem::buffers the node reads. */
             std::vector<std::size_t> writes;   /**< Indices into PartitionProblem::buffers the node writes. */
             std::optional<PartitionSplit> split; /**< The split the node declared; empty for a node that declares none. */
+            std::optional<std::vector<BufferRange>> read_ranges;  /**< Bytes the node reads; empty reads each buffer of reads whole. */
+            std::optional<std::vector<BufferRange>> write_ranges; /**< Bytes the node writes; empty writes each buffer of writes whole. */
         };
 
         /** @brief Holds one dependency: the reader waits on the writer and receives bytes from it. */

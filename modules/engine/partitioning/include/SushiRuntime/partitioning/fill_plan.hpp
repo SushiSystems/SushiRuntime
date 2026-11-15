@@ -64,12 +64,19 @@ namespace SushiRuntime
          */
         [[nodiscard]] FillWalk fill_plan(const PartitionModel& model, const std::vector<std::size_t>& subset);
 
+        /** @brief The most fill plans floor_plan() walks over D devices: D prefixes and D(D-1)/2 prefixes less one device. */
+        [[nodiscard]] constexpr std::size_t floor_candidate_count(std::size_t devices) noexcept
+        {
+            return devices + devices * (devices > 0 ? devices - 1 : 0) / 2;
+        }
+
         /**
-         * @brief Returns the floor of model: the fitting fill plan of least step time over every device subset.
+         * @brief Returns the floor of model: the fitting fill plan of least step time over the candidate subsets.
          *
-         * Subsets are tried in increasing bit-mask order and a later one replaces the best only when
-         * its step time is lower, so the floor is a pure function of the model.
-         * @return Nothing when no subset's fill plan fits.
+         * Devices go fastest alone first (ties by index). The candidates are each prefix of that order
+         * and each prefix less one member, O(D^2) of them. A candidate replaces the best only when its
+         * step is lower, so the floor is a pure function of the model.
+         * @return Nothing when no candidate's fill plan fits.
          */
         [[nodiscard]] std::optional<FloorPlan> floor_plan(const PartitionModel& model);
     } // namespace Internal::Coherence

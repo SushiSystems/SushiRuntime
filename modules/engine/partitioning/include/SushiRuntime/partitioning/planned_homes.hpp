@@ -43,10 +43,17 @@ namespace SushiRuntime
     namespace Internal::Coherence
     {
         /**
+         * @brief Returns the node that names the home of every planned buffer a node of problem touches.
+         *
+         * It is the buffer's first writer in recording order, or its first reader when no node writes
+         * it. A buffer with a stated device has no entry. The model and planned_homes() both use it.
+         */
+        [[nodiscard]] std::map<GlobalHandle, std::size_t> planned_home_nodes(const PartitionProblem& problem);
+
+        /**
          * @brief Returns the home device of every planned buffer a node of model touches.
          *
-         * A buffer's first writer in recording order names its home; a buffer no node writes takes
-         * the device of its first reader. A buffer with a stated device has no entry.
+         * The home is the device of the buffer's planned_home_nodes() entry under placement.
          * @param placement Device index of each node of model.
          */
         [[nodiscard]] std::map<GlobalHandle, DeviceKey> planned_homes(const PartitionModel& model,

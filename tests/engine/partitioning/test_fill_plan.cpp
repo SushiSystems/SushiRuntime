@@ -88,4 +88,30 @@ namespace
         ASSERT_TRUE(large.has_value());
         EXPECT_FALSE(floor_plan(large.value()).has_value());
     }
+
+    TEST(Small_FillPlan, TheFloorWalksQuadraticallyManyCandidates)
+    {
+        EXPECT_EQ(floor_candidate_count(1), 1U);
+        EXPECT_EQ(floor_candidate_count(3), 6U);
+        EXPECT_EQ(floor_candidate_count(16), 136U);
+    }
+
+    TEST(Small_FillPlan, AnAddedDeviceNeverRaisesTheFloorAboveAPrefixOfTheOldDevices)
+    {
+        const PartitionProblem larger = chain(7, 300, 3);
+        const auto costs = speed_model({1.0, 4.0, 2.0});
+        Result<PartitionModel, PartitionRefusal> model = PartitionModel::build(larger, *costs);
+        ASSERT_TRUE(model.has_value());
+
+        const std::optional<FloorPlan> floor = floor_plan(model.value());
+
+        ASSERT_TRUE(floor.has_value());
+        // Devices 0 and 1 are the old machine; by speed its prefixes are {1} and {0, 1}.
+        for (const std::vector<std::size_t>& prefix : {std::vector<std::size_t>{1}, std::vector<std::size_t>{0, 1}})
+        {
+            const FillWalk walk = fill_plan(model.value(), prefix);
+            if (walk.fits)
+                EXPECT_LE(floor->step_time, model.value().step_time(walk.placement));
+        }
+    }
 } // namespace

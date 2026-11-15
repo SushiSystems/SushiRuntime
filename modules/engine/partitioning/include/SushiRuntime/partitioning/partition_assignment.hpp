@@ -38,19 +38,12 @@
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/machine/split_part.hpp>
+#include <SushiRuntime/partitioning/buffer_range.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        /** @brief Names the bytes [begin, end) of one buffer. */
-        struct BufferRange
-        {
-            GlobalHandle handle;      /**< The buffer. */
-            std::uint64_t begin = 0;  /**< First byte. */
-            std::uint64_t end = 0;    /**< One past the last byte. */
-        };
-
         /**
          * @brief Holds one part of a split node: its device, its range of the axis and the bytes it
          *        reads and writes.

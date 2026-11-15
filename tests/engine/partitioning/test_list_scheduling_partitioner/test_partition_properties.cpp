@@ -91,8 +91,7 @@ namespace
         ASSERT_TRUE(model.has_value());
         const std::optional<double> best = best_feasible_step_time(model.value());
         ASSERT_TRUE(best.has_value());
-        const double chosen = model.value().step_time(placement_of(model.value(), result.value()));
-        EXPECT_LE(chosen, *best * (1.0 + K_SEARCH_MARGIN));
+        EXPECT_LE(result.value().step_time, *best * (1.0 + K_SEARCH_MARGIN));
     }
 
     TEST_P(Small_PartitionProperties, NoPlanIsModelledSlowerThanItsFloor)

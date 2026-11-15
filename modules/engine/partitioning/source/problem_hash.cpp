@@ -30,11 +30,16 @@
 
 #include <SushiRuntime/partitioning/problem_hash.hpp>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/machine/split_part.hpp>
+#include <SushiRuntime/machine/split_regions.hpp>
 #include <SushiRuntime/partitioning/fnv_hash.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -58,8 +63,72 @@ namespace SushiRuntime
                     hash.fold(index);
             }
 
-            /** @brief Folds every field of node. */
-            void fold_node(FNVHash& hash, const PartitionNode& node) noexcept
+            /** @brief Folds whether ranges are stated, then each range. */
+            void fold_ranges(FNVHash& hash, const std::optional<std::vector<BufferRange>>& ranges) noexcept
+            {
+                hash.fold(ranges ? 1U : 0U);
+                if (!ranges)
+                    return;
+                hash.fold(ranges->size());
+                for (const BufferRange& range : *ranges)
+                {
+                    hash.fold(range.handle.to_high_word());
+                    hash.fold(range.handle.to_low_word());
+                    hash.fold(range.begin);
+                    hash.fold(range.end);
+                }
+            }
+
+            /** @brief Folds the count of regions, then each region's handle, offset and length. */
+            void fold_regions(FNVHash& hash, const std::vector<BufferRegion>& regions) noexcept
+            {
+                hash.fold(regions.size());
+                for (const BufferRegion& region : regions)
+                {
+                    hash.fold(region.base.to_high_word());
+                    hash.fold(region.base.to_low_word());
+                    hash.fold(static_cast<std::uint64_t>(region.offset));
+                    hash.fold(static_cast<std::uint64_t>(region.length));
+                }
+            }
+
+            /** @brief Returns extent * index / count rounded down, without overflow while count stays small. */
+            [[nodiscard]] std::uint64_t cut_at(std::uint64_t extent, std::uint64_t index, std::uint64_t count) noexcept
+            {
+                return extent / count * index + extent % count * index / count;
+            }
+
+            /**
+             * @brief Folds the regions split returns for the whole axis and for its equal cut into parts parts.
+             *
+             * The parts a partitioner asks for depend on the cost model, which the hash does not see;
+             * these parts + 1 probes are a fixed set in which a change of layout rule shows.
+             */
+            void fold_split_regions(FNVHash& hash, const PartitionSplit& split, std::size_t parts)
+            {
+                hash.fold(split.regions ? 1U : 0U);
+                if (!split.regions || split.extent == 0)
+                    return;
+                const std::uint64_t count = std::max<std::uint64_t>(1, std::min<std::uint64_t>(parts, split.extent));
+                const auto fold_part = [&](const SplitPart& part)
+                {
+                    const SplitRegions regions = split.regions(part);
+                    fold_regions(hash, regions.reads);
+                    fold_regions(hash, regions.writes);
+                };
+                fold_part(SplitPart{split.axis, 0, split.extent, 0, 1});
+                if (count < 2)
+                    return;
+                for (std::uint64_t index = 0; index < count; ++index)
+                {
+                    fold_part(SplitPart{split.axis, cut_at(split.extent, index, count),
+                                        cut_at(split.extent, index + 1, count), static_cast<std::size_t>(index),
+                                        static_cast<std::size_t>(count)});
+                }
+            }
+
+            /** @brief Folds every field of node; parts is the probe cut of its split. */
+            void fold_node(FNVHash& hash, const PartitionNode& node, std::size_t parts)
             {
                 hash.fold(node.cost.operations);
                 hash.fold(node.cost.read_bytes);
@@ -74,16 +143,19 @@ namespace SushiRuntime
                 {
                     hash.fold(node.split->axis);
                     hash.fold(node.split->extent);
+                    fold_split_regions(hash, *node.split, parts);
                 }
+                fold_ranges(hash, node.read_ranges);
+                fold_ranges(hash, node.write_ranges);
             }
         } // namespace
 
-        std::uint64_t problem_hash(const PartitionProblem& problem) noexcept
+        std::uint64_t problem_hash(const PartitionProblem& problem)
         {
             FNVHash hash;
             hash.fold(problem.nodes.size());
             for (const PartitionNode& node : problem.nodes)
-                fold_node(hash, node);
+                fold_node(hash, node, problem.devices.size());
             hash.fold(problem.buffers.size());
             for (const PartitionBuffer& buffer : problem.buffers)
             {

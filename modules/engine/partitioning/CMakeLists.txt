@@ -9,14 +9,17 @@ sushiruntime_add_module(
         assignment_hash.cpp
         fill_plan.cpp
         floor_partitioner.cpp
+        list_schedule.cpp
         list_scheduling_partitioner.cpp
         partition_model.cpp
         partition_report_builder.cpp
         planned_homes.cpp
         pool_occupancy.cpp
         problem_hash.cpp
+        range_max_tree.cpp
         split_expansion.cpp
         split_sizing.cpp
+        step_simulation.cpp
     DEPENDS
         core
         handle

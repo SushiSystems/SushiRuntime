@@ -30,7 +30,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <vector>
+
 #include <SushiRuntime/partitioning/problem_hash.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;
@@ -87,5 +91,39 @@ namespace
         PartitionProblem path = sample();
         path.devices[0].copy_path = TransferPathID::named("host");
         EXPECT_NE(base, problem_hash(path));
+
+        PartitionProblem ranges = sample();
+        ranges.nodes[1].read_ranges = std::vector<BufferRange>{BufferRange{ranges.buffers[0].handle, 0, 32}};
+        EXPECT_NE(base, problem_hash(ranges));
+    }
+
+    /** @brief Returns a split of axis 0 over 8 whose part reads 8 bytes per index of buffer 0, from offset. */
+    [[nodiscard]] PartitionSplit offset_split(std::size_t offset)
+    {
+        PartitionSplit split{0, 8};
+        split.regions = [offset](const SplitPart& part)
+        {
+            SplitRegions regions;
+            const auto begin = static_cast<std::size_t>(part.begin * 8);
+            const auto length = static_cast<std::size_t>((part.end - part.begin) * 8);
+            regions.reads.push_back(BufferRegion(GlobalHandle::from_words(1, 1), offset + begin, length));
+            return regions;
+        };
+        return split;
+    }
+
+    TEST(Small_ProblemHash, ASplitWhoseRegionsChangeChangesTheHash)
+    {
+        PartitionProblem first = sample();
+        first.devices.push_back(first.devices[0]);
+        first.devices[1].key.ordinal = 2;
+        first.nodes[1].split = offset_split(0);
+        PartitionProblem same = first;
+        same.nodes[1].split = offset_split(0);
+        PartitionProblem moved = first;
+        moved.nodes[1].split = offset_split(4);
+
+        EXPECT_EQ(problem_hash(first), problem_hash(same));
+        EXPECT_NE(problem_hash(first), problem_hash(moved));
     }
 } // namespace

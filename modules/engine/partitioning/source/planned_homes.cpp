@@ -23,7 +23,7 @@
 
 /**
  * @file planned_homes.cpp
- * @brief Implements planned_homes().
+ * @brief Implements planned_home_nodes() and planned_homes().
  * @see modules/engine/partitioning/README.md
  * @author Mustafa Garip
  */
@@ -36,11 +36,9 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        std::map<GlobalHandle, DeviceKey> planned_homes(const PartitionModel& model,
-                                                        const std::vector<std::size_t>& placement)
+        std::map<GlobalHandle, std::size_t> planned_home_nodes(const PartitionProblem& problem)
         {
-            std::map<GlobalHandle, DeviceKey> homes;
-            const PartitionProblem& problem = model.problem();
+            std::map<GlobalHandle, std::size_t> homes;
             for (const bool writers : {true, false})
             {
                 for (std::size_t node = 0; node < problem.nodes.size(); ++node)
@@ -49,10 +47,19 @@ namespace SushiRuntime
                     for (const std::size_t buffer : writers ? entry.writes : entry.reads)
                     {
                         if (!problem.buffers[buffer].device)
-                            homes.emplace(problem.buffers[buffer].handle, model.device_key(placement[node]));
+                            homes.emplace(problem.buffers[buffer].handle, node);
                     }
                 }
             }
+            return homes;
+        }
+
+        std::map<GlobalHandle, DeviceKey> planned_homes(const PartitionModel& model,
+                                                        const std::vector<std::size_t>& placement)
+        {
+            std::map<GlobalHandle, DeviceKey> homes;
+            for (const auto& home : planned_home_nodes(model.problem()))
+                homes.emplace(home.first, model.device_key(placement[home.second]));
             return homes;
         }
     } // namespace Internal::Coherence

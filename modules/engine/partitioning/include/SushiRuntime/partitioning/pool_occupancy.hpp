@@ -35,6 +35,7 @@
 #include <vector>
 
 #include <SushiRuntime/partitioning/partition_problem.hpp>
+#include <SushiRuntime/partitioning/range_max_tree.hpp>
 
 namespace SushiRuntime
 {
@@ -58,7 +59,7 @@ namespace SushiRuntime
                 PoolOccupancy(const PartitionProblem& problem, std::size_t pool_count,
                               const std::vector<std::optional<std::size_t>>& buffer_pool);
 
-                /** @brief Returns how far placing node in pool would raise the pool's peak. */
+                /** @brief Returns how far placing node in pool would raise the pool's peak, in O(k log n) for k buffers. */
                 [[nodiscard]] std::uint64_t added_bytes(std::size_t node, std::size_t pool) const;
 
                 /** @brief Gives every buffer node touches an instance in pool, live through node. */
@@ -81,14 +82,11 @@ namespace SushiRuntime
                 /** @brief Returns the interval of buffer's instance in pool once it also covers node. */
                 [[nodiscard]] Interval widened(std::size_t buffer, std::size_t pool, std::size_t node) const;
 
-                /** @brief Adds bytes to every slot of live from interval.first to interval.last. */
-                static void apply(std::vector<std::int64_t>& live, const Interval& interval, std::int64_t bytes);
+                /** @brief Returns the distinct buffers node touches, in index order. */
+                [[nodiscard]] std::vector<std::size_t> buffers_of(std::size_t node) const;
 
-                /** @brief Returns the largest slot of live, or zero when it is empty. */
-                [[nodiscard]] static std::uint64_t peak(const std::vector<std::int64_t>& live);
-
-                /** @brief Writes into live the pool's slots once node's buffers are live there. */
-                void apply_node(std::vector<std::int64_t>& live, std::size_t node, std::size_t pool) const;
+                /** @brief Returns the changes to the pool's slots once node's buffers are live there. */
+                [[nodiscard]] std::vector<RangeMaxTree::Delta> deltas_of(std::size_t node, std::size_t pool) const;
 
                 /// @brief The problem the counts belong to.
                 const PartitionProblem* problem_;
@@ -109,7 +107,7 @@ namespace SushiRuntime
                 std::vector<bool> carried_out_;
 
                 /// @brief Live bytes of each pool at each node.
-                std::vector<std::vector<std::int64_t>> live_;
+                std::vector<RangeMaxTree> live_;
 
                 /// @brief Peak live bytes of each pool.
                 std::vector<std::uint64_t> used_;

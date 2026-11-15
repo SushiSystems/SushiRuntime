@@ -42,8 +42,9 @@ namespace SushiRuntime
          * @brief Returns the 64-bit FNV-1a hash of every field of problem: nodes, buffers, edges and devices.
          *
          * Two problems hash equal when a partitioner reads the same thing from both, on every
-         * machine and in every run.
+         * machine and in every run. A split's regions function is folded through the regions it
+         * returns for the whole axis and for the equal cut into one part per listed device.
          */
-        [[nodiscard]] std::uint64_t problem_hash(const PartitionProblem& problem) noexcept;
+        [[nodiscard]] std::uint64_t problem_hash(const PartitionProblem& problem);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime
