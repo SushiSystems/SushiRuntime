@@ -85,7 +85,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T30 | SushiBLAS handle, cost and split | T23, T25 | done |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T49 | SushiBLAS regions by handle, host handles, slice on its device | T30, T36 | todo |
-| T32 | SushiBLAS conformance kernels | T30 | running |
+| T32 | SushiBLAS conformance kernels | T30 | done |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
 
 ## Tasks
