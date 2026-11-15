@@ -91,3 +91,9 @@ The file tests QueueFlavour: equality over both fields.
 ## test_device_memory_probe.cpp
 
 The probe reads the memory of its device from a host set: the description's bytes, all free.
+
+## test_integrated_device.cpp
+
+An integrated device names the host pool and a discrete one keeps its own. With a host space and a
+device space over fake probes, `usable_pool_bytes` counts an integrated device once with the host
+and adds a discrete device's own bytes. The limited probe caps the device at the host's bytes.

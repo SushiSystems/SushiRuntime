@@ -54,18 +54,18 @@ when its own context would not hold their reading; it still reviews and commits 
 | T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | done |
 | T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | done |
-| T44 | `engine/task`, `surface/api`: nodes whose pointers cannot be rebound stay home; a missing instance is an error; `DeviceSlot` on the table | T39, T37 | todo |
+| T44 | `engine/task`, `surface/api`: nodes whose pointers cannot be rebound stay home; a missing instance is an error; `DeviceSlot` on the table | T39, T37 | running |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | done |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | done |
-| T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | running |
+| T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | done |
 | T15 | reference interpreter test | T13 | done |
 | T16 | determinism suite | T13 | done |
 | T17 | `engine/coherence` same-context and peer paths | T13 | done |
 | T18 | `engine/coherence` host-staged path | T17 | done |
-| T19 | file space and file path | T18 | todo |
+| T19 | file space and file path | T18 | running |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | done |
 | T21 | copy plan replay | T13 | done |
-| T45 | `engine/graph` `PlanCache`, `surface/api` static `Graph`: the coherence hook and copy-plan replay | T21 | todo |
+| T45 | `engine/graph` `PlanCache`, `surface/api` static `Graph`: the coherence hook and copy-plan replay | T21 | running |
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | done |

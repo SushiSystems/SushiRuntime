@@ -35,6 +35,7 @@ The sources are `modules/platform/device/source/device_queue_set.cpp`, `numa_rou
 | `device/device_descriptor.hpp` | `DeviceDescriptor`, a SYCL device with its `DeviceDescription` |
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
+| `device/integrated_device.hpp` | `is_integrated()` and `shared_pool_of()` |
 | `device/queue_factory.hpp` | `QueueFactory`, the port the set builds every queue through, and `properties_of()` |
 | `device/sycl_queue_factory.hpp` | `SYCLQueueFactory`, the factory over SYCL devices |
 | `device/in_memory_queue_factory.hpp` | `InMemoryQueueFactory`, a factory of host queues that records each build |
@@ -207,4 +208,16 @@ set does not log it.
 
 `DeviceMemoryProbe` is the `MemoryProbe` of one device of a `DeviceQueueSet`: the total is the
 memory of the device's description, and the free bytes are what `DeviceQueueSet::free_memory()`
-answers. `RuntimeContext` builds each device's `DeviceMemorySpace` through it.
+answers. `RuntimeContext` builds each device's `DeviceMemorySpace` through it. An optional total
+limit caps the total and the free bytes the probe reports, so an integrated device cannot offer
+more than the host memory it shares.
+
+## integrated_device.hpp
+
+`is_integrated()` tells whether a device draws its memory from system RAM. It asks
+`sycl::info::device::host_unified_memory`, which SYCL 2020 deprecates but DPC++ and AdaptiveCpp
+still answer. A backend that does not answer, or throws, counts as discrete. HIP's integrated
+attribute is not reachable through SYCL, so a HIP integrated GPU reads as discrete until the
+backend reports it. `RuntimeContext` stores the answer in `DeviceDescription::integrated` once, at
+discovery. `shared_pool_of()` returns the host's pool id for an integrated device and the device's
+own id otherwise, so `usable_pool_bytes` counts the shared RAM once.

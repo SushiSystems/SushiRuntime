@@ -52,7 +52,8 @@ namespace SushiRuntime
          * @brief Builds the host space through host_probe and one space per device of devices.
          *
          * Space ids follow engine/task's handle_location.hpp. A device copies without staging to
-         * every other device of its SYCL context; each device draws on a pool of its own.
+         * every other device of its SYCL context. A discrete device draws on a pool of its own.
+         * An integrated device names the host's pool and offers at most the host's usable bytes.
          */
         [[nodiscard]] RuntimeMemorySpaces build_memory_spaces(const Device::DeviceQueueSet& devices,
                                                               const Memory::MemoryProbe& host_probe);

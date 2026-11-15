@@ -30,11 +30,14 @@
 
 #include "runtime_memory_spaces.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 #include <SushiRuntime/device/device_memory_probe.hpp>
+#include <SushiRuntime/device/integrated_device.hpp>
 #include <SushiRuntime/memory/device_memory_space.hpp>
 #include <SushiRuntime/memory/host_memory_space.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
@@ -50,18 +53,23 @@ namespace SushiRuntime
             const MemorySpaceID host = Graph::host_memory_space();
             spaces.owned.push_back(std::make_unique<Memory::HostMemorySpace>(
                 Memory::HostMemorySpaceDescription{host, host.value(), 0, {}}, host_probe));
+            const Memory::MemorySpace& host_space = *spaces.owned.front();
+            const std::size_t host_usable = host_space.capacity_bytes()
+                                            - std::min(host_space.reserve_bytes(), host_space.capacity_bytes());
 
             const std::size_t count = devices.count();
             for (std::size_t device = 0; device < count; ++device)
             {
                 Memory::DeviceMemorySpaceDescription description;
                 description.id = Graph::device_memory_space(device);
-                description.shared_pool = description.id.value();
+                const DeviceDescription& facts = devices.devices()[device];
+                description.shared_pool = Device::shared_pool_of(facts, description.id.value(), host.value());
                 for (std::size_t other = 0; other < count; ++other)
                     if (other != device && devices.shares_context(device, other))
                         description.direct_targets.push_back(Graph::device_memory_space(other));
 
-                const Device::DeviceMemoryProbe probe(devices, device);
+                const std::size_t limit = facts.integrated ? host_usable : std::numeric_limits<std::size_t>::max();
+                const Device::DeviceMemoryProbe probe(devices, device, limit);
                 spaces.owned.push_back(std::make_unique<Memory::DeviceMemorySpace>(std::move(description), probe));
             }
 

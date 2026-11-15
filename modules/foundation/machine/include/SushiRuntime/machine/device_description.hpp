@@ -54,5 +54,6 @@ namespace SushiRuntime
         std::uint32_t compute_units = 0;               /**< Parallel compute units it has. */
         std::string driver_version = "unknown";        /**< Driver version; "unknown" when unread. */
         DeviceKey key{};                               /**< Names the physical device across runs. */
+        bool integrated = false;                       /**< True when it draws its memory from system RAM. */
     };
 } // namespace SushiRuntime

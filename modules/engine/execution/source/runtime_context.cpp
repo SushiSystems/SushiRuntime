@@ -52,6 +52,7 @@
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/in_memory_queue_factory.hpp>
+#include <SushiRuntime/device/integrated_device.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/sycl_queues.hpp>
@@ -94,6 +95,7 @@ namespace SushiRuntime
                 descriptor.info.numa_node = node.numa_node_id;
                 descriptor.info.memory_bytes = node.global_mem_size;
                 descriptor.info.key = node.key;
+                descriptor.info.integrated = Internal::Device::is_integrated(descriptor.device);
                 descriptor.info.compute_units = node.max_compute_units;
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 descriptor.info.kind = node.is_gpu ? DeviceKind::GPU : node.kind;

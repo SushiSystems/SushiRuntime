@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
@@ -43,13 +44,18 @@ namespace SushiRuntime
          * @brief Reads the global and free memory of one device through its DeviceQueueSet.
          *
          * The total is the memory the device's description holds; the free bytes are what
-         * DeviceQueueSet::free_memory() answers. The set must outlive the probe.
+         * DeviceQueueSet::free_memory() answers. The set must outlive the probe. A total limit
+         * caps both: an integrated device cannot offer more than the host memory it shares.
          */
         class DeviceMemoryProbe final : public Memory::MemoryProbe
         {
             public:
-                /** @brief Builds the probe of device index of devices. */
-                DeviceMemoryProbe(const DeviceQueueSet& devices, std::size_t index) noexcept;
+                /**
+                 * @brief Builds the probe of device index of devices.
+                 * @param total_limit The most bytes the probe reports as total or free.
+                 */
+                DeviceMemoryProbe(const DeviceQueueSet& devices, std::size_t index,
+                                  std::size_t total_limit = std::numeric_limits<std::size_t>::max()) noexcept;
 
                 [[nodiscard]] Memory::ProbedMemory probe() const override;
 
@@ -59,6 +65,9 @@ namespace SushiRuntime
 
                 /// @brief Index of the device in the set.
                 std::size_t index_;
+
+                /// @brief The most bytes reported as total or free.
+                std::size_t total_limit_;
         };
     } // namespace Internal::Device
 } // namespace SushiRuntime

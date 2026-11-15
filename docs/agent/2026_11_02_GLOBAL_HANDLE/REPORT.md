@@ -65,6 +65,7 @@ dispatch: T39 — opus low, 122 turns, rung 1, passed
 dispatch: T21 — opus low, rung 1, passed
 dispatch: T37 — opus low, 137 turns, rung 1, passed
 dispatch: T40 — sonnet medium, 33 turns, rung 1, passed
+dispatch: T42 — sonnet low, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -137,3 +138,10 @@ on the home device, the resolved instance elsewhere. Ruling under the owner's de
 that captures `buffer.data()` in its own closure cannot be rebound, so such a node is fixed to its
 home device and refused elsewhere; a bind that finds no instance is an error, not a silent home
 address. T44 carries both and moves the dynamic `DeviceSlot` path onto the table.
+
+## T42: the integrated GPU's pool
+
+An integrated device names the host pool and plans within the smaller of its memory and the host's
+usable bytes. Integration is read from `host_unified_memory`. Whether the HIP adapter answers it for
+gfx1036 is checked in the closing run on the first machine; if it answers false, the pool is
+counted twice and T43's probe takes the fact from the device instead.

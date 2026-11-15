@@ -11,6 +11,7 @@ sushiruntime_add_module_tests(
         test_device_memory_probe.cpp
         test_device_queue_set.cpp
         test_in_memory_queue_factory.cpp
+        test_integrated_device.cpp
         test_numa_route_table.cpp
         test_queue_factory.cpp
         test_queue_flavour.cpp

@@ -30,12 +30,15 @@
 
 #include <SushiRuntime/device/device_memory_probe.hpp>
 
+#include <algorithm>
+
 namespace SushiRuntime
 {
     namespace Internal::Device
     {
-        DeviceMemoryProbe::DeviceMemoryProbe(const DeviceQueueSet& devices, std::size_t index) noexcept
-            : devices_(&devices), index_(index)
+        DeviceMemoryProbe::DeviceMemoryProbe(const DeviceQueueSet& devices, std::size_t index,
+                                             std::size_t total_limit) noexcept
+            : devices_(&devices), index_(index), total_limit_(total_limit)
         {
 
         }
@@ -43,8 +46,10 @@ namespace SushiRuntime
         Memory::ProbedMemory DeviceMemoryProbe::probe() const
         {
             Memory::ProbedMemory measured;
-            measured.total_bytes = static_cast<std::size_t>(devices_->devices()[index_].memory_bytes);
-            measured.free_bytes = static_cast<std::size_t>(devices_->free_memory(index_));
+            measured.total_bytes = std::min(static_cast<std::size_t>(devices_->devices()[index_].memory_bytes),
+                                            total_limit_);
+            measured.free_bytes = std::min(static_cast<std::size_t>(devices_->free_memory(index_)),
+                                           measured.total_bytes);
             return measured;
         }
     } // namespace Internal::Device

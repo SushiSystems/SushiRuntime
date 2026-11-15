@@ -678,6 +678,7 @@ the `SchedulerExecutionEngine` down, which joins every worker thread. A context 
 explicitly calls `stop_work()` a second time from its destructor. The seam allows a second
 `OffloadCoordinator::stop()` and the engine guards its own shutdown, so `Impl` keeps no flag
 for it. `memory_spaces()` holds the host's space and one per device (`source/runtime_memory_spaces.hpp`);
+an integrated device names the host's pool and offers at most the host's usable bytes;
 `transfer_paths()` holds `SameContextPath`, `PeerPath` and `HostStagedPath` with its staging ring
 (`source/runtime_transfer_paths.hpp`). Both are built once from the device set.
 
