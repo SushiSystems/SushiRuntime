@@ -139,7 +139,8 @@ the device. An unnamed rule is named by its position.
 
 `buffer<T>(count, residency, alignment)` calls `device()` and then allocates as `Runtime::buffer()`
 does, through the same private `Buffer<T>::allocate()` that `PlacementScope` is a friend of. It
-returns the error of `device()` unchanged, so a `Fail` rule allocates nothing.
+returns the error of `device()` unchanged, so a `Fail` rule allocates nothing. A placed device is a
+stated device, so `Residency::Planned` there returns `InvalidArgument`.
 
 The scope reads the rules without a lock, as a compile does, so `device()` and `set_placement_rules()`
 are called from the thread that starts runs.
@@ -252,6 +253,11 @@ is destroyed; `state()` allocates the two fields of a State the same way. Both r
 a device that returns no memory is an `AllocationFailed` error, and a State whose second field
 fails releases the first. An index outside `[0, advanced().device_count())` is a rule the caller
 broke and stops the process; `api/data/README.md` has the checks.
+
+`buffer<T>(count, Residency::Planned)` and `state<T>(count, Residency::Planned)` take no device and
+allocate nothing: the runtime places the memory when a node uses it. The forms with a `DeviceIndex`
+refuse `Residency::Planned`, and the forms without one refuse every other residency, both with
+`InvalidArgument`. `api/data/README.md`, section "Residency::Planned", has the rules.
 
 Both take an alignment in bytes as their last argument. Zero, the default, asks for the device's
 own alignment. Any other value must be a power of two and reaches `USMRequest::alignment`, so the

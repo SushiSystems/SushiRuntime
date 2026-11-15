@@ -29,6 +29,7 @@ The rule `operator[]` of a Buffer and a State checks, run small and without a st
 | Test | What it proves |
 | --- | --- |
 | `SharedAndHostMemoryAreHostAddressable`, `DeviceMemoryIsNotHostAddressable` | The rule holds for Shared and Host and fails for Device. |
+| `PlannedMemoryIsNotHostAddressableAndIsNamedPlanned` | The rule fails for Planned, and `residency_name()` spells it `Planned`. |
 
 ## test_buffer.cpp
 
@@ -87,6 +88,17 @@ A struct of two floats instantiates `Buffer` and `State`, and a window written w
 reads back equal through `read_range`. The values are dyadic and the copy moves bits, so the
 comparison is exact. The negative case, a `T` that is not trivially copyable, is a compile error
 from the `static_assert` in `Buffer`, so no test can run it.
+
+### `APlannedResidencyWithAStatedDeviceIsRefused`, `AStatedResidencyWithNoDeviceIsRefused`
+
+`buffer()` and `state()` with `DeviceIndex{0}` and `Residency::Planned` return `InvalidArgument`,
+and so does `buffer()` with `Residency::Device` and no device.
+
+### `APlannedBufferHasAHandleAndNoAddress`, `APlannedBufferRoundTripsThroughTheHost`
+
+A planned buffer is not empty, has a handle, its size and the residency `Planned`, and `data()` is
+null. A planned Buffer and a planned State read back through `read_range()` what `write_range()`
+wrote on the host runtime, with no node in between.
 
 ### `Medium_DataHandleResidencyDeathTest.HostOnADeviceResidentHandleStops`
 

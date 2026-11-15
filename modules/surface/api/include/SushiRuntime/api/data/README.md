@@ -96,6 +96,34 @@ run. Kernels reach host USM across the bus and it is page-locked RAM, so it suit
 host reads mid-run, not bulk kernel data. The handle API is otherwise identical; residency is chosen
 once at allocation.
 
+### Residency::Planned
+
+`Runtime::buffer<T>(count, Residency::Planned)` and `Runtime::state<T>(count, Residency::Planned)`
+make a buffer the runtime places. Creation mints the handle and describes its size and element
+layout in the residency directory, with no instance on any space and a coherence map that no space
+holds. Nothing is allocated. The first node that uses the buffer gets an allocation step from the
+coherence planner on its own space, and the partitioner later gives the buffer a home.
+
+A planned buffer states no device. Passing a `DeviceIndex` with `Residency::Planned`, to `Runtime` or
+to `PlacementScope`, returns `InvalidArgument`; so does passing another residency without a device.
+`device_index()` reports 0. Every other residency keeps its stated device, address and behaviour.
+
+`data()` returns null for a planned buffer: its instances may move between spaces, and an address the
+runtime may move is one the host cannot hold. `operator[]` and `host()` refuse it as they refuse device
+memory. The host reaches the bytes through `read_range()` and `write_range()`:
+
+- `write_range()` copies the bytes into an instance on the host space, made on first use, and records
+  the write there, which marks every other space stale for that range.
+- `read_range()` copies what the host space lacks from the first space that holds it, through a
+  transfer path, then reads the host instance. Bytes no space holds were never written and read as
+  zero.
+
+Both calls run between runs: the coherence map they update takes no lock. Destroying a planned buffer
+frees every instance the directory records for it, then retires the handle.
+`source/planned_buffer.cpp` builds a `PlannedHostAccess` over the runtime's directory, spaces,
+paths and USM allocator for each call; the rules themselves live in `engine/coherence`, whose
+README has the section "PlannedHostAccess".
+
 ### Buffer
 
 A Buffer is the fluent API's unit of data: a typed USM allocation that the runtime tracks by owning

@@ -31,6 +31,7 @@ sushiruntime_add_module_tests(
         test_pin_set.cpp
         test_plan_hash.cpp
         test_plan_splice.cpp
+        test_planned_host_access.cpp
         test_profile_measurement.cpp
         test_profile_transfer_cost.cpp
         test_residency_options.cpp

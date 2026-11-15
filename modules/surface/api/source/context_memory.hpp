@@ -62,6 +62,8 @@ namespace SushiRuntime
                 case Residency::Device: return Internal::Memory::USMKind::Device;
                 case Residency::Host:   return Internal::Memory::USMKind::Host;
                 case Residency::Shared: return Internal::Memory::USMKind::Shared;
+                case Residency::Planned:
+                    SR_FATAL("usm_kind_for(): a Planned buffer is never allocated as one USM kind");
             }
             SR_FATAL("usm_kind_for(): the value is no enumerator of Residency");
         }

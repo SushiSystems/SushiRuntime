@@ -8,6 +8,6 @@ sushiruntime_add_module(
     SYCL
     SOURCES coherence_planner.cpp cost_model.cpp device_profile_file.cpp
             directory_planned_node_factory.cpp host_staged_path.cpp logical_time_eviction.cpp peer_path.cpp
-            plan_hash.cpp plan_splice.cpp profile_measurement.cpp profile_transfer_cost.cpp
+            plan_hash.cpp plan_splice.cpp planned_host_access.cpp profile_measurement.cpp profile_transfer_cost.cpp
             same_context_path.cpp staging_ring.cpp usm_instance_allocator.cpp
     DEPENDS core handle log region memory task)

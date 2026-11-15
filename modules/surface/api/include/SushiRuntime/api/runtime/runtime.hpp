@@ -147,6 +147,38 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Makes a buffer of @p count elements that the runtime places, with no memory yet.
+             * @param residency Residency::Planned; any other residency is refused.
+             * @return The buffer, an InvalidArgument error for a residency other than Planned,
+             *         or an AllocationFailed error when no handle is left.
+             * @pre The byte size of count fits std::size_t.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            template <typename T>
+            [[nodiscard]] Result<Buffer<T>> buffer(std::size_t count, Residency residency) const
+            {
+                if (residency != Residency::Planned)
+                    return make_error(Detail::residency_needs_device("Runtime::buffer", residency));
+                return Buffer<T>::plan("Runtime::buffer", context_, count);
+            }
+
+            /**
+             * @brief Makes a double-buffered field of @p count elements that the runtime places.
+             * @param residency Residency::Planned; any other residency is refused.
+             * @return The state, an InvalidArgument error for a residency other than Planned,
+             *         or an AllocationFailed error when no handle is left.
+             * @pre The byte size of count fits std::size_t.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            template <typename T>
+            [[nodiscard]] Result<State<T>> state(std::size_t count, Residency residency) const
+            {
+                if (residency != Residency::Planned)
+                    return make_error(Detail::residency_needs_device("Runtime::state", residency));
+                return State<T>::plan("Runtime::state", context_, count);
+            }
+
+            /**
              * @brief Allocates a double-buffered field of @p count elements on one device.
              * @param alignment Byte alignment of both fields; 0 asks for the device default.
              * @return The state, or an AllocationFailed error when the device returns nothing.

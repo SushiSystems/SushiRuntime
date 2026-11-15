@@ -180,8 +180,10 @@ namespace SushiRuntime
 
             const Memory::EntryView entry = directory_->inspect(handle);
             Memory::CoherenceIntervals* const map = directory_->coherence(handle);
-            if (entry.status != HandleStatus::Ok || entry.size == 0 || entry.valid_spaces == 0 ||
-                map == nullptr)
+            if (entry.status != HandleStatus::Ok || entry.size == 0 || map == nullptr)
+                return nullptr;
+            // A buffer with no instance is planned only when its map covers its bytes, as a planned buffer's does.
+            if (entry.valid_spaces == 0 && map->size() != entry.size)
                 return nullptr;
 
             // A buffer no plan has met yet holds its bytes on its home space.

@@ -45,11 +45,6 @@ dispatch: T12 — opus low, rung 1, passed
 dispatch: T06 — opus low, 270 turns, rung 1, passed
 dispatch: T08 — sonnet low, 18 turns, rung 1, passed
 dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
-dispatch: T07 — sonnet low, 46 turns, rung 1, passed
-dispatch: T41 — sonnet medium, rung 1, passed
-dispatch: T29 — opus low, rung 1, passed (skipped loading four style skills; checkers clean)
-dispatch: T39 — opus low, 122 turns, rung 1, passed
-dispatch: T21 — opus low, rung 1, passed
 dispatch: T23 — opus low, rung 1, passed
 dispatch: T31 — haiku high, 124 turns, rung 1, passed (SushiEngine e3348900f)
 dispatch: T10 — sonnet medium, 146 turns, rung 1, passed
@@ -68,6 +63,7 @@ dispatch: T41 — sonnet medium, rung 1, passed
 dispatch: T29 — opus low, rung 1, passed (skipped loading four style skills; checkers clean)
 dispatch: T39 — opus low, 122 turns, rung 1, passed
 dispatch: T21 — opus low, rung 1, passed
+dispatch: T37 — opus low, 137 turns, rung 1, passed
 ```
 
 ## T05: the residency directory

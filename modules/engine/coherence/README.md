@@ -34,6 +34,7 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step into a node |
 | `directory_planned_node_factory.hpp` | `DirectoryPlannedNodeFactory`, nodes that resolve through the directory |
 | `plan_splice.hpp` | `splice_plan()` and `SpaceOfNode` |
+| `planned_host_access.hpp` | `PlannedHostAccess`, which mints a planned buffer and moves its bytes to and from the host |
 | `device_profile.hpp` | `DeviceProfile` and `PathProfile`, what one device measured |
 | `device_profile_set.hpp` | `DeviceProfileSet`, the profiles by `DeviceKey`, and `has_profile()` |
 | `device_profile_file.hpp` | `DeviceProfileFile`, the reader and writer of the profile file |
@@ -53,8 +54,10 @@ every byte back to each space it was valid on before the graph, and frees each i
 made, so a graph run again meets the state it was planned for.
 
 A plan reads only its inputs: the nodes, the directory's state, the spaces, the paths and the cost.
-A buffer with the `Borrowed` or `HostOnly` flag, or with no instance, is left alone. A copy no path
-makes is refused as `Unsupported`.
+A buffer with the `Borrowed` or `HostOnly` flag is left alone. A buffer with no instance is left
+alone too, unless its coherence map already covers its bytes: a `Residency::Planned` buffer is made
+that way, and the first node that uses it gets an allocation step. Its bytes that no space holds were
+never written, so nothing is copied for them. A copy no path makes is refused as `Unsupported`.
 
 ## Capacity and eviction
 
@@ -85,6 +88,23 @@ other buffer a node wrote stays valid only where it was written. The plan then w
 into each buffer's map in the directory, so the next `plan()` starts from it, and sets
 `CopyPlan::steady` to whether every buffer is still valid on the spaces it was valid on before.
 A plan that is not steady must be planned again before the next run and is never replayed.
+
+## PlannedHostAccess
+
+`PlannedHostAccess` serves `Residency::Planned` buffers. `mint()` describes the entry with its size,
+its element layout and the host space as the recorded home, and leaves the coherence map covering
+the bytes with no space set; no instance is made. The planner reads such a map as a buffer held
+nowhere, so the first node that uses it gets an allocation step and no copy.
+
+`write()` copies the bytes into the buffer's host instance, made through the `InstanceAllocator` on
+first use, and calls `record_write()` on the host space, so every other space loses the range.
+`read()` zeroes the destination, copies to the host instance each range the host space lacks from
+the first space in the planner's order that holds it, over the first path that connects the two,
+and then reads the host instance. A range no path reaches is refused as `Unsupported`. `release()`
+frees every instance the directory records, whoever made it, and retires the handle.
+
+The calls write the coherence map, which takes no lock, so they run between runs and never beside
+the planner.
 
 ## SameContextPath and PeerPath
 

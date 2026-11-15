@@ -144,6 +144,21 @@ the free follow the reader. Nodes on one device are left as they are, and a refu
 nodes unchanged. An eviction runs after the node that wrote the instance and before the
 allocation it makes room for.
 
+## test_planned_host_access.cpp
+
+A host space, two device spaces, the fake memcpy path and a heap allocator that counts what it
+holds. `run()` carries out a planned step on them, so a plan runs without SYCL.
+
+| Test | What it proves |
+| --- | --- |
+| `APlannedBufferIsMintedWithItsSizeAndNoInstance` | `mint()` records the size, makes no instance, and leaves a map that covers the bytes with no space set. |
+| `APlannedBufferWithNoInstanceIsAllocatedOnTheFirstNodeNotRefused` | A node writing a planned buffer gets an allocation step on its space and no copy. |
+| `APlannedBufferWrittenBeforeAPlanReadsBackEqualAfterANodeOnAnotherDeviceWroteIt` | Bytes written before a plan reach the node's device; what the node writes there reads back equal on the host through one path copy. |
+| `AHostWriteInvalidatesEveryOtherSpace` | A host write leaves only the host valid for its range and the device valid for the rest. |
+| `BytesNoSpaceHoldsReadAsZero` | Bytes never written read as zero and make no host instance. |
+| `AGraphWithNoPlannedBufferGetsThePlanItGotBefore` | A buffer with an instance gets the allocate, copy and free of before, and a buffer with no instance and no map is still left alone. |
+| `ReleaseFreesEveryInstanceAndRetiresTheHandle` | `release()` frees the host instance and a device instance and retires the handle. |
+
 ## test_profile_measurement.cpp
 
 The profile holds the rates the fake probe reported, a faster device measures faster, only the kinds

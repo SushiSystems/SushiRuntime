@@ -372,6 +372,56 @@ namespace DataHandlesTests
         EXPECT_TRUE(source.handle().is_null());
     }
 
+    /** @brief Tests that a planned buffer and state with a stated device are refused with InvalidArgument. */
+    TEST_F(Small_DataHandles, APlannedResidencyWithAStatedDeviceIsRefused)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Planned);
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}, Residency::Planned);
+
+        ASSERT_FALSE(buffer.has_value());
+        ASSERT_FALSE(field.has_value());
+        EXPECT_EQ(buffer.error().code, ErrorCode::InvalidArgument);
+        EXPECT_EQ(field.error().code, ErrorCode::InvalidArgument);
+    }
+
+    /** @brief Tests that a residency other than Planned asked for with no device is refused. */
+    TEST_F(Small_DataHandles, AStatedResidencyWithNoDeviceIsRefused)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, Residency::Device);
+
+        ASSERT_FALSE(buffer.has_value());
+        EXPECT_EQ(buffer.error().code, ErrorCode::InvalidArgument);
+    }
+
+    /** @brief Tests that a planned buffer has a handle and a size but no address the host may hold. */
+    TEST_F(Small_DataHandles, APlannedBufferHasAHandleAndNoAddress)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, Residency::Planned).value();
+
+        EXPECT_FALSE(buffer.empty());
+        EXPECT_FALSE(buffer.handle().is_null());
+        EXPECT_EQ(buffer.size(), K_SIZE);
+        EXPECT_EQ(buffer.residency(), Residency::Planned);
+        EXPECT_EQ(buffer.data(), nullptr);
+        EXPECT_FALSE(buffer.is_host_accessible());
+    }
+
+    /** @brief Tests that a planned buffer and state read back what write_range() wrote. */
+    TEST_F(Small_DataHandles, APlannedBufferRoundTripsThroughTheHost)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE, Residency::Planned).value();
+        const auto field = runtime().state<int>(K_SIZE, Residency::Planned).value();
+        std::vector<int> values(K_SIZE);
+        for (std::size_t index = 0; index < K_SIZE; ++index)
+            values[index] = static_cast<int>(index * 3);
+
+        ASSERT_TRUE(buffer.write_range({0, K_SIZE}, values).has_value());
+        ASSERT_TRUE(field.write_range({0, K_SIZE}, values).has_value());
+
+        EXPECT_EQ(buffer.read_range({0, K_SIZE}).value(), values);
+        EXPECT_EQ(field.read_range({0, K_SIZE}).value(), values);
+    }
+
     /** @brief Tests that the two fields of a State carry two State handles. */
     TEST_F(Small_DataHandles, AStateHasTwoStateHandles)
     {

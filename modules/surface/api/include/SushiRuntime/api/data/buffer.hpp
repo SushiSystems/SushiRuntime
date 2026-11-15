@@ -131,6 +131,44 @@ namespace SushiRuntime
                                              GlobalHandle handle) noexcept;
 
         /**
+         * @brief Mints the handle of a Residency::Planned buffer: its size and layout, no
+         *        instance on any space.
+         * @return The handle, the null handle for no bytes, or an AllocationFailed error when
+         *         no slot is left.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> mint_planned_handle(
+            const ContextHandle& context, HandleKind kind, std::size_t bytes,
+            std::size_t element_size, std::size_t element_alignment);
+
+        /**
+         * @brief Copies bytes of a planned buffer to host memory from a space that holds them.
+         * @param begin First byte of the buffer to read.
+         * @return Nothing, or the error the directory, a transfer path or the host space failed
+         *         with.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> read_planned(const ContextHandle& context,
+                                                                 GlobalHandle handle,
+                                                                 std::size_t begin,
+                                                                 void* destination,
+                                                                 std::size_t bytes) noexcept;
+
+        /**
+         * @brief Writes host bytes into a planned buffer's host instance and marks every other
+         *        space stale for them.
+         * @param begin First byte of the buffer to write.
+         * @return Nothing, or the error the directory or the host space failed with.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> write_planned(const ContextHandle& context,
+                                                                  GlobalHandle handle,
+                                                                  std::size_t begin,
+                                                                  const void* source,
+                                                                  std::size_t bytes) noexcept;
+
+        /** @brief Frees every instance of a planned buffer and retires its handle. */
+        SUSHIRUNTIME_API void release_planned_handle(const ContextHandle& context,
+                                                     GlobalHandle handle) noexcept;
+
+        /**
          * @brief Copies bytes of a buffer to host memory through its device's queue, waits,
          *        and counts them as moved device to host.
          * @param device The buffer's device; source lies inside the buffer.
@@ -212,6 +250,19 @@ namespace SushiRuntime
                    " bytes each (" + std::to_string(count * element_size) +
                    " bytes), residency " + residency_name(residency) + ", device " +
                    std::to_string(device_index.value());
+        }
+
+        /**
+         * @brief Returns the InvalidArgument error of a residency other than Planned asked for
+         *        with no device.
+         * @param call Names the calling operation in the message.
+         */
+        inline Error residency_needs_device(const char* call, Residency residency)
+        {
+            return Error{ErrorCode::InvalidArgument,
+                         std::string(call) + ": Residency::" + residency_name(residency) +
+                             " keeps its memory on a stated device; pass a DeviceIndex with it, "
+                             "or pass Residency::Planned alone."};
         }
 
         /**
@@ -314,7 +365,8 @@ namespace SushiRuntime
             /**
              * @brief Exposes the raw pointer a kernel captures: the address of the buffer's
              *        instance on its home device.
-             * @return Pointer to the first element, or null if the handle is empty.
+             * @return Pointer to the first element; null if the handle is empty, and null for a
+             *         Residency::Planned buffer, whose instances the runtime may move.
              */
             [[nodiscard]] T* data() const noexcept
             {
@@ -338,24 +390,29 @@ namespace SushiRuntime
              * @brief Tells whether this handle owns no memory.
              * @return True if it owns no allocation, e.g. after being moved from.
              */
-            [[nodiscard]] bool empty() const noexcept { return block_.allocation.empty(); }
+            [[nodiscard]] bool empty() const noexcept
+            {
+                return block_.allocation.empty() && handle_.is_null();
+            }
 
             /**
              * @brief Reports which device queue the allocation is pinned to.
-             * @return The device index the buffer was allocated on.
+             * @return The device index the buffer was allocated on; 0 for a Residency::Planned
+             *         buffer, which states no device.
              */
             [[nodiscard]] DeviceIndex device_index() const noexcept { return device_index_; }
 
             /**
              * @brief Reports where the allocation lives.
              * @return Residency::Shared for managed USM, Residency::Device for
-             *         device-resident memory, Residency::Host for pinned host USM.
+             *         device-resident memory, Residency::Host for pinned host USM,
+             *         Residency::Planned for memory the runtime places.
              */
             [[nodiscard]] Residency residency() const noexcept { return residency_; }
 
             /**
              * @brief Tells whether the host may index this buffer directly.
-             * @return True for shared and host USM; false for device-resident
+             * @return True for shared and host USM; false for device-resident and planned
              *         memory, which must go through read_range()/write_range().
              */
             [[nodiscard]] bool is_host_accessible() const noexcept
@@ -448,6 +505,12 @@ namespace SushiRuntime
                 std::size_t count, DeviceIndex device_index, Residency residency,
                 std::size_t alignment, HandleKind kind = HandleKind::Buffer)
             {
+                if (residency == Residency::Planned)
+                    return make_error(Error{
+                        ErrorCode::InvalidArgument,
+                        std::string(call) + ": Residency::Planned takes no device, because the "
+                        "runtime places a planned buffer; leave the device out and pass only "
+                        "the count and Residency::Planned."});
                 Detail::require_device(call, device_index, Detail::device_count(context));
                 Detail::require_alignment(call, alignment);
                 static_cast<void>(
@@ -458,6 +521,37 @@ namespace SushiRuntime
                 if (!block)
                     return make_error(std::move(block.error()));
                 return adopt(context, std::move(*block), count, device_index, residency, kind);
+            }
+
+            /**
+             * @brief Makes a Residency::Planned buffer: a handle with a size and no memory.
+             * @param call Names the public operation in a message.
+             * @param kind The kind of handle minted: Buffer, or State for a State's field.
+             * @return The buffer, or an AllocationFailed error when no handle is left.
+             * @pre count's bytes fit.
+             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+             */
+            [[nodiscard]] static Result<Buffer> plan(const char* call,
+                                                     const ContextHandle& context,
+                                                     std::size_t count,
+                                                     HandleKind kind = HandleKind::Buffer)
+            {
+                const std::size_t bytes = Detail::checked_byte_count(call, count, sizeof(T));
+                Result<GlobalHandle> handle = Detail::mint_planned_handle(
+                    context, kind, bytes, sizeof(T), alignof(T));
+                if (!handle)
+                    return make_error(std::move(handle.error()));
+                std::optional<Buffer> made;
+                Result<void> built = Detail::translate_exceptions([&]()
+                {
+                    made.emplace(Buffer(context, count, *handle));
+                });
+                if (!built)
+                {
+                    Detail::release_planned_handle(context, *handle);
+                    return make_error(std::move(built.error()));
+                }
+                return std::move(*made);
             }
 
             /**
@@ -518,6 +612,22 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Takes the handle of a planned buffer, which holds no memory; plan() is its
+             *        one caller.
+             * @param handle Released, with every instance the directory records for it, by this
+             *        buffer when it has a context.
+             */
+            Buffer(ContextHandle context, std::size_t count, GlobalHandle handle)
+                : context_(std::move(context)),
+                  size_(count),
+                  residency_(Residency::Planned),
+                  liveness_(make_liveness()),
+                  handle_(handle)
+            {
+
+            }
+
+            /**
              * @brief Views memory another owner keeps alive; Interop::borrow() is its one
              *        caller.
              * @param owner_life Expires when the owner releases the memory.
@@ -566,8 +676,11 @@ namespace SushiRuntime
                 {
                     out.resize(range.count);
                 });
-                // A non-zero size_ implies a runtime and a non-null address.
-                if (copied && range.count != 0)
+                // A non-zero size_ implies a runtime, and a non-null address or a planned handle.
+                if (copied && range.count != 0 && residency_ == Residency::Planned)
+                    copied = Detail::read_planned(context_, handle_, range.offset * sizeof(T),
+                                                  out.data(), range.count * sizeof(T));
+                else if (copied && range.count != 0)
                     copied = Detail::copy_to_host(context_, device_index_, data() + range.offset,
                                                   out.data(),
                                                   range.count * sizeof(T));
@@ -597,7 +710,10 @@ namespace SushiRuntime
                            std::to_string(source.size()) + " elements for a window of count " +
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
-                // A non-zero size_ implies a runtime and a non-null address.
+                // A non-zero size_ implies a runtime, and a non-null address or a planned handle.
+                if (residency_ == Residency::Planned)
+                    return Detail::write_planned(context_, handle_, range.offset * sizeof(T),
+                                                 source.data(), range.count * sizeof(T));
                 return Detail::copy_to_device(context_, device_index_, data() + range.offset,
                                               source.data(),
                                               range.count * sizeof(T));
@@ -622,7 +738,9 @@ namespace SushiRuntime
             {
                 SR_VERIFY(is_host_accessible(),
                           (std::string(where) +
-                           ": a device-resident buffer is not host-addressable; "
+                           (residency_ == Residency::Planned
+                                ? ": a planned buffer has no address the host may hold; "
+                                : ": a device-resident buffer is not host-addressable; ") +
                            "use read_range() and write_range().")
                               .c_str());
             }
@@ -630,7 +748,9 @@ namespace SushiRuntime
             /** @brief Frees the owned allocation, releases its handle and clears the buffer. */
             void reset() noexcept
             {
-                if (context_ && !handle_.is_null())
+                if (context_ && !handle_.is_null() && residency_ == Residency::Planned)
+                    Detail::release_planned_handle(context_, handle_);
+                else if (context_ && !handle_.is_null())
                     Detail::release_handle(context_, handle_);
                 handle_ = GlobalHandle::null();
                 block_.allocation.reset();

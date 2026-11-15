@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `Residency::Planned`: a buffer or state asked for with no device gets a handle and no memory, and the runtime allocates it where the first node uses it (GLOBAL_HANDLE H9).
+- 2026-11-15 — api: Added `Runtime::buffer(count, Residency)` and `state(count, Residency)`; a device stated with `Planned`, or another residency without one, is refused (GLOBAL_HANDLE H9).
 - 2026-11-15 — api: Changed a dynamic graph to keep each region's copy plan with its compiled sub-graph and replay it without running the planner; a plan that is not steady is planned again (GLOBAL_HANDLE H5).
 - 2026-11-15 — api: Added `coherence_plan_count()` to `RegionComposer` and `DynamicGraph` (GLOBAL_HANDLE H5).
 - 2026-11-15 — api: Changed a kernel recorded with `In`, `Out` or `InOut` captures to receive each buffer's instance on its node's device, resolved at dispatch (GLOBAL_HANDLE H3).

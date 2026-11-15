@@ -47,4 +47,10 @@ namespace
     {
         EXPECT_FALSE(is_host_addressable(Residency::Device));
     }
+
+    TEST(Small_Residency, PlannedMemoryIsNotHostAddressableAndIsNamedPlanned)
+    {
+        EXPECT_FALSE(is_host_addressable(Residency::Planned));
+        EXPECT_STREQ(SushiRuntime::residency_name(Residency::Planned), "Planned");
+    }
 } // namespace

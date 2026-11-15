@@ -42,21 +42,23 @@ namespace SushiRuntime
     {
         Shared,  /**< Host-addressable USM; the default. */
         Device,  /**< Device-resident USM; host access only via read/write_range. */
-        Host     /**< Pinned host USM; host-readable while kernels run. */
+        Host,    /**< Pinned host USM; host-readable while kernels run. */
+        Planned  /**< Placed by the runtime; no address; host access only via read/write_range. */
     };
 
     /**
      * @brief Names a residency as its enumerator spelling, for messages.
      * @param residency The residency to name.
-     * @return "Shared", "Device", "Host", or "unknown" for an out-of-range value.
+     * @return "Shared", "Device", "Host", "Planned", or "unknown" for an out-of-range value.
      */
     inline const char* residency_name(Residency residency) noexcept
     {
         switch (residency)
         {
-            case Residency::Shared: return "Shared";
-            case Residency::Device: return "Device";
-            case Residency::Host:   return "Host";
+            case Residency::Shared:  return "Shared";
+            case Residency::Device:  return "Device";
+            case Residency::Host:    return "Host";
+            case Residency::Planned: return "Planned";
         }
         return "unknown";
     }
@@ -66,11 +68,11 @@ namespace SushiRuntime
         /**
          * @brief Returns whether the host may index memory of a residency directly.
          * @param residency The residency to test.
-         * @return True for Shared and Host; false for Device.
+         * @return True for Shared and Host; false for Device and Planned.
          */
         [[nodiscard]] constexpr bool is_host_addressable(Residency residency) noexcept
         {
-            return residency != Residency::Device;
+            return residency == Residency::Shared || residency == Residency::Host;
         }
     } // namespace Detail
 } // namespace SushiRuntime

@@ -170,7 +170,8 @@ namespace SushiRuntime
             /**
              * @brief Reports where both fields live.
              * @return Residency::Shared for managed USM, Residency::Device for
-             *         device-resident memory, Residency::Host for pinned host USM.
+             *         device-resident memory, Residency::Host for pinned host USM,
+             *         Residency::Planned for memory the runtime places.
              */
             [[nodiscard]] Residency residency() const noexcept { return current_.residency(); }
 
@@ -270,7 +271,35 @@ namespace SushiRuntime
                     call, context, count, device_index, residency, alignment, HandleKind::State);
                 if (!next)
                     return make_error(std::move(next.error()));
+                return assemble(std::move(*current), std::move(*next));
+            }
 
+            /**
+             * @brief Makes both fields as Residency::Planned buffers of count elements.
+             * @param call Names the public operation in a message.
+             * @return The state, or an AllocationFailed error when no handle is left; a field
+             *         already made is released.
+             * @pre The byte size of count fits std::size_t.
+             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+             */
+            [[nodiscard]] static Result<State> plan(const char* call, const ContextHandle& context,
+                                                    std::size_t count)
+            {
+                Result<Buffer<T>> current = Buffer<T>::plan(call, context, count, HandleKind::State);
+                if (!current)
+                    return make_error(std::move(current.error()));
+                Result<Buffer<T>> next = Buffer<T>::plan(call, context, count, HandleKind::State);
+                if (!next)
+                    return make_error(std::move(next.error()));
+                return assemble(std::move(*current), std::move(*next));
+            }
+
+            /**
+             * @brief Builds a State from two fields and a new view.
+             * @return The state, or an AllocationFailed error when the view cannot be made.
+             */
+            [[nodiscard]] static Result<State> assemble(Buffer<T> current, Buffer<T> next)
+            {
                 std::shared_ptr<Detail::StateView<T>> view;
                 Result<void> shared = Detail::translate_exceptions([&view]()
                 {
@@ -278,7 +307,7 @@ namespace SushiRuntime
                 });
                 if (!shared)
                     return make_error(std::move(shared.error()));
-                return State(std::move(*current), std::move(*next), std::move(view));
+                return State(std::move(current), std::move(next), std::move(view));
             }
 
             /**
