@@ -47,7 +47,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | done |
 | T07 | `surface/api` region composer | T06 | todo |
 | T08 | `engine/scheduler` and `engine/task` placement | T06 | done |
-| T09 | `platform/memory` `usm_registry` | T06 | todo |
+| T09 | `platform/memory` `usm_registry` | T06 | running |
 | T10 | `extension/buffer_exchange` | T06 | done |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
@@ -59,7 +59,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
 | T15 | reference interpreter test | T13 | todo |
 | T16 | determinism suite | T13 | todo |
-| T17 | `engine/coherence` same-context and peer paths | T13 | todo |
+| T17 | `engine/coherence` same-context and peer paths | T13 | running |
 | T18 | `engine/coherence` host-staged path | T17 | todo |
 | T19 | file space and file path | T18 | todo |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |
@@ -67,14 +67,14 @@ when its own context would not hold their reading; it still reviews and commits 
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | todo |
-| T24 | device profile and cost model | T04, T23 | todo |
+| T24 | device profile and cost model | T04, T23 | running |
 | T25 | partitioner | T14, T24, T37 | todo |
 | T26 | partitioner search and floor tests | T25 | todo |
 | T34 | `Runtime::partition_report()` | T25 | todo |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
-| T28 | wire version 5 | T10 | todo |
+| T28 | wire version 5 | T10 | running |
 | T29 | owner per handle and recovery | T28 | todo |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
