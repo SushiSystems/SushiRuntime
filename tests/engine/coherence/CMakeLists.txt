@@ -31,7 +31,8 @@ sushiruntime_add_module_tests(
         test_file_path.cpp
         test_fill_plan.cpp
         test_host_staged_path.cpp
-        test_list_scheduling_partitioner.cpp
+        test_list_scheduling_partitioner/test_partition_properties.cpp
+        test_list_scheduling_partitioner/test_placement_and_refusal.cpp
         test_logical_time_eviction.cpp
         test_partition_assignment.cpp
         test_partition_model.cpp

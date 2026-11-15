@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_list_scheduling_partitioner.cpp                                   */
+/* test_placement_and_refusal.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -21,7 +21,7 @@
 /* permissions and limitations under the License.                         */
 
 /**
- * @file test_list_scheduling_partitioner.cpp
+ * @file test_placement_and_refusal.cpp
  * @brief Tests that ListSchedulingPartitioner refuses with the shortfall per pool, is deterministic and homes planned buffers.
  * @see tests/engine/coherence/README.md
  * @author Mustafa Garip
@@ -33,7 +33,7 @@
 #include <SushiRuntime/coherence/fill_plan.hpp>
 #include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
 
-#include "partition_problem_builder.hpp"
+#include "../partition_problem_builder.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Coherence;

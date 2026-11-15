@@ -18,6 +18,12 @@ queue for every space, `FixedPeerAccess` grants or refuses every request and cou
 the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
 writes buffer `i` and reads buffer `i - 1`.
 
+`random_partition_case.hpp` holds `SeededDraw`, a portable generator, and `random_partition_case()`,
+which builds from a seed a graph of three to eight nodes with forward edges and a speed per device.
+`best_feasible_step_time()` tries every placement of a model, keeps the ones that fit and honour
+fixed nodes, and returns the least step time; `placement_of()` turns an assignment into device
+indices of the model.
+
 ## compile_coherence_log_category.cpp, compile_instance_allocator.cpp, compile_peer_access.cpp, compile_planned_node_factory.cpp, compile_profile_probe.cpp, compile_space_queues.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
 
 Each file includes one interface header alone.
@@ -230,10 +236,23 @@ then the next, then the slowest, and crosses each device boundary once. When not
 last device takes the rest and the walk reports that it does not fit. The floor is a fitting plan,
 and there is none when no subset fits.
 
-## test_list_scheduling_partitioner.cpp
+## test_list_scheduling_partitioner/
+
+`ListSchedulingPartitioner` has two test files, so its tests sit in a folder of that name.
+
+### test_placement_and_refusal.cpp
 
 A node larger than every pool, and a job larger than the pools together, are refused as
 `AllocationFailed` with the bytes and the shortfall of each pool. Two partitioners built from one
 profile set give assignments that hash equal, and so does a second run of one partitioner. A planned
 buffer is homed on its writer's device, the plan is never modelled slower than its floor, and a
 device with no profile receives no node.
+
+### test_partition_properties.cpp
+
+For each of 64 fixed seeds, `Small_PartitionProperties` builds a graph of three to eight nodes over
+two or three devices whose buffers fit one pool, and checks three properties; a failure names its
+seed. The partitioner's modelled step time is within 10% of the best that an exhaustive search over
+every fitting placement finds. No plan is modelled slower than its floor. With a device a thousand
+times slower added, that device gets no node. The search counts `devices ^ nodes` placements, at most
+6561 here, and prices each with `PartitionModel`.

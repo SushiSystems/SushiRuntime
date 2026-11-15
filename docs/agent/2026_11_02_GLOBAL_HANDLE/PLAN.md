@@ -74,14 +74,14 @@ when its own context would not hold their reading; it still reviews and commits 
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | running |
 | T25 | partitioner | T14, T24, T37 | done |
 | T47 | partitioner in the composer, live intervals, one FNV helper | T25, T43 | todo |
-| T26 | partitioner search and floor tests | T25 | todo |
-| T34 | `Runtime::partition_report()` | T25 | todo |
+| T26 | partitioner search and floor tests | T25 | done |
+| T34 | `Runtime::partition_report()` | T25 | running |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
 | T28 | wire version 5 | T10 | done |
 | T29 | owner per handle and recovery | T28 | done |
-| T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
+| T30 | SushiBLAS handle, cost and split | T23, T25 | running |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |
 | T32 | SushiBLAS conformance kernels | T30 | todo |
 | T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
