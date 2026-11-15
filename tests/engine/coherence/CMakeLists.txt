@@ -28,11 +28,8 @@ sushiruntime_add_module_tests(
         test_device_profile_file.cpp
         test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
-<<<<<<< ours
         test_file_path.cpp
-=======
         test_fill_plan.cpp
->>>>>>> theirs
         test_host_staged_path.cpp
         test_list_scheduling_partitioner.cpp
         test_logical_time_eviction.cpp
