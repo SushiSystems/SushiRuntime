@@ -36,6 +36,9 @@
 #include <optional>
 #include <utility>
 
+#include <SushiRuntime/coherence/fill_plan.hpp>
+#include <SushiRuntime/coherence/partition_model.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Coherence
@@ -102,10 +105,38 @@ namespace SushiRuntime
                     }
                 }
             }
+            /** @brief Gives each row the device time and the copies measured gives its device. */
+            void add_measurement(Rows& rows, const PartitionMeasurement& measured)
+            {
+                for (auto& entry : rows)
+                {
+                    const auto seconds = measured.device_seconds.find(entry.first);
+                    if (seconds != measured.device_seconds.end())
+                        entry.second.measured_seconds = seconds->second;
+                    const auto copies = measured.copies.find(entry.first);
+                    if (copies != measured.copies.end())
+                        entry.second.copies = copies->second;
+                }
+            }
+
+            /** @brief Writes the floor's modelled step and devices into report; nothing when no floor fits. */
+            void add_floor(PartitionReport& report, const PartitionProblem& problem, const CostModel& model)
+            {
+                const Result<PartitionModel, PartitionRefusal> built = PartitionModel::build(problem, model);
+                if (!built)
+                    return;
+                const std::optional<FloorPlan> floor = floor_plan(built.value());
+                if (!floor)
+                    return;
+                report.floor_step_seconds = floor->step_time;
+                for (const std::size_t device : floor->devices)
+                    report.floor_devices.push_back(built.value().device_key(device));
+            }
         } // namespace
 
         PartitionReport make_partition_report(const PartitionProblem& problem, const CostModel& model,
-                                              const Result<PartitionAssignment, PartitionRefusal>& answer)
+                                              const Result<PartitionAssignment, PartitionRefusal>& answer,
+                                              const PartitionMeasurement& measured)
         {
             Rows rows = empty_rows(problem);
             PartitionReport report;
@@ -113,9 +144,12 @@ namespace SushiRuntime
             {
                 const PartitionAssignment& assignment = answer.value();
                 report.step_seconds = assignment.step_time;
+                report.measured_step_seconds = measured.step_seconds;
                 report.floor_taken = assignment.floor_taken;
                 add_nodes(rows, problem, model, assignment);
                 add_buffers(rows, problem, assignment);
+                add_measurement(rows, measured);
+                add_floor(report, problem, model);
             }
             else
             {

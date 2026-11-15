@@ -87,6 +87,18 @@ namespace
         EXPECT_EQ(result.error().pools[1].missing(), 300U);
     }
 
+    TEST(Small_ListSchedulingPartitioner, AChainWhoseBuffersExceedThePoolTogetherFitsByLiveIntervals)
+    {
+        // Five buffers of 300 are 1500 bytes for the step, but at most two are live at once: 600 of 900.
+        const PartitionProblem problem = chain(5, 300, 1);
+        const ListSchedulingPartitioner partitioner(speed_model({1.0}));
+
+        const Result<PartitionAssignment, PartitionRefusal> result = partitioner.partition(problem);
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value().node_devices.size(), 5U);
+    }
+
     TEST(Small_ListSchedulingPartitioner, AssignmentsHashEqualAcrossRunsWithOneProfileFile)
     {
         const PartitionProblem first_problem = chain(7, 300, 3);

@@ -31,6 +31,8 @@
 #include <SushiRuntime/coherence/split_expansion.hpp>
 
 #include <cstdint>
+#include <map>
+#include <utility>
 
 namespace SushiRuntime
 {
@@ -74,17 +76,38 @@ namespace SushiRuntime
             expanded.devices = problem.devices;
 
             std::vector<std::size_t> first(problem.nodes.size(), 0);
+            // The slices each cut node wrote last into a buffer; a later reader reads them in its place.
+            std::map<std::size_t, std::vector<std::size_t>> slices_of;
+            const auto sliced_reads = [&slices_of](const std::vector<std::size_t>& reads)
+            {
+                std::vector<std::size_t> rewritten;
+                for (const std::size_t buffer : reads)
+                {
+                    const auto found = slices_of.find(buffer);
+                    if (found == slices_of.end())
+                        rewritten.push_back(buffer);
+                    else
+                        rewritten.insert(rewritten.end(), found->second.begin(), found->second.end());
+                }
+                return rewritten;
+            };
             for (std::size_t node = 0; node < problem.nodes.size(); ++node)
             {
                 const PartitionNode& entry = problem.nodes[node];
                 first[node] = expanded.nodes.size();
                 if (!is_split(parts, node))
                 {
-                    expanded.nodes.push_back(entry);
+                    PartitionNode whole = entry;
+                    whole.reads = sliced_reads(entry.reads);
+                    for (const std::size_t buffer : entry.writes)
+                        slices_of.erase(buffer);
+                    expanded.nodes.push_back(std::move(whole));
                     expansion.origin.push_back(node);
                     continue;
                 }
                 const std::uint64_t extent = extent_of(parts[node]);
+                const std::vector<std::size_t> reads = sliced_reads(entry.reads);
+                std::map<std::size_t, std::vector<std::size_t>> written;
                 for (const SizedPart& sized : parts[node])
                 {
                     PartitionNode part_node;
@@ -93,17 +116,20 @@ namespace SushiRuntime
                     part_node.cost.read_bytes = share_of(entry.cost.read_bytes, sized.part, extent);
                     part_node.cost.written_bytes = share_of(entry.cost.written_bytes, sized.part, extent);
                     part_node.placed = devices[sized.device];
-                    part_node.reads = entry.reads;
+                    part_node.reads = reads;
                     for (const std::size_t buffer : entry.writes)
                     {
                         PartitionBuffer slice = problem.buffers[buffer];
                         slice.bytes = share_of(slice.bytes, sized.part, extent);
+                        written[buffer].push_back(expanded.buffers.size());
                         part_node.writes.push_back(expanded.buffers.size());
                         expanded.buffers.push_back(slice);
                     }
                     expanded.nodes.push_back(std::move(part_node));
                     expansion.origin.push_back(node);
                 }
+                for (auto& entry_slices : written)
+                    slices_of[entry_slices.first] = std::move(entry_slices.second);
             }
 
             for (const PartitionEdge& edge : problem.edges)

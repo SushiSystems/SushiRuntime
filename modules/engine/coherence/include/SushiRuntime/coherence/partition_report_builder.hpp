@@ -32,6 +32,7 @@
 
 #include <SushiRuntime/coherence/cost_model.hpp>
 #include <SushiRuntime/coherence/partition_assignment.hpp>
+#include <SushiRuntime/coherence/partition_measurement.hpp>
 #include <SushiRuntime/coherence/partition_problem.hpp>
 #include <SushiRuntime/coherence/partition_refusal.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -44,12 +45,14 @@ namespace SushiRuntime
         /**
          * @brief Returns the report of what a partitioner answered for problem, one row per device.
          *
-         * A row counts the nodes put on the device, the bytes of the buffers homed on it and the
-         * model's node times of those nodes. A refusal gives rows of no nodes with each pool's shortfall.
-         * The result is a pure function of its arguments.
+         * A row counts the nodes put on the device, the bytes of the buffers homed on it, the
+         * model's node times of those nodes, and what measured gives the device. The report holds
+         * the floor's modelled step and devices. A refusal gives rows of no nodes with each pool's
+         * shortfall. The result is a pure function of its arguments.
          */
         [[nodiscard]] PartitionReport make_partition_report(const PartitionProblem& problem,
                                                             const CostModel& model,
-                                                            const Result<PartitionAssignment, PartitionRefusal>& answer);
+                                                            const Result<PartitionAssignment, PartitionRefusal>& answer,
+                                                            const PartitionMeasurement& measured = PartitionMeasurement{});
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

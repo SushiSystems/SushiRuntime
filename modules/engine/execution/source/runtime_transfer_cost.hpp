@@ -30,9 +30,11 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/coherence/cost_model.hpp>
 #include <SushiRuntime/coherence/transfer_cost.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
@@ -43,15 +45,22 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
+        /** @brief Holds the cost the runtime's planners price copies with and the model behind it. */
+        struct RuntimeCost
+        {
+            Coherence::TransferCost transfer;                 /**< Prices one planned copy. */
+            std::shared_ptr<const Coherence::CostModel> model; /**< The frozen model; null when no profile file is set. */
+        };
+
         /**
-         * @brief Returns the cost the runtime's planners price copies with.
+         * @brief Returns the cost the runtime's planners price copies with, and its model.
          *
-         * An empty path gives uniform_transfer_cost(). A path with no file is a first start: the
-         * devices, spaces and paths are measured and the file is written atomically. A file there
-         * is read once. devices must outlive the result.
+         * An empty path gives uniform_transfer_cost() and no model. A path with no file is a first
+         * start: the devices, spaces and paths are measured and the file is written atomically. A
+         * file there is read once. devices must outlive the result.
          * @return The cost, or the error of the reader, the measurement or the writer.
          */
-        [[nodiscard]] Result<Coherence::TransferCost>
+        [[nodiscard]] Result<RuntimeCost>
         load_transfer_cost(const std::string& path, Device::DeviceQueueSet& devices,
                            const std::vector<const Memory::MemorySpace*>& spaces,
                            const std::vector<Coherence::TransferPath*>& paths);

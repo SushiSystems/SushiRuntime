@@ -289,7 +289,7 @@ namespace SushiRuntime
 
     PartitionReport Runtime::partition_report() const
     {
-        return PartitionReport{};
+        return Internal::ContextAccess::context(context_).partitioning().report();
     }
 
     Result<void> Runtime::wait() const

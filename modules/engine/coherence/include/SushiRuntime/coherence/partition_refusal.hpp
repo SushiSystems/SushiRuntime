@@ -30,6 +30,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <SushiRuntime/core/error.hpp>
@@ -57,6 +58,22 @@ namespace SushiRuntime
         {
             Error error;                      /**< Class and sentence of the refusal. */
             std::vector<PoolShortfall> pools; /**< One row per pool in pool order; empty when capacity was not the cause. */
+
+            /**
+             * @brief Returns the refusal as one error: its class, its sentence and, per pool, the
+             *        bytes required, the bytes usable and the bytes missing.
+             */
+            [[nodiscard]] Error to_error() const
+            {
+                std::string message = error.message;
+                for (const PoolShortfall& row : pools)
+                {
+                    message += "; pool " + std::to_string(row.pool) + " needs " + std::to_string(row.required) +
+                               " bytes of " + std::to_string(row.usable) + " usable, " +
+                               std::to_string(row.missing()) + " missing";
+                }
+                return Error{error.code, message};
+            }
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

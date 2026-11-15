@@ -58,6 +58,7 @@
 #include <SushiRuntime/report/run_report.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
+#include "partition_measure.hpp"
 #include "run_description_builder.hpp"
 #include "run_report_builder.hpp"
 
@@ -388,11 +389,13 @@ namespace SushiRuntime
             const bool hosted = target.placement != nullptr &&
                                 placed_on_host(target, context, plan, expected_invocations);
             const ExecutionLayer layer = hosted ? ExecutionLayer::Host : choose_layer(target, context, plan);
+            const std::uint64_t started_ns = engine.clock().now_ns();
             const Result<std::size_t> stepped =
                 run_on_layer(layer, target, keep_going, context, engine, hooked_sync);
             if (!stepped)
                 return make_error(stepped.error());
             const std::size_t executed = *stepped;
+            const double run_seconds = static_cast<double>(engine.clock().now_ns() - started_ns) * 1e-9;
 
             const ExecutionMetrics after = engine.metrics();
 
@@ -408,8 +411,10 @@ namespace SushiRuntime
 
             engine.write_run_values();
             observe_run(context, engine, plan, report.layer);
+            measure_partitioned_run(context, plan, executed, run_seconds);
             // Every step of the run has ended, so no plan reads the coherence maps now.
-            static_cast<void>(context.coherence_horizon().advance(context.handles(), executed));
+            if (context.coherence_horizon().advance(context.handles(), executed))
+                fold_partition_ledger(context);
             return {};
         }
 
@@ -472,7 +477,8 @@ namespace SushiRuntime
             report.layer = state.layer;
             engine.write_run_values();
             // The step has ended, so no plan reads the coherence maps now.
-            static_cast<void>(context.coherence_horizon().advance(context.handles(), 1));
+            if (context.coherence_horizon().advance(context.handles(), 1))
+                fold_partition_ledger(context);
             return {};
         }
 

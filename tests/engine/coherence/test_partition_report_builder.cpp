@@ -33,7 +33,9 @@
 #include <cstddef>
 #include <utility>
 
+#include <SushiRuntime/coherence/fill_plan.hpp>
 #include <SushiRuntime/coherence/list_scheduling_partitioner.hpp>
+#include <SushiRuntime/coherence/partition_model.hpp>
 #include <SushiRuntime/coherence/partition_report_builder.hpp>
 
 #include "partition_problem_builder.hpp"
@@ -75,6 +77,43 @@ namespace
         EXPECT_EQ(report.rows[1].nodes, 1u);
         EXPECT_EQ(report.rows[1].bytes, 100u);
         EXPECT_EQ(report.rows[1].modelled_seconds, model->node_time(host_key(2), problem.nodes[2].cost).value());
+    }
+
+    TEST(Small_PartitionReportBuilder, EachDeviceRowCarriesItsMeasuredTimeAndCopiesAndTheReportTheMeasuredStep)
+    {
+        const PartitionProblem problem = chain(3, 100, 3);
+        const auto model = speed_model({1.0, 2.0, 1.0});
+        const Result<PartitionAssignment, PartitionRefusal> answer = split_assignment(problem);
+        PartitionMeasurement measured;
+        measured.step_seconds = 0.75;
+        measured.device_seconds[host_key(2)] = 0.25;
+        measured.copies[host_key(2)].push_back(PartitionCopyRow{"pcie", 1.0, 100.0});
+
+        const PartitionReport report = make_partition_report(problem, *model, answer, measured);
+
+        ASSERT_EQ(report.rows.size(), 3u);
+        EXPECT_EQ(report.measured_step_seconds, 0.75);
+        EXPECT_EQ(report.rows[0].measured_seconds, 0.0);
+        EXPECT_EQ(report.rows[1].measured_seconds, 0.25);
+        ASSERT_EQ(report.rows[1].copies.size(), 1u);
+        EXPECT_EQ(report.rows[1].copies[0].path, "pcie");
+        EXPECT_EQ(report.rows[1].copies[0].bytes, 100.0);
+    }
+
+    TEST(Small_PartitionReportBuilder, TheReportCarriesTheFloorsModelledStepAndDevices)
+    {
+        const PartitionProblem problem = chain(3, 100, 2);
+        const auto model = speed_model({1.0, 2.0});
+        const Result<PartitionAssignment, PartitionRefusal> answer = PartitionAssignment{};
+        Result<PartitionModel, PartitionRefusal> built = PartitionModel::build(problem, *model);
+        ASSERT_TRUE(built.has_value());
+        const std::optional<FloorPlan> floor = floor_plan(built.value());
+        ASSERT_TRUE(floor.has_value());
+
+        const PartitionReport report = make_partition_report(problem, *model, answer);
+
+        EXPECT_EQ(report.floor_step_seconds, floor->step_time);
+        EXPECT_EQ(report.floor_devices.size(), floor->devices.size());
     }
 
     TEST(Small_PartitionReportBuilder, ADeviceWithNoNodeHasARowOfZeros)

@@ -46,10 +46,10 @@ namespace SushiRuntime
         /**
          * @brief Adds the allocate, copy and free nodes a region's nodes need on runtime's devices.
          *
-         * A runtime with one device is left alone. Instances stay resident across steps, and
-         * every buffer with a host-visible home is copied back to it at the graph end.
+         * A runtime with one device is left alone. A partitioner first places the movable nodes of
+         * a graph that touches a planned buffer. Host-visible homes are written back at the end.
          * @param nodes A built, stamped region or static graph, in insertion order; gains the planned nodes.
-         * @return The spliced plan, nothing when no planner ran, or its error; nodes then stays.
+         * @return The spliced plan, nothing when no planner ran, or its error (AllocationFailed with shortfalls).
          */
         [[nodiscard]] Result<std::optional<Internal::Coherence::CopyPlan>>
         plan_region_coherence(std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,

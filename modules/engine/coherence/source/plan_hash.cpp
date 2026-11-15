@@ -30,46 +30,32 @@
 
 #include <SushiRuntime/coherence/plan_hash.hpp>
 
+#include <SushiRuntime/coherence/fnv_hash.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        namespace
-        {
-            constexpr std::uint64_t K_FNV_OFFSET = 0xcbf29ce484222325ULL;
-            constexpr std::uint64_t K_FNV_PRIME = 0x100000001b3ULL;
-
-            /** @brief Folds the eight little-endian bytes of value into hash. */
-            void fold(std::uint64_t& hash, std::uint64_t value) noexcept
-            {
-                for (unsigned shift = 0; shift < 64; shift += 8)
-                {
-                    hash ^= (value >> shift) & 0xffU;
-                    hash *= K_FNV_PRIME;
-                }
-            }
-        } // namespace
-
         std::uint64_t plan_hash(const CopyPlan& plan) noexcept
         {
-            std::uint64_t hash = K_FNV_OFFSET;
-            fold(hash, plan.steady ? 1U : 0U);
-            fold(hash, plan.steps.size());
+            FNVHash hash;
+            hash.fold(plan.steady ? 1U : 0U);
+            hash.fold(plan.steps.size());
             for (const PlannedStep& step : plan.steps)
             {
-                fold(hash, static_cast<std::uint64_t>(step.kind));
-                fold(hash, step.handle.to_high_word());
-                fold(hash, step.handle.to_low_word());
-                fold(hash, step.space.value());
-                fold(hash, step.source.value());
-                fold(hash, step.begin);
-                fold(hash, step.end);
-                fold(hash, step.alignment);
-                fold(hash, step.path);
-                fold(hash, step.node);
-                fold(hash, step.evicts ? 1U : 0U);
+                hash.fold(static_cast<std::uint64_t>(step.kind));
+                hash.fold(step.handle.to_high_word());
+                hash.fold(step.handle.to_low_word());
+                hash.fold(step.space.value());
+                hash.fold(step.source.value());
+                hash.fold(step.begin);
+                hash.fold(step.end);
+                hash.fold(step.alignment);
+                hash.fold(step.path);
+                hash.fold(step.node);
+                hash.fold(step.evicts ? 1U : 0U);
             }
-            return hash;
+            return hash.value();
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

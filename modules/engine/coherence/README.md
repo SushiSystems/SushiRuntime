@@ -61,6 +61,13 @@ It depends on `core`, `handle`, `region`, `report`, `memory` and `task`.
 | `dispatch_observation.hpp` | `DispatchObservation`, `DeviceKeyTable` and `observe_dispatches()`, the ledger's records as measured work |
 | `profile_fold.hpp` | `fold_observations()`, which folds measured throughput into the device profiles |
 | `profile_update.hpp` | `update_profile_file()`, which folds a run into the profile file and writes it back |
+| `fnv_hash.hpp` | `FNVHash`, the 64-bit FNV-1a accumulator `plan_hash()` and `assignment_hash()` share |
+| `graph_partition_problem.hpp` | `make_graph_partition_problem()` and `GraphPartitionProblem`, the problem of a recorded graph |
+| `partition_apply.hpp` | `apply_partition()`, which puts the movable nodes where an assignment says |
+| `partition_measurement.hpp` | `PartitionMeasurement`, what the runs of a plan measured per step |
+| `partition_ledger.hpp` | `PartitionLedger`, the dispatches, steps and seconds of a plan's runs |
+| `partition_session.hpp` | `PartitionSession` and `PartitionSessionParts`, a runtime's partitioner, last plan and ledger |
+| `transfer_path_tally.hpp` | `TransferPathTally`, `PathTally` and `PathTallies`, the copies counted per destination and path |
 
 ## CoherencePlanner
 
@@ -257,9 +264,11 @@ with their declared size, edges, devices with their pool and copy path) and retu
   capacity less its reserve, so a pool that several devices share is counted once. A step runs the
   nodes in recording order, each device one after another; an edge between two pools waits for the
   copy over the source device's path, an edge inside one pool does not.
-- `PoolOccupancy` counts each buffer once per pool it has an instance in. A buffer with a stated
-  device holds its home instance from the start. Every instance counts as live for the whole step,
-  which bounds the peak from above.
+- `PoolOccupancy` counts the peak of the live instances of each pool. An instance is live from the
+  first to the last node of its pool that touches the buffer, in recording order; a buffer read
+  before any node writes it, or written by the last node that touches it, is carried across steps
+  and live for the whole step, in every pool it has an instance in. A buffer with a stated device
+  holds its home instance for the whole step. Nodes may be added in any order.
 - `fill_plan()` orders a device subset by the time each takes alone, walks the nodes in recording
   order and moves to the next device when a pool is full, never back. `floor_plan()` is the fitting
   fill plan of least step time over every subset, so the model takes at most sixteen devices.
@@ -272,7 +281,7 @@ with their declared size, edges, devices with their pool and copy path) and retu
 - `PartitionAssignment::home_of()` gives each `Residency::Planned` buffer the device of its first
   writer, or of its first reader when nothing writes it. `assignment_hash()` hashes the devices, the
   homes, the step time, the floor flag and the parts of each split node, so equal inputs and one
-  profile file give equal hashes.
+  profile file give equal hashes. It and `plan_hash()` fold their fields through one `FNVHash`.
 
 ### Splitting
 
@@ -291,7 +300,8 @@ modelled slower than that plan or its floor. A consumer-placed node is never cut
   its share of the operations and bytes. A part reads every buffer the node reads whole and writes
   a buffer of its own that holds its share of each written buffer, so capacity counts only that
   share. An edge into the node reaches every part whole; an edge out of it carries each part's
-  share. The expanded problem is scheduled like any other.
+  share. A later reader of a buffer the parts wrote reads their slices in its place, so each slice is
+  live until its last reader. The expanded problem is scheduled like any other.
 - `planned_splits()` gives the assignment one `PlannedSplit` per cut node: per part the device, the
   `SplitPart`, the whole range of each buffer read and the bytes `[bytes * begin / extent, bytes *
   end / extent)` of each buffer written. The written ranges of one node are disjoint and cover the
@@ -299,6 +309,32 @@ modelled slower than that plan or its floor. A consumer-placed node is never cut
 
 The step drivers, the composer and the copy planner do not read `splits` yet; a cut node runs as
 parts through `Internal::Graph::dispatch_split()` (`engine/task`) once they do.
+
+## Partitioning a recorded graph
+
+`make_graph_partition_problem()` turns a graph's nodes into a `PartitionProblem` over the runtime's
+devices, device i standing for device index i. A node's cost is its `NodeCost`, none counting as
+zero, and its split is the axis and extent of its `declared_split`. A `Borrowed` or `HostOnly` buffer is left out; a buffer a device owns keeps that device, and
+any other is planned. An edge joins the last earlier writer of a buffer to each reader and carries
+the bytes the reader's region names; the edges are ordered by writer, then reader. A node with a
+stated device, or a `FixedToHome` node whose anchor a device owns, is placed where `placement_of()`
+puts it (`modules/engine/task/README.md`, "Placement rule order"); the partitioner may move every
+other node.
+
+`apply_partition()` states the assigned device on each movable node, or changes nothing and returns
+`InvalidArgument` when the assignment does not fit the problem. The coherence planner then
+allocates each planned buffer's first instance on the device of its first writer, which is the home
+the assignment gives it. Rebalancing calls the same function with a new assignment.
+
+`PartitionSession` holds what the runtime keeps: the frozen `CostModel`, the `Partitioner`, the
+devices with their pools and copy paths, the problem and answer of the last plan, its
+`PartitionLedger` and the `TransferPathTally` every transfer path reports to. `partition()` keeps a
+new plan and starts an empty ledger and tally; `report()` gives `make_partition_report()` of the last
+plan with what its runs measured. A session with no cost model is inactive and reports nothing.
+`PartitionLedger::measurement()` divides by the steps added: the measured step, the summed dispatch
+seconds of each device and the copies into each device by path. `TransferPathTally` takes a lock per
+copy, since paths report from several workers, and forwards each copy to the observer a caller
+installed.
 
 ## PartitionReportBuilder
 
@@ -309,7 +345,9 @@ the bytes of the buffers homed on it (a buffer with a stated device at that devi
 the assignment gave it) and the sum of the model's node times of those nodes; a node the model cannot price adds
 nothing. The report carries the assignment's modelled step time and floor flag. For a refusal the rows hold no
 nodes and no bytes, each row holds the bytes its pool lacked (`PoolShortfall::missing()`), and the report holds
-the refusal's sentence. The function is pure.
+the refusal's sentence. For an assignment the report also carries the floor's modelled step and devices, and,
+from a `PartitionMeasurement`, the measured step, each device's measured time and its copies by path. The
+function is pure.
 
 ## Folding the ledger into the profile
 
@@ -334,7 +372,10 @@ run reads them.
   run; the update is called when the run ends, and the next run reads the result. A missing file is an error
   and nothing is created.
 
-The runtime does not call these yet; the calls belong where the run ends and the profile file is held.
+The step driver of `surface/api` calls them through the session's `PartitionLedger`: after each blocking run
+of a partitioned plan it adds the run's steps, its seconds and its dispatches, and at each horizon of
+`coherence_horizon()` it folds the dispatches into the file `RuntimeConfig::device_profile_file` names. A
+runtime with no profile file folds nothing. A failed write is logged and the run goes on.
 
 ## ProfileMeasurement
 

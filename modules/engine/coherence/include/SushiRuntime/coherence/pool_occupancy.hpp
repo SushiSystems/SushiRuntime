@@ -41,11 +41,11 @@ namespace SushiRuntime
     namespace Internal::Coherence
     {
         /**
-         * @brief Counts the bytes of the instances a placement puts in each pool, each buffer once per pool.
+         * @brief Counts the peak bytes of the live instances a placement puts in each pool.
          *
-         * A node placed in a pool gives every buffer it touches an instance there. A buffer with a
-         * stated device holds its home instance in that device's pool from the start. Every instance
-         * is counted live for the whole step, which bounds the peak from above.
+         * An instance is live from the first to the last node of its pool that touches the buffer.
+         * A carried buffer (read before any write, or last touched by a write) and a stated home
+         * are live for the whole step. Nodes may be added in any order.
          */
         class PoolOccupancy
         {
@@ -58,29 +58,60 @@ namespace SushiRuntime
                 PoolOccupancy(const PartitionProblem& problem, std::size_t pool_count,
                               const std::vector<std::optional<std::size_t>>& buffer_pool);
 
-                /** @brief Returns the bytes placing node in pool would add. */
+                /** @brief Returns how far placing node in pool would raise the pool's peak. */
                 [[nodiscard]] std::uint64_t added_bytes(std::size_t node, std::size_t pool) const;
 
-                /** @brief Gives every buffer node touches an instance in pool. */
+                /** @brief Gives every buffer node touches an instance in pool, live through node. */
                 void add(std::size_t node, std::size_t pool);
 
-                /** @brief Returns the bytes held in pool. */
+                /** @brief Returns the peak bytes live in pool over the step. */
                 [[nodiscard]] std::uint64_t used(std::size_t pool) const
                 {
                     return used_[pool];
                 }
 
             private:
+                /** @brief Holds the first and last node an instance is live through. */
+                struct Interval
+                {
+                    std::size_t first = 0; /**< First node, in recording order. */
+                    std::size_t last = 0;  /**< Last node, in recording order. */
+                };
+
+                /** @brief Returns the interval of buffer's instance in pool once it also covers node. */
+                [[nodiscard]] Interval widened(std::size_t buffer, std::size_t pool, std::size_t node) const;
+
+                /** @brief Adds bytes to every slot of live from interval.first to interval.last. */
+                static void apply(std::vector<std::int64_t>& live, const Interval& interval, std::int64_t bytes);
+
+                /** @brief Returns the largest slot of live, or zero when it is empty. */
+                [[nodiscard]] static std::uint64_t peak(const std::vector<std::int64_t>& live);
+
+                /** @brief Writes into live the pool's slots once node's buffers are live there. */
+                void apply_node(std::vector<std::int64_t>& live, std::size_t node, std::size_t pool) const;
+
                 /// @brief The problem the counts belong to.
                 const PartitionProblem* problem_;
 
                 /// @brief Number of pools.
                 std::size_t pool_count_;
 
-                /// @brief Whether buffer b has an instance in pool p, at b * pool_count_ + p.
-                std::vector<bool> present_;
+                /// @brief Number of slots of a step: one per node, at least one.
+                std::size_t slots_;
 
-                /// @brief Bytes held in each pool.
+                /// @brief Live interval of buffer b in pool p, at b * pool_count_ + p.
+                std::vector<std::optional<Interval>> intervals_;
+
+                /// @brief Whether each buffer is read before any node writes it.
+                std::vector<bool> carried_in_;
+
+                /// @brief Whether each buffer is written by the last node that touches it.
+                std::vector<bool> carried_out_;
+
+                /// @brief Live bytes of each pool at each node.
+                std::vector<std::vector<std::int64_t>> live_;
+
+                /// @brief Peak live bytes of each pool.
                 std::vector<std::uint64_t> used_;
         };
     } // namespace Internal::Coherence

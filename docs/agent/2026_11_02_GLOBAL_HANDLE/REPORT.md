@@ -83,6 +83,7 @@ dispatch: T36 — opus low, 142 turns, rung 1, passed (skipped loading style ski
 dispatch: T49 — sonnet medium, 115 turns, rung 1, passed after one return (hook findings)
 dispatch: T51 — sonnet medium, rung 1, passed
 dispatch: T52 — sonnet medium, rung 1, passed (SushiBLAS)
+dispatch: T47 — opus low, 277 turns, rung 1, passed after one rebase
 ```
 
 ## T05: the residency directory

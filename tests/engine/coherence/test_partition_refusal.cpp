@@ -41,4 +41,16 @@ namespace
         EXPECT_EQ((PoolShortfall{1, 900, 900}.missing()), 0U);
         EXPECT_EQ((PoolShortfall{1, 100, 900}.missing()), 0U);
     }
+
+    TEST(Small_PartitionRefusal, AsAnErrorItKeepsItsClassAndNamesEachPoolsShortfall)
+    {
+        const PartitionRefusal refusal{SushiRuntime::Error{SushiRuntime::ErrorCode::AllocationFailed, "no plan fits"},
+                                       {PoolShortfall{1, 1200, 900}, PoolShortfall{2, 600, 900}}};
+
+        const SushiRuntime::Error error = refusal.to_error();
+
+        EXPECT_EQ(error.code, SushiRuntime::ErrorCode::AllocationFailed);
+        EXPECT_EQ(error.message, "no plan fits; pool 1 needs 1200 bytes of 900 usable, 300 missing"
+                                 "; pool 2 needs 600 bytes of 900 usable, 0 missing");
+    }
 } // namespace

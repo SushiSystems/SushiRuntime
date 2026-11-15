@@ -36,6 +36,7 @@
 #include <string>
 #include <vector>
 #include <SushiRuntime/coherence/eviction_policy.hpp>
+#include <SushiRuntime/coherence/partition_session.hpp>
 #include <SushiRuntime/coherence/transfer_cost.hpp>
 #include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/core/clock.hpp>
@@ -186,6 +187,14 @@ namespace SushiRuntime
                 [[nodiscard]] const Internal::Coherence::EvictionPolicy& eviction_policy() const noexcept;
 
                 /**
+                 * @brief Returns the partitioner of this context, its last plan and what the runs measured.
+                 *
+                 * The session is active when create() loaded a device profile file.
+                 * @see modules/engine/coherence/README.md
+                 */
+                [[nodiscard]] Internal::Coherence::PartitionSession& partitioning() noexcept;
+
+                /**
                  * @brief Installs the observer every transfer path reports its copies to; null removes it.
                  * @param observer Co-owned while installed; a context starts with none.
                  * @pre No run is in flight.
@@ -275,7 +284,10 @@ namespace SushiRuntime
                  */
                 void remove_run_observer(std::uint64_t id) noexcept;
 
-                /** @brief Returns whether a run armed now is timed: an ungated observer is added or a gate is open; any thread. */
+                /**
+                 * @brief Returns whether a run armed now is timed: an ungated observer is added, a gate
+                 *        is open, or a profile file is set and a plan was partitioned; any thread.
+                 */
                 [[nodiscard]] bool wants_device_timing() const noexcept;
 
                 /** @brief Hands @p observation to every added observer, in the order they were added; any thread. */

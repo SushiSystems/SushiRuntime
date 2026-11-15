@@ -102,10 +102,11 @@ dispatches against the host's submit and reap readings, as
 
 ### PartitionReport
 
-`PartitionReport` holds one `PartitionDeviceRow` per device in `DeviceKey` order, and the modelled
-step time and floor flag of the plan. A row names the device and its pool, the nodes assigned to it,
-the bytes of the buffers homed on it, the modelled time of its nodes and, for a refused job, the
-bytes its pool lacked. A device that received no node has a row of zeros. `to_text()` writes one
+`PartitionReport` holds one `PartitionDeviceRow` per device in `DeviceKey` order, the modelled and
+measured step time of the plan, the floor's modelled step time and devices, and the floor flag. A row
+names the device and its pool, the nodes assigned to it, the bytes of the buffers homed on it, the
+modelled time of its nodes, its measured time per step, a `PartitionCopyRow` per path its copies took
+and, for a refused job, the bytes its pool lacked. A device that received no node has a row of zeros. `to_text()` writes one
 header line and one line per device, for a log. The coherence module fills it
 (`modules/engine/coherence/README.md`, "PartitionReportBuilder") and `Runtime::partition_report()`
 returns it.

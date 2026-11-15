@@ -75,6 +75,17 @@ namespace
         EXPECT_EQ(expansion.problem.buffers[expansion.problem.nodes[2].writes[0]].bytes, 300u);
     }
 
+    /** @brief Tests that a reader of a cut node's output reads the parts' slices, not the whole buffer. */
+    TEST(Small_SplitExpansion, AReaderOfACutOutputReadsTheSlicesOfTheParts)
+    {
+        const CutChain cut;
+
+        const SplitExpansion expansion = expand_splits(cut.problem, cut.parts, cut.devices);
+
+        const std::vector<std::size_t> slices{expansion.problem.nodes[1].writes[0], expansion.problem.nodes[2].writes[0]};
+        EXPECT_EQ(expansion.problem.nodes[3].reads, slices);
+    }
+
     /** @brief Tests that an edge into a cut node reaches every part whole and an edge out of it carries each part's share. */
     TEST(Small_SplitExpansion, EdgesFollowTheParts)
     {

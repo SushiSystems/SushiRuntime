@@ -71,4 +71,32 @@ namespace
         EXPECT_EQ(occupancy.added_bytes(0, 1), 0U);
         EXPECT_EQ(occupancy.added_bytes(0, 0), 70U);
     }
+
+    TEST(Small_PoolOccupancy, AChainHoldsOnlyTheTwoBuffersLiveAtEachLink)
+    {
+        // Buffer i lives from node i to node i + 1; the last one leaves the step, so it lives to the end.
+        const PartitionProblem problem = chain(4, 300, 1);
+        PoolOccupancy occupancy(problem, 1, std::vector<std::optional<std::size_t>>(4));
+        occupancy.add(2, 0);
+        occupancy.add(0, 0);
+        occupancy.add(3, 0);
+        occupancy.add(1, 0);
+        EXPECT_EQ(occupancy.used(0), 600U);
+    }
+
+    TEST(Small_PoolOccupancy, ABufferReadBeforeAnyWriteIsLiveForTheWholeStep)
+    {
+        // The input is carried in, so it is live through node 1 although only node 0 reads it.
+        PartitionProblem problem;
+        const std::size_t input = add_buffer(problem, 400);
+        PartitionNode reader;
+        reader.reads.push_back(input);
+        PartitionNode other;
+        other.writes.push_back(add_buffer(problem, 100));
+        problem.nodes = {reader, other};
+
+        PoolOccupancy occupancy(problem, 1, {std::nullopt, std::nullopt});
+        occupancy.add(0, 0);
+        EXPECT_EQ(occupancy.added_bytes(1, 0), 100U);
+    }
 } // namespace

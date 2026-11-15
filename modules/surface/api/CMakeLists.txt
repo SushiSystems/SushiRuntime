@@ -18,6 +18,7 @@ sushiruntime_add_module(
         interop.cpp
         late_window.cpp
         node_emitters.cpp
+        partition_measure.cpp
         placement_scope.cpp
         planned_buffer.cpp
         plan_cache.cpp

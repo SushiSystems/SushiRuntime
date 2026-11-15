@@ -52,8 +52,8 @@ namespace SushiRuntime
         /**
          * @brief Returns problem with each node that has parts replaced by one node per part.
          *
-         * A part node is placed on its device, costs and writes its share, and reads whole; an edge
-         * out carries the part's share and an edge in reaches every part whole.
+         * A part node is placed on its device, costs and writes its share, and reads whole; edges
+         * follow the parts, and a later reader of a buffer the parts wrote reads their slices.
          * @param parts   Parts of each node of problem; fewer than two leaves the node whole.
          * @param devices Key of each device index the parts name.
          */

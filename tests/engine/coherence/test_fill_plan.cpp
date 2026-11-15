@@ -40,7 +40,7 @@ namespace
 {
     TEST(Small_FillPlan, AChainLargerThanTheFastestPoolCrossesEachDeviceBoundaryOnce)
     {
-        const PartitionProblem problem = chain(7, 300, 3);
+        const PartitionProblem problem = state_chain(7, 300, 3);
         const auto costs = speed_model({1.0, 4.0, 2.0});
         Result<PartitionModel, PartitionRefusal> model = PartitionModel::build(problem, *costs);
         ASSERT_TRUE(model.has_value());
@@ -61,7 +61,7 @@ namespace
 
     TEST(Small_FillPlan, TheLastDeviceTakesWhatIsLeftAndTheWalkReportsItDoesNotFit)
     {
-        const PartitionProblem problem = chain(4, 400, 1);
+        const PartitionProblem problem = state_chain(4, 400, 1);
         const auto costs = speed_model({1.0});
         Result<PartitionModel, PartitionRefusal> model = PartitionModel::build(problem, *costs);
         ASSERT_TRUE(model.has_value());
@@ -83,7 +83,7 @@ namespace
         EXPECT_TRUE(model.value().fits(floor->placement));
         EXPECT_DOUBLE_EQ(floor->step_time, model.value().step_time(floor->placement));
 
-        const PartitionProblem too_large = chain(20, 300, 3);
+        const PartitionProblem too_large = state_chain(20, 300, 3);
         Result<PartitionModel, PartitionRefusal> large = PartitionModel::build(too_large, *costs);
         ASSERT_TRUE(large.has_value());
         EXPECT_FALSE(floor_plan(large.value()).has_value());

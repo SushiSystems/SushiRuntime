@@ -384,8 +384,8 @@ destroyed.
 
 `add_run_observer()` and `observe_runs()` take an optional `TimingGate`, a pointer to a function that
 answers whether the observer wants timing now; null means always, which is what the public
-`Runtime::add_run_observer()` passes. wants_device_timing() is true while an ungated observer is added or
-the gate of any gated one is open, and notify_run() skips an observer whose gate is closed. The answer is
+`Runtime::add_run_observer()` passes. wants_device_timing() is true while an ungated observer is added,
+the gate of any gated one is open, or a profile file is set and a plan was partitioned, and notify_run() skips an observer whose gate is closed. The answer is
 still read once, when a run is armed. The profiler parts add their observers behind the gate
 `Collector::sources_wanted`, so a session that is paused, or not open, costs the runtime no device timing.
 A gate is read again when an observation is delivered: one that has closed since the run was armed receives
@@ -681,14 +681,14 @@ for it. `memory_spaces()` holds the host's space and one per device (`source/run
 an integrated device names the host's pool and offers at most the host's usable bytes;
 `transfer_paths()` holds `SameContextPath`, `PeerPath`, `HostStagedPath` with its staging ring, and
 `FilePath` (`source/runtime_transfer_paths.hpp`). Both are built once from the device set. Every path
-reports to the context's `TransferObserverSlot`, which forwards to the observer
-`install_transfer_observer()` installed, if any. `transfer_cost()` is the profile file's `CostModel` when `RuntimeSettings::device_profile_file`
+reports to the context's `TransferObserverSlot`, whose `TransferPathTally` counts each copy and forwards
+it to the observer `install_transfer_observer()` installed, if any. `transfer_cost()` is the profile file's `CostModel` when `RuntimeSettings::device_profile_file`
 is set, else the bytes (`source/runtime_transfer_cost.hpp`); `create()` loads it once and refuses
 an unreadable file. With the path set and no file, `create()` first measures every device
 (`source/runtime_profile_measurement.hpp`) with `DeviceProfileProbe` and two internal probe kernels
 (`source/runtime_probe_kernels.hpp`), writes the file by a temporary file and a rename, and prices
-by it. `eviction_policy()` is the context's `LogicalTimeEviction`. The coherence
-hook of the composer and of `PlanCache` reads all three from the context, so neither builds its own.
+by it. `eviction_policy()` is the context's `LogicalTimeEviction`; `partitioning()` its `PartitionSession` (`source/runtime_partition_parts.hpp`), a `ListSchedulingPartitioner` over that `CostModel`.
+The coherence hook of the composer and of `PlanCache` reads all four from the context, so neither builds its own.
 
 `add_file_space()` takes the lowest id a removed file space left vacant, else the next index, so an
 id stays its index in `memory_spaces()` and is the same in every run. `remove_file_space()`, called

@@ -31,68 +31,57 @@
 
 #include <cstring>
 
+#include <SushiRuntime/coherence/fnv_hash.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
         namespace
         {
-            constexpr std::uint64_t K_FNV_OFFSET = 0xcbf29ce484222325ULL;
-            constexpr std::uint64_t K_FNV_PRIME = 0x100000001b3ULL;
-
-            /** @brief Folds the eight little-endian bytes of value into hash. */
-            void fold(std::uint64_t& hash, std::uint64_t value) noexcept
-            {
-                for (unsigned shift = 0; shift < 64; shift += 8)
-                {
-                    hash ^= (value >> shift) & 0xffU;
-                    hash *= K_FNV_PRIME;
-                }
-            }
-
             /** @brief Folds every field of key into hash. */
-            void fold_key(std::uint64_t& hash, const DeviceKey& key) noexcept
+            void fold_key(FNVHash& hash, const DeviceKey& key) noexcept
             {
-                fold(hash, static_cast<std::uint64_t>(key.backend));
-                fold(hash, static_cast<std::uint64_t>(key.id_kind));
+                hash.fold(static_cast<std::uint64_t>(key.backend));
+                hash.fold(static_cast<std::uint64_t>(key.id_kind));
                 for (const std::uint8_t byte : key.hardware_id)
-                    fold(hash, byte);
-                fold(hash, key.ordinal);
+                    hash.fold(byte);
+                hash.fold(key.ordinal);
             }
         } // namespace
 
         std::uint64_t assignment_hash(const PartitionAssignment& assignment) noexcept
         {
-            std::uint64_t hash = K_FNV_OFFSET;
-            fold(hash, assignment.node_devices.size());
+            FNVHash hash;
+            hash.fold(assignment.node_devices.size());
             for (const DeviceKey& key : assignment.node_devices)
                 fold_key(hash, key);
-            fold(hash, assignment.homes.size());
+            hash.fold(assignment.homes.size());
             for (const auto& home : assignment.homes)
             {
-                fold(hash, home.first.to_high_word());
-                fold(hash, home.first.to_low_word());
+                hash.fold(home.first.to_high_word());
+                hash.fold(home.first.to_low_word());
                 fold_key(hash, home.second);
             }
             std::uint64_t step_bits = 0;
             static_assert(sizeof(step_bits) == sizeof(assignment.step_time), "a double is eight bytes");
             std::memcpy(&step_bits, &assignment.step_time, sizeof(step_bits));
-            fold(hash, step_bits);
-            fold(hash, assignment.floor_taken ? 1U : 0U);
-            fold(hash, assignment.splits.size());
+            hash.fold(step_bits);
+            hash.fold(assignment.floor_taken ? 1U : 0U);
+            hash.fold(assignment.splits.size());
             for (const PlannedSplit& split : assignment.splits)
             {
-                fold(hash, split.node);
-                fold(hash, split.parts.size());
+                hash.fold(split.node);
+                hash.fold(split.parts.size());
                 for (const PlannedSplitPart& part : split.parts)
                 {
                     fold_key(hash, part.device);
-                    fold(hash, part.part.axis);
-                    fold(hash, part.part.begin);
-                    fold(hash, part.part.end);
+                    hash.fold(part.part.axis);
+                    hash.fold(part.part.begin);
+                    hash.fold(part.part.end);
                 }
             }
-            return hash;
+            return hash.value();
         }
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

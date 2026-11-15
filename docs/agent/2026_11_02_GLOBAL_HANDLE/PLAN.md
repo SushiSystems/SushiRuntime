@@ -74,7 +74,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | done |
 | T25 | partitioner | T14, T24, T37 | done |
 | T48 | host pricing in the cost model, first-start measurement written to the profile file | T43 | done |
-| T47 | partitioner in the composer, live intervals, one FNV helper | T25, T43 | running |
+| T47 | partitioner in the composer, live intervals, one FNV helper | T25, T43 | done |
 | T26 | partitioner search and floor tests | T25 | done |
 | T34 | `Runtime::partition_report()` | T25 | done |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |

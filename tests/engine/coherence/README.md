@@ -16,7 +16,8 @@ queue for every space, `FixedPeerAccess` grants or refuses every request and cou
 `partition_problem_builder.hpp` holds the partitioner tests' builders: `speed_model()` makes a
 `CostModel` of `round_profile()` devices, `add_devices()` gives each device a pool of its own and
 the `"pcie"` path, `add_buffer()` adds a planned buffer, and `chain()` builds a chain whose node `i`
-writes buffer `i` and reads buffer `i - 1`.
+writes buffer `i` and reads buffer `i - 1`; `state_chain()` is that chain with node `i` also writing
+buffer `i - 1`, so every buffer outlives the step and is live for all of it.
 
 `random_partition_case.hpp` holds `SeededDraw`, a portable generator, and `random_partition_case()`,
 which builds from a seed a graph of three to eight nodes with forward edges and a speed per device.
@@ -27,7 +28,8 @@ indices of the model.
 
 ## test_partition_report_builder.cpp
 
-The rows match the plan: nodes, bytes and modelled time per device, a device with no node as zeros, a
+The rows match the plan: nodes, bytes and modelled time per device, the measured time and copies of a
+`PartitionMeasurement` per device with the measured step, the floor's step and devices, a device with no node as zeros, a
 buffer with a stated device counted at it, a refusal with the shortfall of each pool, the answer of
 `ListSchedulingPartitioner` against its own assignment, and the same report for the same inputs.
 
@@ -247,9 +249,50 @@ with no CUDA GPU or too little disk, and deletes the file.
 
 Each file includes one partitioner header alone.
 
+## compile_partition_measurement.cpp
+
+Includes `partition_measurement.hpp` alone.
+
+## test_fnv_hash.cpp
+
+Folding two values hashes their sixteen little-endian bytes, against a byte-wise FNV-1a reference with
+the published constants.
+
+## test_graph_partition_problem.cpp
+
+`Small_GraphPartitionProblem` builds a writer of a planned buffer and a `FixedToHome` reader that writes
+a buffer device 1 owns: the owned buffer keeps its device and the other is planned, the reader waits on
+the writer for the bytes it reads, the reader stays on its owner's device, a node that declares a split
+carries its axis and extent, and a `Borrowed` buffer is left out.
+
+## test_partition_apply.cpp
+
+`Small_PartitionApply` partitions a three-node chain of planned buffers over two devices: each node is
+put on its assigned device, which is the home the assignment gives the buffer it writes first. An
+assignment of another graph, or one naming a device the problem lacks, is refused and changes no node.
+
+## test_partition_ledger.cpp
+
+Figures come per step: the measured step, each device's dispatch time and the copies into a device by
+path; a copy into a space with no device is left out, and a ledger with no step measures nothing.
+`Medium_PartitionLedger` writes a profile file: a second run reads the throughput the first one folded,
+and a ledger with nothing unfolded leaves the file alone.
+
+## test_partition_session.cpp
+
+A session with no partitioner is inactive and reports nothing. An unfitting job is refused with each
+pool's shortfall, in the error and in the report. The report of the last plan carries the measured step,
+each device's measured time and the floor's step, and a new plan starts an empty ledger.
+
+## test_transfer_path_tally.cpp
+
+Copies are counted by destination and path, each copy reaches the next observer, and `clear()` forgets
+every tally.
+
 ## test_partition_refusal.cpp
 
 A pool's shortfall is the bytes required above the usable ones, and zero when the pool holds them.
+`to_error()` keeps the refusal's class and names each pool's required, usable and missing bytes.
 
 ## test_partition_assignment.cpp
 
@@ -270,14 +313,16 @@ zero extent or no usable device gives none.
 
 On a three-node chain whose middle node is cut 7 to 3, `expand_splits()` gives one placed node per
 part with its share of the operations and of the written bytes, edges into the cut node reach each
-part whole and edges out of it carry each part's share, and every edge still runs forward.
+part whole and edges out of it carry each part's share, and every edge still runs forward. The reader
+of the cut node's output reads the parts' slices.
 `planned_splits()` gives disjoint written ranges that cover the buffer and whole read ranges. A
 node with one part stays whole.
 
 ## test_pool_occupancy.cpp
 
 A buffer two nodes touch is counted once per pool, and a buffer with a stated home is held in its
-pool from the start.
+pool for the whole step. A chain holds only the two buffers live at each link, whatever order its nodes
+are added in, and a buffer read before any write is live for the whole step.
 
 ## test_partition_model.cpp
 
@@ -287,7 +332,7 @@ fixed to it, and a node placed on a device with no profile is refused.
 
 ## test_fill_plan.cpp
 
-A seven-node chain over three devices whose pools hold three nodes' buffers fills the fastest device,
+A seven-node `state_chain()` over three devices whose pools hold three nodes' buffers fills the fastest device,
 then the next, then the slowest, and crosses each device boundary once. When nothing is left, the
 last device takes the rest and the walk reports that it does not fit. The floor is a fitting plan,
 and there is none when no subset fits.
@@ -299,7 +344,8 @@ and there is none when no subset fits.
 ### test_placement_and_refusal.cpp
 
 A node larger than every pool, and a job larger than the pools together, are refused as
-`AllocationFailed` with the bytes and the shortfall of each pool. Two partitioners built from one
+`AllocationFailed` with the bytes and the shortfall of each pool. A chain whose buffers exceed the
+pool together fits by live intervals. Two partitioners built from one
 profile set give assignments that hash equal, and so does a second run of one partitioner. A planned
 buffer is homed on its writer's device, the plan is never modelled slower than its floor, and a
 device with no profile receives no node.

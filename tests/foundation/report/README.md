@@ -23,7 +23,8 @@ their constructed values.
 ## test_partition_report.cpp
 
 `PartitionReport::to_text()`: a plan gives a header line and one line per device in row order, a
-device with no node shows zeros, a refusal shows its sentence and the bytes each pool lacks. The
+device with no node shows zeros, each line carries the measured times and the path of each copy, a
+refusal shows its sentence and the bytes each pool lacks. The
 suite is `Small_PartitionReport`.
 
 ## compile_dispatch_width.cpp

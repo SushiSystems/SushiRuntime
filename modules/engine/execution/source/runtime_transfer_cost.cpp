@@ -45,6 +45,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
+#include "runtime_partition_parts.hpp"
 #include "runtime_profile_measurement.hpp"
 
 namespace SushiRuntime
@@ -83,15 +84,15 @@ namespace SushiRuntime
             }
         } // namespace
 
-        Result<Coherence::TransferCost> load_transfer_cost(const std::string& path, Device::DeviceQueueSet& devices,
-                                                           const std::vector<const Memory::MemorySpace*>& spaces,
-                                                           const std::vector<Coherence::TransferPath*>& paths)
+        Result<RuntimeCost> load_transfer_cost(const std::string& path, Device::DeviceQueueSet& devices,
+                                               const std::vector<const Memory::MemorySpace*>& spaces,
+                                               const std::vector<Coherence::TransferPath*>& paths)
         {
             if (path.empty())
             {
                 SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY,
                             "No device profile file is configured; copies are priced by their bytes.");
-                return Coherence::uniform_transfer_cost();
+                return RuntimeCost{Coherence::uniform_transfer_cost(), nullptr};
             }
 
             Result<Coherence::DeviceProfileSet> profiles = profiles_at(path, devices, spaces, paths);
@@ -99,15 +100,7 @@ namespace SushiRuntime
                 return make_error(std::move(profiles.error()));
 
             auto model = std::make_shared<const Coherence::CostModel>(std::move(profiles.value()));
-            const Device::DeviceQueueSet* const set = &devices;
-            Coherence::SpaceDeviceResolver resolver = [set](MemorySpaceID space) -> std::optional<DeviceKey>
-            {
-                const std::optional<std::size_t> device = Graph::device_of_space(space);
-                if (!device || *device >= set->devices().size())
-                    return std::nullopt;
-                return set->devices()[*device].key;
-            };
-            return Coherence::select_transfer_cost(std::move(model), std::move(resolver));
+            return RuntimeCost{Coherence::select_transfer_cost(model, make_space_device_resolver(devices)), model};
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

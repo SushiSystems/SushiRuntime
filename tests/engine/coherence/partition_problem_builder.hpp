@@ -91,4 +91,18 @@ namespace SushiRuntime::Internal::Coherence
         }
         return problem;
     }
+
+    /**
+     * @brief Returns chain(length, buffer_bytes, devices) in which node i also writes buffer i - 1.
+     *
+     * The last node that touches each buffer writes it, so every buffer is carried to the next
+     * step and live for the whole step.
+     */
+    [[nodiscard]] inline PartitionProblem state_chain(std::size_t length, std::uint64_t buffer_bytes, std::size_t devices)
+    {
+        PartitionProblem problem = chain(length, buffer_bytes, devices);
+        for (std::size_t node = 1; node < length; ++node)
+            problem.nodes[node].writes.push_back(node - 1);
+        return problem;
+    }
 } // namespace SushiRuntime::Internal::Coherence

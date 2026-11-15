@@ -310,10 +310,13 @@ run finished and must not start a run or add or remove an observer. The `profili
 ### partition_report
 
 `Runtime::partition_report()` returns a `PartitionReport` (`SushiRuntime/report/partition_report.hpp`): one
-row per device with the nodes and bytes it holds, the modelled time of its nodes and, for a refused job, the
-bytes its pool lacked, and `to_text()` for a log. The runtime holds no partition yet, since the composer does
-not place buffers by one, so the report has no rows and a refusal sentence of none. The rows are built by
-`make_partition_report()` of the `coherence` module from the partitioner's answer.
+row per device with the nodes and bytes it holds, the modelled and measured time of a step on it, its copies
+by path and, for a refused job, the bytes its pool lacked; for the plan the modelled and measured step and the
+floor's modelled step and devices; and `to_text()` for a log. The report is of the last plan the composer or
+`PlanCache` partitioned: a runtime with a device profile file and two devices or more partitions a graph that
+touches a `Residency::Planned` buffer. Before that the report has no rows. A job no plan fits is refused at
+compile with `AllocationFailed` and each pool's shortfall. The rows come from `PartitionSession::report()` of
+the `coherence` module.
 
 ### set_rebalancer_enabled
 

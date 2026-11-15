@@ -16,6 +16,7 @@ sushiruntime_add_module(
         scheduler_execution_engine.cpp
         runtime_context.cpp
         runtime_memory_spaces.cpp
+        runtime_partition_parts.cpp
         runtime_probe_kernels.cpp
         runtime_profile_measurement.cpp
         runtime_transfer_cost.cpp
