@@ -677,7 +677,8 @@ that no late remote completion can touch a scheduler that is being torn down. Th
 the `SchedulerExecutionEngine` down, which joins every worker thread. A context that was shut down
 explicitly calls `stop_work()` a second time from its destructor. The seam allows a second
 `OffloadCoordinator::stop()` and the engine guards its own shutdown, so `Impl` keeps no flag
-for it.
+for it. `memory_spaces()` holds the host's space and one per device, built once through
+`SystemMemoryProbe` and `DeviceMemoryProbe` (`source/runtime_memory_spaces.hpp`).
 
 The destructor then clears the allocator's release observer: a `Buffer` holds the allocator
 through `shared_memory()` and can release its memory after the context is gone, and the

@@ -202,3 +202,9 @@ first run after an observer is added to the runtime.
 
 A failure while a plain queue is built leaves the constructor as the exception SYCL threw. The
 set does not log it.
+
+## device_memory_probe.hpp
+
+`DeviceMemoryProbe` is the `MemoryProbe` of one device of a `DeviceQueueSet`: the total is the
+memory of the device's description, and the free bytes are what `DeviceQueueSet::free_memory()`
+answers. `RuntimeContext` builds each device's `DeviceMemorySpace` through it.

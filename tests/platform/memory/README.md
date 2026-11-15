@@ -311,3 +311,7 @@ targets.
 ## test_memory_pool_capacity.cpp
 
 A host and an integrated GPU share pool 0 and a discrete GPU has pool 1; the sum counts pool 0 once.
+
+## test_system_memory_probe.cpp
+
+The probe reports some memory and no more free bytes than total.

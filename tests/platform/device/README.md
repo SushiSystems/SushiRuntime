@@ -87,3 +87,7 @@ The file tests QueueFlavour: equality over both fields.
 | Test | What it proves |
 | --- | --- |
 | `EqualityComparesBothFields` | Two flavours are equal only when both fields are. |
+
+## test_device_memory_probe.cpp
+
+The probe reads the memory of its device from a host set: the description's bytes, all free.

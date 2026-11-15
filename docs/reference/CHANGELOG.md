@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — distributed: Changed `Cluster::share`, `bump_buffer` and `buffer_handle` to take a `GlobalHandle` in place of an address (GLOBAL_HANDLE H2).
 - 2026-11-15 — handle: Added `GlobalHandle`, `DeviceKey`, `HandleSpace` and `HandleResolver` in the new `foundation/handle` module (GLOBAL_HANDLE H0).
 - 2026-11-15 — api: Added `Runtime::device_key()` and `Runtime::device_index(DeviceKey)`, and placement rules that name a `DeviceKey` (GLOBAL_HANDLE H0).
 - 2026-11-15 — region: Changed `BufferRegion::base` from an address to a `GlobalHandle` (GLOBAL_HANDLE H1).

@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 #include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -43,6 +44,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
+#include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
@@ -154,6 +156,12 @@ namespace SushiRuntime
 
                 /** @brief Returns the residency directory that mints, retires and resolves this context's handles. */
                 [[nodiscard]] Internal::Memory::ResidencyDirectory& handles() noexcept;
+
+                /**
+                 * @brief Returns the memory spaces of the host and of each device, indexed by space id.
+                 * @see modules/engine/task/include/SushiRuntime/task/handle_location.hpp
+                 */
+                [[nodiscard]] const std::vector<const Internal::Memory::MemorySpace*>& memory_spaces() const noexcept;
 
                 /** @brief Returns the index that gives one Borrowed handle per range of caller-owned memory. */
                 [[nodiscard]] Internal::Memory::BorrowedIndex& borrowed_handles() noexcept;

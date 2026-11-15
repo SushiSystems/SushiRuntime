@@ -15,6 +15,7 @@ sushiruntime_add_module(
         host_step_run.cpp
         scheduler_execution_engine.cpp
         runtime_context.cpp
+        runtime_memory_spaces.cpp
     DEPENDS
         core
         handle

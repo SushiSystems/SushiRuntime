@@ -59,6 +59,14 @@ namespace SushiRuntime
             return MemorySpaceID(static_cast<std::uint32_t>(device + 1));
         }
 
+        /** @brief Returns the device whose memory space is @p space, or nothing for the host. */
+        [[nodiscard]] constexpr std::optional<std::size_t> device_of_space(MemorySpaceID space) noexcept
+        {
+            if (space == host_memory_space())
+                return std::nullopt;
+            return static_cast<std::size_t>(space.value() - 1);
+        }
+
         /** @brief Holds the device a handle has an instance on and that instance's address. */
         struct HandleLocation
         {

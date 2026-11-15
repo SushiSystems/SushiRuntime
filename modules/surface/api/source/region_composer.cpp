@@ -58,6 +58,7 @@
 #include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "region_coherence.hpp"
 #include "rule_stamp.hpp"
 
 namespace SushiRuntime
@@ -112,6 +113,11 @@ namespace SushiRuntime
                             if (!stamped)
                                 return make_error(std::move(stamped.error()));
                         }
+                        // The planned copies join the region before its degrees and boundary are read.
+                        Result<void> coherent = plan_region_coherence(state.nodes, runtime);
+                        if (!coherent)
+                            return make_error(std::move(coherent.error()));
+                        finish_region(state);
                         built.emplace(k, std::move(state));
                     }
                     prepare_offload(built, placement->rules, runtime);
@@ -587,7 +593,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Builds one region's sub-graph from its recorder, in O(region).
+                 * @brief Builds one region's sub-graph from its recorder, in O(region); finish_region()
+                 *        completes it.
                  * @return The state to install; no region held by the composer is changed.
                  * @throws Whatever the replay of the recorder throws.
                  */
@@ -604,7 +611,15 @@ namespace SushiRuntime
                     });
 
                     st.nodes = backing_graph.take_nodes();   // intra edges baked; insertion order
+                    return st;
+                }
 
+                /**
+                 * @brief Reads a built region's in-degrees, roots, leaves and boundary summary.
+                 * @pre Every node of the region, planned ones included, is in st.nodes.
+                 */
+                void finish_region(RegionState& st)
+                {
                     for (auto& np : st.nodes)
                     {
                         Node* n = np.get();
@@ -621,7 +636,6 @@ namespace SushiRuntime
                     }
 
                     st.access = compute_boundary_access(st.nodes);
-                    return st;
                 }
 
                 /**

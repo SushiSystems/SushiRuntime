@@ -361,3 +361,9 @@ edits no sibling. A space measures its reserve once, when it is built, through a
 the reserve is the bytes the probe reports as not free. Tests pass a fake probe.
 `usable_pool_bytes` sums capacity less reserve per `shared_pool`, so an integrated GPU that shares
 the host pool is counted once.
+
+## system_memory_probe.hpp
+
+`SystemMemoryProbe` is the `MemoryProbe` of host memory. It reads the physical and available bytes
+from `GlobalMemoryStatusEx()` on Windows and from `sysconf()` elsewhere; a refused query reports zero
+bytes. `RuntimeContext` builds the host's `HostMemorySpace` through it.

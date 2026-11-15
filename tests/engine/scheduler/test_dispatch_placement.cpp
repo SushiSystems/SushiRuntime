@@ -117,8 +117,8 @@ TEST_F(Small_DispatchPlacement, RefusesAPlacementPastTheDeviceCount)
     EXPECT_FALSE(node_->locality_checked_);
 }
 
-/** @brief Tests that a node whose regions sit on two devices is refused and nothing is cached. */
-TEST_F(Small_DispatchPlacement, RefusesANodeWhoseRegionsSpanTwoDevices)
+/** @brief Tests that a node whose regions sit on two devices runs on the device of its anchor, the written region. */
+TEST_F(Small_DispatchPlacement, PlacesANodeWhoseRegionsSpanTwoDevicesOnItsAnchor)
 {
     int written = 0;
     int read = 0;
@@ -127,13 +127,10 @@ TEST_F(Small_DispatchPlacement, RefusesANodeWhoseRegionsSpanTwoDevices)
     node_->io_writes_.emplace_back(handles_.place(&written));
     node_->io_reads_.emplace_back(handles_.place(&read));
 
-    const SushiRuntime::Result<void> placed = place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES);
+    ASSERT_TRUE(place_for_dispatch(*node_, memory_, handles_.resolver(), K_DEVICES));
 
-    ASSERT_FALSE(placed);
-    EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
-    EXPECT_NE(placed.error().message.find("span multiple device contexts"), std::string::npos)
-        << placed.error().message;
-    EXPECT_FALSE(node_->locality_checked_);
+    EXPECT_EQ(node_->cached_queue_index_, 0);
+    EXPECT_TRUE(node_->locality_checked_);
     memory_.forget(&written);
     memory_.forget(&read);
 }

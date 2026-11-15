@@ -19,6 +19,7 @@ sushiruntime_add_module(
         placement_scope.cpp
         plan_cache.cpp
         recorder.cpp
+        region_coherence.cpp
         region_composer.cpp
         runtime.cpp
         step_machinery.cpp
@@ -45,5 +46,6 @@ sushiruntime_add_module(
         context_access
         engine_handles
         region_boundary
+        coherence
         topology
         profile)

@@ -48,6 +48,7 @@ dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
 dispatch: T23 — opus low, rung 1, passed
 dispatch: T31 — haiku high, 124 turns, rung 1, passed (SushiEngine e3348900f)
 dispatch: T10 — sonnet medium, 146 turns, rung 1, passed
+dispatch: T13 — opus low, 145 turns, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -96,3 +97,13 @@ closing build moves its pins. SushiAI's build runs in the closing build.
 - `Cluster::share(void*, bytes)` is gone; raw memory enters as a borrowed handle.
 - The release path still starts from the address observer in `platform/memory`; T09 replaces it
   with a retire notification, and the coordinator then unshares from that.
+
+## T13: the coherence planner
+
+The planner, the copy plan, the planned nodes and the composer hook are in `engine/coherence`, and
+the span refusal is gone. The acceptance holds on fakes. On a real runtime three pieces are
+missing, each now a task: kernels still read the home address captured at `add()` (T39),
+`placement_of` refuses a node across SYCL contexts (T40), and no transfer path is registered
+(T17). The planner takes the concrete directory (T41), every device gets a pool of its own (T42),
+and planned buffers are allocated and freed every step and copied back home at graph end, which
+T14 and T21 remove.

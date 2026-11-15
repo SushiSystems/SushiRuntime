@@ -42,6 +42,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     graph           engine
     execution       engine
     region_boundary engine
+    coherence       engine
     probe_tasks     engine
     runtime_assembly engine
     engine_handles  surface
@@ -83,6 +84,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     dependency_tracking task
     work_stealing   task
     topology        numa_lookup
+    device          memory
     scheduler       task
     scheduler       work_stealing
     graph           dependency_tracking
@@ -91,6 +93,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     execution       scheduler
     execution       graph
     region_boundary task
+    coherence       task
     probe_tasks     task
     runtime_assembly execution
     runtime_assembly scheduler

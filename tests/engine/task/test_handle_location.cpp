@@ -44,6 +44,8 @@ namespace
     static_assert(host_memory_space() == MemorySpaceID(0), "the host is space 0");
     static_assert(device_memory_space(0) == MemorySpaceID(1), "device i is space i + 1");
     static_assert(device_memory_space(3) == MemorySpaceID(4), "device i is space i + 1");
+    static_assert(!device_of_space(host_memory_space()), "the host space has no device");
+    static_assert(*device_of_space(device_memory_space(3)) == 3, "space i + 1 is device i");
 
     /** @brief Mints a handle in @p directory with an instance at @p address on @p device. */
     GlobalHandle placed(Internal::Memory::ResidencyDirectory& directory, void* address, std::size_t device)

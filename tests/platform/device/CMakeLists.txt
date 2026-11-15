@@ -8,6 +8,7 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_device_descriptor.cpp
         compile_device_log_category.cpp
+        test_device_memory_probe.cpp
         test_device_queue_set.cpp
         test_in_memory_queue_factory.cpp
         test_numa_route_table.cpp

@@ -665,24 +665,21 @@ a host address used as a dependency key, also falls to rules 3 and 4.
 `TaskMetadata::numa_affinity` plays no part in the choice.
 
 A single kernel cannot dereference USM from two device contexts that are not peers. A node
-whose regions straddle a device boundary would hit an illegal cross-context access, so the
-first dispatch of a node checks co-location and fails the run with a precise error. The
-result is cached on the node; nodes are dispatched serially across steps, so a plain flag is
-safe and steady-state replay pays nothing. A failure is not cached, so a graph that is still
-misconfigured fails again on a later run. Cross-device execution itself needs region
-ownership and halo exchange, which the runtime does not have; the check enforces the
-co-location contract the layer above must honour.
+whose regions straddle a device boundary runs on its placed device: the coherence planner
+(`modules/engine/coherence`) adds the copies that bring every byte it reads to its device
+when the region composer installs it. The placement found at the first dispatch is cached on
+the node; nodes are dispatched serially across steps, so a plain flag is safe and steady-state
+replay pays nothing.
 
-Both steps are `place_for_dispatch()` (`dispatch_placement.hpp`), which execute_task() calls for
+The placement is `place_for_dispatch()` (`dispatch_placement.hpp`), which execute_task() calls for
 every graph node it dispatches; a node already placed keeps its device and is not checked again.
-The first dispatch asks `placement_of()` once, after the co-location check, and caches the
+The first dispatch asks `placement_of()` once and caches the
 answer on the node as `cached_queue_index_`. Steady-state replay then routes through
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
 `USMAllocator::owning_device()`. `place_for_dispatch()` returns `Result<void>`. A placement at or
 past the device count is an `ErrorCode::InvalidGraph` error with the index and the count, and
 `place_for_dispatch()` passes on the refusal `placement_of()` returns for a stated device in
-another context. execute_task() names the node in either and fails the run; like a
-co-location failure neither is cached, so each recurs on a later run.
+another context. execute_task() names the node in either and fails the run; neither failure is cached, so each recurs on a later run.
 
 A task that is not a graph node has no placement. It takes
 `DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of

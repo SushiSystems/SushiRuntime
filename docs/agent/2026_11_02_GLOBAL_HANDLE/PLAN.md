@@ -51,8 +51,12 @@ when its own context would not hold their reading; it still reviews and commits 
 | T10 | `extension/buffer_exchange` | T06 | done |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
-| T13 | `engine/coherence` planner | T08, T12 | running |
+| T13 | `engine/coherence` planner | T08, T12 | done |
 | T14 | `engine/coherence` eviction | T13 | todo |
+| T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | todo |
+| T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
+| T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |
+| T42 | `engine/execution`, `platform/device`: integrated GPU shares the host pool | T13 | todo |
 | T15 | reference interpreter test | T13 | todo |
 | T16 | determinism suite | T13 | todo |
 | T17 | `engine/coherence` same-context and peer paths | T13 | todo |
@@ -114,6 +118,15 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T14 | `sonnet` `medium` | `engine/coherence`: `EvictionPolicy` interface, logical-time strategy, pinning; its tests | T13 | A capacity test evicts in graph order and the eviction plan hashes equal across runs |
 | T15 | `sonnet` `medium` | a reference sequential interpreter and the seeded randomized coherence test, under `tests/` | T13 | Every seeded graph gives equal bytes on the planner and the reference |
 | T16 | `haiku` `high` | the BB-3 determinism suite: handle values, plan hash and bytes across worker counts {1, 2, max} | T13 | The suite passes on the software device |
+
+### Follow-ups found by T13
+
+| Task | Runs on | Files | Waits on | Done when |
+| --- | --- | --- | --- | --- |
+| T39 | `opus` `low` | `engine/task` `handle_location.hpp` callers, dispatch in `engine/scheduler` and the task submit path | T13 | A kernel's captured buffer pointer is replaced by the instance resolved on its node's device at dispatch, and a test shows a node on device 1 reading the copied instance |
+| T40 | `sonnet` `medium` | `engine/task/source/node_placement.cpp` | T13 | A node stated on a device in another SYCL context than its anchor's owner is placed, with the copy planned, instead of refused |
+| T41 | `sonnet` `medium` | `platform/memory` `ResidencyView` port; `engine/coherence` planner and node factory | T13 | The planner and the node factory depend on the port, not on `ResidencyDirectory` |
+| T42 | `sonnet` `low` | `engine/execution/source/runtime_memory_spaces.cpp`, `platform/device` | T13 | An integrated GPU reports the host pool as its shared pool, and `usable_pool_bytes` counts it once |
 
 ### H4: transfer paths and files
 

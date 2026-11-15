@@ -29,8 +29,8 @@ Read from the source on 2026-10-19 and 2026-10-20.
 A tracked node (`kernel()`, `task()`) runs on the device that owns the buffer of
 its first write region, else of its first read region; a node that names no buffer runs on device
 0 (`modules/engine/task/source/node_placement.cpp`, `placement_of()`; `K_DEFAULT_PLACEMENT = 0`).
-A node whose buffers span two devices is refused with "its buffers span multiple device contexts"
-(`modules/engine/scheduler/source/dispatch_placement.cpp`). Only the untracked verbs take an `On`,
+A node whose buffers span two devices runs with the copies the coherence planner adds
+(`modules/engine/coherence`, GLOBAL_HANDLE). Only the untracked verbs take an `On`,
 whose default is `On(DeviceIndex{0})` (`api/graph/recorder.hpp`). `Runtime::buffer<T>(count,
 device = DeviceIndex{0}, residency = Residency::Shared, alignment = 0)` places a buffer
 (`api/runtime/runtime.hpp`). So on one machine the device of a tracked node already follows its

@@ -29,14 +29,10 @@
 
 #include <SushiRuntime/scheduler/dispatch_placement.hpp>
 
-#include <optional>
-#include <vector>
-
 #include <SushiLog/text/text_format.hpp>
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -46,32 +42,6 @@ namespace SushiRuntime
 {
     namespace Internal::Scheduler
     {
-        namespace
-        {
-            /** @brief Returns the device a handle's buffer is recorded on, or -1 when it has no record. */
-            int recorded_device_index(const Internal::Graph::PlacementMemory& memory, GlobalHandle handle)
-            {
-                const std::optional<std::size_t> device = memory.recorded_device(handle);
-                return device ? static_cast<int>(*device) : -1;
-            }
-
-            /** @brief Tells whether a region of @p regions is recorded off the device @p anchor. */
-            bool leaves_device(const std::vector<BufferRegion>& regions, int anchor,
-                               const Internal::Graph::PlacementMemory& memory)
-            {
-                for (const BufferRegion& region : regions)
-                {
-                    if (!region.valid())
-                        continue;
-
-                    const int device = recorded_device_index(memory, region.base);
-                    if (device >= 0 && device != anchor)
-                        return true;
-                }
-                return false;
-            }
-        } // namespace
-
         Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& allocator,
                                         const HandleResolver& handles, std::size_t device_count)
         {
@@ -81,19 +51,7 @@ namespace SushiRuntime
             if (node.locality_checked_)
                 return {};
 
-            const std::optional<std::size_t> anchor = Internal::Graph::anchor_device(node, memory);
-            const int anchor_device = anchor ? static_cast<int>(*anchor) : -1;
-            const bool spans = anchor_device >= 0 &&
-                               (leaves_device(node.io_reads_, anchor_device, memory) ||
-                                leaves_device(node.io_writes_, anchor_device, memory));
-
-            // A failure is not cached, so it recurs each run (modules/engine/scheduler/README.md).
-            if (spans)
-                return make_error(Error{
-                    ErrorCode::InvalidGraph,
-                    "its buffers span multiple device contexts; co-locate them on "
-                    "one device (cross-device execution is not yet supported)."});
-
+            // A node over buffers on several devices runs with the copies the coherence planner added.
             const Result<std::size_t> placed = Internal::Graph::placement_of(node, memory);
             if (!placed)
                 return make_error(placed.error());

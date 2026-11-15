@@ -715,6 +715,9 @@ build_region(), which replays the region's recorder and can throw. Up to that po
 it writes is the plan index counter, so a throw from a build leaves the regions, the cross edges,
 the roots and the plan as the last commit left them, and the caller repeats the commit once the
 recording is repaired. A region built before the one that threw is built again by that commit.
+Each built region is stamped, then `plan_region_coherence()` (`source/region_coherence.hpp`) adds
+the allocate, copy and free nodes of `engine/coherence`, and finish_region() reads its in-degrees,
+roots, leaves and boundary summary; a refused plan fails the commit the same way.
 
 The second phase un-wires the allocations of the retired regions (retire_regions()), installs the
 built ones (install_region()), wires every dirty allocation again (rewire_base()) and publishes the

@@ -22,6 +22,7 @@ sushiruntime_add_module_tests(
         test_residency_directory.cpp
         test_sycl_queues.cpp
         test_sycl_usm_source.cpp
+        test_system_memory_probe.cpp
         test_usm_allocation_owner.cpp
         test_usm_allocator.cpp
         test_usm_registry.cpp
