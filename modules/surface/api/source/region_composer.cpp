@@ -212,7 +212,7 @@ namespace SushiRuntime
                 Internal::Graph::CompiledGraph plan_;
 
                 using Node = Internal::Graph::Node;
-                using Base = ::SushiRuntime::ResourceID;  // allocation identity (void*)
+                using Base = ::SushiRuntime::GlobalHandle;
 
                 /**
                  * @brief Holds a boundary pin reduced to one hazard's intervals, used by

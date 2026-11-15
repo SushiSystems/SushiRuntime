@@ -56,6 +56,7 @@
 
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 namespace
 {
@@ -159,7 +160,7 @@ namespace
     {
         const std::vector<SushiRuntime::BufferRegion> none;
         const std::vector<SushiRuntime::BufferRegion> writes{
-            SushiRuntime::BufferRegion(data)};
+            SushiRuntime::BufferRegion(TestSupport::place_in(context.handles(), data))};
 
         TaskGraph graph;
         graph.add_node([data, count](sycl::handler& handler)
@@ -345,13 +346,13 @@ namespace HostEngineTests
     CompiledGraph diamond(std::vector<char>& order, int* cells)
     {
         TaskGraph graph;
-        graph.add_native({}, {BufferRegion(&cells[0])}, [&order]() { order.push_back('a'); });
-        graph.add_native({BufferRegion(&cells[0])}, {BufferRegion(&cells[1])},
+        graph.add_native({}, {TestSupport::region_at(&cells[0])}, [&order]() { order.push_back('a'); });
+        graph.add_native({TestSupport::region_at(&cells[0])}, {TestSupport::region_at(&cells[1])},
                          [&order]() { order.push_back('b'); });
-        graph.add_native({BufferRegion(&cells[0])}, {BufferRegion(&cells[2])},
+        graph.add_native({TestSupport::region_at(&cells[0])}, {TestSupport::region_at(&cells[2])},
                          [&order]() { order.push_back('c'); });
-        graph.add_native({BufferRegion(&cells[1]), BufferRegion(&cells[2])},
-                         {BufferRegion(&cells[3])}, [&order]() { order.push_back('d'); });
+        graph.add_native({TestSupport::region_at(&cells[1]), TestSupport::region_at(&cells[2])},
+                         {TestSupport::region_at(&cells[3])}, [&order]() { order.push_back('d'); });
         return graph.compile().value();
     }
 
@@ -443,8 +444,8 @@ namespace HostEngineTests
     int cell = 0;
     bool successor_ran = false;
     TaskGraph graph;
-    graph.add_native({}, {BufferRegion(&cell)}, []() { throw std::runtime_error("boom"); });
-    graph.add_native({BufferRegion(&cell)}, {}, [&successor_ran]() { successor_ran = true; });
+    graph.add_native({}, {TestSupport::region_at(&cell)}, []() { throw std::runtime_error("boom"); });
+    graph.add_native({TestSupport::region_at(&cell)}, {}, [&successor_ran]() { successor_ran = true; });
     CompiledGraph plan = graph.compile().value();
 
     auto ran = host.engine.execute(plan);

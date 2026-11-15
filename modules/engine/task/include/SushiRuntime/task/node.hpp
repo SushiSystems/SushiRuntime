@@ -301,14 +301,14 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Lists the addresses this node reads and writes at its next dispatch.
+             * @brief Lists the handles this node reads and writes at its next dispatch.
              *
              * For a node whose buffers rotate every step; whoever owns the lists re-points
              * them before each step.
              * @see modules/engine/task/README.md
              */
-            void set_live_io(std::shared_ptr<std::vector<void*>> reads,
-                             std::shared_ptr<std::vector<void*>> writes)
+            void set_live_io(std::shared_ptr<std::vector<GlobalHandle>> reads,
+                             std::shared_ptr<std::vector<GlobalHandle>> writes)
             {
                 OffloadState& state = offload();
                 state.live_reads = std::move(reads);

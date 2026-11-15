@@ -43,14 +43,14 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Returns the base of the first write region, else of the first read region. */
-            void* anchor_of(const Node& node) noexcept
+            /** @brief Returns the handle of the first write region, else of the first read region. */
+            GlobalHandle anchor_of(const Node& node) noexcept
             {
                 if (!node.io_writes_.empty())
                     return node.io_writes_.front().base;
                 if (!node.io_reads_.empty())
                     return node.io_reads_.front().base;
-                return nullptr;
+                return GlobalHandle::null();
             }
         } // namespace
 
@@ -58,9 +58,10 @@ namespace SushiRuntime
          * @brief Returns the device @p node runs on, or the refusal of its stated device.
          */
         Result<std::size_t> placement_of(const Node& node,
-                                         const Internal::Memory::USMAllocator& memory)
+                                         const Internal::Memory::USMAllocator& memory,
+                                         const HandleResolver& handles)
         {
-            return placement_of(node, USMPlacementMemory(memory));
+            return placement_of(node, USMPlacementMemory(memory, handles));
         }
 
         /**

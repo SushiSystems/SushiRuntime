@@ -50,7 +50,9 @@ compute_boundary_access() returns a region's per-base boundary summary. For each
 region touches it gives every accessor node an entry pin and an exit pin, each holding the intervals
 of the node that the rules below keep. A node whose intervals are all dropped has no pin. Both rules
 look at direct intra neighbours only and count an interval as covered only when one interval of a
-neighbour fully contains it; an interval is never split.
+neighbour fully contains it; an interval is never split. Bases come out in the order of their
+`GlobalHandle`, and the pins of one base in the order of the nodes given, so the summary is equal in
+every run.
 
 Entry (entry_pin()). A read of the node is dropped when a direct intra predecessor reads or writes
 an interval of the base that contains it. A write of the node is dropped only when a direct intra

@@ -41,6 +41,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
@@ -94,15 +95,15 @@ namespace SushiRuntime
                 /**
                  * @brief Sizes the worker pool and builds its steal order; starts no thread.
                  * @param pool Copied; the range it asks for is clamped to the machine's cores.
-                 * @param topology Must outlive the scheduler.
-                 * @param devices Must outlive the scheduler.
-                 * @param memory Must outlive the scheduler.
+                 * @param topology,devices,memory Must outlive the scheduler.
+                 * @param handles Resolves the handles of node regions; must outlive the scheduler.
                  * @param collector Takes the dispatch and steal zones; must outlive the scheduler.
                  */
                 TaskScheduler(const WorkerPoolSettings& pool,
                               const Internal::Topology::TopologyView& topology,
                               Internal::Device::DeviceQueueSet& devices,
                               const Internal::Memory::USMAllocator& memory,
+                              const HandleResolver& handles,
                               Profile::Collector& collector = Profile::process_collector());
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();

@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -93,10 +94,13 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> add_views(const std::vector<BufferView>& views,
                                                      DeviceIndex device,
                                                      std::vector<BufferRegion>& regions,
-                                                     std::vector<LivenessObserver>& lives) const;
+                                                     std::vector<LivenessObserver>& lives);
 
                 /// @brief Holds the tasks of the batch being run; cleared for each batch.
                 Graph graph_;
+
+                /// @brief Keeps the borrowed views of the batch, so each range keeps one handle.
+                std::vector<Buffer<std::byte>> borrowed_;
 
                 /// @brief Wraps the cache's memory as buffers the graph tracks.
                 Interop interop_;

@@ -8,5 +8,5 @@ sushiruntime_add_module(
     SYCL
     SOURCES dispatch_events.cpp node_host_run.cpp node_placement.cpp node_widths.cpp task_submission.cpp
         usm_placement_memory.cpp
-    DEPENDS core report region
+    DEPENDS core handle report region
     PRIVATE_DEPENDS memory)

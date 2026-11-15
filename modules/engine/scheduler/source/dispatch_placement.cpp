@@ -40,6 +40,7 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
+#include <SushiRuntime/task/usm_placement_memory.hpp>
 
 namespace SushiRuntime
 {
@@ -47,20 +48,20 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
-            int recorded_device_index(const Internal::Memory::USMAllocator& memory, void* address)
+            /** @brief Returns the device a handle's buffer is recorded on, or -1 when it has no record. */
+            int recorded_device_index(const Internal::Graph::PlacementMemory& memory, GlobalHandle handle)
             {
-                const std::optional<std::size_t> device = memory.device_of(address);
+                const std::optional<std::size_t> device = memory.recorded_device(handle);
                 return device ? static_cast<int>(*device) : -1;
             }
 
             /** @brief Tells whether a region of @p regions is recorded off the device @p anchor. */
             bool leaves_device(const std::vector<BufferRegion>& regions, int anchor,
-                               const Internal::Memory::USMAllocator& memory)
+                               const Internal::Graph::PlacementMemory& memory)
             {
                 for (const BufferRegion& region : regions)
                 {
-                    if (!region.base)
+                    if (!region.valid())
                         continue;
 
                     const int device = recorded_device_index(memory, region.base);
@@ -71,14 +72,16 @@ namespace SushiRuntime
             }
         } // namespace
 
-        Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
-                                std::size_t device_count)
+        Result<void> place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& allocator,
+                                        const HandleResolver& handles, std::size_t device_count)
         {
+            const Internal::Graph::USMPlacementMemory memory(allocator, handles);
+
             // The placement found at the first dispatch holds for every later step of the node.
             if (node.locality_checked_)
                 return {};
 
-            void* anchor = nullptr;
+            GlobalHandle anchor;
             if (!node.io_writes_.empty())
                 anchor = node.io_writes_.front().base;
             else if (!node.io_reads_.empty())

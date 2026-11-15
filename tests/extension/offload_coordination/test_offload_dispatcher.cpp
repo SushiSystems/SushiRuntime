@@ -79,6 +79,7 @@
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -210,6 +211,7 @@ namespace OffloadDispatcherTests
                     register_worker(worker_peer_, K_WORKER_NAME);
                     registry_.register_buffer(first_.data(), sizeof(Storage));
                     registry_.register_buffer(second_.data(), sizeof(Storage));
+                    dispatcher_.bind_handles(handles_.resolver(), 1);
                 }
 
                 /** @brief Puts the default sink and the saved level back, and stops the endpoints. */
@@ -252,13 +254,19 @@ namespace OffloadDispatcherTests
                 }
 
                 /** @brief Returns a node that reads @p read and writes @p written under @p op. */
-                static sushi_ptr<Internal::Graph::Node> fixed_node(OperationID op, void* read, void* written)
+                sushi_ptr<Internal::Graph::Node> fixed_node(OperationID op, void* read, void* written)
                 {
                     sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
                     node->metadata.op_id = op;
-                    node->io_reads_.emplace_back(read);
-                    node->io_writes_.emplace_back(written);
+                    node->io_reads_.emplace_back(handles_.place(read));
+                    node->io_writes_.emplace_back(handles_.place(written));
                     return node;
+                }
+
+                /** @brief Returns a live list holding the handle of @p address @p count times. */
+                std::shared_ptr<std::vector<GlobalHandle>> live_list(std::size_t count, void* address)
+                {
+                    return std::make_shared<std::vector<GlobalHandle>>(count, handles_.place(address));
                 }
 
                 /** @brief Runs prepare() over the given nodes, under @p rules. */
@@ -446,6 +454,9 @@ namespace OffloadDispatcherTests
                 /// @brief The registry the dispatcher reads handles from.
                 BufferRegistry registry_;
 
+                /// @brief Gives each buffer a handle that resolves to its address on device 0.
+                TestSupport::HandleTable handles_;
+
                 /// @brief The policy the directory asks.
                 std::shared_ptr<InMemoryOffloadPolicy> policy_ =
                     std::make_shared<InMemoryOffloadPolicy>();
@@ -581,8 +592,8 @@ namespace OffloadDispatcherTests
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
         Internal::Graph::OffloadState& state = node->offload();
-        state.live_reads = std::make_shared<std::vector<void*>>(1, static_cast<void*>(first_.data()));
-        state.live_writes = std::make_shared<std::vector<void*>>(1, static_cast<void*>(second_.data()));
+        state.live_reads = live_list(1, first_.data());
+        state.live_writes = live_list(1, second_.data());
         prepare({node});
         ASSERT_TRUE(state.offloadable);
         EXPECT_EQ(state.payload, nullptr);
@@ -606,8 +617,8 @@ namespace OffloadDispatcherTests
         dispatcher_.complete_remote(*node);
 
         // The step boundary swaps the two buffers; the baked lists still name the old roles.
-        state.live_reads->assign(1, static_cast<void*>(second_.data()));
-        state.live_writes->assign(1, static_cast<void*>(first_.data()));
+        state.live_reads->assign(1, handles_.place(second_.data()));
+        state.live_writes->assign(1, handles_.place(first_.data()));
 
         ASSERT_TRUE(dispatcher_.try_offload(*node));
         ASSERT_EQ(offered().size(), 2u);
@@ -700,15 +711,15 @@ namespace OffloadDispatcherTests
 
         const sushi_ptr<Internal::Graph::Node> fixed =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
-        fixed->io_writes_.emplace_back(second_.data());
+        fixed->io_writes_.emplace_back(handles_.place(second_.data()));
 
         const sushi_ptr<Internal::Graph::Node> dynamic =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
         Internal::Graph::OffloadState& dynamic_state = dynamic->offload();
         dynamic_state.live_reads =
-            std::make_shared<std::vector<void*>>(1, static_cast<void*>(first_.data()));
+            live_list(1, first_.data());
         dynamic_state.live_writes =
-            std::make_shared<std::vector<void*>>(2, static_cast<void*>(second_.data()));
+            live_list(2, second_.data());
 
         // The same buffer as an input and as an output is one write, so this node may leave.
         const sushi_ptr<Internal::Graph::Node> in_place =

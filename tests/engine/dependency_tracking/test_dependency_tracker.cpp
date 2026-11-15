@@ -37,6 +37,8 @@
 
 #include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>
 
+#include "support/made_up_handle.hpp"
+
 using namespace SushiRuntime;
 
 /** @brief Tests the edges the lock-free DependencyTracker creates between raw nodes. */
@@ -70,8 +72,7 @@ namespace DependencyTrackerTests
         auto writer = make_sushi<Node>();
         auto reader = make_sushi<Node>();
 
-        int buffer = 0;
-        void* p = &buffer;
+        const GlobalHandle p = TestSupport::made_up_handle(1);
 
         tracker.resolve(writer.get(), SushiRuntime::BufferRegion(p), true);
         tracker.resolve(reader.get(), SushiRuntime::BufferRegion(p), false);
@@ -94,8 +95,7 @@ namespace DependencyTrackerTests
         auto reader = make_sushi<Node>();
         auto writer = make_sushi<Node>();
 
-        int buffer = 0;
-        void* p = &buffer;
+        const GlobalHandle p = TestSupport::made_up_handle(1);
 
         tracker.resolve(reader.get(), SushiRuntime::BufferRegion(p), false);
         tracker.resolve(writer.get(), SushiRuntime::BufferRegion(p), true);
@@ -116,8 +116,7 @@ namespace DependencyTrackerTests
         auto first = make_sushi<Node>();
         auto second = make_sushi<Node>();
 
-        int buffer = 0;
-        void* p = &buffer;
+        const GlobalHandle p = TestSupport::made_up_handle(1);
 
         tracker.resolve(first.get(), SushiRuntime::BufferRegion(p), true);
         tracker.resolve(second.get(), SushiRuntime::BufferRegion(p), true);
@@ -140,8 +139,7 @@ namespace DependencyTrackerTests
         auto r1 = make_sushi<Node>();
         auto r2 = make_sushi<Node>();
 
-        int buffer = 0;
-        void* p = &buffer;
+        const GlobalHandle p = TestSupport::made_up_handle(1);
 
         tracker.resolve(writer.get(), SushiRuntime::BufferRegion(p), true);
         tracker.resolve(r1.get(), SushiRuntime::BufferRegion(p), false);
@@ -165,9 +163,8 @@ namespace DependencyTrackerTests
         auto writer = make_sushi<Node>();
         auto reader = make_sushi<Node>();
 
-        int a = 0, b = 0;
-        void* pa = &a;
-        void* pb = &b;
+        const GlobalHandle pa = TestSupport::made_up_handle(1);
+        const GlobalHandle pb = TestSupport::made_up_handle(2);
 
         tracker.resolve(writer.get(), SushiRuntime::BufferRegion(pa), true);
         tracker.resolve(writer.get(), SushiRuntime::BufferRegion(pb), true);
@@ -191,8 +188,7 @@ namespace DependencyTrackerTests
         DependencyTracker tracker;
         auto node = make_sushi<Node>();
 
-        int buffer = 0;
-        void* p = &buffer;
+        const GlobalHandle p = TestSupport::made_up_handle(1);
 
         tracker.resolve(node.get(), SushiRuntime::BufferRegion(p), true);
         tracker.resolve(node.get(), SushiRuntime::BufferRegion(p), true);
@@ -208,7 +204,7 @@ namespace DependencyTrackerTests
      * @brief Tests that writes to disjoint sub-regions of one allocation stay parallel.
      *
      * Two writers touching non-overlapping byte ranges of the same base must not be
-     * ordered — the core win of region identity over base-pointer identity.
+     * ordered — the core win of region identity over whole-buffer identity.
      */
     TEST(Small_DependencyTrackerTest, DisjointSubRegionsAreParallel)
     {
@@ -216,7 +212,7 @@ namespace DependencyTrackerTests
         auto w1 = make_sushi<Node>();
         auto w2 = make_sushi<Node>();
 
-        char base[64];
+        const GlobalHandle base = TestSupport::made_up_handle(1);
         tracker.resolve(w1.get(), BufferRegion{base, 0, 32}, true);
         tracker.resolve(w2.get(), BufferRegion{base, 32, 32}, true);
 
@@ -238,7 +234,7 @@ namespace DependencyTrackerTests
         auto w1 = make_sushi<Node>();
         auto w2 = make_sushi<Node>();
 
-        char base[64];
+        const GlobalHandle base = TestSupport::made_up_handle(1);
         tracker.resolve(w1.get(), BufferRegion{base, 0, 40}, true);
         tracker.resolve(w2.get(), BufferRegion{base, 32, 32}, true);
 
@@ -250,7 +246,7 @@ namespace DependencyTrackerTests
     /**
      * @brief Tests that a whole-buffer access conflicts with any sub-region of it.
      *
-     * A bare base pointer is the whole-buffer region, which contains every
+     * A bare handle is the whole-buffer region, which contains every
      * sub-region of the same allocation, so it serializes against them.
      */
     TEST(Small_DependencyTrackerTest, WholeBufferConflictsWithSubRegion)
@@ -259,7 +255,7 @@ namespace DependencyTrackerTests
         auto whole = make_sushi<Node>();
         auto part  = make_sushi<Node>();
 
-        char base[64];
+        const GlobalHandle base = TestSupport::made_up_handle(1);
         tracker.resolve(whole.get(), SushiRuntime::BufferRegion(base), true);                 // whole-buffer write
         tracker.resolve(part.get(), BufferRegion{base, 16, 8}, true);
 
@@ -282,7 +278,7 @@ namespace DependencyTrackerTests
         auto w_hi = make_sushi<Node>();
         auto rd   = make_sushi<Node>();
 
-        char base[64];
+        const GlobalHandle base = TestSupport::made_up_handle(1);
         tracker.resolve(w_lo.get(), BufferRegion{base, 0, 32}, true);
         tracker.resolve(w_hi.get(), BufferRegion{base, 32, 32}, true);
         tracker.resolve(rd.get(),   BufferRegion{base, 0, 64}, false);
@@ -308,7 +304,7 @@ namespace DependencyTrackerTests
         auto wp = make_sushi<Node>();
         auto w  = make_sushi<Node>();
 
-        char base[64];
+        const GlobalHandle base = TestSupport::made_up_handle(1);
         tracker.resolve(rd.get(), BufferRegion{base, 0, 16}, false);
         tracker.resolve(wp.get(), BufferRegion{base, 16, 16}, true);
         tracker.resolve(w.get(),  BufferRegion{base, 0, 32}, true);
@@ -331,8 +327,8 @@ namespace DependencyTrackerTests
         auto w1 = make_sushi<Node>();
         auto w2 = make_sushi<Node>();
 
-        char base_a[64];
-        char base_b[64];
+        const GlobalHandle base_a = TestSupport::made_up_handle(1);
+        const GlobalHandle base_b = TestSupport::made_up_handle(2);
         tracker.resolve(w1.get(), BufferRegion{base_a, 0, 32}, true);
         tracker.resolve(w2.get(), BufferRegion{base_b, 0, 32}, true);
 

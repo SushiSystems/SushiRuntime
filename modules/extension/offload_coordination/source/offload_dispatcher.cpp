@@ -43,6 +43,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/offload_coordination/offload_coordination_log_category.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
@@ -153,15 +154,11 @@ namespace SushiRuntime
                 return scratch;
             }
 
-            /** @brief Returns whether every address of a live list is shared; null is true. */
-            bool is_all_shared(const BufferRegistry& registry,
-                               const std::shared_ptr<std::vector<void*>>& addresses)
+            /** @brief Returns whether every address of a live list is shared; a null address is not. */
+            bool is_all_shared(const BufferRegistry& registry, const std::vector<void*>& addresses)
             {
-                if (!addresses)
-                    return true;
-
-                for (void* address : *addresses)
-                    if (!registry.lookup(address).has_value())
+                for (void* address : addresses)
+                    if (address == nullptr || !registry.lookup(address).has_value())
                         return false;
                 return true;
             }
@@ -182,14 +179,13 @@ namespace SushiRuntime
             }
 
             /** @brief Returns whether two addresses of a live write list name one buffer. */
-            bool is_written_twice(const BufferRegistry& registry,
-                                  const std::shared_ptr<std::vector<void*>>& addresses)
+            bool is_written_twice(const BufferRegistry& registry, const std::vector<void*>& addresses)
             {
-                if (!addresses || addresses->size() < 2)
+                if (addresses.size() < 2)
                     return false;
 
                 std::vector<BufferHandle> handles;
-                const SushiRuntime::span<void* const> listed(addresses->data(), addresses->size());
+                const SushiRuntime::span<void* const> listed(addresses.data(), addresses.size());
                 return registry.resolve(listed, handles) &&
                        names_a_buffer_twice(SushiRuntime::span<const BufferHandle>(
                            handles.data(), handles.size()));
@@ -198,10 +194,12 @@ namespace SushiRuntime
             /**
              * @brief Decides a double-buffered node, whose handles are resolved per dispatch.
              * @param may_wait The node's rule names another machine; no alive worker is needed.
+             * @param reads,writes The addresses of the node's live lists now.
              */
             Placement place_dynamic(const BufferRegistry& registry,
                                     const WorkerDirectory& directory, const Internal::Graph::Node& node,
-                                    Internal::Graph::OffloadState& state, bool may_wait)
+                                    Internal::Graph::OffloadState& state, bool may_wait,
+                                    const std::vector<void*>& reads, const std::vector<void*>& writes)
             {
                 state.offloadable = false;
                 state.payload.reset();
@@ -212,10 +210,9 @@ namespace SushiRuntime
                     return Placement::Untagged;
                 if (!may_wait && !directory.supports(operation))
                     return Placement::NoWorker;
-                if (!is_all_shared(registry, state.live_reads) ||
-                    !is_all_shared(registry, state.live_writes))
+                if (!is_all_shared(registry, reads) || !is_all_shared(registry, writes))
                     return Placement::NotShared;
-                if (is_written_twice(registry, state.live_writes))
+                if (is_written_twice(registry, writes))
                     return Placement::WrittenTwice;
 
                 state.offloadable = true;
@@ -228,9 +225,11 @@ namespace SushiRuntime
              * A node that stays local keeps the handles of the shared buffers it writes; a
              * node that writes none keeps no payload, and gets no OffloadState for it.
              * @param may_wait The node's rule names another machine; no alive worker is needed.
+             * @param address_of Returns the address the registry knows a handle by.
              */
+            template <class AddressOf>
             Placement place_fixed(const BufferRegistry& registry, const WorkerDirectory& directory,
-                                  Internal::Graph::Node& node, bool may_wait)
+                                  Internal::Graph::Node& node, bool may_wait, const AddressOf& address_of)
             {
                 const OperationID operation = node.metadata.op_id;
                 const bool is_tagged = operation.value != 0;
@@ -244,7 +243,7 @@ namespace SushiRuntime
                     baked->handles.reserve(node.io_reads_.size() + node.io_writes_.size());
                     for (const BufferRegion& region : node.io_reads_)
                     {
-                        const std::optional<BufferHandle> handle = registry.lookup(region.base);
+                        const std::optional<BufferHandle> handle = registry.lookup(address_of(region.base));
                         if (!handle.has_value())
                         {
                             every_buffer_shared = false;
@@ -260,7 +259,7 @@ namespace SushiRuntime
 
                 for (const BufferRegion& region : node.io_writes_)
                 {
-                    const std::optional<BufferHandle> handle = registry.lookup(region.base);
+                    const std::optional<BufferHandle> handle = registry.lookup(address_of(region.base));
                     if (handle.has_value())
                         baked->handles.push_back(*handle);
                     else
@@ -349,27 +348,25 @@ namespace SushiRuntime
             /**
              * @brief Writes a node's current handles into the scratch under one registry lock.
              *
-             * A double-buffered node resolves the addresses of its live lists; a fixed-buffer
-             * node refreshes the versions of the handles prepare() stored.
+             * A double-buffered node resolves its live lists; a fixed one refreshes its handles.
+             * @param append_addresses Writes the address of each handle of a list to a vector's end.
              * @return The number of leading handles that are inputs, or nothing when a buffer
              *         is not shared any more.
              */
+            template <class AppendAddresses>
             std::optional<std::size_t> snapshot_handles(const BufferRegistry& registry,
                                                         const Internal::Graph::OffloadState& state,
-                                                        DispatchScratch& scratch)
+                                                        DispatchScratch& scratch,
+                                                        const AppendAddresses& append_addresses)
             {
                 if (state.live_reads || state.live_writes)
                 {
                     scratch.addresses.clear();
                     if (state.live_reads)
-                        scratch.addresses.insert(scratch.addresses.end(),
-                                                 state.live_reads->begin(),
-                                                 state.live_reads->end());
+                        append_addresses(*state.live_reads, scratch.addresses);
                     const std::size_t input_count = scratch.addresses.size();
                     if (state.live_writes)
-                        scratch.addresses.insert(scratch.addresses.end(),
-                                                 state.live_writes->begin(),
-                                                 state.live_writes->end());
+                        append_addresses(*state.live_writes, scratch.addresses);
 
                     const SushiRuntime::span<void* const> addresses(scratch.addresses.data(),
                                                                     scratch.addresses.size());
@@ -404,6 +401,28 @@ namespace SushiRuntime
 
         }
 
+        void OffloadDispatcher::bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept
+        {
+            handles_ = &handles;
+            device_count_ = device_count;
+        }
+
+        void* OffloadDispatcher::address_of(GlobalHandle handle) const noexcept
+        {
+            if (handles_ == nullptr)
+                return nullptr;
+            const std::optional<Internal::Graph::HandleLocation> location =
+                Internal::Graph::locate(*handles_, handle, device_count_);
+            return location ? location->address : nullptr;
+        }
+
+        void OffloadDispatcher::append_addresses(const std::vector<GlobalHandle>& handles,
+                                                 std::vector<void*>& addresses) const
+        {
+            for (const GlobalHandle handle : handles)
+                addresses.push_back(address_of(handle));
+        }
+
         void
         OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
                                    const std::shared_ptr<const PlacementRules>& rules)
@@ -421,9 +440,20 @@ namespace SushiRuntime
                     state != nullptr && (state->live_reads || state->live_writes);
                 const PlacementRule* rule = winning_rule(*node, rules.get());
                 const bool may_wait = rule != nullptr && !rule_placement_.names_master(*rule);
-                const Placement placement =
-                    is_dynamic ? place_dynamic(registry_, directory_, *node, *state, may_wait)
-                               : place_fixed(registry_, directory_, *node, may_wait);
+                const auto address_of_handle = [this](GlobalHandle handle) { return address_of(handle); };
+                Placement placement = Placement::Untagged;
+                if (is_dynamic)
+                {
+                    std::vector<void*> reads;
+                    std::vector<void*> writes;
+                    if (state->live_reads)
+                        append_addresses(*state->live_reads, reads);
+                    if (state->live_writes)
+                        append_addresses(*state->live_writes, writes);
+                    placement = place_dynamic(registry_, directory_, *node, *state, may_wait, reads, writes);
+                }
+                else
+                    placement = place_fixed(registry_, directory_, *node, may_wait, address_of_handle);
                 const std::optional<UnreachableCause> cause =
                     may_wait ? unreachable_cause(placement) : std::nullopt;
                 if (cause.has_value())
@@ -470,7 +500,9 @@ namespace SushiRuntime
 
             DispatchScratch& scratch = dispatch_scratch();
             const std::optional<std::size_t> input_count =
-                snapshot_handles(registry_, *state, scratch);
+                snapshot_handles(registry_, *state, scratch,
+                    [this](const std::vector<GlobalHandle>& handles, std::vector<void*>& addresses)
+                    { append_addresses(handles, addresses); });
             if (!input_count.has_value())
             {
                 if (remote_rule == nullptr)
@@ -659,8 +691,11 @@ namespace SushiRuntime
 
             if (state->live_writes)
             {
+                thread_local std::vector<void*> written_addresses;
+                written_addresses.clear();
+                append_addresses(*state->live_writes, written_addresses);
                 registry_.bump_addresses(SushiRuntime::span<void* const>(
-                    state->live_writes->data(), state->live_writes->size()));
+                    written_addresses.data(), written_addresses.size()));
                 return;
             }
 

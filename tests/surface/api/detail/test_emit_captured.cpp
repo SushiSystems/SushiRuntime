@@ -40,6 +40,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -57,7 +58,7 @@ TEST_F(Small_EmitCaptured, TheKernelReceivesEachPointer)
     TestSupport::fill_with(in, 5);
     TestSupport::fill_with(out, 0);
     const Detail::NodeDescription description = Detail::captured_node(
-        {BufferRegion(in.data())}, {BufferRegion(out.data())}, K_COUNT,
+        {TestSupport::region_at(in.data())}, {TestSupport::region_at(out.data())}, K_COUNT,
         std::make_tuple(static_cast<const int*>(in.data()), out.data()),
         [](std::size_t index, const int* source, int* target) { target[index] = source[index] * 2; });
 

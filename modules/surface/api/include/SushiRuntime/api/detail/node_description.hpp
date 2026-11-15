@@ -90,7 +90,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Holds the addresses a State rule reads and writes at its next step.
+         * @brief Holds the handles a State rule reads and writes at its next step.
          *
          * Both lists are null for a rule that names no operation.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
@@ -98,10 +98,10 @@ namespace SushiRuntime
         struct LiveFields
         {
             /** @brief The current field of each State the rule reads, the one written first. */
-            std::shared_ptr<std::vector<void*>> reads;
+            std::shared_ptr<std::vector<GlobalHandle>> reads;
 
             /** @brief The next field of the State the rule writes. */
-            std::shared_ptr<std::vector<void*>> writes;
+            std::shared_ptr<std::vector<GlobalHandle>> writes;
         };
 
         /**

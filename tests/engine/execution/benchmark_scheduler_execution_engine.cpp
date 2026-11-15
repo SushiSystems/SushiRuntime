@@ -64,6 +64,7 @@
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 
 #include "support/tolerance.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -99,7 +100,7 @@ namespace GraphCompileTests
                     void* in  = &bufs[t % M];
                     void* out = &bufs[(t + 1) % M];
                     TaskMetadata meta{"n"};
-                    graph.add_task(meta, {SushiRuntime::BufferRegion(in)}, {SushiRuntime::BufferRegion(out)},
+                    graph.add_task(meta, {TestSupport::region_at(in)}, {TestSupport::region_at(out)},
                         [](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event { return {}; });
                 }
 

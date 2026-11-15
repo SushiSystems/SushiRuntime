@@ -31,24 +31,32 @@
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
 #include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Graph
     {
-        USMPlacementMemory::USMPlacementMemory(const Internal::Memory::USMAllocator& memory) noexcept
-            : memory_(memory)
+        USMPlacementMemory::USMPlacementMemory(const Internal::Memory::USMAllocator& memory,
+                                               const HandleResolver& handles) noexcept
+            : memory_(memory), handles_(handles)
         {
         }
 
-        std::optional<std::size_t> USMPlacementMemory::recorded_device(const void* address) const
+        std::optional<std::size_t> USMPlacementMemory::recorded_device(GlobalHandle handle) const
         {
-            return memory_.device_of(address);
+            const std::optional<HandleLocation> location = locate(handles_, handle, memory_.device_count());
+            if (!location)
+                return std::nullopt;
+            return memory_.device_of(location->address);
         }
 
-        std::optional<std::size_t> USMPlacementMemory::owning_device(const void* address) const
+        std::optional<std::size_t> USMPlacementMemory::owning_device(GlobalHandle handle) const
         {
-            return memory_.owning_device(address);
+            const std::optional<HandleLocation> location = locate(handles_, handle, memory_.device_count());
+            if (!location)
+                return std::nullopt;
+            return memory_.owning_device(location->address);
         }
 
         std::size_t USMPlacementMemory::device_count() const

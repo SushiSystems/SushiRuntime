@@ -95,7 +95,7 @@ void record_scaled_copy(Recorder& recorder, const Buffer<float>& in,
                         const Buffer<float>& out, std::size_t count, float factor)
 {
     float* stage = recorder.scratch<float>(count, in.device_index(), in.residency()).value();
-    const BufferRegion staged{stage, 0, count * sizeof(float)};
+    const BufferRegion staged = recorder.borrowed_region(stage, count * sizeof(float)).value();
     const float* source = in.data();
     float* target = out.data();
 

@@ -47,6 +47,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 #include "support/host_context.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -58,7 +59,7 @@ namespace
     Node& add_digit(TaskGraph& graph, int* cell, int digit,
                     std::shared_ptr<LateBindings> bindings = nullptr)
     {
-        const std::vector<BufferRegion> region{BufferRegion(cell)};
+        const std::vector<BufferRegion> region{TestSupport::region_at(cell)};
         Node& node = graph.add_node(TaskWork(), region, region, std::move(bindings));
         node.host_form = [cell, digit]() { *cell = *cell * 10 + digit; };
         return node;

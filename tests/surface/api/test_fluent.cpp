@@ -199,10 +199,10 @@ TEST_F(Small_FluentAPI, PointerTrackedAddOrdering)
     auto buf = runtime().buffer<int>(N).value();
     TestSupport::fill_with(buf, 0);
     int* p = buf.data();
-    void* key = buf.data();
+    const BufferRegion key(buf.handle());
     auto g = runtime().graph();
-    g.add(N, Reads(), Writes(BufferRegion(key)), [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    g.add(N, Reads(BufferRegion(key)), Writes(BufferRegion(key)),
+    g.add(N, Reads(), Writes(key), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(key), Writes(key),
           [p](std::size_t i) { p[i] = p[i] * p[i]; });
 
     g.run().value();
@@ -314,7 +314,7 @@ TEST_F(Small_FluentAPI, BufferAllocateUseAndReadBack)
     float* sp = src.data();
     float* dp = dst.data();
     auto g = runtime().graph();
-    g.add(N, Reads(BufferRegion(sp)), Writes(BufferRegion(dp)),
+    g.add(N, Reads(BufferRegion(src.handle())), Writes(BufferRegion(dst.handle())),
           [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
 
     g.run().value();

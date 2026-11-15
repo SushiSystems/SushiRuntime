@@ -6,6 +6,7 @@
 sushiruntime_add_module(
     NAME memory TIER platform INTERNAL
     SYCL
-    SOURCES coherence_intervals.cpp device_memory_space.cpp host_memory_space.cpp host_usm_source.cpp
-            memory_pool_capacity.cpp residency_directory.cpp sycl_usm_source.cpp usm_allocator.cpp
+    SOURCES borrowed_index.cpp coherence_intervals.cpp device_memory_space.cpp host_memory_space.cpp
+            host_usm_source.cpp memory_pool_capacity.cpp residency_directory.cpp sycl_usm_source.cpp
+            usm_allocator.cpp
     DEPENDS core handle log profile)

@@ -45,6 +45,7 @@
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -89,7 +90,8 @@ TEST(Medium_ChainRun, EachStepRunsTheWholeChain)
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
     ASSERT_NE(value, nullptr);
-    const std::vector<BufferRegion> region{BufferRegion(value)};
+    TestSupport::HandleTable keys(context->handles());
+    const std::vector<BufferRegion> region{keys.region(value)};
 
     TaskGraph graph;
     graph.add_node(add_one(value), region, region);
@@ -115,7 +117,8 @@ TEST(Medium_ChainRun, WaitReturnsAfterTheStep)
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
     ASSERT_NE(value, nullptr);
-    const std::vector<BufferRegion> region{BufferRegion(value)};
+    TestSupport::HandleTable keys(context->handles());
+    const std::vector<BufferRegion> region{keys.region(value)};
 
     TaskGraph graph;
     graph.add_node(add_one(value), region, region);

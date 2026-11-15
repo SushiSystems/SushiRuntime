@@ -5,4 +5,5 @@
 
 sushiruntime_add_module(
     NAME region TIER foundation
-    HEADER_ONLY)
+    HEADER_ONLY
+    DEPENDS handle)

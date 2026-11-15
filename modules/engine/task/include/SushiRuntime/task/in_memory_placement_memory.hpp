@@ -23,7 +23,7 @@
 
 /**
  * @file in_memory_placement_memory.hpp
- * @brief Declares InMemoryPlacementMemory, a PlacementMemory that answers from addresses a caller records.
+ * @brief Declares InMemoryPlacementMemory, a PlacementMemory that answers from handles a caller records.
  * @author Mustafa Garip
  * @see modules/engine/task/README.md
  */
@@ -32,9 +32,11 @@
 
 #include <cstddef>
 #include <optional>
-#include <unordered_map>
+#include <map>
 #include <utility>
 #include <vector>
+
+#include <SushiRuntime/handle/global_handle.hpp>
 
 #include <SushiRuntime/task/placement_memory.hpp>
 
@@ -43,9 +45,9 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         /**
-         * @brief Holds the context of each device and the device of each recorded address.
+         * @brief Holds the context of each device and the device of each recorded handle.
          *
-         * An address has a device only once record() names it, so recorded_device() and owning_device()
+         * A handle has a device only once record() names it, so recorded_device() and owning_device()
          * answer alike. Device i lies in the SYCL context numbered context_of_device[i].
          * @see modules/engine/task/README.md
          */
@@ -62,26 +64,26 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Records an address as belonging to a device.
-                 * @param address The first address of the allocation.
+                 * @brief Records a handle's buffer as belonging to a device.
+                 * @param handle The handle of the buffer.
                  * @param device  A device index below device_count().
                  */
-                void record(const void* address, std::size_t device)
+                void record(GlobalHandle handle, std::size_t device)
                 {
-                    owners_[address] = device;
+                    owners_[handle] = device;
                 }
 
-                [[nodiscard]] std::optional<std::size_t> recorded_device(const void* address) const override
+                [[nodiscard]] std::optional<std::size_t> recorded_device(GlobalHandle handle) const override
                 {
-                    const auto found = owners_.find(address);
+                    const auto found = owners_.find(handle);
                     if (found == owners_.end())
                         return std::nullopt;
                     return found->second;
                 }
 
-                [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const override
+                [[nodiscard]] std::optional<std::size_t> owning_device(GlobalHandle handle) const override
                 {
-                    return recorded_device(address);
+                    return recorded_device(handle);
                 }
 
                 [[nodiscard]] std::size_t device_count() const override
@@ -96,7 +98,7 @@ namespace SushiRuntime
 
             private:
                 std::vector<std::size_t> context_of_device_;
-                std::unordered_map<const void*, std::size_t> owners_;
+                std::map<GlobalHandle, std::size_t> owners_;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

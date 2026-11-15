@@ -100,7 +100,7 @@ namespace SushiRuntime
                 {
                     for (const auto& r : regions)
                     {
-                        if (!r.base)
+                        if (!r.valid())
                             continue;
                         const std::optional<std::size_t> device = memory.recorded_device(r.base);
                         const int index = device ? static_cast<int>(*device) : -1;
@@ -284,7 +284,7 @@ namespace SushiRuntime
         Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context,
                                                   UnorderedHostWork unordered_host)
         {
-            return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory()),
+            return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory(), context.handles()),
                                   context.offload() != nullptr, unordered_host);
         }
 

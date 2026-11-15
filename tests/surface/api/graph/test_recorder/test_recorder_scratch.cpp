@@ -65,7 +65,7 @@ namespace RecorderScratchTests
         {
             std::uint32_t* stage =
                 recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency()).value();
-            const BufferRegion stage_region{stage, 0, K_COUNT * sizeof(std::uint32_t)};
+            const BufferRegion stage_region = recorder.borrowed_region(stage, K_COUNT * sizeof(std::uint32_t)).value();
             const std::uint32_t* source = in.data();
             std::uint32_t* target = out.data();
 
@@ -150,6 +150,37 @@ namespace RecorderScratchTests
             g.run().value();
 
         EXPECT_EQ(g.compile_count(), 1u);
+    }
+
+    /** @brief Tests that one scratch range named twice gets one Borrowed handle. */
+    TEST_F(Small_RecorderScratch, ABorrowedRangeKeepsOneHandle)
+    {
+        const Runtime& rt = runtime();
+        auto g = rt.graph();
+        Recorder& recorder = g.recorder();
+        std::uint32_t* stage = recorder.scratch<std::uint32_t>(K_COUNT, DeviceIndex{0}, Residency::Shared).value();
+
+        const BufferRegion first = recorder.borrowed_region(stage, K_COUNT * sizeof(std::uint32_t)).value();
+        const BufferRegion second = recorder.borrowed_region(stage, K_COUNT * sizeof(std::uint32_t)).value();
+
+        EXPECT_TRUE(first.valid());
+        EXPECT_EQ(first.base, second.base);
+        EXPECT_TRUE(has_flags(first.base.flags(), HandleFlags::Borrowed));
+    }
+
+    /** @brief Tests that a range overlapping a borrowed range it does not equal is refused. */
+    TEST_F(Small_RecorderScratch, AnOverlappingBorrowedRangeIsRefused)
+    {
+        const Runtime& rt = runtime();
+        auto g = rt.graph();
+        Recorder& recorder = g.recorder();
+        std::uint32_t* stage = recorder.scratch<std::uint32_t>(K_COUNT, DeviceIndex{0}, Residency::Shared).value();
+        ASSERT_TRUE(recorder.borrowed_region(stage, K_COUNT * sizeof(std::uint32_t)).has_value());
+
+        const Result<BufferRegion> inside = recorder.borrowed_region(stage + 1, sizeof(std::uint32_t));
+
+        ASSERT_FALSE(inside.has_value());
+        EXPECT_EQ(inside.error().code, ErrorCode::InvalidArgument);
     }
 
     TEST_F(Small_RecorderScratch, ScratchSurvivesARecompile)

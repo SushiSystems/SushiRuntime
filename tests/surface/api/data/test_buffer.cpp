@@ -347,6 +347,44 @@ namespace DataHandlesTests
         EXPECT_EQ(field.is_host_accessible(), buffer.is_host_accessible());
     }
 
+    /** @brief Tests that each buffer has its own live Buffer handle, which its regions carry. */
+    TEST_F(Small_DataHandles, EachBufferHasItsOwnHandle)
+    {
+        const auto first = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
+        const auto second = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
+
+        EXPECT_FALSE(first.handle().is_null());
+        EXPECT_NE(first.handle(), second.handle());
+        EXPECT_EQ(first.handle().kind(), HandleKind::Buffer);
+        EXPECT_FALSE(has_flags(first.handle().flags(), HandleFlags::Borrowed));
+        EXPECT_EQ(first.region({0, 1}).base, first.handle());
+    }
+
+    /** @brief Tests that a move carries the handle and leaves the moved-from buffer with none. */
+    TEST_F(Small_DataHandles, AMoveCarriesTheHandle)
+    {
+        auto source = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
+        const GlobalHandle handle = source.handle();
+
+        const auto moved = std::move(source);
+
+        EXPECT_EQ(moved.handle(), handle);
+        EXPECT_TRUE(source.handle().is_null());
+    }
+
+    /** @brief Tests that the two fields of a State carry two State handles. */
+    TEST_F(Small_DataHandles, AStateHasTwoStateHandles)
+    {
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
+
+        const GlobalHandle current = Detail::HandleAccess::read_key(field);
+        const GlobalHandle next = Detail::HandleAccess::write_key(field);
+
+        EXPECT_NE(current, next);
+        EXPECT_EQ(current.kind(), HandleKind::State);
+        EXPECT_EQ(next.kind(), HandleKind::State);
+    }
+
     /** @brief Tests that State::region names a byte window of the current field. */
     TEST_F(Small_DataHandles, StateRegionNamesAWindowOfTheCurrentField)
     {
@@ -354,7 +392,7 @@ namespace DataHandlesTests
 
         const BufferRegion window = field.region({4, 8});
 
-        EXPECT_EQ(window.base, static_cast<void*>(field.current()));
+        EXPECT_EQ(window.base, Detail::HandleAccess::read_key(field));
         EXPECT_EQ(window.offset, 4 * sizeof(int));
         EXPECT_EQ(window.length, 8 * sizeof(int));
     }

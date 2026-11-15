@@ -107,16 +107,12 @@ namespace SushiRuntime
                 SushiRuntime::Internal::Memory::EpochManager* epochs_;
 
                 /**
-                 * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
+                 * @brief Maps a buffer's handle to a shard index with the handle's own hash.
                  * @see modules/engine/dependency_tracking/README.md
                  */
-                inline size_t shard_index(SushiRuntime::ResourceID base) const
+                inline size_t shard_index(SushiRuntime::GlobalHandle base) const
                 {
-                    uint64_t z = reinterpret_cast<uint64_t>(base);
-                    z += 0x9e3779b97f4a7c15;
-                    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
-                    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-                    return (z ^ (z >> 31)) % K_SHARD_COUNT;
+                    return std::hash<SushiRuntime::GlobalHandle>{}(base) % K_SHARD_COUNT;
                 }
 
             public:
@@ -154,7 +150,7 @@ namespace SushiRuntime
                 /**
                  * @brief Links a task into the access dependency graph of a region by the
                  *        RAW/WAR/WAW rules.
-                 * @param region The byte interval accessed; a bare base pointer names the whole
+                 * @param region The byte interval accessed; a bare handle names the whole
                  *        buffer.
                  */
                 void resolve(Node* node, const SushiRuntime::BufferRegion& region, bool is_write);

@@ -36,24 +36,23 @@
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
 
 #include "support/placement_memory_contract.hpp"
+#include "support/made_up_handle.hpp"
 
 using SushiRuntime::Internal::Graph::InMemoryPlacementMemory;
 
-/** @brief Tests that an address nobody recorded has no device. */
-TEST(Small_PlacementMemoryContract, AnUnrecordedAddressHasNoDevice)
+/** @brief Tests that a handle nobody recorded has no device. */
+TEST(Small_PlacementMemoryContract, AnUnrecordedHandleHasNoDevice)
 {
-    int cell = 0;
     const InMemoryPlacementMemory memory(std::vector<std::size_t>{0});
-    TestSupport::expect_unrecorded_address_has_no_device(memory, &cell);
+    TestSupport::expect_unrecorded_handle_has_no_device(memory, TestSupport::made_up_handle(1));
 }
 
-/** @brief Tests that a recorded address names its device. */
-TEST(Small_PlacementMemoryContract, ARecordedAddressNamesItsDevice)
+/** @brief Tests that a recorded handle names its device. */
+TEST(Small_PlacementMemoryContract, ARecordedHandleNamesItsDevice)
 {
-    int cell = 0;
     InMemoryPlacementMemory memory(std::vector<std::size_t>{0, 0});
-    memory.record(&cell, 1);
-    TestSupport::expect_recorded_address_names_device(memory, &cell, 1);
+    memory.record(TestSupport::made_up_handle(1), 1);
+    TestSupport::expect_recorded_handle_names_device(memory, TestSupport::made_up_handle(1), 1);
 }
 
 /** @brief Tests that the device count is the number of devices the memory was built with. */

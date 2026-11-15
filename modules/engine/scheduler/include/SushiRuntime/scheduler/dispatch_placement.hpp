@@ -34,6 +34,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 
 namespace SushiRuntime
 {
@@ -46,13 +47,13 @@ namespace SushiRuntime
          * @brief Checks that a node's regions share one device and caches the device it runs on;
          *        a node already placed keeps its device and is not checked again.
          * @param node Its cached index and checked flag are written on success.
-         * @param memory Asked which device owns each region of the node.
+         * @param memory,handles Resolve each region's handle and name the device owning its address.
          * @param device_count Devices the runtime holds; a placement at or past it is refused.
          * @return Nothing, or an InvalidGraph error; nothing is cached then.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void>
         place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
-                           std::size_t device_count);
+                           const HandleResolver& handles, std::size_t device_count);
 
     } // namespace Scheduler
 } // namespace SushiRuntime

@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <unordered_map>
@@ -39,6 +40,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -76,6 +78,28 @@ namespace SushiRuntime
         {
             std::vector<BufferRegion> reads;
             std::vector<BufferRegion> writes;
+        };
+
+        /**
+         * @brief Holds every node's accesses to one buffer, in the order the nodes were given.
+         *
+         * The list fixes the order pins come out in; the index only finds a node's entry.
+         */
+        struct BaseAccessors
+        {
+            std::vector<std::pair<GraphNode*, NodeAccess>> list; /**< Accesses, in node order. */
+            std::unordered_map<GraphNode*, std::size_t> index;    /**< Position of a node in list. */
+
+            /** @brief Returns the entry of node n, adding it at the end on first use. */
+            NodeAccess& of(GraphNode* n)
+            {
+                const auto found = index.find(n);
+                if (found != index.end())
+                    return list[found->second].second;
+                index.emplace(n, list.size());
+                list.emplace_back(n, NodeAccess{});
+                return list.back().second;
+            }
         };
 
         /** @brief Lists the accesses of a node's direct intra neighbours on one allocation. */
@@ -179,46 +203,49 @@ namespace SushiRuntime
         /**
          * @brief Returns a region's per-base boundary summary: entry and exit pins by
          *        byte interval.
+         *
+         * Bases come out in handle order and pins in the order of nodes, so the summary is the
+         * same in every run.
          * @see modules/engine/region_boundary/README.md
          */
-        inline std::map<ResourceID, BaseAccess> compute_boundary_access(
+        inline std::map<GlobalHandle, BaseAccess> compute_boundary_access(
             const std::vector<sushi_ptr<GraphNode>>& nodes)
         {
-            std::map<ResourceID, std::unordered_map<GraphNode*, NodeAccess>> per_base;
+            std::map<GlobalHandle, BaseAccessors> per_base;
             for (const auto& np : nodes)
             {
                 GraphNode* n = np.get();
                 for (const auto& r : n->io_reads_)
-                    if (r.base) per_base[r.base][n].reads.push_back(r);
+                    if (r.valid()) per_base[r.base].of(n).reads.push_back(r);
                 for (const auto& w : n->io_writes_)
-                    if (w.base) per_base[w.base][n].writes.push_back(w);
+                    if (w.valid()) per_base[w.base].of(n).writes.push_back(w);
             }
 
-            std::map<ResourceID, BaseAccess> access;
+            std::map<GlobalHandle, BaseAccess> access;
             const NeighbourAccesses none;
             for (const auto& base_and_accessors : per_base)
             {
-                const auto& accessors = base_and_accessors.second;
+                const BaseAccessors& accessors = base_and_accessors.second;
 
-                // An entry of accessors keeps its address: the map is not changed below.
+                // An entry of accessors keeps its address: the list is not changed below.
                 std::unordered_map<GraphNode*, NeighbourAccesses> predecessors;
                 std::unordered_map<GraphNode*, NeighbourAccesses> successors;
-                for (const auto& accessor : accessors)
+                for (const auto& accessor : accessors.list)
                 {
                     GraphNode* n = accessor.first;
                     const NodeAccess* n_access = &accessor.second;
                     for_each_intra_successor(n, [&](GraphNode* s)
                     {
-                        const auto found = accessors.find(s);
-                        if (found == accessors.end())
+                        const auto found = accessors.index.find(s);
+                        if (found == accessors.index.end())
                             return;
                         predecessors[s].push_back(n_access);
-                        successors[n].push_back(&found->second);
+                        successors[n].push_back(&accessors.list[found->second].second);
                     });
                 }
 
                 BaseAccess summary;
-                for (const auto& accessor : accessors)
+                for (const auto& accessor : accessors.list)
                 {
                     GraphNode* n = accessor.first;
                     const auto before = predecessors.find(n);

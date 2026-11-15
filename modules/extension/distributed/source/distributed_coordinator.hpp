@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
@@ -101,6 +102,13 @@ namespace SushiRuntime
                  * @pre start() has not been called.
                  */
                 void bind(Internal::Graph::OffloadSink& sink) override;
+
+                /**
+                 * @brief Sets the resolver that turns node handles into shared addresses.
+                 * @param device_count Devices the resolver's handles may live on.
+                 * @pre start() has not been called; the resolver outlives the coordinator's calls.
+                 */
+                void bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept;
 
                 /**
                  * @brief Starts the transport, then the monitor.

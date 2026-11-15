@@ -44,8 +44,11 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/borrowed_index.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 
 #include "context_memory.hpp"
 
@@ -76,7 +79,89 @@ namespace SushiRuntime
                     return make_error(std::move(copied.error()));
                 return &runtime;
             }
+
+            /**
+             * @brief Records the size, layout and device instance of a freshly minted handle.
+             * @return Nothing, or the error the directory refused the entry with.
+             */
+            [[nodiscard]] Result<void> describe_entry(Internal::Memory::ResidencyDirectory& directory,
+                                                      GlobalHandle handle, void* address,
+                                                      std::size_t bytes, std::size_t element_size,
+                                                      std::size_t element_alignment,
+                                                      std::size_t device)
+            {
+                const MemorySpaceID space = Internal::Graph::device_memory_space(device);
+                HandleStatus status = directory.describe(
+                    handle, bytes, Internal::Memory::ElementLayout{element_size, element_alignment}, space);
+                if (status == HandleStatus::Ok)
+                    status = directory.set_instance(handle, space, address);
+                if (status != HandleStatus::Ok)
+                    return make_error(Error{Internal::Memory::error_code_of(status),
+                                            "the residency directory refused the buffer's entry"});
+                return {};
+            }
         } // namespace
+
+        Result<GlobalHandle> mint_handle(const ContextHandle& context, HandleKind kind,
+                                         void* address, std::size_t bytes,
+                                         std::size_t element_size, std::size_t element_alignment,
+                                         DeviceIndex device)
+        {
+            if (address == nullptr || !context)
+                return GlobalHandle::null();
+            Internal::Memory::ResidencyDirectory& directory =
+                Internal::ContextAccess::context(context).handles();
+            const MintOutcome minted = directory.mint(kind, HandleFlags::None);
+            if (minted.status != HandleStatus::Ok)
+                return make_error(Error{Internal::Memory::error_code_of(minted.status),
+                                        "no handle is left for a new buffer"});
+            Result<void> described = describe_entry(directory, minted.handle, address, bytes,
+                                                    element_size, element_alignment,
+                                                    device.value());
+            if (!described)
+            {
+                static_cast<void>(directory.retire(minted.handle));
+                return make_error(std::move(described.error()));
+            }
+            return minted.handle;
+        }
+
+        Result<GlobalHandle> borrow_handle(const ContextHandle& context, void* address,
+                                           std::size_t bytes, std::size_t element_size,
+                                           std::size_t element_alignment, DeviceIndex device)
+        {
+            if (address == nullptr || bytes == 0 || !context)
+                return GlobalHandle::null();
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            Result<Internal::Memory::BorrowedHandle> borrowed =
+                runtime.borrowed_handles().acquire(address, bytes);
+            if (!borrowed)
+                return make_error(std::move(borrowed.error()));
+            if (!borrowed->minted)
+                return borrowed->handle;
+
+            const std::optional<std::size_t> owner = runtime.memory().owning_device(address);
+            Result<void> described = describe_entry(runtime.handles(), borrowed->handle, address,
+                                                    bytes, element_size, element_alignment,
+                                                    owner.value_or(device.value()));
+            if (!described)
+            {
+                static_cast<void>(runtime.borrowed_handles().release(borrowed->handle));
+                return make_error(std::move(described.error()));
+            }
+            return borrowed->handle;
+        }
+
+        void release_handle(const ContextHandle& context, GlobalHandle handle) noexcept
+        {
+            if (handle.is_null() || !context)
+                return;
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            if (has_flags(handle.flags(), HandleFlags::Borrowed))
+                static_cast<void>(runtime.borrowed_handles().release(handle));
+            else
+                static_cast<void>(runtime.handles().retire(handle));
+        }
 
         std::size_t device_count(const ContextHandle& context)
         {

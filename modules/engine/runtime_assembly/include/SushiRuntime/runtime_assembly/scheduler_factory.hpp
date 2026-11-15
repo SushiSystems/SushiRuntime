@@ -47,7 +47,7 @@ namespace SushiRuntime
         {
             return Internal::Scheduler::TaskScheduler(Internal::Execution::worker_pool_settings(context.settings()),
                                             context.topology(), context.devices(),
-                                            context.memory());
+                                            context.memory(), context.handles());
         }
     } // namespace Test
 } // namespace SushiRuntime

@@ -38,6 +38,7 @@
 #include <SushiRuntime/api/graph/access.hpp>
 
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -46,12 +47,12 @@ TEST(Small_Access, RegionsKeepTheirOrder)
 {
     int first = 0;
     int second = 0;
-    const Access access({BufferRegion(&first), BufferRegion(&second)}, {BufferRegion(&second)});
+    const Access access({TestSupport::region_at(&first), TestSupport::region_at(&second)}, {TestSupport::region_at(&second)});
     ASSERT_EQ(access.reads.size(), 2u);
-    EXPECT_EQ(access.reads[0].base, &first);
-    EXPECT_EQ(access.reads[1].base, &second);
+    EXPECT_EQ(access.reads[0].base, TestSupport::region_at(&first).base);
+    EXPECT_EQ(access.reads[1].base, TestSupport::region_at(&second).base);
     ASSERT_EQ(access.writes.size(), 1u);
-    EXPECT_EQ(access.writes[0].base, &second);
+    EXPECT_EQ(access.writes[0].base, TestSupport::region_at(&second).base);
 }
 
 /** @brief Tests that bare regions carry no liveness observer. */
@@ -59,7 +60,7 @@ TEST(Small_Access, BareRegionsCarryNoObserver)
 {
     int first = 0;
     int second = 0;
-    const Access access({BufferRegion(&first)}, {BufferRegion(&second)});
+    const Access access({TestSupport::region_at(&first)}, {TestSupport::region_at(&second)});
     EXPECT_TRUE(access.lives.empty());
 }
 

@@ -42,6 +42,7 @@
 #include "support/buffer_contents.hpp"
 #include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -67,11 +68,11 @@ TEST(Small_EmitTask, ATaskNodeDescribesItsKindWriteAndWork)
     int target = 0;
 
     const Detail::NodeDescription description =
-        Detail::task_node({}, {BufferRegion(&target)}, store_seven(&target), 1);
+        Detail::task_node({}, {TestSupport::region_at(&target)}, store_seven(&target), 1);
 
     EXPECT_EQ(description.kind, Detail::NodeKind::Task);
     ASSERT_EQ(description.writes.size(), 1u);
-    EXPECT_EQ(description.writes[0].base, &target);
+    EXPECT_EQ(description.writes[0].base, TestSupport::region_at(&target).base);
     EXPECT_TRUE(std::holds_alternative<Detail::QueueWork>(description.work));
 }
 
@@ -86,7 +87,7 @@ TEST_F(Medium_EmitTask, ATaskNodeRunsOnTheQueue)
     auto value = runtime().buffer<int>(1).value();
     TestSupport::fill_with(value, 0);
     const Detail::NodeDescription description =
-        Detail::task_node({}, {BufferRegion(value.data())}, store_seven(value.data()), 1);
+        Detail::task_node({}, {TestSupport::region_at(value.data())}, store_seven(value.data()), 1);
 
     Testing::run_description(runtime(), description);
 

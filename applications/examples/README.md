@@ -345,8 +345,9 @@ The operation is out = in * factor + offset, in two nodes with a staging buffer 
 | `kernel()` | The first node: a launch over a count that reads `in` and writes the stage |
 | `task()` | The second node: a body that takes the queue, reads the stage and writes `out` |
 
-The stage is not a `Buffer`, so the library names it as a `BufferRegion` over the pointer
-`scratch()` returned, and `Access(Reads(...), Writes(...))` orders the two nodes by it.
+The stage is not a `Buffer`, so the library names it with `borrowed_region()` over the pointer
+`scratch()` returned. That gives the range a handle while the recorder keeps its nodes, and
+`Access(Reads(...), Writes(...))` orders the two nodes by the region.
 
 The program reaches the function through `extend()`, which hands it the graph's recorder in the
 middle of a chain, and reads the same position from `last_rule()`. `name()` after `extend()`

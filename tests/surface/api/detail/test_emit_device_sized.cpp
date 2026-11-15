@@ -40,6 +40,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -64,7 +65,7 @@ TEST_F(Small_EmitDeviceSized, OnlyTheLiveIndicesRun)
     launch.live_words = live.data();
     int* const words = data.data();
     const Detail::NodeDescription description = Detail::device_sized_node(
-        {}, {BufferRegion(words)}, launch, [words](std::size_t index) { words[index] = 1; },
+        {}, {TestSupport::region_at(words)}, launch, [words](std::size_t index) { words[index] = 1; },
         K_CAPACITY);
 
     description.host_form();

@@ -23,19 +23,21 @@
 
 /**
  * @file host_reachable_memory.hpp
- * @brief Declares HostReachableMemory, the port that says whether the host can touch an allocation.
+ * @brief Declares HostReachableMemory, the port that says whether the host can touch a handle's buffer.
  * @author Mustafa Garip
  * @see docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md
  */
 
 #pragma once
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Execution
     {
         /**
-         * @brief Answers whether the calling thread may read and write an allocation.
+         * @brief Answers whether the calling thread may read and write a handle's buffer.
          *
          * host_step_refusal() reads memory through it; the USM adapter lives in
          * source/host_step_plan.cpp, and a test passes its own.
@@ -47,11 +49,11 @@ namespace SushiRuntime
                 virtual ~HostReachableMemory() = default;
 
                 /**
-                 * @brief Returns whether the host may touch the allocation that starts at @p base.
-                 * @param base The first address of an allocation; null and an unknown address
-                 *        are not reachable.
+                 * @brief Returns whether the host may touch the buffer @p handle names.
+                 * @param handle The handle of a buffer; the null handle and an unknown one are
+                 *        not reachable.
                  */
-                [[nodiscard]] virtual bool host_reachable(const void* base) const = 0;
+                [[nodiscard]] virtual bool host_reachable(GlobalHandle handle) const = 0;
         };
     } // namespace Internal::Execution
 } // namespace SushiRuntime

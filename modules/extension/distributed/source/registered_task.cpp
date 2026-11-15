@@ -49,14 +49,26 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Returns the whole-buffer region of each view, in the views' order. */
-            std::vector<BufferRegion> regions_of(
-                SushiRuntime::span<const BufferView> views)
+            /**
+             * @brief Returns the whole-buffer region of each view, in the views' order, each
+             *        named by the Borrowed handle the recorder keeps for its range.
+             * @pre Every view is a range the recorder can borrow; a refusal stops the process.
+             */
+            std::vector<BufferRegion> regions_of(Recorder& recorder,
+                                                 SushiRuntime::span<const BufferView> views)
             {
                 std::vector<BufferRegion> regions;
                 regions.reserve(views.size());
                 for (const BufferView& view : views)
-                    regions.emplace_back(view.data);
+                {
+                    Result<BufferRegion> region = recorder.borrowed_region(view.data, view.size_bytes);
+                    SR_VERIFY(static_cast<bool>(region),
+                              ("record_registered_task: a buffer view cannot be named as a region: " +
+                               (region ? std::string() : region.error().message) +
+                               "; pass views of whole, non-overlapping buffers.")
+                                  .c_str());
+                    regions.push_back(*region);
+                }
                 return regions;
             }
 
@@ -114,7 +126,7 @@ namespace SushiRuntime
             call.inputs.assign(inputs.begin(), inputs.end());
             call.outputs.assign(outputs.begin(), outputs.end());
 
-            return recorder.task(Access(regions_of(inputs), regions_of(outputs)), std::move(call),
+            return recorder.task(Access(regions_of(recorder, inputs), regions_of(recorder, outputs)), std::move(call),
                                  options);
         }
 

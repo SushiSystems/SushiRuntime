@@ -33,12 +33,14 @@
 #include <cstddef>
 #include <optional>
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Graph
     {
         /**
-         * @brief Answers which device owns an address and which devices share a SYCL context.
+         * @brief Answers which device owns a handle's buffer and which devices share a SYCL context.
          *
          * placement_of() and the chain classifier read memory through this port. USMPlacementMemory
          * answers from a USMAllocator, and InMemoryPlacementMemory from a table a test fills.
@@ -50,16 +52,16 @@ namespace SushiRuntime
                 virtual ~PlacementMemory() = default;
 
                 /**
-                 * @brief Returns the device an address was recorded on, with no query of the SYCL runtime.
-                 * @param address The first address of an allocation; null and an unknown address have no device.
+                 * @brief Returns the device a handle's buffer was recorded on, with no query of the SYCL runtime.
+                 * @param handle The handle of a buffer; the null handle and an unknown one have no device.
                  */
-                [[nodiscard]] virtual std::optional<std::size_t> recorded_device(const void* address) const = 0;
+                [[nodiscard]] virtual std::optional<std::size_t> recorded_device(GlobalHandle handle) const = 0;
 
                 /**
-                 * @brief Returns the device that owns an address, recorded or not.
-                 * @param address Null has no device.
+                 * @brief Returns the device that owns a handle's buffer, recorded or not.
+                 * @param handle The null handle has no device.
                  */
-                [[nodiscard]] virtual std::optional<std::size_t> owning_device(const void* address) const = 0;
+                [[nodiscard]] virtual std::optional<std::size_t> owning_device(GlobalHandle handle) const = 0;
 
                 /** @return How many devices the memory spans. */
                 [[nodiscard]] virtual std::size_t device_count() const = 0;

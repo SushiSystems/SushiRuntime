@@ -235,7 +235,7 @@ addresses through `tests/support/adopted_handles.hpp`, so no case touches a devi
 
 | Test | What it proves |
 | --- | --- |
-| `ABufferKeyIsItsData` | A buffer's key is its data address. |
+| `ABufferKeyIsItsHandle` | A buffer's key is its handle. |
 | `ABufferLivenessEndsWithIt` | A buffer's liveness observer expires when the buffer is destroyed. |
 | `AStateReadsCurrentAndWritesNext` | A state's read key is its current field and its write key its next one. |
 

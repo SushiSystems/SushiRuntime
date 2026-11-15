@@ -38,6 +38,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/region_boundary/boundary_access.hpp>
+#include "support/made_up_handle.hpp"
 
 using namespace SushiRuntime;
 
@@ -47,9 +48,6 @@ namespace BoundaryAccessTests
     {
         using Interval = BufferRegion;
         using Intervals = std::vector<BufferRegion>;
-
-        /** @brief Number of bytes of the allocation the pin tests slice. */
-        constexpr std::size_t K_BYTES = 20;
 
         /** @brief Returns the pin of a node in a pin list, or nullptr when the node has none. */
         const Detail::Pin* pin_of(const std::vector<Detail::Pin>& pins,
@@ -71,8 +69,7 @@ namespace BoundaryAccessTests
     /** @brief Tests that a read reaching past its predecessor's write keeps an entry pin. */
     TEST(Small_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     {
-        unsigned char bytes[K_BYTES] = {};
-        void* base = bytes;
+        const GlobalHandle base = TestSupport::made_up_handle(1);
 
         Internal::Graph::TaskGraph graph;
         Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
@@ -93,8 +90,7 @@ namespace BoundaryAccessTests
     /** @brief Tests that a read inside its predecessor's write has no entry pin. */
     TEST(Small_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
     {
-        unsigned char bytes[K_BYTES] = {};
-        void* base = bytes;
+        const GlobalHandle base = TestSupport::made_up_handle(1);
 
         Internal::Graph::TaskGraph graph;
         Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 20)}, [] {});
@@ -112,8 +108,7 @@ namespace BoundaryAccessTests
     /** @brief Tests that a write behind a predecessor that only reads keeps its write pin. */
     TEST(Small_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
     {
-        unsigned char bytes[K_BYTES] = {};
-        void* base = bytes;
+        const GlobalHandle base = TestSupport::made_up_handle(1);
 
         Internal::Graph::TaskGraph graph;
         Internal::Graph::Node& p = graph.add_native({Interval(base, 0, 10)}, {}, [] {});
@@ -132,8 +127,7 @@ namespace BoundaryAccessTests
     /** @brief Tests that only a successor's write that contains an access shadows it on exit. */
     TEST(Small_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
     {
-        unsigned char bytes[K_BYTES] = {};
-        void* base = bytes;
+        const GlobalHandle base = TestSupport::made_up_handle(1);
 
         Internal::Graph::TaskGraph contained;
         Internal::Graph::Node& inner = contained.add_native({}, {Interval(base, 5, 5)}, [] {});

@@ -8,10 +8,11 @@ links this page.
 
 ## HostReachableMemory
 
-The port `host_step_refusal()` reads memory through: `host_reachable(base)` says whether the
-calling thread may touch the allocation that starts at an address. The USM adapter answers true for
-an allocation the context's `USMAllocator` recorded as host or shared USM, and false for device USM,
-adopted memory with no kind, and an address it holds no record of. It lives in
+The port `host_step_refusal()` reads memory through: `host_reachable(handle)` says whether the
+calling thread may touch the buffer a `GlobalHandle` names. The USM adapter resolves the handle
+through the context's directory and answers true for an allocation the context's `USMAllocator`
+recorded as host or shared USM, and false for device USM, adopted memory with no kind, and a handle
+that resolves to no address it holds a record of. It lives in
 `source/host_step_plan.cpp`, and a test passes a table of its own.
 
 ## host_step_refusal

@@ -57,10 +57,19 @@ includes the adapter header alone.
 
 | Test | What it proves |
 | --- | --- |
-| `AnUnrecordedAddressHasNoDevice` | An address nobody recorded has no recorded and no owning device. |
-| `ARecordedAddressNamesItsDevice` | A recorded (small) or adopted (medium) address names its device. |
+| `AnUnrecordedHandleHasNoDevice`, `AnUnrecordedAddressHasNoDevice` | A handle nobody recorded, or whose address nobody adopted, has no recorded and no owning device. |
+| `AHandleWithNoInstanceHasNoDevice` | A handle that resolves to no instance has no device. |
+| `ARecordedHandleNamesItsDevice`, `AnAdoptedAddressNamesItsDevice` | A recorded handle (small), or the handle of an adopted address (medium), names its device. |
 | `TheDeviceCountIsTheNumberOfDevicesItWasBuiltWith` | The device count is the number of devices or allocator entries. |
 | `TwoDevicesInOneContextShareIt` | Two devices in one context share it. |
+
+## test_handle_location.cpp
+
+| Test | What it checks |
+| --- | --- |
+| `LocateFindsTheLowestDeviceWithAnInstance` | `locate()` gives the device and address of the instance, and nothing past the device count. |
+| `NullAndRetiredHandlesHaveNoLocation` | The null handle and a retired handle have no location. |
+| `ResolveOnDeviceGivesThatDevicesInstance` | `resolve_on_device()` gives the instance on that device and null on another. |
 
 ## test_in_memory_placement_memory.cpp
 

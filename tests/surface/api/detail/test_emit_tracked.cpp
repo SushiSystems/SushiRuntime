@@ -42,6 +42,7 @@
 #include "support/host_runtime.hpp"
 #include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -67,7 +68,7 @@ TEST(Small_EmitTracked, ALaunchNodeStatesItsKindAndWidth)
     int target = 0;
 
     const Detail::NodeDescription description = Detail::launch_node(
-        {}, {BufferRegion(&target)}, K_COUNT, [](std::size_t) {});
+        {}, {TestSupport::region_at(&target)}, K_COUNT, [](std::size_t) {});
 
     EXPECT_EQ(description.kind, Detail::NodeKind::Kernel);
     EXPECT_EQ(description.width, K_COUNT);
@@ -80,7 +81,7 @@ TEST_F(Small_EmitTrackedRun, ALaunchRunsOncePerIndex)
     TestSupport::fill_with(data, 0);
     int* const words = data.data();
     const Detail::NodeDescription description = Detail::launch_node(
-        {}, {BufferRegion(words)}, K_COUNT,
+        {}, {TestSupport::region_at(words)}, K_COUNT,
         [words](std::size_t index) { words[index] += static_cast<int>(index); });
 
     description.host_form();
@@ -94,7 +95,7 @@ TEST(Small_EmitTracked, ARangeNodeStatesItsWidth)
     int target = 0;
 
     const Detail::NodeDescription description = Detail::range_node(
-        {}, {BufferRegion(&target)}, K_COUNT, [](std::size_t, std::size_t, sycl::handler&) {});
+        {}, {TestSupport::region_at(&target)}, K_COUNT, [](std::size_t, std::size_t, sycl::handler&) {});
 
     EXPECT_EQ(description.width, K_COUNT);
 }
@@ -106,7 +107,7 @@ TEST_F(Medium_EmitTracked, ARangeKernelGetsTheWholeRange)
     TestSupport::fill_with(data, 0);
     int* const words = data.data();
     const Detail::NodeDescription description = Detail::range_node(
-        {}, {BufferRegion(words)}, K_COUNT,
+        {}, {TestSupport::region_at(words)}, K_COUNT,
         [words](std::size_t begin, std::size_t end, sycl::handler& handler)
         {
             handler.single_task([words, begin, end] { TestSupport::store_range_width(words, begin, end); });
@@ -123,7 +124,7 @@ TEST(Small_EmitTracked, ARawNodeKeepsTheStatedWidth)
     int target = 0;
 
     const Detail::NodeDescription description = Detail::raw_node(
-        {}, {BufferRegion(&target)}, [](sycl::handler&) {}, 9);
+        {}, {TestSupport::region_at(&target)}, [](sycl::handler&) {}, 9);
 
     EXPECT_EQ(description.width, 9u);
 }
@@ -135,7 +136,7 @@ TEST_F(Medium_EmitTracked, ARawNodeRunsItsCommandGroup)
     TestSupport::fill_with(data, 0);
     int* const words = data.data();
     const Detail::NodeDescription description = Detail::raw_node(
-        {}, {BufferRegion(words)},
+        {}, {TestSupport::region_at(words)},
         [words](sycl::handler& handler) { handler.single_task([words] { TestSupport::store_value(words, 0, 3); }); }, 9);
 
     Testing::run_description(runtime(), description);

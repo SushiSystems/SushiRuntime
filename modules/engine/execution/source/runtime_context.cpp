@@ -171,6 +171,9 @@ namespace SushiRuntime
          */
         struct RuntimeContext::Impl : public RefCounted
         {
+            /** @brief Universe of every handle of a single-machine context; a cluster assigns its own. */
+            static constexpr std::uint32_t K_LOCAL_UNIVERSE = 0;
+
             /**
              * @brief Builds every part but the engine, which needs the finished context.
              * @param provider Queried during construction only; not stored.
@@ -268,6 +271,12 @@ namespace SushiRuntime
 
             /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
             std::shared_ptr<Internal::Memory::USMAllocator> memory;
+
+            /** @brief Mints, retires and resolves the handles of every buffer of the context. */
+            Internal::Memory::ResidencyDirectory handles{K_LOCAL_UNIVERSE};
+
+            /** @brief Gives the Borrowed handles of caller-owned memory; mints in handles. */
+            Internal::Memory::BorrowedIndex borrowed{handles};
 
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
             Internal::Observability::TransferCounters transfers;
@@ -433,6 +442,16 @@ namespace SushiRuntime
         const std::shared_ptr<Internal::Memory::USMAllocator>& RuntimeContext::shared_memory() const noexcept
         {
             return impl_->memory;
+        }
+
+        Internal::Memory::ResidencyDirectory& RuntimeContext::handles() noexcept
+        {
+            return impl_->handles;
+        }
+
+        Internal::Memory::BorrowedIndex& RuntimeContext::borrowed_handles() noexcept
+        {
+            return impl_->borrowed;
         }
 
         Internal::Observability::TransferCounters& RuntimeContext::transfers() noexcept

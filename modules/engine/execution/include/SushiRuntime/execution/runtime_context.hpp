@@ -42,6 +42,8 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/memory/borrowed_index.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/profile/profile.hpp>
@@ -149,6 +151,12 @@ namespace SushiRuntime
                  *        this context.
                  */
                 [[nodiscard]] const std::shared_ptr<Internal::Memory::USMAllocator>& shared_memory() const noexcept;
+
+                /** @brief Returns the residency directory that mints, retires and resolves this context's handles. */
+                [[nodiscard]] Internal::Memory::ResidencyDirectory& handles() noexcept;
+
+                /** @brief Returns the index that gives one Borrowed handle per range of caller-owned memory. */
+                [[nodiscard]] Internal::Memory::BorrowedIndex& borrowed_handles() noexcept;
 
                 /** @brief Returns the byte counters of explicit host and device transfers. */
                 [[nodiscard]] Internal::Observability::TransferCounters& transfers() noexcept;

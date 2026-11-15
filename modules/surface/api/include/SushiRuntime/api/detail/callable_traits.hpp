@@ -110,7 +110,7 @@ namespace SushiRuntime
             const Views& views, std::index_sequence<Is...>)
         {
             return std::vector<BufferRegion>{
-                BufferRegion(static_cast<void*>(std::get<Is>(views)->current))... };
+                BufferRegion(std::get<Is>(views)->current_handle)... };
         }
     } // namespace Detail
 } // namespace SushiRuntime

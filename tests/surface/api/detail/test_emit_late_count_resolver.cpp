@@ -40,6 +40,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -63,7 +64,7 @@ TEST_F(Small_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
             words[0] = static_cast<int>(live[0]);
             words[1] = static_cast<int>(live[1]);
         },
-        {}, {BufferRegion(words)}, 1);
+        {}, {TestSupport::region_at(words)}, 1);
 
     description.host_form();
 

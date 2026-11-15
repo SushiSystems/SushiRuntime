@@ -41,6 +41,7 @@
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
+#include "support/handle_table.hpp"
 
 namespace
 {
@@ -100,9 +101,9 @@ TEST_F(Small_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDevice)
 TEST_F(Small_NodePlacementRule, ANodeWithOnlyAReadRegionRunsOnItsOwner)
 {
     int read_cell = 0;
-    memory_.record(&read_cell, 1);
+    memory_.record(TestSupport::region_at(&read_cell).base, 1);
     const sushi_ptr<Node> reader = make_sushi<Node>();
-    reader->io_reads_.emplace_back(&read_cell);
+    reader->io_reads_.emplace_back(TestSupport::region_at(&read_cell));
 
     EXPECT_EQ(placement_of(*reader, memory_).value(), 1u);
 }
@@ -112,11 +113,11 @@ TEST_F(Small_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 {
     int read_cell = 0;
     int write_cell = 0;
-    memory_.record(&read_cell, 0);
-    memory_.record(&write_cell, 1);
+    memory_.record(TestSupport::region_at(&read_cell).base, 0);
+    memory_.record(TestSupport::region_at(&write_cell).base, 1);
     const sushi_ptr<Node> both = make_sushi<Node>();
-    both->io_reads_.emplace_back(&read_cell);
-    both->io_writes_.emplace_back(&write_cell);
+    both->io_reads_.emplace_back(TestSupport::region_at(&read_cell));
+    both->io_writes_.emplace_back(TestSupport::region_at(&write_cell));
 
     EXPECT_EQ(placement_of(*both, memory_).value(), 1u);
 }
@@ -125,9 +126,9 @@ TEST_F(Small_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 TEST_F(Small_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
 {
     int cell = 0;
-    memory_.record(&cell, 1);
+    memory_.record(TestSupport::region_at(&cell).base, 1);
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_writes_.emplace_back(&cell);
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
 }
@@ -136,9 +137,9 @@ TEST_F(Small_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
 TEST_F(Small_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
 {
     int cell = 0;
-    memory_.record(&cell, 1);
+    memory_.record(TestSupport::region_at(&cell).base, 1);
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_writes_.emplace_back(&cell);
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(0);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
@@ -148,9 +149,9 @@ TEST_F(Small_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
 TEST_F(Small_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
 {
     int cell = 0;
-    memory_.record(&cell, 1);
+    memory_.record(TestSupport::region_at(&cell).base, 1);
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_writes_.emplace_back(&cell);
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(0);
 
     const SushiRuntime::Result<std::size_t> placed = placement_of(*node, memory_);
@@ -165,9 +166,9 @@ TEST_F(Small_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
 TEST_F(Small_NodePlacementContexts, StatingTheOwnerItselfIsAccepted)
 {
     int cell = 0;
-    memory_.record(&cell, 1);
+    memory_.record(TestSupport::region_at(&cell).base, 1);
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_writes_.emplace_back(&cell);
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(1);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u) << "the owner itself is never refused";
@@ -177,9 +178,9 @@ TEST_F(Small_NodePlacementContexts, StatingTheOwnerItselfIsAccepted)
 TEST_F(Small_NodePlacementContexts, AStatedIndexPastTheDevicesIsLeftToTheDispatch)
 {
     int cell = 0;
-    memory_.record(&cell, 1);
+    memory_.record(TestSupport::region_at(&cell).base, 1);
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_writes_.emplace_back(&cell);
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(5);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 5u);
@@ -190,7 +191,7 @@ TEST_F(Small_NodePlacementRule, AnUnownedRegionWithNothingStatedRunsOnDeviceZero
 {
     int cell = 0;
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_reads_.emplace_back(&cell);
+    node->io_reads_.emplace_back(TestSupport::region_at(&cell));
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
 }
@@ -200,7 +201,7 @@ TEST_F(Small_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
 {
     int cell = 0;
     const sushi_ptr<Node> node = make_sushi<Node>();
-    node->io_reads_.emplace_back(&cell);
+    node->io_reads_.emplace_back(TestSupport::region_at(&cell));
     node->place_on(1);
 
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);

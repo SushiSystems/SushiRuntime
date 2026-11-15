@@ -23,7 +23,7 @@
 
 /**
  * @file usm_placement_memory.hpp
- * @brief Declares USMPlacementMemory, the PlacementMemory that answers from a USMAllocator.
+ * @brief Declares USMPlacementMemory, the PlacementMemory that answers from a HandleResolver and a USMAllocator.
  * @author Mustafa Garip
  * @see modules/engine/task/README.md
  */
@@ -34,6 +34,8 @@
 #include <optional>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/task/placement_memory.hpp>
 
 namespace SushiRuntime
@@ -46,25 +48,27 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         /**
-         * @brief Forwards each question to the USMAllocator it views.
+         * @brief Resolves each handle through a HandleResolver and asks the USMAllocator about the address.
          * @see modules/engine/task/README.md
          */
         class SUSHIRUNTIME_API USMPlacementMemory final : public PlacementMemory
         {
             public:
                 /**
-                 * @brief Views @p memory.
-                 * @param memory Must outlive this object.
+                 * @brief Views @p memory and @p handles.
+                 * @param memory,handles Must outlive this object.
                  */
-                explicit USMPlacementMemory(const Internal::Memory::USMAllocator& memory) noexcept;
+                USMPlacementMemory(const Internal::Memory::USMAllocator& memory,
+                                   const HandleResolver& handles) noexcept;
 
-                [[nodiscard]] std::optional<std::size_t> recorded_device(const void* address) const override;
-                [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const override;
+                [[nodiscard]] std::optional<std::size_t> recorded_device(GlobalHandle handle) const override;
+                [[nodiscard]] std::optional<std::size_t> owning_device(GlobalHandle handle) const override;
                 [[nodiscard]] std::size_t device_count() const override;
                 [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const override;
 
             private:
                 const Internal::Memory::USMAllocator& memory_;
+                const HandleResolver& handles_;
         };
     } // namespace Internal::Graph
 } // namespace SushiRuntime

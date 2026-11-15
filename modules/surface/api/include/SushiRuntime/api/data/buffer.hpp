@@ -51,6 +51,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
@@ -100,6 +101,32 @@ namespace SushiRuntime
         [[nodiscard]] SUSHIRUNTIME_API Result<MemoryBlock> allocate_block(
             const ContextHandle& context, std::size_t count, std::size_t element_size,
             std::size_t device, Residency residency, std::size_t alignment);
+
+        /**
+         * @brief Mints the handle of a buffer the runtime made and records its home instance.
+         * @param address The buffer's memory on its device; null mints nothing.
+         * @param bytes,element_size,element_alignment Size and element layout of the buffer.
+         * @return The handle, the null handle for a null address, or an AllocationFailed
+         *         error when no slot is left.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> mint_handle(
+            const ContextHandle& context, HandleKind kind, void* address, std::size_t bytes,
+            std::size_t element_size, std::size_t element_alignment, DeviceIndex device);
+
+        /**
+         * @brief Returns the Borrowed handle of caller-owned memory: the live one when the same
+         *        range is borrowed already, else a new one.
+         * @param device Device the memory is recorded on when the allocator knows no owner.
+         * @return The handle, the null handle for a null address or no bytes, or an
+         *         InvalidArgument error when the range overlaps another borrowed range.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> borrow_handle(
+            const ContextHandle& context, void* address, std::size_t bytes,
+            std::size_t element_size, std::size_t element_alignment, DeviceIndex device);
+
+        /** @brief Retires a minted handle, or drops one borrow of a Borrowed handle. */
+        SUSHIRUNTIME_API void release_handle(const ContextHandle& context,
+                                             GlobalHandle handle) noexcept;
 
         /**
          * @brief Copies bytes of an allocation to host memory through its owning queue,
@@ -250,10 +277,12 @@ namespace SushiRuntime
                   device_index_(other.device_index_),
                   residency_(other.residency_),
                   liveness_(std::move(other.liveness_)),
-                  borrowed_life_(std::move(other.borrowed_life_))
+                  borrowed_life_(std::move(other.borrowed_life_)),
+                  handle_(other.handle_)
             {
                 other.size_ = 0;
                 other.borrowed_life_.reset();
+                other.handle_ = GlobalHandle::null();
             }
 
             /**
@@ -273,6 +302,8 @@ namespace SushiRuntime
                     residency_ = other.residency_;
                     liveness_ = std::move(other.liveness_);
                     borrowed_life_ = std::move(other.borrowed_life_);
+                    handle_ = other.handle_;
+                    other.handle_ = GlobalHandle::null();
                     other.size_ = 0;
                     other.liveness_.reset();
                     other.borrowed_life_.reset();
@@ -281,13 +312,21 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Exposes the raw pointer a kernel captures.
+             * @brief Exposes the raw pointer a kernel captures: the address of the buffer's
+             *        instance on its home device.
              * @return Pointer to the first element, or null if the handle is empty.
              */
             [[nodiscard]] T* data() const noexcept
             {
                 return static_cast<T*>(block_.allocation.address());
             }
+
+            /**
+             * @brief Returns the identity of the buffer, the key every graph orders it by.
+             * @return The buffer's GlobalHandle, or the null handle for an empty buffer.
+             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+             */
+            [[nodiscard]] GlobalHandle handle() const noexcept { return handle_; }
 
             /**
              * @brief Reports the allocation's capacity.
@@ -399,15 +438,15 @@ namespace SushiRuntime
             /**
              * @brief Allocates count elements of USM pinned to one device.
              * @param call Names the public operation in a message.
+             * @param kind The kind of handle minted: Buffer, or State for a State's field.
              * @return The buffer, or an AllocationFailed error when the device returns nothing.
-             * @pre device_index names a device, the byte size of count fits std::size_t, and
-             *      alignment is 0 or a power of two.
+             * @pre device_index names a device, count's bytes fit, alignment is 0 or a power of 2.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] static Result<Buffer> allocate(
                 const char* call, const ContextHandle& context,
                 std::size_t count, DeviceIndex device_index, Residency residency,
-                std::size_t alignment)
+                std::size_t alignment, HandleKind kind = HandleKind::Buffer)
             {
                 Detail::require_device(call, device_index, Detail::device_count(context));
                 Detail::require_alignment(call, alignment);
@@ -418,44 +457,55 @@ namespace SushiRuntime
                     context, count, sizeof(T), device_index.value(), residency, alignment);
                 if (!block)
                     return make_error(std::move(block.error()));
-                return adopt(context, std::move(*block), count, device_index, residency);
+                return adopt(context, std::move(*block), count, device_index, residency, kind);
             }
 
             /**
-             * @brief Wraps memory another component allocated and will release.
-             * @param block Holds at least count * sizeof(T) bytes; the buffer takes it, and
-             *        on a failure it is released here.
-             * @return The buffer, or an AllocationFailed error when its liveness token
-             *         cannot be allocated.
+             * @brief Wraps memory another component allocated and will release; mints its handle.
+             * @param block Holds count * sizeof(T) bytes or more; released here on a failure.
+             * @param kind The kind of handle minted.
+             * @return The buffer, or AllocationFailed when its token or handle cannot be made.
              * @pre The byte size of count fits std::size_t and block holds at least it.
              */
             [[nodiscard]] static Result<Buffer> adopt(
                 const ContextHandle& context, Detail::MemoryBlock block, std::size_t count,
-                DeviceIndex device_index, Residency residency) noexcept
+                DeviceIndex device_index, Residency residency,
+                HandleKind kind = HandleKind::Buffer) noexcept
             {
+                Result<GlobalHandle> handle = Detail::mint_handle(
+                    context, kind, block.allocation.address(), block.allocation.bytes(),
+                    sizeof(T), alignof(T), device_index);
+                if (!handle)
+                    return make_error(std::move(handle.error()));
                 std::optional<Buffer> made;
                 Result<void> built = Detail::translate_exceptions([&]()
                 {
-                    made.emplace(
-                        Buffer(context, std::move(block), count, device_index, residency));
+                    made.emplace(Buffer(context, std::move(block), count, device_index,
+                                        residency, *handle));
                 });
                 if (!built)
+                {
+                    Detail::release_handle(context, *handle);
                     return make_error(std::move(built.error()));
+                }
                 return std::move(*made);
             }
 
             /**
-             * @brief Takes memory another component allocated; adopt() is its one caller.
+             * @brief Takes memory another component allocated and the handle minted for it;
+             *        adopt() is its one caller.
+             * @param handle Released by this buffer when it has a context.
              * @pre The byte size of count fits std::size_t and block holds at least it.
              */
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
-                   DeviceIndex device_index, Residency residency)
+                   DeviceIndex device_index, Residency residency, GlobalHandle handle)
                 : context_(std::move(context)),
                   block_(std::move(block)),
                   size_(count),
                   device_index_(device_index),
                   residency_(residency),
-                  liveness_(make_liveness())
+                  liveness_(make_liveness()),
+                  handle_(handle)
             {
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
@@ -471,17 +521,20 @@ namespace SushiRuntime
              * @brief Views memory another owner keeps alive; Interop::borrow() is its one
              *        caller.
              * @param owner_life Expires when the owner releases the memory.
+             * @param handle The Borrowed handle of the memory; one borrow of it is dropped by
+             *        this buffer when it has a context.
              * @pre block holds at least count elements and its allocation has no owner.
              */
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
                    DeviceIndex device_index, Residency residency,
-                   LivenessObserver owner_life) noexcept
+                   LivenessObserver owner_life, GlobalHandle handle) noexcept
                 : context_(std::move(context)),
                   block_(std::move(block)),
                   size_(count),
                   device_index_(device_index),
                   residency_(residency),
-                  borrowed_life_(std::move(owner_life))
+                  borrowed_life_(std::move(owner_life)),
+                  handle_(handle)
             {
 
             }
@@ -558,9 +611,7 @@ namespace SushiRuntime
             BufferRegion region_of(const char* call, ElementRange range) const
             {
                 Detail::require_window(call, range, size_);
-                return BufferRegion{static_cast<void*>(data()),
-                                    range.offset * sizeof(T),
-                                    range.count * sizeof(T)};
+                return BufferRegion{handle_, range.offset * sizeof(T), range.count * sizeof(T)};
             }
 
             /**
@@ -576,9 +627,12 @@ namespace SushiRuntime
                               .c_str());
             }
 
-            /** @brief Frees the owned allocation and clears the handle. */
+            /** @brief Frees the owned allocation, releases its handle and clears the buffer. */
             void reset() noexcept
             {
+                if (context_ && !handle_.is_null())
+                    Detail::release_handle(context_, handle_);
+                handle_ = GlobalHandle::null();
                 block_.allocation.reset();
                 size_ = 0;
                 // Resetting the token expires every graph's observer of this allocation.
@@ -599,5 +653,8 @@ namespace SushiRuntime
 
             /** @brief Observer of the owner of borrowed memory; empty for an owned handle. */
             LivenessObserver borrowed_life_;
+
+            /** @brief Identity of the buffer; null for an empty buffer. */
+            GlobalHandle handle_;
     };
 } // namespace SushiRuntime

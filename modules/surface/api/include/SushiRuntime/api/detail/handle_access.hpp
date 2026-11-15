@@ -33,6 +33,7 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
@@ -67,25 +68,25 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns the address the dependency tracker keys a Buffer on.
-             * @return The allocation's base address, or nullptr for an empty handle.
+             * @brief Returns the handle the dependency tracker keys a Buffer on.
+             * @return The buffer's handle, or the null handle for an empty buffer.
              */
             template <typename T>
-            static void* key(const Buffer<T>& buffer) noexcept
+            static GlobalHandle key(const Buffer<T>& buffer) noexcept
             {
-                return static_cast<void*>(buffer.data());
+                return buffer.handle();
             }
 
             /** @brief Returns the key of the field a task reading the State depends on. */
             template <typename T>
-            static void* read_key(const State<T>& state) noexcept
+            static GlobalHandle read_key(const State<T>& state) noexcept
             {
                 return key(state.current_);
             }
 
             /** @brief Returns the key of the field a task writing the State depends on. */
             template <typename T>
-            static void* write_key(const State<T>& state) noexcept
+            static GlobalHandle write_key(const State<T>& state) noexcept
             {
                 return key(state.next_);
             }

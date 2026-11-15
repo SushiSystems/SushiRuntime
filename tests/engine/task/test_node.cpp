@@ -144,7 +144,8 @@ TEST(Small_Node, TheOffloadStateIsMadeOnceOnDemand)
 TEST(Small_Node, SetLiveIoStoresTheListsOfTheNextDispatch)
 {
     Node node;
-    const std::shared_ptr<std::vector<void*>> reads = std::make_shared<std::vector<void*>>(1, nullptr);
+    const std::shared_ptr<std::vector<SushiRuntime::GlobalHandle>> reads =
+        std::make_shared<std::vector<SushiRuntime::GlobalHandle>>(1, SushiRuntime::GlobalHandle::null());
 
     node.set_live_io(reads, nullptr);
 

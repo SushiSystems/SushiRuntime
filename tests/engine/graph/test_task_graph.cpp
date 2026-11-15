@@ -48,6 +48,7 @@
 #include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include "support/made_up_handle.hpp"
 
 
 using namespace SushiRuntime;
@@ -95,17 +96,17 @@ namespace TaskGraphTests
             return compiled.error();
         }
 
-        /** @brief Two integers and the region lists that read the first and write the second. */
+        /** @brief Two handles and the region lists that read the first and write the second. */
         struct Buffers
         {
-            int source = 0;
-            int target = 0;
+            SushiRuntime::GlobalHandle source = TestSupport::made_up_handle(1);
+            SushiRuntime::GlobalHandle target = TestSupport::made_up_handle(2);
 
             /** @brief Returns the region list that reads the source. */
-            std::vector<BufferRegion> reads() { return {BufferRegion(&source)}; }
+            std::vector<BufferRegion> reads() { return {BufferRegion(source)}; }
 
             /** @brief Returns the region list that writes the target. */
-            std::vector<BufferRegion> writes() { return {BufferRegion(&target)}; }
+            std::vector<BufferRegion> writes() { return {BufferRegion(target)}; }
         };
 
         /** @brief Returns the metadata every task-kind test gives its tasks. */
@@ -200,8 +201,8 @@ namespace TaskGraphTests
     TEST(Small_TaskGraph, LiveIoLandsInTheOffloadState)
     {
         Buffers buffers;
-        const auto live_reads = std::make_shared<std::vector<void*>>(1, &buffers.source);
-        const auto live_writes = std::make_shared<std::vector<void*>>(1, &buffers.target);
+        const auto live_reads = std::make_shared<std::vector<SushiRuntime::GlobalHandle>>(1, buffers.source);
+        const auto live_writes = std::make_shared<std::vector<SushiRuntime::GlobalHandle>>(1, buffers.target);
         TaskGraph graph;
         Node& dynamic = graph.add_task(named_metadata(), buffers.reads(), buffers.writes(), idle_host_work());
         ASSERT_EQ(dynamic.offload_state(), nullptr);
@@ -255,10 +256,10 @@ namespace TaskGraphTests
 
     TEST(Medium_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
     {
-        int source = 0;
-        int target = 0;
-        const std::vector<BufferRegion> reads{BufferRegion(&source)};
-        const std::vector<BufferRegion> writes{BufferRegion(&target)};
+        const SushiRuntime::GlobalHandle source = TestSupport::made_up_handle(1);
+        const SushiRuntime::GlobalHandle target = TestSupport::made_up_handle(2);
+        const std::vector<BufferRegion> reads{BufferRegion(source)};
+        const std::vector<BufferRegion> writes{BufferRegion(target)};
         const std::vector<sycl::event> none;
         const std::optional<std::uint32_t> unissued(7);
         TaskMetadata metadata;
@@ -266,8 +267,8 @@ namespace TaskGraphTests
 
         TaskGraph graph;
         const auto bindings = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
-        const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
-        const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
+        const auto live_reads = std::make_shared<std::vector<SushiRuntime::GlobalHandle>>(1, source);
+        const auto live_writes = std::make_shared<std::vector<SushiRuntime::GlobalHandle>>(1, target);
         const char* const pattern = "registration index 7 was not issued by this graph";
 
         EXPECT_DEATH(static_cast<void>(graph.add_node(idle_work(), reads, writes, none, unissued)),

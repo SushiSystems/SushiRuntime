@@ -42,6 +42,7 @@
 #include <SushiRuntime/task/task_work.hpp>
 
 #include <SushiRuntime/execution/chain_plan.hpp>
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -91,8 +92,8 @@ TEST(Small_ChainPlan, KernelsOnOneDeviceChainInOrder)
 {
     int value = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&value, 0);
-    const std::vector<BufferRegion> region{BufferRegion(&value)};
+    memory.record(TestSupport::region_at(&value).base, 0);
+    const std::vector<BufferRegion> region{TestSupport::region_at(&value)};
     TaskGraph graph;
     Node& first = graph.add_node(add_one(&value), region, region);
     Node& second = graph.add_node(add_one(&value), region, region);
@@ -112,8 +113,8 @@ TEST(Small_ChainPlan, TheChainTakesTheQueueOfTheDeviceThatOwnsTheMemory)
 {
     int value = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(2);
-    memory.record(&value, 1);
-    const std::vector<BufferRegion> region{BufferRegion(&value)};
+    memory.record(TestSupport::region_at(&value).base, 1);
+    const std::vector<BufferRegion> region{TestSupport::region_at(&value)};
     TaskGraph graph;
     graph.add_node(add_one(&value), region, region);
     const CompiledGraph plan = compiled(graph);
@@ -130,10 +131,10 @@ TEST(Small_ChainPlan, KernelsOnTwoDevicesKeepThePlanOff)
     int on_first = 0;
     int on_second = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(2);
-    memory.record(&on_first, 0);
-    memory.record(&on_second, 1);
-    const std::vector<BufferRegion> first_region{BufferRegion(&on_first)};
-    const std::vector<BufferRegion> second_region{BufferRegion(&on_second)};
+    memory.record(TestSupport::region_at(&on_first).base, 0);
+    memory.record(TestSupport::region_at(&on_second).base, 1);
+    const std::vector<BufferRegion> first_region{TestSupport::region_at(&on_first)};
+    const std::vector<BufferRegion> second_region{TestSupport::region_at(&on_second)};
     TaskGraph graph;
     graph.add_node(add_one(&on_first), first_region, first_region);
     graph.add_node(add_one(&on_second), second_region, second_region);
@@ -160,7 +161,7 @@ TEST(Small_ChainPlan, ForeignMemoryKeepsThePlanOff)
 {
     int foreign = 0;
     const InMemoryPlacementMemory memory = devices_in_one_context(1);
-    const std::vector<BufferRegion> region{BufferRegion(&foreign)};
+    const std::vector<BufferRegion> region{TestSupport::region_at(&foreign)};
     TaskGraph graph;
     graph.add_node(add_one(&foreign), region, region);
     const CompiledGraph plan = compiled(graph);
@@ -184,10 +185,10 @@ TEST(Small_ChainPlan, ATaskUnorderedOnlyWithAKernelChains)
     int task_cell = 0;
     int kernel_cell = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&task_cell, 0);
-    memory.record(&kernel_cell, 0);
-    const std::vector<BufferRegion> task_region{BufferRegion(&task_cell)};
-    const std::vector<BufferRegion> kernel_region{BufferRegion(&kernel_cell)};
+    memory.record(TestSupport::region_at(&task_cell).base, 0);
+    memory.record(TestSupport::region_at(&kernel_cell).base, 0);
+    const std::vector<BufferRegion> task_region{TestSupport::region_at(&task_cell)};
+    const std::vector<BufferRegion> kernel_region{TestSupport::region_at(&kernel_cell)};
     TaskGraph graph;
     add_task_node(graph, {}, task_region);
     graph.add_node(add_one(&kernel_cell), kernel_region, kernel_region);
@@ -205,10 +206,10 @@ TEST(Small_ChainPlan, TwoOrderedTasksChainInOrder)
     int first_cell = 0;
     int second_cell = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&first_cell, 0);
-    memory.record(&second_cell, 0);
-    const std::vector<BufferRegion> first_region{BufferRegion(&first_cell)};
-    const std::vector<BufferRegion> second_region{BufferRegion(&second_cell)};
+    memory.record(TestSupport::region_at(&first_cell).base, 0);
+    memory.record(TestSupport::region_at(&second_cell).base, 0);
+    const std::vector<BufferRegion> first_region{TestSupport::region_at(&first_cell)};
+    const std::vector<BufferRegion> second_region{TestSupport::region_at(&second_cell)};
     TaskGraph graph;
     Node& first = add_task_node(graph, {}, first_region);
     Node& second = add_task_node(graph, first_region, second_region);
@@ -228,11 +229,11 @@ TEST(Small_ChainPlan, TwoUnorderedTasksStayOffWithoutTheOptIn)
     int first_cell = 0;
     int second_cell = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&first_cell, 0);
-    memory.record(&second_cell, 0);
+    memory.record(TestSupport::region_at(&first_cell).base, 0);
+    memory.record(TestSupport::region_at(&second_cell).base, 0);
     TaskGraph graph;
-    add_task_node(graph, {}, {BufferRegion(&first_cell)});
-    add_task_node(graph, {}, {BufferRegion(&second_cell)});
+    add_task_node(graph, {}, {TestSupport::region_at(&first_cell)});
+    add_task_node(graph, {}, {TestSupport::region_at(&second_cell)});
     const CompiledGraph plan = compiled(graph);
 
     const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::Refused);
@@ -247,11 +248,11 @@ TEST(Small_ChainPlan, TwoUnorderedTasksOverDisjointDataChainUnderTheOptIn)
     int first_cell = 0;
     int second_cell = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&first_cell, 0);
-    memory.record(&second_cell, 0);
+    memory.record(TestSupport::region_at(&first_cell).base, 0);
+    memory.record(TestSupport::region_at(&second_cell).base, 0);
     TaskGraph graph;
-    add_task_node(graph, {}, {BufferRegion(&first_cell)});
-    add_task_node(graph, {}, {BufferRegion(&second_cell)});
+    add_task_node(graph, {}, {TestSupport::region_at(&first_cell)});
+    add_task_node(graph, {}, {TestSupport::region_at(&second_cell)});
     const CompiledGraph plan = compiled(graph);
 
     const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::InTurnWhenDisjoint);
@@ -267,13 +268,13 @@ TEST(Small_ChainPlan, TwoUnorderedTasksReadingOneRegionStayOffUnderTheOptIn)
     int first_cell = 0;
     int second_cell = 0;
     InMemoryPlacementMemory memory = devices_in_one_context(1);
-    memory.record(&shared_cell, 0);
-    memory.record(&first_cell, 0);
-    memory.record(&second_cell, 0);
-    const std::vector<BufferRegion> shared_region{BufferRegion(&shared_cell)};
+    memory.record(TestSupport::region_at(&shared_cell).base, 0);
+    memory.record(TestSupport::region_at(&first_cell).base, 0);
+    memory.record(TestSupport::region_at(&second_cell).base, 0);
+    const std::vector<BufferRegion> shared_region{TestSupport::region_at(&shared_cell)};
     TaskGraph graph;
-    add_task_node(graph, shared_region, {BufferRegion(&first_cell)});
-    add_task_node(graph, shared_region, {BufferRegion(&second_cell)});
+    add_task_node(graph, shared_region, {TestSupport::region_at(&first_cell)});
+    add_task_node(graph, shared_region, {TestSupport::region_at(&second_cell)});
     const CompiledGraph plan = compiled(graph);
 
     const ChainPlan chain = classify_chain(plan, memory, false, UnorderedHostWork::InTurnWhenDisjoint);

@@ -24,6 +24,6 @@ sushiruntime_add_module(
         worker_pool_sizing.cpp
         worker_rounds.cpp
         worker_threads.cpp
-    DEPENDS core log sycl task machine report profile
+    DEPENDS core handle log sycl task machine report profile
     PRIVATE_DEPENDS observability topology memory device region work_stealing
     PUBLIC_EXTERNAL SushiLog::text)

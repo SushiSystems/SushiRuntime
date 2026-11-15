@@ -34,6 +34,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <vector>
 
 #include <SushiRuntime/core/common.hpp>
@@ -89,11 +91,12 @@ namespace SushiRuntime
                  * @param size The worker count and first pinned core.
                  * @param pinning Whether workers are bound to cores; the steal order follows it.
                  * @param topology Read during construction only.
-                 * @param devices,memory,pending,run,funnels Must outlive the rounds.
+                 * @param devices,memory,handles,pending,run,funnels Must outlive the rounds.
                  */
                 WorkerRounds(const PoolSize& size, PinPolicy pinning, const Internal::Topology::TopologyView& topology,
                              Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                             PendingWork& pending, RunState& run, SubmitFunnels& funnels);
+                             const HandleResolver& handles, PendingWork& pending, RunState& run,
+                             SubmitFunnels& funnels);
 
                 WorkerRounds(const WorkerRounds&) = delete;
                 WorkerRounds& operator=(const WorkerRounds&) = delete;
@@ -181,6 +184,7 @@ namespace SushiRuntime
                 std::size_t num_workers_;
                 Internal::Device::DeviceQueueSet& devices_;
                 const Internal::Memory::USMAllocator& memory_;
+                const HandleResolver& handles_;
                 PendingWork& pending_;
                 RunState& run_;
                 SubmitFunnels& funnels_;

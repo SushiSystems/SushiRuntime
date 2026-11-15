@@ -139,9 +139,9 @@ namespace SushiRuntime
                 [view, slot_reads = std::move(slot_reads)](std::vector<BufferRegion>& reads,
                                                            std::vector<BufferRegion>& writes)
                 {
-                    reads.push_back(BufferRegion(static_cast<void*>(view->current)));
+                    reads.push_back(BufferRegion(view->current_handle));
                     reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
-                    writes.push_back(BufferRegion(static_cast<void*>(view->next)));
+                    writes.push_back(BufferRegion(view->next_handle));
                 };
             std::decay_t<F> body(std::forward<F>(kernel));
             description.host_form = [body, view, lb, capacity, fault]()

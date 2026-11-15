@@ -35,6 +35,8 @@
 #include <memory>
 #include <vector>
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 namespace SushiRuntime
 {
     class PlacementRules;
@@ -74,14 +76,14 @@ namespace SushiRuntime
             std::atomic<std::uint32_t> attempts{0};
 
             /**
-             * @brief Lists the addresses a double-buffered node reads at its next dispatch.
+             * @brief Lists the handles a double-buffered node reads at its next dispatch.
              *
              * Node::set_live_io() sets it; null on a node with fixed buffers.
              */
-            std::shared_ptr<std::vector<void*>> live_reads;
+            std::shared_ptr<std::vector<GlobalHandle>> live_reads;
 
-            /** @brief Lists the addresses a double-buffered node writes; see live_reads. */
-            std::shared_ptr<std::vector<void*>> live_writes;
+            /** @brief Lists the handles a double-buffered node writes; see live_reads. */
+            std::shared_ptr<std::vector<GlobalHandle>> live_writes;
 
             /** @brief Holds the coordinator's own record; OffloadCoordinator::prepare() sets it. */
             std::unique_ptr<OffloadPayload> payload;

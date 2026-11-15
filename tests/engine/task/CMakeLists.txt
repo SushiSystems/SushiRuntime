@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         compile_task_work.cpp
         compile_usm_placement_memory.cpp
         test_dispatch_events.cpp
+        test_handle_location.cpp
         test_in_memory_offload_coordinator.cpp
         test_in_memory_offload_sink.cpp
         test_in_memory_placement_memory.cpp

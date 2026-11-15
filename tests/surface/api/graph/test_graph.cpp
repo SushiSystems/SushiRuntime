@@ -1205,7 +1205,7 @@ namespace DeterminismTests
         {
             float* partials =
                 recorder.scratch<float>(K_TILES, input.device_index(), input.residency()).value();
-            const BufferRegion partial_region{partials, 0, K_TILES * sizeof(float)};
+            const BufferRegion partial_region = recorder.borrowed_region(partials, K_TILES * sizeof(float)).value();
             const float* in = input.data();
             float* out = total.data();
 

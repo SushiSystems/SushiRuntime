@@ -690,6 +690,11 @@ namespace SushiRuntime
             impl_->dispatcher.bind(sink);
         }
 
+        void DistributedCoordinator::bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept
+        {
+            impl_->dispatcher.bind_handles(handles, device_count);
+        }
+
         TransportResult DistributedCoordinator::start()
         {
             Impl& impl = *impl_;

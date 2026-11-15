@@ -211,8 +211,18 @@ memory. A handle that owns no allocation has an empty observer.
 Two tasks declaring regions of the same buffer are serialized only when their ranges overlap, so
 disjoint slices (an array's halves, a grid's interior versus its halo) run in parallel. Pass the
 result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in elements; the buffer
-keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the api
-module's name for the byte window of one allocation, and follows the Range calls rule.
+keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the byte window
+of one buffer named by its `GlobalHandle`, and follows the Range calls rule.
+
+### handle
+
+handle() returns the buffer's `GlobalHandle`, its identity: every region of the buffer carries it,
+and every graph orders the buffer by it. The runtime mints it when the buffer is made, with kind
+`Buffer`, or kind `State` for a field of a State, and records the size, the element layout and the
+instance address on the buffer's device in the context's residency directory. Destroying the
+buffer retires the handle. Memory `Interop::borrow()` wraps gets a `Borrowed` handle: one per byte
+range while a borrow of it lives. data() stays the address of the instance on the home device, the
+pointer a kernel captures. An empty buffer has the null handle.
 
 ## source/context_memory.hpp
 
@@ -236,8 +246,8 @@ context, which is what the late-bound slot check does for an interior pointer. A
 
 ### StateView
 
-A StateView is what a graph holds of a State: the base pointers of the current and the next
-field, the element count, and the address of the State that owns the view. A State that owns memory
+A StateView is what a graph holds of a State: the base pointers and the handles of the current
+and the next field, the element count, and the address of the State that owns the view. A State that owns memory
 creates one view when it is allocated and shares it, through a shared_ptr, with every graph that
 records the State. A rule's replay reads the two pointers as its read key and its write key, and a
 kernel's host-side body reads them at each submit, so one compiled node follows the double buffer

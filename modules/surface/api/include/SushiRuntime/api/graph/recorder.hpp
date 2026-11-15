@@ -674,6 +674,18 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Names a scratch() block or the caller's USM as a whole region whose Borrowed
+             *        handle lives while the recorder keeps its nodes.
+             * @param address,bytes The range; a range named twice gets the same handle.
+             * @param device Device the memory is recorded on when the allocator knows no owner.
+             * @return The region, an empty one for no bytes, or InvalidArgument on a partial overlap.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<BufferRegion>
+            borrowed_region(const void* address, std::size_t bytes,
+                            DeviceIndex device = DeviceIndex{0});
+
+            /**
              * @brief Names the rule most recently recorded; every node of it reports the name.
              * @param label Copied; an empty label returns the rule to the default name.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -918,12 +930,11 @@ namespace SushiRuntime
                                         const std::shared_ptr<Detail::StateView<T>>& written,
                                         const std::shared_ptr<Detail::StateView<Inputs>>&... read)
                 {
-                    *fields.reads = {static_cast<void*>(written->current),
-                                     static_cast<void*>(read->current)...};
-                    *fields.writes = {static_cast<void*>(written->next)};
+                    *fields.reads = {written->current_handle, read->current_handle...};
+                    *fields.writes = {written->next_handle};
                 };
-                live.reads = std::make_shared<std::vector<void*>>();
-                live.writes = std::make_shared<std::vector<void*>>();
+                live.reads = std::make_shared<std::vector<GlobalHandle>>();
+                live.writes = std::make_shared<std::vector<GlobalHandle>>();
                 refresh(live, out, inputs...);
 
                 // The fields swap every step, so the lists are rewritten before each one.
@@ -1088,7 +1099,10 @@ namespace SushiRuntime
             /** @brief The recorded nodes, in recording order. */
             std::vector<Detail::NodeSpec> specs_;
 
-            /** @brief Owns the USM handed out by scratch() and the fault records. */
+            /**
+             * @brief Owns the USM handed out by scratch(), the fault records and the borrows of
+             *        borrowed_region().
+             */
             std::vector<std::shared_ptr<void>> scratch_;
 
             /** @brief One entry per rule: its label in labels_, or null for the default. */

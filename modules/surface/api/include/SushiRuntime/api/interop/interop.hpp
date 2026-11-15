@@ -137,13 +137,17 @@ namespace SushiRuntime
                 const std::size_t bytes = Detail::checked_byte_count(call, count, sizeof(T));
                 if (count == 0)
                     return Buffer<T>(context_, Detail::MemoryBlock{}, 0, device, residency,
-                                     LivenessObserver(owner));
+                                     LivenessObserver(owner), GlobalHandle::null());
                 Result<void> agreed = require_stated_residency(address, device, residency);
                 if (!agreed)
                     return make_error(std::move(agreed.error()));
+                Result<GlobalHandle> handle = Detail::borrow_handle(
+                    context_, address, bytes, sizeof(T), alignof(T), device);
+                if (!handle)
+                    return make_error(std::move(handle.error()));
                 Detail::MemoryBlock block{Detail::Allocation(address, bytes, nullptr)};
                 return Buffer<T>(context_, std::move(block), count, device, residency,
-                                 LivenessObserver(owner));
+                                 LivenessObserver(owner), *handle);
             }
 
         private:

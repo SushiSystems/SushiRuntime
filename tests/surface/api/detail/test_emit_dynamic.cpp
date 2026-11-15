@@ -41,6 +41,7 @@
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -60,7 +61,7 @@ TEST_F(Small_EmitDynamic, TheKernelRunsOverTheLiveCount)
     const std::shared_ptr<Detail::LateControls> controls =
         Testing::bound_controls(sized([] { return K_LIVE; }));
     const Detail::NodeDescription description = Detail::dynamic_node(
-        controls, nullptr, {}, {BufferRegion(words)}, K_CAPACITY,
+        controls, nullptr, {}, {TestSupport::region_at(words)}, K_CAPACITY,
         [words](std::size_t index) { words[index] = 1; }, K_CAPACITY);
 
     description.host_form();

@@ -144,6 +144,16 @@ queue.
 | `GrowingPastOneChunkKeepsEarlierEntriesInPlace` | Minting past one chunk makes the second chunk and leaves the first entry at its address. |
 | `ReadersResolveWhileAWriterMints` | Four reader threads resolve one live handle while the test thread mints and retires four chunks of others; every resolve returns the same address. |
 
+## test_borrowed_index.cpp
+
+| Test | What it checks |
+| --- | --- |
+| `OneRangeGetsOneHandle` | One range borrowed twice gets one `Borrowed` handle, minted by the first call only. |
+| `TheLastReleaseRetiresTheHandle` | The handle stays live until its last borrow is released, then is stale. |
+| `DisjointRangesGetDistinctHandles` | Two disjoint ranges get two handles, and `find()` answers by containment. |
+| `AnOverlappingRangeIsRefused` | A range inside or across a live range it does not equal is refused with `InvalidArgument`. |
+| `ANullOrEmptyRangeIsRefused` | A null address or a range of no bytes is refused. |
+
 ## test_recording_usm_release_observer.cpp
 
 A `RecordingUSMReleaseObserver` keeps the addresses it hears. The test calls `on_release()` itself,

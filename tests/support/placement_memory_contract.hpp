@@ -35,24 +35,26 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 #include <SushiRuntime/task/placement_memory.hpp>
 
 namespace TestSupport
 {
-    /** @brief Checks that an address nobody recorded has no recorded and no owning device. */
-    inline void expect_unrecorded_address_has_no_device(const SushiRuntime::Internal::Graph::PlacementMemory& memory,
-                                                        const void* address)
+    /** @brief Checks that a handle nobody recorded has no recorded and no owning device. */
+    inline void expect_unrecorded_handle_has_no_device(const SushiRuntime::Internal::Graph::PlacementMemory& memory,
+                                                       SushiRuntime::GlobalHandle handle)
     {
-        EXPECT_EQ(memory.recorded_device(address), std::nullopt);
-        EXPECT_EQ(memory.owning_device(address), std::nullopt);
+        EXPECT_EQ(memory.recorded_device(handle), std::nullopt);
+        EXPECT_EQ(memory.owning_device(handle), std::nullopt);
     }
 
-    /** @brief Checks that an address recorded on @p device names it, recorded and owning. */
-    inline void expect_recorded_address_names_device(const SushiRuntime::Internal::Graph::PlacementMemory& memory,
-                                                     const void* address, std::size_t device)
+    /** @brief Checks that a handle recorded on @p device names it, recorded and owning. */
+    inline void expect_recorded_handle_names_device(const SushiRuntime::Internal::Graph::PlacementMemory& memory,
+                                                    SushiRuntime::GlobalHandle handle, std::size_t device)
     {
-        EXPECT_EQ(memory.recorded_device(address), std::optional<std::size_t>(device));
-        EXPECT_EQ(memory.owning_device(address), std::optional<std::size_t>(device));
+        EXPECT_EQ(memory.recorded_device(handle), std::optional<std::size_t>(device));
+        EXPECT_EQ(memory.owning_device(handle), std::optional<std::size_t>(device));
     }
 
     /** @brief Checks that the memory spans @p count devices. */

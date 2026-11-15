@@ -245,6 +245,7 @@ namespace SushiRuntime
 
             // The new master starts before the installed one is touched, so a failure costs nothing.
             state->coordinator.bind(context.offload_sink());
+            state->coordinator.bind_handles(context.handles(), context.devices().count());
             const TransportResult started = state->coordinator.start();
             if (!started.is_ok())
             {

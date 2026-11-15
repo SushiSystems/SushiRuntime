@@ -20,9 +20,10 @@ not installed.
 
 ### get_shard_idx
 
-shard_index() shards on the owning allocation (its base), not the sub-region, so every access to
-one allocation lands in the same chain and can be compared by interval overlap. It applies a fast
-SplitMix64 bitwise hash to distribute allocations uniformly.
+shard_index() shards on the buffer's `GlobalHandle` (the region's base), not the sub-region, so
+every access to one buffer lands in the same chain and can be compared by interval overlap. It takes
+the handle's own `std::hash`, a SplitMix64 mix of its two words, so the shard does not depend on an
+address.
 
 ### DependencyTracker
 

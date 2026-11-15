@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/task/placement_memory.hpp>
 
 namespace SushiRuntime
@@ -52,13 +53,14 @@ namespace SushiRuntime
         /**
          * @brief Returns the device @p node runs on.
          * @param node A node whose regions and stated placement are final.
-         * @param memory The allocator that knows which device owns each region and its context.
+         * @param memory,handles Resolve each region's handle and name its device and context.
          * @return The device by the rule order in the README, or an InvalidGraph error when
          *         the stated device and the memory's owner are in different contexts.
          * @see modules/engine/task/README.md
          */
         SUSHIRUNTIME_API Result<std::size_t>
-        placement_of(const Node& node, const Internal::Memory::USMAllocator& memory);
+        placement_of(const Node& node, const Internal::Memory::USMAllocator& memory,
+                     const HandleResolver& handles);
 
         /**
          * @brief Returns the device @p node runs on, reading memory through a port.

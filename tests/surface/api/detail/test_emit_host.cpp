@@ -35,6 +35,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_host.hpp>
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -44,12 +45,12 @@ TEST(Small_EmitHost, AHostNodeDescribesItsKindWidthAndWrites)
     int target = 0;
 
     const Detail::NodeDescription description =
-        Detail::host_node({}, {BufferRegion(&target)}, [] {}, 5);
+        Detail::host_node({}, {TestSupport::region_at(&target)}, [] {}, 5);
 
     EXPECT_EQ(description.kind, Detail::NodeKind::Host);
     EXPECT_EQ(description.width, 5u);
     ASSERT_EQ(description.writes.size(), 1u);
-    EXPECT_EQ(description.writes[0].base, &target);
+    EXPECT_EQ(description.writes[0].base, TestSupport::region_at(&target).base);
     EXPECT_TRUE(std::holds_alternative<Detail::WorkerWork>(description.work));
 }
 

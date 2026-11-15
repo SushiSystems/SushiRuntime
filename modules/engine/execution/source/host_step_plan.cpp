@@ -38,6 +38,7 @@
 #include <SushiRuntime/memory/usm_registry.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 
@@ -49,22 +50,27 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Answers HostReachableMemory from the kinds a USMAllocator recorded. */
+            /** @brief Answers HostReachableMemory from a handle's address and the kind a USMAllocator recorded for it. */
             class USMHostReachableMemory final : public HostReachableMemory
             {
                 public:
-                    /** @brief Reads @p memory, which must outlive this object. */
-                    explicit USMHostReachableMemory(const Internal::Memory::USMAllocator& memory) noexcept
-                        : memory_(memory)
+                    /** @brief Reads @p memory and @p handles, which must outlive this object. */
+                    USMHostReachableMemory(const Internal::Memory::USMAllocator& memory,
+                                           const HandleResolver& handles) noexcept
+                        : memory_(memory), handles_(handles)
                     {
 
                     }
 
-                    /** @brief Returns whether the allocation at @p base was made as host or shared USM. */
-                    [[nodiscard]] bool host_reachable(const void* base) const override
+                    /** @brief Returns whether the buffer @p handle names was made as host or shared USM. */
+                    [[nodiscard]] bool host_reachable(GlobalHandle handle) const override
                     {
+                        const std::optional<Internal::Graph::HandleLocation> location =
+                            Internal::Graph::locate(handles_, handle, memory_.device_count());
+                        if (!location)
+                            return false;
                         const std::optional<Internal::Memory::USMRegistry::Record> record =
-                            memory_.record_of(base);
+                            memory_.record_of(location->address);
                         if (!record || !record->kind)
                             return false;
                         return *record->kind == Internal::Memory::USMKind::Host ||
@@ -73,6 +79,7 @@ namespace SushiRuntime
 
                 private:
                     const Internal::Memory::USMAllocator& memory_; /**< The allocator whose records answer. */
+                    const HandleResolver& handles_;                /**< Resolves a handle to its address. */
             };
 
             /** @brief Returns whether every region of @p regions lies in memory the host reaches. */
@@ -84,14 +91,14 @@ namespace SushiRuntime
                 return true;
             }
 
-            /** @brief Returns whether every address a live list holds lies in memory the host reaches. */
-            bool addresses_reachable(const std::shared_ptr<std::vector<void*>>& addresses,
-                                     const HostReachableMemory& memory)
+            /** @brief Returns whether every handle a live list holds names memory the host reaches. */
+            bool handles_reachable(const std::shared_ptr<std::vector<GlobalHandle>>& handles,
+                                   const HostReachableMemory& memory)
             {
-                if (addresses == nullptr)
+                if (handles == nullptr)
                     return true;
-                for (const void* address : *addresses)
-                    if (address != nullptr && !memory.host_reachable(address))
+                for (const GlobalHandle handle : *handles)
+                    if (!handle.is_null() && !memory.host_reachable(handle))
                         return false;
                 return true;
             }
@@ -114,9 +121,9 @@ namespace SushiRuntime
                     return "a node names no region, so the memory its kernel touches is unknown";
                 if (!regions_reachable(node.io_reads_, memory) || !regions_reachable(node.io_writes_, memory))
                     return "a node touches device memory or memory the runtime holds no kind for";
-                if (offload != nullptr && (!addresses_reachable(offload->live_reads, memory) ||
-                                           !addresses_reachable(offload->live_writes, memory)))
-                    return "a node's live address lists hold device memory or memory the runtime holds no kind for";
+                if (offload != nullptr && (!handles_reachable(offload->live_reads, memory) ||
+                                           !handles_reachable(offload->live_writes, memory)))
+                    return "a node's live handle lists hold device memory or memory the runtime holds no kind for";
                 return nullptr;
             }
         } // namespace
@@ -134,7 +141,7 @@ namespace SushiRuntime
 
         const char* host_step_refusal(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
-            return host_step_refusal(graph, USMHostReachableMemory(context.memory()));
+            return host_step_refusal(graph, USMHostReachableMemory(context.memory(), context.handles()));
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

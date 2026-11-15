@@ -291,7 +291,7 @@ namespace SushiRuntime
             // Resolve USM dependencies for reads and writes
             for (const auto& r : read_access)
             {
-                if (r.base)
+                if (r.valid())
                     impl_->tracker.resolve(node.get(), r, false);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
@@ -299,7 +299,7 @@ namespace SushiRuntime
 
             for (const auto& w : write_access)
             {
-                if (w.base)
+                if (w.valid())
                     impl_->tracker.resolve(node.get(), w, true);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
@@ -367,7 +367,7 @@ namespace SushiRuntime
             // Resolve USM dependencies utilizing Lock-Free Access History
             for (const auto& r : read_access)
             {
-                if (r.base)
+                if (r.valid())
                     impl_->tracker.resolve(node.get(), r, false);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
@@ -375,7 +375,7 @@ namespace SushiRuntime
 
             for (const auto& w : write_access)
             {
-                if (w.base)
+                if (w.valid())
                     impl_->tracker.resolve(node.get(), w, true);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
@@ -476,7 +476,7 @@ namespace SushiRuntime
 
             for (const auto& r : read_access)
             {
-                if (r.base)
+                if (r.valid())
                     impl_->tracker.resolve(node.get(), r, false);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
@@ -484,7 +484,7 @@ namespace SushiRuntime
 
             for (const auto& w : write_access)
             {
-                if (w.base)
+                if (w.valid())
                     impl_->tracker.resolve(node.get(), w, true);
                 else
                     impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);

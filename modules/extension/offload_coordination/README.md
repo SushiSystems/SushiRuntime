@@ -60,7 +60,7 @@ is `Picked` with the worker and the device. When every match is at its `max_jobs
 | op-tagged, supported, every buffer shared, two writes name one buffer | false | the handles of the shared buffers it writes |
 | any other node that writes a shared buffer | false | the handles of the shared buffers it writes |
 | any other node | false | none, and no `OffloadState` is created for it |
-| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live address is shared and no two live writes name one buffer | none |
+| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live handle resolves to a shared address and no two live writes name one buffer | none |
 
 A dispatch raises the version of each output once. A buffer listed twice among the outputs would
 leave with two versions, and the output fence would refuse the chunks of one of them, so such a

@@ -46,7 +46,7 @@ namespace SushiRuntime
     struct In
     {
         const T* ptr;  /**< Element pointer handed to the kernel. */
-        void* key;     /**< Read dependency key for this argument. */
+        GlobalHandle key; /**< Read dependency key for this argument. */
         LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = true;   /**< Contributes a read key. */
         static constexpr bool writes = false; /**< Contributes no write key. */
@@ -72,7 +72,7 @@ namespace SushiRuntime
     struct Out
     {
         T* ptr;        /**< Element pointer handed to the kernel. */
-        void* key;     /**< Write dependency key for this argument. */
+        GlobalHandle key; /**< Write dependency key for this argument. */
         LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = false;  /**< Contributes no read key. */
         static constexpr bool writes = true;  /**< Contributes a write key. */
@@ -98,7 +98,7 @@ namespace SushiRuntime
     struct InOut
     {
         T* ptr;        /**< Element pointer handed to the kernel. */
-        void* key;     /**< Dependency key counted as both read and write. */
+        GlobalHandle key; /**< Dependency key counted as both read and write. */
         LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = true;   /**< Contributes a read key. */
         static constexpr bool writes = true;  /**< Contributes a write key. */

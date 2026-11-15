@@ -86,8 +86,9 @@ namespace SushiRuntime
                                      const Internal::Topology::TopologyView& topology,
                                      Internal::Device::DeviceQueueSet& devices,
                                      const Internal::Memory::USMAllocator& memory,
+                                     const HandleResolver& handles,
                                      Profile::Collector& collector)
-            : parts_(std::make_unique<Parts>(pool, topology, devices, memory, collector))
+            : parts_(std::make_unique<Parts>(pool, topology, devices, memory, handles, collector))
         {
             parts_->run.poller.set_inflight_tracker(&parts_->run.quiescence);
 

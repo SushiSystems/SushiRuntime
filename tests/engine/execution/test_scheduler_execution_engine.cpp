@@ -66,6 +66,7 @@
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 #include "support/tolerance.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 
@@ -279,6 +280,7 @@ namespace DevicePipelineTests
     TEST(Medium_DevicePipelineTest, DiamondAllKernelNodes)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
+        TestSupport::HandleTable keys(context.handles());
 
         if (!numa0_has_single_queue(context))
             GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would scatter "
@@ -307,7 +309,7 @@ namespace DevicePipelineTests
             {
                 h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { a[i] = float(i); });
             },
-            {}, {SushiRuntime::BufferRegion(a)});
+            {}, {keys.region(a)});
 
         // doubleA: B[i] = A[i] * 2
         graph.add_node(
@@ -315,7 +317,7 @@ namespace DevicePipelineTests
             {
                 h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { b[i] = a[i] * 2.0f; });
             },
-            {SushiRuntime::BufferRegion(a)}, {SushiRuntime::BufferRegion(b)});
+            {keys.region(a)}, {keys.region(b)});
 
         // incA: C[i] = A[i] + 1  (parallel sibling of doubleA)
         graph.add_node(
@@ -323,7 +325,7 @@ namespace DevicePipelineTests
             {
                 h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { c[i] = a[i] + 1.0f; });
             },
-            {SushiRuntime::BufferRegion(a)}, {SushiRuntime::BufferRegion(c)});
+            {keys.region(a)}, {keys.region(c)});
 
         // combine: D[i] = B[i] + C[i]  (fan-in)
         graph.add_node(
@@ -331,7 +333,7 @@ namespace DevicePipelineTests
             {
                 h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { d[i] = b[i] + c[i]; });
             },
-            {SushiRuntime::BufferRegion(b), SushiRuntime::BufferRegion(c)}, {SushiRuntime::BufferRegion(d)});
+            {keys.region(b), keys.region(c)}, {keys.region(d)});
 
         auto compiled = graph.compile().value();
         EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
@@ -363,10 +365,10 @@ namespace HeterogeneousPipelineTests
         constexpr float  K_BIAS   = 5.0f;
 
         /** @brief Adds an init, scale and bias chain of device kernels on @p dq over @p data. */
-        void add_device_chain(TaskGraph& graph, sycl::queue* dq, float* data, int c)
+        void add_device_chain(TaskGraph& graph, TestSupport::HandleTable& keys, sycl::queue* dq, float* data, int c)
         {
             TaskMetadata meta_init{"chain_init_dev"};
-            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_init, {}, {keys.region(data)},
                 [data, c, dq](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
@@ -379,7 +381,7 @@ namespace HeterogeneousPipelineTests
                 });
 
             TaskMetadata meta_scale{"chain_scale_dev"};
-            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_scale, {keys.region(data)}, {keys.region(data)},
                 [data, dq](sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
@@ -393,7 +395,7 @@ namespace HeterogeneousPipelineTests
                 });
 
             TaskMetadata meta_bias{"chain_bias_dev"};
-            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_bias, {keys.region(data)}, {keys.region(data)},
                 [data, dq](sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
@@ -408,10 +410,10 @@ namespace HeterogeneousPipelineTests
         }
 
         /** @brief Adds an init, scale and bias chain of host tasks over @p data. */
-        void add_host_chain(TaskGraph& graph, float* data, int c)
+        void add_host_chain(TaskGraph& graph, TestSupport::HandleTable& keys, float* data, int c)
         {
             TaskMetadata meta_init{"chain_init_host"};
-            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_init, {}, {keys.region(data)},
                 [data, c](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     std::iota(data, data + N, float(c));
@@ -419,7 +421,7 @@ namespace HeterogeneousPipelineTests
                 });
 
             TaskMetadata meta_scale{"chain_scale_host"};
-            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_scale, {keys.region(data)}, {keys.region(data)},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     std::transform(data, data + N, data, [](float value) { return value * K_SCALE; });
@@ -427,7 +429,7 @@ namespace HeterogeneousPipelineTests
                 });
 
             TaskMetadata meta_bias{"chain_bias_host"};
-            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+            graph.add_task(meta_bias, {keys.region(data)}, {keys.region(data)},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     std::transform(data, data + N, data, [](float value) { return value + K_BIAS; });
@@ -466,6 +468,7 @@ namespace HeterogeneousPipelineTests
     TEST(Medium_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
+        TestSupport::HandleTable keys(context.handles());
         TaskGraph graph;
         const std::vector<sycl::queue*> device_queues = cpu_and_gpu_queues(context);
         ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
@@ -480,9 +483,9 @@ namespace HeterogeneousPipelineTests
             ASSERT_TRUE(buffers.back()) << "USM allocation failed for chain " << c;
             sycl::queue* const chain_queue = &dq;
             if (dq.get_device().is_gpu())
-                add_device_chain(graph, chain_queue, buffers.back().get(), c);
+                add_device_chain(graph, keys, chain_queue, buffers.back().get(), c);
             else
-                add_host_chain(graph, buffers.back().get(), c);
+                add_host_chain(graph, keys, buffers.back().get(), c);
         }
 
         auto compiled = graph.compile().value();
@@ -512,6 +515,7 @@ namespace SYCLExecutionTests
     TEST(Medium_SyclExecutionTest, EndToEndVectorAddition)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
+        TestSupport::HandleTable keys(context.handles());
         TaskGraph graph;
 
         sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
@@ -538,7 +542,7 @@ namespace SYCLExecutionTests
             std::fill(C, C + VECTOR_SIZE, 0.0f);
             return {};
         };
-        graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(A), SushiRuntime::BufferRegion(B), SushiRuntime::BufferRegion(C)}, init_work);
+        graph.add_task(meta_init, {}, {keys.region(A), keys.region(B), keys.region(C)}, init_work);
 
         TaskMetadata meta_compute{"Vector_Add_Kernel"};
         auto compute_work = [A, B, C](sycl::queue& queue,
@@ -553,7 +557,7 @@ namespace SYCLExecutionTests
                 });
             });
         };
-        graph.add_task(meta_compute, {SushiRuntime::BufferRegion(A), SushiRuntime::BufferRegion(B)}, {SushiRuntime::BufferRegion(C)}, compute_work);
+        graph.add_task(meta_compute, {keys.region(A), keys.region(B)}, {keys.region(C)}, compute_work);
 
         auto compiled = graph.compile().value();
         context.execution_engine().execute(std::move(compiled)).value();
@@ -571,6 +575,7 @@ namespace SYCLExecutionTests
     TEST(Medium_SyclExecutionTest, MultiStageChain)
     {
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
+        TestSupport::HandleTable keys(context.handles());
         TaskGraph graph;
 
         constexpr size_t N     = 2048;
@@ -585,7 +590,7 @@ namespace SYCLExecutionTests
         ASSERT_NE(sum, nullptr);
 
         TaskMetadata meta_init{"Init"};
-        graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)}, [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+        graph.add_task(meta_init, {}, {keys.region(data)}, [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
         {
             for (size_t i = 0; i < N; ++i)
                 data[i] = static_cast<float>(i);
@@ -593,7 +598,7 @@ namespace SYCLExecutionTests
         });
 
         TaskMetadata meta_scale{"Scale"};
-        graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+        graph.add_task(meta_scale, {keys.region(data)}, {keys.region(data)},
                        [data](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
                            -> sycl::event
         {
@@ -608,7 +613,7 @@ namespace SYCLExecutionTests
         });
 
         TaskMetadata meta_reduce{"Reduce"};
-        graph.add_task(meta_reduce, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(sum)}, [data, sum](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+        graph.add_task(meta_reduce, {keys.region(data)}, {keys.region(sum)}, [data, sum](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
         {
             double acc = 0.0;
             for (size_t i = 0; i < N; ++i)
@@ -683,11 +688,12 @@ namespace ReplayHostWriteTests
                 std::uint32_t* data_;     /**< The word. */
         };
 
-        /** @brief Compiles a plan of one kernel that writes @p output as @p input plus one. */
-        CompiledGraph compile_increment(std::uint32_t* input, std::uint32_t* output)
+        /** @brief Compiles a plan of one kernel that writes @p output as @p input plus one, both on @p device. */
+        CompiledGraph compile_increment(std::uint32_t* input, std::uint32_t* output,
+                                        TestSupport::HandleTable& keys, std::size_t device)
         {
-            const std::vector<BufferRegion> reads{BufferRegion(input)};
-            const std::vector<BufferRegion> writes{BufferRegion(output)};
+            const std::vector<BufferRegion> reads{keys.region(input, device)};
+            const std::vector<BufferRegion> writes{keys.region(output, device)};
 
             TaskGraph graph;
             graph.add_node([input, output](sycl::handler& handler)
@@ -712,7 +718,8 @@ namespace ReplayHostWriteTests
             ASSERT_NE(output.data(), nullptr);
 
             ExecutionEngine& engine = context.execution_engine();
-            CompiledGraph plan = compile_increment(input.data(), output.data());
+            TestSupport::HandleTable keys(context.handles());
+            CompiledGraph plan = compile_increment(input.data(), output.data(), keys, device);
 
             for (std::uint32_t value = 0; value < K_REPLAYS; ++value)
             {
@@ -767,7 +774,7 @@ namespace GraphTests
         TaskGraph graph;
 
         int shared_cell = 0;
-        const BufferRegion cell(&shared_cell);
+        const BufferRegion cell = TestSupport::region_at(&shared_cell);
         std::vector<int> execution_order;
 
         graph.add_native({}, {cell}, [&execution_order] { execution_order.push_back(1); });
@@ -820,7 +827,7 @@ namespace GraphTests
         TaskGraph graph;
 
         int shared_resource = 0;
-        const BufferRegion cell(&shared_resource);
+        const BufferRegion cell = TestSupport::region_at(&shared_resource);
         int current_phase = 0;
         int readers_after_writer = 0;
 
@@ -892,7 +899,7 @@ namespace SchedulerStepTests
         SushiRuntime::SeededExecutor executor(TestSupport::K_HOST_RUNTIME_SEED);
         const auto context = TestSupport::make_host_context();
         TaskScheduler scheduler(WorkerPoolSettings{2, 0, SushiRuntime::PinPolicy::Float}, context->topology(),
-                                context->devices(), context->memory());
+                                context->devices(), context->memory(), context->handles());
         scheduler.set_executor(&executor);
         std::vector<SushiRuntime::sushi_ptr<SushiRuntime::Internal::Graph::Node>> nodes;
         std::atomic<std::size_t> executed{0};

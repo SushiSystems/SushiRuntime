@@ -42,6 +42,9 @@
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/allocation.hpp>
 #include <SushiRuntime/core/recording_allocation_owner.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
+
+#include "made_up_handle.hpp"
 
 namespace TestSupport
 {
@@ -69,7 +72,7 @@ namespace TestSupport
 }
 
 /**
- * @brief Builds a Buffer that adopts a block of @p block_bytes at a made-up address.
+ * @brief Builds a Buffer named made_up_handle(id) over a block of @p block_bytes at a made-up address.
  * @tparam Element The element type of the Buffer.
  * @param id Names the address, as made_up_address() takes it.
  * @param count The element count the Buffer claims.
@@ -83,7 +86,7 @@ template <class Element>
 {
     return SushiRuntime::Detail::HandleAccess::construct<SushiRuntime::Buffer<Element>>(
         SushiRuntime::ContextHandle(), recorded_block(id, block_bytes, releases), count,
-        SushiRuntime::DeviceIndex{0}, SushiRuntime::Residency::Shared);
+        SushiRuntime::DeviceIndex{0}, SushiRuntime::Residency::Shared, made_up_handle(id));
 }
 
 /**

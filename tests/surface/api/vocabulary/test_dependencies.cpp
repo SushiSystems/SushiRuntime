@@ -38,6 +38,7 @@
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 
 #include "support/host_runtime.hpp"
+#include "support/made_up_handle.hpp"
 
 using namespace SushiRuntime;
 
@@ -49,17 +50,16 @@ class Small_DependenciesOfHandles : public TestSupport::HostRuntimeTest
 /** @brief Tests that a region is given as its own key and is watched by nothing. */
 TEST(Small_Dependencies, ARegionIsItsOwnKeyAndHasNoObserver)
 {
-    int raw = 0;
-    const BufferRegion region(&raw, 0, sizeof(int));
+    const BufferRegion region(TestSupport::made_up_handle(1), 0, sizeof(int));
 
     const Reads reads(region);
 
     ASSERT_EQ(reads.keys.size(), 1u);
-    EXPECT_EQ(reads.keys[0].base, &raw);
+    EXPECT_EQ(reads.keys[0].base, TestSupport::made_up_handle(1));
     EXPECT_TRUE(reads.lives.empty());
 }
 
-/** @brief Tests that a buffer reads and writes one key, the address of its data. */
+/** @brief Tests that a buffer reads and writes one key, its handle. */
 TEST_F(Small_DependenciesOfHandles, ABufferReadsAndWritesTheSameKey)
 {
     auto buffer = runtime().buffer<int>(4).value();
@@ -82,8 +82,11 @@ TEST_F(Small_DependenciesOfHandles, AStateReadsCurrentAndWritesNext)
 
     ASSERT_EQ(reads.keys.size(), 1u);
     ASSERT_EQ(writes.keys.size(), 1u);
-    EXPECT_EQ(reads.keys[0].base, static_cast<void*>(state.current()));
-    EXPECT_EQ(writes.keys[0].base, static_cast<void*>(state.next()));
+    EXPECT_FALSE(reads.keys[0].base.is_null());
+    EXPECT_FALSE(writes.keys[0].base.is_null());
+    EXPECT_NE(reads.keys[0].base, writes.keys[0].base) << "the two fields are two buffers";
+    EXPECT_EQ(reads.keys[0].base.kind(), HandleKind::State);
+    EXPECT_EQ(writes.keys[0].base.kind(), HandleKind::State);
 }
 
 /** @brief Tests that a typed handle is observed, so the graph can tell when it is destroyed. */
@@ -107,7 +110,7 @@ TEST_F(Small_DependenciesOfHandles, ReadsAndWritesCollectOneKeyEach)
     const Writes writes(first);
 
     ASSERT_EQ(reads.keys.size(), 2u);
-    EXPECT_EQ(reads.keys[0].base, static_cast<void*>(first.data()));
-    EXPECT_EQ(reads.keys[1].base, static_cast<void*>(second.data()));
+    EXPECT_EQ(reads.keys[0].base, first.handle());
+    EXPECT_EQ(reads.keys[1].base, second.handle());
     EXPECT_EQ(writes.keys.size(), 1u);
 }

@@ -39,14 +39,14 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a buffer's key is its data. */
-TEST(Small_HandleAccess, ABufferKeyIsItsData)
+/** @brief Tests that a buffer's key is its handle. */
+TEST(Small_HandleAccess, ABufferKeyIsItsHandle)
 {
     std::vector<void*> releases;
     auto buffer = TestSupport::adopted_buffer<int>(1, 4, releases);
 
-    EXPECT_EQ(Detail::HandleAccess::key(buffer), static_cast<void*>(buffer.data()));
-    EXPECT_EQ(Detail::HandleAccess::key(buffer), TestSupport::made_up_address(1));
+    EXPECT_EQ(Detail::HandleAccess::key(buffer), buffer.handle());
+    EXPECT_EQ(Detail::HandleAccess::key(buffer), TestSupport::made_up_handle(1));
 }
 
 /** @brief Tests that a buffer's liveness ends with the buffer. */
@@ -69,6 +69,6 @@ TEST(Small_HandleAccess, AStateReadsCurrentAndWritesNext)
     std::vector<void*> releases;
     auto state = TestSupport::adopted_state<int>(2, 3, 4, releases);
 
-    EXPECT_EQ(Detail::HandleAccess::read_key(state), TestSupport::made_up_address(2));
-    EXPECT_EQ(Detail::HandleAccess::write_key(state), TestSupport::made_up_address(3));
+    EXPECT_EQ(Detail::HandleAccess::read_key(state), TestSupport::made_up_handle(2));
+    EXPECT_EQ(Detail::HandleAccess::write_key(state), TestSupport::made_up_handle(3));
 }

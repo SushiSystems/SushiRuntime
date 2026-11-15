@@ -77,8 +77,9 @@ namespace SushiRuntime
         WorkerRounds::WorkerRounds(const PoolSize& size, PinPolicy pinning,
                                    const Internal::Topology::TopologyView& topology,
                                    Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                                   PendingWork& pending, RunState& run, SubmitFunnels& funnels)
-            : num_workers_(size.workers), devices_(devices), memory_(memory), pending_(pending), run_(run),
+                                   const HandleResolver& handles, PendingWork& pending, RunState& run,
+                                   SubmitFunnels& funnels)
+            : num_workers_(size.workers), devices_(devices), memory_(memory), handles_(handles), pending_(pending), run_(run),
               funnels_(funnels)
         {
             for (std::size_t i = 0; i < num_workers_; ++i)
@@ -448,7 +449,7 @@ namespace SushiRuntime
                 if (node)
                 {
                     const Result<void> placed =
-                        place_for_dispatch(*node, memory_, devices_.count());
+                        place_for_dispatch(*node, memory_, handles_, devices_.count());
                     if (!placed)
                     {
                         abort_run(name_failure(*task, placed.error()));

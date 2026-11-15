@@ -68,8 +68,8 @@ namespace SushiRuntime
             description.state_access = [view](std::vector<BufferRegion>& reads,
                                               std::vector<BufferRegion>& writes)
             {
-                reads.push_back(BufferRegion(static_cast<void*>(view->current)));
-                writes.push_back(BufferRegion(static_cast<void*>(view->next)));
+                reads.push_back(BufferRegion(view->current_handle));
+                writes.push_back(BufferRegion(view->next_handle));
             };
             std::decay_t<F> body(std::forward<F>(kernel));
             if constexpr (has_host_form_v<Launch>)
@@ -111,10 +111,10 @@ namespace SushiRuntime
             description.state_access = [out_view, views](std::vector<BufferRegion>& reads,
                                                          std::vector<BufferRegion>& writes)
             {
-                reads.push_back(BufferRegion(static_cast<void*>(out_view->current)));
+                reads.push_back(BufferRegion(out_view->current_handle));
                 const std::vector<BufferRegion> inputs = read_keys_of_views(views, Seq{});
                 reads.insert(reads.end(), inputs.begin(), inputs.end());
-                writes.push_back(BufferRegion(static_cast<void*>(out_view->next)));
+                writes.push_back(BufferRegion(out_view->next_handle));
             };
             std::decay_t<F> body(std::forward<F>(kernel));
             if constexpr (has_host_form_v<Launch>)

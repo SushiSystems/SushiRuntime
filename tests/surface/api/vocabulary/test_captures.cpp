@@ -60,7 +60,7 @@ TEST_F(Small_Captures, EachCaptureNamesItsBuffer)
     const Out<int> written(out);
 
     EXPECT_EQ(read.ptr, in.data());
-    EXPECT_EQ(read.key, static_cast<void*>(in.data()));
+    EXPECT_EQ(read.key, in.handle());
     EXPECT_EQ(written.ptr, out.data());
     EXPECT_FALSE(read.life.expired());
 }

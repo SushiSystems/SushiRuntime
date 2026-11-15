@@ -211,16 +211,16 @@ TEST_F(Small_PlanViewChain, AChainOfThreeKernelsReportsItsPredecessorsAndRegions
     ASSERT_EQ(plan->nodes.size(), 3u);
 
     const std::size_t expected_predecessors[] = {0u, 1u, 1u};
-    const void* const expected_reads[] = {nullptr, first_->data(), second_->data()};
-    const void* const expected_writes[] = {first_->data(), second_->data(), third_->data()};
+    const GlobalHandle expected_reads[] = {GlobalHandle::null(), first_->handle(), second_->handle()};
+    const GlobalHandle expected_writes[] = {first_->handle(), second_->handle(), third_->handle()};
     for (std::size_t node = 0; node < 3u; ++node)
     {
         const PlanNode& described = plan->nodes[node];
         EXPECT_EQ(described.rule, node);
         EXPECT_EQ(described.predecessor_count, expected_predecessors[node]) << "node " << node;
-        ASSERT_EQ(described.reads.size(), expected_reads[node] != nullptr ? 1u : 0u)
+        ASSERT_EQ(described.reads.size(), expected_reads[node].is_null() ? 0u : 1u)
             << "node " << node;
-        if (expected_reads[node] != nullptr)
+        if (!expected_reads[node].is_null())
             EXPECT_EQ(described.reads[0].base, expected_reads[node]) << "node " << node;
         ASSERT_EQ(described.writes.size(), 1u) << "node " << node;
         EXPECT_EQ(described.writes[0].base, expected_writes[node]) << "node " << node;
@@ -263,5 +263,5 @@ TEST_F(Small_PlanView, AViewOutlivesItsGraph)
 
     ASSERT_EQ(kept.nodes.size(), 1u);
     EXPECT_EQ(kept.nodes[0].name, std::string("kept"));
-    EXPECT_EQ(kept.nodes[0].writes[0].base, static_cast<void*>(words));
+    EXPECT_EQ(kept.nodes[0].writes[0].base, target.handle());
 }

@@ -140,6 +140,30 @@ namespace SushiRuntime
         return block;
     }
 
+    Result<BufferRegion> Recorder::borrowed_region(const void* address, std::size_t bytes,
+                                                   DeviceIndex device)
+    {
+        Result<GlobalHandle> handle = Detail::borrow_handle(
+            context_, const_cast<void*>(address), bytes, 1, 1, device);
+        if (!handle)
+            return make_error(std::move(handle.error()));
+        if (handle->is_null())
+            return BufferRegion();
+
+        // The borrow is dropped when the recorder forgets its nodes.
+        Result<void> kept = Detail::translate_exceptions([&]()
+        {
+            const ContextHandle context = context_;
+            const GlobalHandle borrowed = *handle;
+            scratch_.push_back(std::shared_ptr<void>(static_cast<void*>(nullptr),
+                [context, borrowed](void*) { Detail::release_handle(context, borrowed); }));
+        });
+        // A refused push has already dropped the borrow through the deleter.
+        if (!kept)
+            return make_error(std::move(kept.error()));
+        return BufferRegion(*handle);
+    }
+
     void Recorder::require_device_slots(const Dynamic& window) const
     {
         const std::optional<Error> refusal = Detail::host_device_slots_refusal(

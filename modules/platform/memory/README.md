@@ -129,6 +129,17 @@ directory is left for epoch-based reclamation to free.
 `NotResident` to `InvalidAccess` and `SpaceExhausted` to `AllocationFailed`. `to_result` wraps a
 `ResolveOutcome` into a `Result<void*>` with that code.
 
+## borrowed_index.hpp
+
+`BorrowedIndex` gives memory the caller owns a handle with the `Borrowed` flag. It is the only
+lookup from an address to a handle, and it serves borrowed memory only: a sorted map from the first
+byte of each live range to its end, its handle and its count of borrows. `acquire()` returns the
+live handle when the same range is borrowed again and mints one in the directory on the first
+borrow; a range that overlaps a live range without equalling it is refused with
+`InvalidArgument`, since two handles over one byte would lose an ordering. `release()` drops one
+borrow and retires the handle with the last. Its calls run when a buffer is made or dropped and
+take one mutex; no dispatch calls it.
+
 ## usm_registry.hpp
 
 ### USMRegistry

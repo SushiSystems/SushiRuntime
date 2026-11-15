@@ -72,8 +72,8 @@ be reaped by different workers, so the adds are atomic.
 
 ### live_reads and live_writes
 
-A State node rotates which allocation it reads and writes every step, so the fluent layer re-points
-these lists before each step and the coordinator resolves handles from them at dispatch. The
+A State node rotates which allocation it reads and writes every step, so the fluent layer rewrites
+these lists of `GlobalHandle`s before each step and the coordinator resolves handles from them at dispatch. The
 compiled plan stays replayable while it follows the swap. Both are null for every ordinary node,
 whose fixed handles the coordinator keeps in the payload of the node's OffloadState.
 
@@ -217,8 +217,8 @@ sycl::handler to define the work. `dependencies` are manual events to wait for b
 ### add_node(work, read_access, write_access, dependencies, registration)
 
 The runtime orders this task by the USM regions it touches: two tasks are serialized only when their
-regions overlap, so disjoint sub-ranges of one allocation run in parallel. A bare base pointer
-converts to the whole-buffer region, the conservative default.
+regions overlap, so disjoint sub-ranges of one buffer run in parallel. A region named by a bare
+handle covers the whole buffer, the conservative default.
 
 ### add_node(work, read_access, write_access, bindings, dependencies, registration)
 
@@ -276,7 +276,7 @@ operation overwrites or updates.
 
 For a node that reads one allocation and writes another and swaps the two each step (the rule
 of a State), the touched buffers cannot be frozen at compile time. `Node::set_live_io()` gives
-such a node the shared `live_reads` and `live_writes` pointer lists, which the caller re-points
+such a node the shared `live_reads` and `live_writes` handle lists, which the caller rewrites
 before each step; a coordinator's prepare() then marks the node without baking handles and
 resolves them from the live lists at dispatch. No add function sets the lists: the node is added
 like any other, and its dependency ordering and queue routing use the regions it was added with.

@@ -31,14 +31,18 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/handle/handle_resolver.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
@@ -140,6 +144,15 @@ namespace SushiRuntime
                  */
                 void bind(Internal::Graph::OffloadSink& sink) noexcept;
 
+                /**
+                 * @brief Sets the resolver that turns a node's handles into the addresses the
+                 *        registry shares buffers by.
+                 * @param device_count Devices the resolver's handles may live on.
+                 * @pre No node is offered yet; the resolver outlives the dispatcher's calls. Until
+                 *      it is called no handle resolves, so every node stays local.
+                 */
+                void bind_handles(const HandleResolver& handles, std::size_t device_count) noexcept;
+
                 /** @brief Returns the counters; reads atomics and takes no lock. */
                 [[nodiscard]] OffloadDispatcherStatistics statistics() const noexcept;
 
@@ -186,8 +199,21 @@ namespace SushiRuntime
                 /** @brief Counts one refused dispatch and returns false. */
                 [[nodiscard]] bool decline() noexcept;
 
+                /** @brief Returns the address the registry knows @p handle by, or null for none. */
+                [[nodiscard]] void* address_of(GlobalHandle handle) const noexcept;
+
+                /** @brief Writes the address of each handle of @p handles to the end of @p addresses. */
+                void append_addresses(const std::vector<GlobalHandle>& handles,
+                                      std::vector<void*>& addresses) const;
+
                 /// @brief Names and versions of the shared buffers.
                 BufferRegistry& registry_;
+
+                /// @brief Resolves a node's handles; null until bind_handles().
+                const HandleResolver* handles_ = nullptr;
+
+                /// @brief Devices handles_ may hold an instance on.
+                std::size_t device_count_ = 0;
 
                 /// @brief Picks the worker and counts its load.
                 WorkerDirectory& directory_;

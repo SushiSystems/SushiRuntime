@@ -6,4 +6,4 @@
 sushiruntime_add_module(
     NAME region_boundary TIER engine INTERNAL
     HEADER_ONLY
-    DEPENDS core region task)
+    DEPENDS core handle region task)

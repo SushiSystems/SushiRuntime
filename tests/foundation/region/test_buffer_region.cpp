@@ -33,20 +33,28 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 using SushiRuntime::BufferRegion;
+using SushiRuntime::GlobalHandle;
+using SushiRuntime::HandleFlags;
+using SushiRuntime::HandleKind;
 
-static_assert(!std::is_convertible<void*, BufferRegion>::value,
-              "a base pointer becomes a region only where the code spells BufferRegion");
+static_assert(std::is_same<decltype(BufferRegion::base), GlobalHandle>::value,
+              "a region keys on the buffer's GlobalHandle, never on an address");
+static_assert(!std::is_constructible<BufferRegion, void*>::value,
+              "an address cannot name a region");
+static_assert(!std::is_convertible<GlobalHandle, BufferRegion>::value,
+              "a handle becomes a region only where the code spells BufferRegion");
 
 namespace
 {
-    /** @brief Stands in for one allocation; only its address is used. */
-    int first_allocation = 0;
+    /** @brief Names one buffer. */
+    constexpr GlobalHandle first_allocation(0, 0, HandleKind::Buffer, HandleFlags::None, 1, 1);
 
-    /** @brief Stands in for a second allocation; only its address is used. */
-    int second_allocation = 0;
+    /** @brief Names a second buffer. */
+    constexpr GlobalHandle second_allocation(0, 0, HandleKind::Buffer, HandleFlags::None, 1, 2);
 
     /** @brief Holds two regions and the answer a query about them is expected to give. */
     struct RegionPair
@@ -82,7 +90,7 @@ namespace
 TEST(Small_BufferRegion, ADefaultRegionOverlapsNothing)
 {
     const BufferRegion empty;
-    const BufferRegion whole(&first_allocation);
+    const BufferRegion whole(first_allocation);
 
     EXPECT_FALSE(empty.valid());
     expect_overlaps({
@@ -90,7 +98,7 @@ TEST(Small_BufferRegion, ADefaultRegionOverlapsNothing)
         {"a default region with itself", empty, empty, false},
         {"a default region with a whole allocation", empty, whole, false},
         {"a whole allocation with a default region", whole, empty, false},
-        {"two regions with a null base", BufferRegion(nullptr, 0, 8), BufferRegion(nullptr, 4, 8), false},
+        {"two regions with a null base", BufferRegion(GlobalHandle::null(), 0, 8), BufferRegion(GlobalHandle::null(), 4, 8), false},
     });
 }
 
@@ -98,7 +106,7 @@ TEST(Small_BufferRegion, ADefaultRegionOverlapsNothing)
 TEST(Small_BufferRegion, ADefaultRegionContainsNothing)
 {
     const BufferRegion empty;
-    const BufferRegion whole(&first_allocation);
+    const BufferRegion whole(first_allocation);
 
     expect_contains({
         {"a default region holds another", empty, BufferRegion(), false},
@@ -111,7 +119,7 @@ TEST(Small_BufferRegion, ADefaultRegionContainsNothing)
 TEST(Small_BufferRegion, ADefaultRegionIsContainedByNothing)
 {
     const BufferRegion empty;
-    const BufferRegion whole(&first_allocation);
+    const BufferRegion whole(first_allocation);
 
     expect_contains({{"a whole allocation holds a default region", whole, empty, false}});
 }
@@ -119,11 +127,11 @@ TEST(Small_BufferRegion, ADefaultRegionIsContainedByNothing)
 /** @brief Tests that regions of one allocation overlap when their intervals intersect. */
 TEST(Small_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
 {
-    const BufferRegion whole(&first_allocation);
-    const BufferRegion low(&first_allocation, 0, 8);
-    const BufferRegion high(&first_allocation, 8, 8);
-    const BufferRegion middle(&first_allocation, 4, 8);
-    const BufferRegion tail(&first_allocation, 12, BufferRegion::K_WHOLE);
+    const BufferRegion whole(first_allocation);
+    const BufferRegion low(first_allocation, 0, 8);
+    const BufferRegion high(first_allocation, 8, 8);
+    const BufferRegion middle(first_allocation, 4, 8);
+    const BufferRegion tail(first_allocation, 12, BufferRegion::K_WHOLE);
 
     expect_overlaps({
         {"the whole with itself", whole, whole, true},
@@ -139,9 +147,9 @@ TEST(Small_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersec
 /** @brief Tests that half-open intervals that only touch share no byte. */
 TEST(Small_BufferRegion, TouchingRegionsShareNoByte)
 {
-    const BufferRegion low(&first_allocation, 0, 8);
-    const BufferRegion high(&first_allocation, 8, 8);
-    const BufferRegion tail(&first_allocation, 12, BufferRegion::K_WHOLE);
+    const BufferRegion low(first_allocation, 0, 8);
+    const BufferRegion high(first_allocation, 8, 8);
+    const BufferRegion tail(first_allocation, 12, BufferRegion::K_WHOLE);
 
     expect_overlaps({
         {"[0, 8) and [8, 16)", low, high, false},
@@ -153,8 +161,8 @@ TEST(Small_BufferRegion, TouchingRegionsShareNoByte)
 /** @brief Tests that regions of different allocations neither overlap nor contain each other. */
 TEST(Small_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
 {
-    const BufferRegion first(&first_allocation);
-    const BufferRegion second(&second_allocation);
+    const BufferRegion first(first_allocation);
+    const BufferRegion second(second_allocation);
 
     EXPECT_FALSE(first.overlaps(second));
     EXPECT_FALSE(first.contains(second));
@@ -163,10 +171,10 @@ TEST(Small_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
 /** @brief Tests that a region contains what lies entirely inside it. */
 TEST(Small_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
 {
-    const BufferRegion whole(&first_allocation);
-    const BufferRegion low(&first_allocation, 0, 8);
-    const BufferRegion inner(&first_allocation, 2, 4);
-    const BufferRegion middle(&first_allocation, 4, 8);
+    const BufferRegion whole(first_allocation);
+    const BufferRegion low(first_allocation, 0, 8);
+    const BufferRegion inner(first_allocation, 2, 4);
+    const BufferRegion middle(first_allocation, 4, 8);
 
     expect_contains({
         {"the whole holds itself", whole, whole, true},

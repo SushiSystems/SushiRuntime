@@ -42,6 +42,7 @@ dispatch: T05 — opus low, rung 1, passed
 dispatch: T02 — sonnet medium, rung 1, passed
 dispatch: T04 — sonnet low, rung 1, passed
 dispatch: T12 — opus low, rung 1, passed
+dispatch: T06 — opus low, 270 turns, rung 1, passed
 ```
 
 ## T05: the residency directory
@@ -53,3 +54,13 @@ dispatch: T12 — opus low, rung 1, passed
   delegation of 2026-11-15.
 - `ResidencyDirectory::entry_address` is public only for the chunk-stability test. It exposes a
   read-only internal address; a test-only seam would remove it.
+
+## T06: the handle replaces the address
+
+- `RuntimeContext::handles()` hands out the concrete `ResidencyDirectory`, because the API layer
+  mints and describes; the engine, the scheduler and the dispatcher take `const HandleResolver&`.
+- `BorrowedIndex` takes one mutex on borrow and release. Neither sits on the dispatch path.
+- A borrowed range that partly overlaps a live borrowed range is refused.
+- Syntax-checked: every changed module source and most tests. Not checked one by one: some
+  profiling, dynamic-graph and recorder tests, `test_replay`, the benchmarks and most examples.
+  The closing build covers them, since a `BufferRegion` no longer converts from a pointer.

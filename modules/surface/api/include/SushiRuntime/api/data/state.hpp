@@ -42,6 +42,7 @@
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 
 namespace SushiRuntime
 {
@@ -59,6 +60,8 @@ namespace SushiRuntime
         {
             T* current = nullptr;       /**< Base of the field a step reads. */
             T* next = nullptr;          /**< Base of the field a step writes. */
+            GlobalHandle current_handle; /**< Handle of the field a step reads. */
+            GlobalHandle next_handle;    /**< Handle of the field a step writes. */
             std::size_t size = 0;       /**< Elements in each field. */
             State<T>* owner = nullptr;  /**< The State that writes this view, or null. */
         };
@@ -247,12 +250,12 @@ namespace SushiRuntime
                 std::size_t count, DeviceIndex device_index, Residency residency,
                 std::size_t alignment)
             {
-                Result<Buffer<T>> current =
-                    Buffer<T>::allocate(call, context, count, device_index, residency, alignment);
+                Result<Buffer<T>> current = Buffer<T>::allocate(
+                    call, context, count, device_index, residency, alignment, HandleKind::State);
                 if (!current)
                     return make_error(std::move(current.error()));
-                Result<Buffer<T>> next =
-                    Buffer<T>::allocate(call, context, count, device_index, residency, alignment);
+                Result<Buffer<T>> next = Buffer<T>::allocate(
+                    call, context, count, device_index, residency, alignment, HandleKind::State);
                 if (!next)
                     return make_error(std::move(next.error()));
 
@@ -278,13 +281,16 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Writes both field pointers, the size and this address into the view.
+             * @brief Writes both field pointers and handles, the size and this address into the
+             *        view.
              * @pre view_ is not null.
              */
             void publish_view() noexcept
             {
                 view_->current = current_.data();
                 view_->next = next_.data();
+                view_->current_handle = current_.handle();
+                view_->next_handle = next_.handle();
                 view_->size = current_.size();
                 view_->owner = this;
             }

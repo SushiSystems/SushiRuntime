@@ -38,6 +38,8 @@
 #include <SushiRuntime/task/usm_placement_memory.hpp>
 
 #include "support/placement_memory_contract.hpp"
+#include "support/handle_table.hpp"
+#include "support/made_up_handle.hpp"
 
 using SushiRuntime::Internal::Graph::USMPlacementMemory;
 
@@ -47,31 +49,39 @@ class Small_USMPlacementMemoryContract : public ::testing::Test
     protected:
         Small_USMPlacementMemoryContract()
             : allocator_(SushiRuntime::Internal::Memory::make_host_usm_source(2)),
-              memory_(allocator_)
+              memory_(allocator_, handles_.resolver())
         {
 
         }
 
         /// @brief Allocates nothing.
         SushiRuntime::Internal::Memory::USMAllocator allocator_;
+        /// @brief Gives each address of a test a handle that resolves to it.
+        TestSupport::HandleTable handles_;
         /// @brief The memory under test.
         USMPlacementMemory memory_;
 };
 
-/** @brief Tests that an address nobody recorded has no device. */
+/** @brief Tests that the handle of an address nobody recorded has no device. */
 TEST_F(Small_USMPlacementMemoryContract, AnUnrecordedAddressHasNoDevice)
 {
     int cell = 0;
-    TestSupport::expect_unrecorded_address_has_no_device(memory_, &cell);
+    TestSupport::expect_unrecorded_handle_has_no_device(memory_, handles_.place(&cell));
 }
 
-/** @brief Tests that an adopted address names its device. */
+/** @brief Tests that a handle that resolves to no instance has no device. */
+TEST_F(Small_USMPlacementMemoryContract, AHandleWithNoInstanceHasNoDevice)
+{
+    TestSupport::expect_unrecorded_handle_has_no_device(memory_, TestSupport::made_up_handle(1));
+}
+
+/** @brief Tests that the handle of an adopted address names its device. */
 TEST_F(Small_USMPlacementMemoryContract, AnAdoptedAddressNamesItsDevice)
 {
     int cell = 0;
     allocator_.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
-    TestSupport::expect_recorded_address_names_device(memory_, &cell, 1);
+    TestSupport::expect_recorded_handle_names_device(memory_, handles_.place(&cell), 1);
 
     allocator_.forget(&cell);
 }

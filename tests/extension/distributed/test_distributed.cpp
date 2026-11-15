@@ -331,8 +331,12 @@ namespace EndToEndTests
             float* right = b.data();
             float* sum = out.data();
             const std::size_t count = out.count();
+            Recorder& recorder = graph.recorder();
+            const BufferRegion left_region = recorder.borrowed_region(left, a.count() * sizeof(float)).value();
+            const BufferRegion right_region = recorder.borrowed_region(right, b.count() * sizeof(float)).value();
+            const BufferRegion sum_region = recorder.borrowed_region(sum, count * sizeof(float)).value();
             graph.add_task(
-                Reads(BufferRegion(left), BufferRegion(right)), Writes(BufferRegion(sum)),
+                Reads(left_region, right_region), Writes(sum_region),
                 [left, right, sum, count](sycl::queue& queue,
                                           const std::vector<sycl::event>&) -> sycl::event
                 {
@@ -359,7 +363,7 @@ namespace EndToEndTests
             float* values = buffer.data();
             const std::size_t count = buffer.count();
             graph.add_task(
-                Reads(), Writes(BufferRegion(values)),
+                Reads(), Writes(graph.recorder().borrowed_region(values, count * sizeof(float)).value()),
                 [values, count, base](sycl::queue& queue,
                                       const std::vector<sycl::event>&) -> sycl::event
                 {
@@ -1620,8 +1624,13 @@ namespace EndToEndTests
             master_runtime.placement_scope(K_PINNED, K_PINNED_KEY),
             [&a, &b, &out, &options](Recorder& in_scope)
             {
-                in_scope.task(Access(Reads(BufferRegion(a.data()), BufferRegion(b.data())),
-                                     Writes(BufferRegion(out.data()))),
+                const BufferRegion a_region =
+                    in_scope.borrowed_region(a.data(), a.count() * sizeof(float)).value();
+                const BufferRegion b_region =
+                    in_scope.borrowed_region(b.data(), b.count() * sizeof(float)).value();
+                const BufferRegion out_region =
+                    in_scope.borrowed_region(out.data(), out.count() * sizeof(float)).value();
+                in_scope.task(Access(Reads(a_region, b_region), Writes(out_region)),
                               [](sycl::queue&, const std::vector<sycl::event>&)
                               {
                                   return sycl::event{};
@@ -2534,7 +2543,8 @@ namespace FaultInjectionTests
             float* in = input.data();
             float* out = output.data();
             graph.add_task(
-                Reads(BufferRegion(in)), Writes(BufferRegion(out)),
+                Reads(graph.recorder().borrowed_region(in, K_COUNT * sizeof(float)).value()),
+                Writes(graph.recorder().borrowed_region(out, K_COUNT * sizeof(float)).value()),
                 [in, out](sycl::queue& queue, const std::vector<sycl::event>&) -> sycl::event
                 {
                     return queue.submit([&](sycl::handler& handler)
@@ -3394,8 +3404,12 @@ namespace TCPFaultsTests
 
                         auto graph = runtime->graph();
                         graph.add_task(
-                            Reads(BufferRegion(task.input->data())),
-                            Writes(BufferRegion(task.output->data())),
+                            Reads(graph.recorder()
+                                      .borrowed_region(task.input->data(), task.input->size())
+                                      .value()),
+                            Writes(graph.recorder()
+                                       .borrowed_region(task.output->data(), task.output->size())
+                                       .value()),
                             [runs, input, output, count](
                                 sycl::queue& queue,
                                 const std::vector<sycl::event>& /*dependencies*/) -> sycl::event

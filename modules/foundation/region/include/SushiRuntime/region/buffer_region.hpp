@@ -23,7 +23,7 @@
 
 /**
  * @file buffer_region.hpp
- * @brief Declares BufferRegion, a byte interval within one tracked allocation.
+ * @brief Declares BufferRegion, a byte interval within one buffer named by its GlobalHandle.
  * @author Mustafa Garip
  * @see modules/foundation/region/README.md
  */
@@ -32,17 +32,12 @@
 
 #include <cstddef>
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 namespace SushiRuntime
 {
     /**
-     * @brief Identity of the allocation a resource region belongs to.
-     *
-     * A raw base pointer.
-     */
-    using ResourceID = void*;
-
-    /**
-     * @brief Describes a half-open byte interval within one tracked allocation.
+     * @brief Describes a half-open byte interval within one buffer named by its handle.
      * @see modules/foundation/region/README.md
      */
     struct BufferRegion
@@ -50,30 +45,30 @@ namespace SushiRuntime
         /** @brief Sentinel length meaning "to the end of the allocation". */
         static constexpr std::size_t K_WHOLE = ~std::size_t{0};
 
-        ResourceID  base   = nullptr; /**< Owning allocation; the identity key. */
-        std::size_t offset = 0;       /**< Byte offset of the interval start. */
-        std::size_t length = K_WHOLE;   /**< Byte length, or K_WHOLE for the rest. */
+        GlobalHandle base;              /**< Handle of the owning buffer; the identity key. */
+        std::size_t  offset = 0;        /**< Byte offset of the interval start. */
+        std::size_t  length = K_WHOLE;  /**< Byte length, or K_WHOLE for the rest. */
 
         /** @brief Constructs an empty region that overlaps nothing. */
         constexpr BufferRegion() noexcept = default;
 
         /**
-         * @brief Wraps a base pointer as the whole-buffer region.
-         * @param p Base pointer of the allocation; null yields an empty region.
+         * @brief Names the whole buffer of a handle.
+         * @param handle Handle of the buffer; the null handle yields an empty region.
          */
-        constexpr explicit BufferRegion(ResourceID p) noexcept : base(p) {}
+        constexpr explicit BufferRegion(GlobalHandle handle) noexcept : base(handle) {}
 
         /**
-         * @brief Constructs a sub-region of one allocation.
-         * @param b   Base pointer of the owning allocation.
-         * @param off Byte offset of the interval start within @p b.
-         * @param len Byte length of the interval; K_WHOLE means to the end.
+         * @brief Constructs a sub-region of one buffer.
+         * @param handle Handle of the owning buffer.
+         * @param off    Byte offset of the interval start within the buffer.
+         * @param len    Byte length of the interval; K_WHOLE means to the end.
          */
-        constexpr BufferRegion(ResourceID b, std::size_t off, std::size_t len) noexcept
-            : base(b), offset(off), length(len) {}
+        constexpr BufferRegion(GlobalHandle handle, std::size_t off, std::size_t len) noexcept
+            : base(handle), offset(off), length(len) {}
 
-        /** @brief True if this region keys on a real allocation. */
-        constexpr bool valid() const noexcept { return base != nullptr; }
+        /** @brief True if this region names a live handle rather than the null one. */
+        constexpr bool valid() const noexcept { return !base.is_null(); }
 
         /**
          * @brief Reports whether two regions of the same allocation intersect.

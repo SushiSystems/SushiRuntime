@@ -75,6 +75,7 @@
 #include "support/host_context.hpp"
 #include "support/host_runtime.hpp"
 #include "support/submitting_threads.hpp"
+#include "support/handle_table.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Graph::Node;
@@ -145,7 +146,7 @@ namespace
             /** @brief Builds a scheduler of @p settings over the parts, without starting it. */
             std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings)
             {
-                return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_);
+                return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_, handles_.resolver());
             }
 
             /** @brief Builds a scheduler of @p settings whose rounds run on @p executor, without starting it. */
@@ -169,6 +170,8 @@ namespace
             Internal::Device::DeviceQueueSet devices_;
             /// @brief Allocator over the entries; a test records ownership with adopt().
             Internal::Memory::USMAllocator memory_;
+            /// @brief Resolves the handles of the nodes the scheduler places.
+            TestSupport::HandleTable handles_;
     };
 
     /** @brief Builds hardware with no device entry and the given core map, for a scheduler that only constructs. */
@@ -275,7 +278,7 @@ namespace
             {
                 auto scheduler = std::make_unique<TaskScheduler>(WorkerPoolSettings{workers, 0, PinPolicy::Float},
                                                                  context_->topology(), context_->devices(),
-                                                                 context_->memory());
+                                                                 context_->memory(), context_->handles());
                 scheduler->set_executor(&executor_);
                 return scheduler;
             }

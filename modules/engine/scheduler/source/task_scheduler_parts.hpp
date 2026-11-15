@@ -59,13 +59,13 @@ namespace SushiRuntime
             /** @brief Sizes the pool and builds each piece over the ones before it. */
             Parts(const WorkerPoolSettings& pool, const Internal::Topology::TopologyView& topology,
                   Internal::Device::DeviceQueueSet& devices, const Internal::Memory::USMAllocator& memory,
-                  Profile::Collector& collector)
+                  const HandleResolver& handles, Profile::Collector& collector)
                 : size(size_worker_pool(pool, std::thread::hardware_concurrency())),
                   pinning(pool.pinning),
                   pending(collector),
                   run(collector),
                   funnels(pool.submit_funnel, devices.count(), size.workers, run.outcome, collector),
-                  rounds(size, pinning, topology, devices, memory, pending, run, funnels),
+                  rounds(size, pinning, topology, devices, memory, handles, pending, run, funnels),
                   threads(rounds, pending, run, pinning, size.first_core),
                   executor_rounds(rounds)
             {

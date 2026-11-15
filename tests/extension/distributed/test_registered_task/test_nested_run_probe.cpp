@@ -145,7 +145,7 @@ namespace
                 NodeOptions options;
                 options.name = "inner_double";
                 graph_.add_task(
-                    Reads(BufferRegion(source)), Writes(BufferRegion(target)),
+                    Reads(BufferRegion(input_.handle())), Writes(BufferRegion(output_.handle())),
                     [source, target](sycl::queue& queue,
                                      const std::vector<sycl::event>&) -> sycl::event
                     {

@@ -56,13 +56,14 @@ namespace SushiRuntime
         void DispatchRecorder::clear()
         {
             graph_.clear();
+            borrowed_.clear();
         }
 
         template <typename Role>
         Result<void> DispatchRecorder::add_views(const std::vector<BufferView>& views,
                                                  DeviceIndex device,
                                                  std::vector<BufferRegion>& regions,
-                                                 std::vector<LivenessObserver>& lives) const
+                                                 std::vector<LivenessObserver>& lives)
         {
             for (const BufferView& view : views)
             {
@@ -77,6 +78,7 @@ namespace SushiRuntime
                 const Role role(*borrowed);
                 regions.insert(regions.end(), role.keys.begin(), role.keys.end());
                 lives.insert(lives.end(), role.lives.begin(), role.lives.end());
+                borrowed_.push_back(std::move(*borrowed));
             }
             return {};
         }

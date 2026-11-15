@@ -51,14 +51,15 @@ namespace SushiRuntime
         struct DeviceSlot
         {
             const std::uint32_t* words = nullptr; /**< First element, or null for no slot. */
+            GlobalHandle buffer;                  /**< Handle of the slot's buffer; null for no slot. */
             std::size_t index = 0;                /**< Element that holds the value. */
             LivenessObserver life;        /**< Observer of the buffer; empty for none. */
         };
 
         /** @brief Returns the dependency key of the buffer a slot lies in; null for no slot. */
-        inline ResourceID slot_buffer_key(const DeviceSlot& slot) noexcept
+        inline GlobalHandle slot_buffer_key(const DeviceSlot& slot) noexcept
         {
-            return const_cast<void*>(static_cast<const void*>(slot.words));
+            return slot.buffer;
         }
 
         /**
@@ -82,7 +83,7 @@ namespace SushiRuntime
                        " is out of range for a buffer of " + std::to_string(slot.size()) +
                        " elements; pass an index below " + std::to_string(slot.size()) + ".")
                           .c_str());
-            return DeviceSlot{slot.data(), index, HandleAccess::liveness(slot)};
+            return DeviceSlot{slot.data(), slot.handle(), index, HandleAccess::liveness(slot)};
         }
 
         struct DynamicAccess;
