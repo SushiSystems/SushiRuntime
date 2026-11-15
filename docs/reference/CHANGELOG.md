@@ -4,6 +4,7 @@
 
 - 2026-11-16 — runtime: Changed the partition model to copy a byte range once per pool, price split parts by the bytes they lack and time steps in schedule order with insertion EFT (GLOBAL_HANDLE R12).
 - 2026-11-16 — runtime: Bounded the partitioner: 8 refine passes, D+D(D-1)/2 floor subsets, O(k log n) pool counts; problem_hash folds split regions (GLOBAL_HANDLE R12).
+- 2026-11-16 — runtime: Changed the coherence map to change only as copies, frees and node writes complete, under one lock per buffer; host access is refused while a run holds the buffer, and a failed run releases it (GLOBAL_HANDLE R05).
 - 2026-11-15 — runtime: Changed the profile fold to need 8 samples per device and kind and to move an entry a quarter of the way to the lower median (GLOBAL_HANDLE R15).
 - 2026-11-15 — runtime: Changed `NodeSplit::slice` to take its dependency events and return its event; a cut node submits every part, then waits only on its parts (RW-154, GLOBAL_HANDLE R03).
 - 2026-11-15 — runtime: Transfer paths, the staging ring and planned nodes report failure as a Result the run returns, so a refused allocation gives AllocationFailed instead of a throw on a worker (GLOBAL_HANDLE R09).

@@ -41,6 +41,7 @@
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
 #include <SushiRuntime/memory/coherence_intervals.hpp>
+#include <SushiRuntime/memory/locked_coherence.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
 namespace SushiRuntime
@@ -81,15 +82,13 @@ namespace SushiRuntime
                 [[nodiscard]] virtual EntryView inspect(GlobalHandle handle) const = 0;
 
                 /**
-                 * @brief Returns the coherence map of a live handle, or null when it is not live.
+                 * @brief Returns the coherence map of a live handle under its entry's lock.
                  *
-                 * The planner is the map's only writer, at plan time; the map takes no lock.
+                 * The lock is held until the returned object is destroyed. The caller takes no
+                 * other directory lock while it holds one.
+                 * @return An empty object when handle is not live.
                  */
-                [[nodiscard]] virtual CoherenceIntervals* coherence(GlobalHandle handle) noexcept = 0;
-
-                /** @brief Returns the coherence map of a live handle, or null when it is not live. */
-                [[nodiscard]] virtual const CoherenceIntervals*
-                coherence(GlobalHandle handle) const noexcept = 0;
+                [[nodiscard]] virtual LockedCoherence coherence(GlobalHandle handle) = 0;
 
                 /**
                  * @brief Records address as handle's instance on space, with the kind of USM it is.

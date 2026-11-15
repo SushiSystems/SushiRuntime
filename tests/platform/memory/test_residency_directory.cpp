@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/handle/local_handle_space.hpp>
+#include <SushiRuntime/memory/locked_coherence.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 using namespace SushiRuntime;
@@ -296,15 +297,17 @@ namespace
     {
         ResidencyDirectory directory(K_UNIVERSE);
         const GlobalHandle handle = mint_buffer(directory);
-        CoherenceIntervals* const map = directory.coherence(handle);
-        ASSERT_NE(map, nullptr);
-        map->reset(64, MemorySpaceID(0));
+        {
+            LockedCoherence map = directory.coherence(handle);
+            ASSERT_TRUE(map != nullptr);
+            map->reset(64, MemorySpaceID(0));
+        }
         EXPECT_EQ(directory.coherence(handle)->size(), 64U);
 
         EXPECT_EQ(directory.retire(handle), HandleStatus::Ok);
-        EXPECT_EQ(directory.coherence(handle), nullptr);
+        EXPECT_TRUE(directory.coherence(handle) == nullptr);
         const GlobalHandle reused = mint_buffer(directory);
-        ASSERT_NE(directory.coherence(reused), nullptr);
+        ASSERT_TRUE(directory.coherence(reused) != nullptr);
         EXPECT_TRUE(directory.coherence(reused)->intervals().empty());
     }
 
@@ -379,5 +382,76 @@ namespace
 
         EXPECT_EQ(directory.record_host_write(retired), HandleStatus::StaleHandle);
         EXPECT_EQ(directory.host_write_generation(), 0U);
+    }
+    /** @brief Returns whether map's intervals are sorted and cover [0, bytes) without a gap. */
+    bool covers_without_gap(const CoherenceIntervals& map, std::size_t bytes)
+    {
+        std::size_t next = 0;
+        for (const CoherenceInterval& interval : map.intervals())
+        {
+            if (interval.begin != next || interval.end <= interval.begin)
+                return false;
+            next = interval.end;
+        }
+        return next == bytes;
+    }
+
+    TEST(Small_ResidencyDirectory, ARunHoldsTheBufferUntilItLeavesAndARetireForgetsTheHold)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle handle = mint_buffer(directory);
+        directory.coherence(handle).enter_run();
+        directory.coherence(handle).enter_run();
+
+        EXPECT_TRUE(directory.coherence(handle).held_by_run());
+        directory.coherence(handle).leave_run();
+        EXPECT_TRUE(directory.coherence(handle).held_by_run());
+        directory.coherence(handle).leave_run();
+        EXPECT_FALSE(directory.coherence(handle).held_by_run());
+        directory.coherence(handle).leave_run();
+        EXPECT_FALSE(directory.coherence(handle).held_by_run());
+
+        directory.coherence(handle).enter_run();
+        ASSERT_EQ(directory.retire(handle), HandleStatus::Ok);
+        const GlobalHandle reused = mint_buffer(directory);
+        ASSERT_EQ(reused.slot(), handle.slot());
+        EXPECT_FALSE(directory.coherence(reused).held_by_run());
+    }
+
+    TEST(Medium_ResidencyDirectory, HorizonsBesideTwoMapWritersLeaveEveryMapWhole)
+    {
+        constexpr std::size_t K_BYTES = 256;
+        constexpr int K_ROUNDS = 20000;
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle shared = mint_buffer(directory);
+        directory.coherence(shared)->reset(K_BYTES, K_HOST_SPACE);
+
+        const auto writer = [&directory, shared](MemorySpaceID from, MemorySpaceID to)
+        {
+            for (int round = 0; round < K_ROUNDS; ++round)
+            {
+                const std::size_t byte = static_cast<std::size_t>(round) % K_BYTES;
+                LockedCoherence map = directory.coherence(shared);
+                write_then_read(*map, byte, from, to);
+            }
+        };
+        std::atomic<bool> done{false};
+        std::thread first(writer, K_HOST_SPACE, K_DEVICE_SPACE);
+        std::thread second(writer, K_DEVICE_SPACE, K_HOST_SPACE);
+        std::thread horizons([&directory, &done]()
+        {
+            while (!done.load())
+                static_cast<void>(directory.retire_coherence_history());
+        });
+        first.join();
+        second.join();
+        done.store(true);
+        horizons.join();
+
+        LockedCoherence map = directory.coherence(shared);
+        EXPECT_TRUE(covers_without_gap(*map, K_BYTES));
+        // Every write is followed by its copy, so both spaces hold every byte.
+        for (std::size_t byte = 0; byte < K_BYTES; ++byte)
+            EXPECT_EQ(map->valid_spaces_at(byte), K_HOST_MASK | K_DEVICE_MASK);
     }
 } // namespace

@@ -29,8 +29,10 @@
  */
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -303,5 +305,88 @@ namespace
         const GlobalHandle handle;
         EXPECT_EQ(byte_range(BufferRegion(handle, 8, BufferRegion::K_WHOLE), 32), std::make_pair(std::size_t{8}, std::size_t{32}));
         EXPECT_EQ(byte_range(BufferRegion(handle, 40, 4), 32), std::make_pair(std::size_t{32}, std::size_t{32}));
+    }
+    /** @brief Applies to the directory's maps what a run of plan over node_count nodes records, in run order. */
+    void record_run(ResidencyDirectory& directory, const CopyPlan& plan, std::size_t node_count)
+    {
+        const auto record = [&directory, &plan](std::size_t node)
+        {
+            for (const PlannedStep& step : plan.steps)
+            {
+                if (step.node != node)
+                    continue;
+                Internal::Memory::LockedCoherence map = directory.coherence(step.handle);
+                if (step.kind == PlannedStepKind::Copy)
+                    map->record_copy(step.begin, step.end, step.space);
+                else if (step.kind == PlannedStepKind::Free)
+                    map->drop_space(step.space);
+            }
+            for (const PlannedEffect& effect : plan.effects)
+            {
+                if (effect.node != node)
+                    continue;
+                Internal::Memory::LockedCoherence map = directory.coherence(effect.handle);
+                if (effect.kind == PlannedEffectKind::Hold)
+                    map.enter_run();
+                else if (effect.kind == PlannedEffectKind::Leave)
+                    map.leave_run();
+                else
+                    map->record_write(effect.begin, effect.end, effect.space);
+            }
+        };
+        for (std::size_t node = 0; node < node_count; ++node)
+            record(node);
+        record(PlannedStep::K_GRAPH_END);
+    }
+
+    /** @brief Runs the planner from several threads at once on graphs that share one buffer. */
+    class Medium_CoherencePlanner : public Small_CoherencePlanner
+    {
+    };
+
+    TEST_F(Medium_CoherencePlanner, TwoCommitsAtOnceOnASharedBufferAndAHorizonLeaveOneWholeMap)
+    {
+        constexpr int K_ROUNDS = 2000;
+        std::atomic<int> refused{0};
+        const auto commit_and_run = [this, &refused](MemorySpaceID space)
+        {
+            CoherencePlanner subject = planner();
+            const std::vector<NodeAccess> graph{node(space, {buffer_}, {buffer_})};
+            for (int round = 0; round < K_ROUNDS; ++round)
+            {
+                const Result<CopyPlan> plan = subject.plan(graph);
+                if (!plan)
+                {
+                    refused.fetch_add(1);
+                    continue;
+                }
+                record_run(directory_, plan.value(), graph.size());
+            }
+        };
+        std::atomic<bool> done{false};
+        std::thread first(commit_and_run, K_DEVICE_1);
+        std::thread second(commit_and_run, K_DEVICE_2);
+        std::thread horizons([this, &done]()
+        {
+            while (!done.load())
+                static_cast<void>(directory_.retire_coherence_history());
+        });
+        first.join();
+        second.join();
+        done.store(true);
+        horizons.join();
+
+        EXPECT_EQ(refused.load(), 0);
+        Internal::Memory::LockedCoherence map = directory_.coherence(buffer_);
+        ASSERT_TRUE(map != nullptr);
+        EXPECT_FALSE(map.held_by_run());
+        std::size_t next = 0;
+        for (const Internal::Memory::CoherenceInterval& interval : map->intervals())
+        {
+            EXPECT_EQ(interval.begin, next);
+            EXPECT_NE(interval.valid_spaces, 0U);
+            next = interval.end;
+        }
+        EXPECT_EQ(next, K_BYTES);
     }
 } // namespace

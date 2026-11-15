@@ -107,8 +107,8 @@ and `live_count()`: it is the API layer's side. `ResidencyView` is the reading s
 ### ResidencyView
 
 The port `engine/coherence` reads and writes the directory through. It extends `HandleResolver` and
-adds what a planner needs and nothing else: `inspect()`, the coherence map of a handle,
-`set_instance()`, `drop_instance()` and `instance_kind()`. `EntryView` and `ElementLayout` are
+adds what a planner needs and nothing else: `inspect()`, the coherence map of a handle under its
+lock (`coherence()`, which returns a `LockedCoherence`), `set_instance()`, `drop_instance()` and `instance_kind()`. `EntryView` and `ElementLayout` are
 declared here with it. Minting, retiring, describing and the retire observer stay on
 `ResidencyDirectory`, behind `HandleRegistry`, `HostWriteLog` and `RetireSource`, so a planner cannot call them. A test fake implements the port without a
 table behind it.
@@ -133,9 +133,24 @@ unknown: memory a caller borrowed has no kind. `set_instance()` takes the kind, 
 and `retire()` clear it, `instance_kind()` reads it without a lock, and `EntryView::home_kind` is the
 kind of the home instance. A caller that asks what kind of USM a buffer is therefore asks the
 handle, and no table of addresses exists to ask. `K_MAX_MEMORY_SPACES` is
-64, one bit of that mask each. The entry also holds the buffer's coherence interval map, which
-`coherence()` returns for a live handle and `retire()` clears, and the generation of the last host
+64, one bit of that mask each. The entry also holds the buffer's coherence interval map, the mutex
+that guards it, the count of runs in flight that hold the buffer, and the generation of the last host
 write on the buffer.
+
+### The coherence lock
+
+Every reader and writer of a map takes the entry's coherence mutex: `coherence()` returns a
+`LockedCoherence` (`locked_coherence.hpp`) that holds the lock until it is destroyed and is empty for
+a handle that is not live. It rechecks the generation once it holds the lock, so a slot retired
+between the check and the lock gives an empty object. The planner's snapshot, each planned step and
+effect, `PlannedHostAccess` and `retire_coherence_history()` all go through it. `retire()` clears the
+map and the run count under the same lock. The coherence lock is taken after the writer mutex and
+never before it, so a holder of a `LockedCoherence` calls no writer (`set_instance()`, `retire()`,
+`record_host_write()`) until it has let the lock go.
+
+`LockedCoherence::enter_run()` and `leave_run()` count the runs in flight that hold the buffer, and
+`held_by_run()` reads the count. The planned Hold and Leave effects call them; host access reads the
+count and refuses while it is above zero.
 
 ### Host writes
 
@@ -149,8 +164,8 @@ load per check, and otherwise a buffer whose mark is higher was written after th
 ### retire_coherence_history
 
 `retire_coherence_history()` calls `CoherenceIntervals::retire_history()` on every live entry under
-the writer mutex and returns the intervals left across them. It runs between runs, at a horizon,
-because the maps take no lock and the planner writes them while it plans.
+the writer mutex and that entry's coherence lock, and returns the intervals left across them. It may
+run beside a plan or a run: each map is retired whole, between two steps that change it.
 
 ### mint and retire: the ordered free list
 
@@ -336,7 +351,8 @@ bytes. A write makes the written space the only valid one at a fresh version; a 
 and keeps the version. The map then joins neighbours with equal state, so a buffer written whole is
 one interval again. `drop_space()` takes a space out of every interval, which is how a plan records
 an eviction. The intervals sit in a sorted vector, so the order never depends on a hash.
-The planner is the only writer of a buffer's map, at plan time, and the map takes no lock.
+The map takes no lock of its own: the directory hands it out under the entry's coherence lock, the
+planner plans on a copy, and the steps of a plan change it as they run.
 
 `retire_history()` sets every interval's version to 0 and joins the neighbours that then hold the
 same spaces, so the history of writes no plan still reads is dropped. It returns the intervals

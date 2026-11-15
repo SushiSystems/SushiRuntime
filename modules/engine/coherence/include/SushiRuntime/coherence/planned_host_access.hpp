@@ -50,7 +50,8 @@ namespace SushiRuntime
          * @brief Mints Residency::Planned buffers and reads and writes their bytes from the host.
          *
          * A host write lands in the host instance and invalidates every other space; a host read
-         * first copies to the host what only another space holds. Calls run between runs.
+         * first copies to the host what only another space holds. Both are refused with
+         * InvalidState while a run of a graph that holds the buffer is in flight.
          * @see modules/engine/coherence/README.md
          */
         class PlannedHostAccess final
@@ -88,8 +89,9 @@ namespace SushiRuntime
                 /**
                  * @brief Writes host bytes into [begin, begin + bytes) of the host instance,
                  *        records the write on the host space and as a host write of handle.
-                 * @return Nothing, AllocationFailed when no host instance can be made, or the
-                 *         directory's error for a handle that is not live.
+                 * @return Nothing, AllocationFailed when no host instance can be made, InvalidState
+                 *         while a run holds the buffer, or the directory's error for a handle that
+                 *         is not live.
                  * @pre The range lies inside the buffer and source holds bytes bytes.
                  */
                 [[nodiscard]] Result<void> write(GlobalHandle handle, std::size_t begin,
@@ -99,7 +101,8 @@ namespace SushiRuntime
                  * @brief Reads [begin, begin + bytes) into destination, copying to the host space
                  *        first what only another space holds.
                  * @return Nothing, Unsupported when no path reaches the host from a space that
-                 *         holds the bytes, AllocationFailed, or the directory's error.
+                 *         holds the bytes, AllocationFailed, InvalidState while a run holds the
+                 *         buffer, or the directory's error.
                  * @pre The range lies inside the buffer and destination holds bytes bytes.
                  */
                 [[nodiscard]] Result<void> read(GlobalHandle handle, std::size_t begin,
@@ -122,7 +125,10 @@ namespace SushiRuntime
                 /** @brief Returns handle's host instance, allocating it when there is none. */
                 [[nodiscard]] Result<unsigned char*> host_instance(GlobalHandle handle);
 
-                /** @brief Copies [begin, end) from the first space in spaces_ that holds it to the host. */
+                /**
+                 * @brief Copies [begin, end) from the first space in spaces_ that holds it to the host.
+                 * @pre The caller holds the buffer's map lock and records the copy on it.
+                 */
                 [[nodiscard]] Result<void> fetch(GlobalHandle handle, std::size_t begin, std::size_t end,
                                                  std::uint64_t valid_spaces, unsigned char* host_bytes);
 

@@ -295,9 +295,14 @@ namespace
         CoherencePlanner subject = planner();
         const std::vector<NodeAccess> nodes{node({a_}), node({b_})};
         ASSERT_TRUE(subject.plan(nodes));
-        // The instances sit on the device after the first run, so the second plan has nothing to add.
+        // The first run, not its plan, records the resident copies; the second plan adds nothing.
         ASSERT_EQ(directory_.set_instance(a_, K_DEVICE, &a_bytes_[0]), HandleStatus::Ok);
         ASSERT_EQ(directory_.set_instance(b_, K_DEVICE, &b_bytes_[0]), HandleStatus::Ok);
+        for (const GlobalHandle handle : {a_, b_})
+        {
+            Internal::Memory::LockedCoherence map = directory_.coherence(handle);
+            map->record_copy(0, map->size(), K_DEVICE);
+        }
 
         const Result<CopyPlan> second = subject.plan(nodes);
         ASSERT_TRUE(second);

@@ -22,7 +22,7 @@ It depends on `core`, `handle`, `log`, `memory`, `region`, `task` and `transfer`
 | `plan_hash.hpp` | `plan_hash()`, the FNV-1a hash of a plan |
 | `instance_allocator.hpp` | `InstanceAllocator`, the port that makes and frees an instance and names its kind of USM |
 | `usm_instance_allocator.hpp` | `USMInstanceAllocator`, the port over a `USMAllocator` |
-| `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step into a node |
+| `planned_node_factory.hpp` | `PlannedNodeFactory`, the port that turns a step or an effect into a node |
 | `directory_planned_node_factory.hpp` | `DirectoryPlannedNodeFactory`, nodes that resolve through the directory |
 | `plan_splice.hpp` | `splice_plan()` and `SpaceOfNode` |
 | `planned_host_access.hpp` | `PlannedHostAccess`, which mints a planned buffer and moves its bytes to and from the host |
@@ -72,9 +72,10 @@ flag gives the same value in every run.
 
 A resident plan does not free what it allocated, so the next step meets the instances it needs. It
 copies back only the buffers named in `ResidencyOptions::host_read`, each to its home space; any
-other buffer a node wrote stays valid only where it was written. The plan then writes the end state
-into each buffer's map in the directory, so the next `plan()` starts from it, and sets
-`CopyPlan::steady` to whether every buffer is still valid on the spaces it was valid on before.
+other buffer a node wrote stays valid only where it was written. The plan sets `CopyPlan::steady`
+to whether every buffer is still valid on the spaces it was valid on before. It writes nothing into
+the directory's maps; the run records the end state as its steps complete (see "Planned state and
+current state").
 A plan that is not steady must be planned again before the next run and is never replayed.
 
 ## PlannedHostAccess
@@ -96,8 +97,44 @@ a planned allocation made on a device, and retires the handle. An instance with 
 `mint_held()` gave, which the runtime did not allocate; `held_spaces()` names its spaces before the
 release, so the caller can free what holds it. For a file-backed buffer that is its file space.
 
-The calls write the coherence map, which takes no lock, so they run between runs and never beside
-the planner.
+Each call works on the map under its coherence lock. A call made while a run of a graph that holds
+the buffer is in flight, from the run's Hold effect to its Leave effect, is refused as
+`InvalidState`. Refusing was chosen over waiting: a host node of the same graph that read the buffer
+would wait for its own run's Leave and never return, and a refusal leaves the caller free to retry
+after the run. `read()` and `write()` make the host instance before they take the lock, since making
+it takes the directory's writer mutex.
+
+## Planned state and current state
+
+The directory's map of a buffer is its current state: what the steps that already ran left. The
+planner never writes it, apart from giving a buffer it meets with no map the state the buffer already
+has (its bytes on its home space). It copies each map once, under the coherence lock, and plans on
+that copy, so two commits at once on graphs that share a buffer each plan from a whole snapshot.
+
+The current map changes only as steps complete, so mid-run it is never ahead of the bytes. A copy
+node waits for its transfer to complete and then records `record_copy()`; a free node records
+`drop_space()` once the instance is dropped. `CopyPlan::effects`
+carries what no step carries, each built into a host node by `PlannedNodeFactory::make_effect()`:
+
+| Effect | Placed | Records |
+| --- | --- | --- |
+| `Hold` | one per buffer, before node 0 | the run holds the buffer: host access is refused |
+| `Write` | one per written region, after its node has completed | `record_write()` on the node's space |
+| `Leave` | one per buffer, at the graph end after every node and step | the run's hold on the buffer ends |
+
+A host read between a commit and its run therefore sees the state before the run. Effects are
+recorded in plan order on each buffer, so the map holds the plan's end state when the run leaves the
+buffer.
+
+Hold and Leave nodes carry `Graph::Node::runs_on_abort`, so the scheduler runs them after a task
+failure or a cancellation aborts the run, when it skips every other node. A failed run therefore
+releases its holds, and host access works after it. A Write node does not carry the flag: the write
+of a node that never ran is not recorded.
+
+Each effect node takes the buffer's coherence lock once. These are host nodes, not kernel dispatches,
+and the lock is uncontended unless host access or a horizon hits the same buffer at that moment. A
+copy node now waits for its transfer on the worker that runs it. Both costs will be measured in the
+closing build and test run of the GLOBAL_HANDLE plan.
 
 ## splice_plan
 
@@ -105,8 +142,10 @@ the planner.
 graph, and returns the `CopyPlan` it spliced, so the caller can keep it beside the graph it built. A
 refused step leaves the nodes as they were. A step before a node takes the node's predecessors and
 precedes it. A step precedes every later step and node that uses one of its instances. A step at
-the graph end follows every leaf. Each edge raises the target's in-degree, and the planned nodes are
-appended in plan order.
+the graph end follows every leaf. A Hold precedes every step, effect and node of its buffer. A Write
+follows its node and every earlier step of its buffer on any space, and precedes every later step,
+effect and node of the buffer. A Leave follows every leaf and every step of its buffer. Each edge raises the target's
+in-degree; the step nodes are appended in plan order, then the effect nodes in plan order.
 
 `splice_plan()` given a `SpaceOfDevice` plans a cut node as its parts: `NodeAccess::parts` holds each
 part's space, reads and writes, the regions the consumer's `NodeSplit::regions` gave that part,
@@ -122,7 +161,9 @@ use it; it works over any `ResidencyView`.
 
 Each node is a host node pinned to the device of the space it makes, writes or frees. An allocate
 node makes the instance only when the directory has none; a copy node resolves both instances when
-it runs and hands them to its `TransferPath`; a free node drops the instance and releases it. The
+it runs, hands them to its `TransferPath` and records the copy on the map; a free node drops the
+instance, releases it and drops the space from the map. An effect node is a host node on device 0
+that applies its effect to the map under the coherence lock. The
 nodes share the allocator; the directory and the paths must outlive them.
 
 A node runs `Node::checked_host_work`, which returns a `Result<sycl::event>`, so no planned node

@@ -10,6 +10,7 @@ sushiruntime_add_module_tests(
         compile_handle_ports.cpp
         compile_handle_registry.cpp
         compile_host_write_log.cpp
+        compile_locked_coherence.cpp
         compile_memory_log_category.cpp
         compile_memory_probe.cpp
         compile_memory_space.cpp

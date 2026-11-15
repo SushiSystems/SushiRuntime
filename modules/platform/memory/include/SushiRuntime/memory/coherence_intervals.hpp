@@ -59,8 +59,8 @@ namespace SushiRuntime
          * @brief Maps the byte ranges of one buffer to their valid spaces and version.
          *
          * The intervals are sorted, cover [0, size) without gaps and never leave two equal
-         * neighbours apart. The planner is the only writer of a buffer's map, at plan time, and
-         * the map takes no lock; readers that run beside the planner are not supported.
+         * neighbours apart. The map takes no lock of its own: the directory hands it out under
+         * its entry's lock (LockedCoherence), and the planner works on a copy of it.
          */
         class CoherenceIntervals final
         {

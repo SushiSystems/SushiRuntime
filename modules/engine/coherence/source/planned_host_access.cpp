@@ -56,6 +56,23 @@ namespace SushiRuntime
                            : 0;
             }
 
+            /** @brief Returns whether some space holds a byte of [begin, end) in map. */
+            bool holds_any(const Memory::CoherenceIntervals& map, std::size_t begin, std::size_t end) noexcept
+            {
+                for (const Memory::CoherenceInterval& interval : map.intervals())
+                    if (interval.begin < end && interval.end > begin && interval.valid_spaces != 0)
+                        return true;
+                return false;
+            }
+
+            /** @brief Returns the error host access is refused with while a run holds the buffer. */
+            Error held_by_run_error()
+            {
+                return Error{ErrorCode::InvalidState,
+                             "a run of a graph that holds the planned buffer is in flight; host access waits for "
+                             "the run to finish."};
+            }
+
             /** @brief Returns the error a failed directory call is reported with. */
             Error directory_error(HandleStatus status, const char* what)
             {
@@ -85,17 +102,19 @@ namespace SushiRuntime
 
             // The host space is the recorded home until the partitioner places the buffer.
             const HandleStatus described = ports_.registry.describe(minted.handle, bytes, layout, host_);
-            Memory::CoherenceIntervals* const map = ports_.residency.coherence(minted.handle);
-            if (described != HandleStatus::Ok || map == nullptr)
             {
-                static_cast<void>(ports_.registry.retire(minted.handle));
-                return make_error(directory_error(described != HandleStatus::Ok ? described : HandleStatus::StaleHandle,
-                                                  "the residency directory refused the planned buffer's entry"));
+                Memory::LockedCoherence map = ports_.residency.coherence(minted.handle);
+                if (described == HandleStatus::Ok && map != nullptr)
+                {
+                    // A map that covers the bytes and names no space marks the buffer as held nowhere yet.
+                    map->reset(bytes, host_);
+                    map->drop_space(host_);
+                    return minted.handle;
+                }
             }
-            // A map that covers the bytes and names no space marks the buffer as held nowhere yet.
-            map->reset(bytes, host_);
-            map->drop_space(host_);
-            return minted.handle;
+            static_cast<void>(ports_.registry.retire(minted.handle));
+            return make_error(directory_error(described != HandleStatus::Ok ? described : HandleStatus::StaleHandle,
+                                              "the residency directory refused the planned buffer's entry"));
         }
 
         Result<GlobalHandle> PlannedHostAccess::mint_held(HandleKind kind, std::size_t bytes,
@@ -112,7 +131,8 @@ namespace SushiRuntime
                 return make_error(directory_error(set, "the residency directory refused the held instance"));
             }
             // The held instance is the one valid copy of every byte.
-            ports_.residency.coherence(*minted)->reset(bytes, space);
+            if (Memory::LockedCoherence map = ports_.residency.coherence(*minted))
+                map->reset(bytes, space);
             return minted;
         }
 
@@ -124,10 +144,17 @@ namespace SushiRuntime
             Result<unsigned char*> host_bytes = host_instance(handle);
             if (!host_bytes)
                 return make_error(std::move(host_bytes.error()));
-            std::memcpy(*host_bytes + begin, source, bytes);
-            // The write leaves the host space the only holder of the range.
-            ports_.residency.coherence(handle)->record_write(begin, begin + bytes, host_);
-            // A plan made before this write no longer matches the map, so it must be made again.
+            {
+                Memory::LockedCoherence map = ports_.residency.coherence(handle);
+                if (map == nullptr)
+                    return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
+                if (map.held_by_run())
+                    return make_error(held_by_run_error());
+                std::memcpy(*host_bytes + begin, source, bytes);
+                // The write leaves the host space the only holder of the range.
+                map->record_write(begin, begin + bytes, host_);
+            }
+            // Outside the map's lock, which the writer mutex is never taken under; a plan made before is made again.
             static_cast<void>(ports_.host_writes.record_host_write(handle));
             return {};
         }
@@ -137,13 +164,27 @@ namespace SushiRuntime
         {
             if (bytes == 0)
                 return {};
-            Memory::CoherenceIntervals* const map = ports_.residency.coherence(handle);
+            const std::size_t end = begin + bytes;
+            Memory::LockedCoherence map = ports_.residency.coherence(handle);
             if (map == nullptr)
                 return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
+            if (map.held_by_run())
+                return make_error(held_by_run_error());
 
             auto* const out = static_cast<unsigned char*>(destination);
             std::memset(out, 0, bytes);
-            const std::size_t end = begin + bytes;
+            if (!holds_any(*map, begin, end))
+                return {};
+            // Making the host instance takes the writer mutex, never taken under the map's lock.
+            map = Memory::LockedCoherence{};
+            Result<unsigned char*> host_bytes = host_instance(handle);
+            if (!host_bytes)
+                return make_error(std::move(host_bytes.error()));
+            map = ports_.residency.coherence(handle);
+            if (map == nullptr)
+                return make_error(directory_error(HandleStatus::StaleHandle, "the planned buffer is not live"));
+            if (map.held_by_run())
+                return make_error(held_by_run_error());
             const std::uint64_t host_bit = bit_of(host_);
             const std::vector<Memory::CoherenceInterval> intervals = map->intervals();
             for (const Memory::CoherenceInterval& interval : intervals)
@@ -153,14 +194,12 @@ namespace SushiRuntime
                 // Bytes no space holds were never written; they stay zero.
                 if (from >= to || interval.valid_spaces == 0)
                     continue;
-                Result<unsigned char*> host_bytes = host_instance(handle);
-                if (!host_bytes)
-                    return make_error(std::move(host_bytes.error()));
                 if ((interval.valid_spaces & host_bit) == 0)
                 {
                     Result<void> fetched = fetch(handle, from, to, interval.valid_spaces, *host_bytes);
                     if (!fetched)
                         return fetched;
+                    map->record_copy(from, to, host_);
                 }
                 std::memcpy(out + (from - begin), *host_bytes + from, to - from);
             }
@@ -251,7 +290,6 @@ namespace SushiRuntime
                         return make_error(Error{finished.error().code,
                                                 "the copy of a planned buffer to the host failed: " +
                                                     finished.error().message});
-                    ports_.residency.coherence(handle)->record_copy(begin, end, host_);
                     return {};
                 }
             }

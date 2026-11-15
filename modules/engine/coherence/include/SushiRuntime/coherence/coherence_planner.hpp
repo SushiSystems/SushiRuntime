@@ -101,8 +101,10 @@ namespace SushiRuntime
                 void set_residency(ResidencyOptions options);
 
                 /**
-                 * @brief Plans the steps nodes need, in node order, and writes the start state of
-                 *        each buffer it meets into the directory when the directory held none.
+                 * @brief Plans the steps and effects nodes need, in node order, on a copy of each map.
+                 *
+                 * It writes a map only to give a buffer with none its present state; the steps
+                 * and effects record every other change as they run.
                  * @return The plan, or Unsupported when no path reaches a space a node reads on.
                  */
                 [[nodiscard]] Result<CopyPlan> plan(const std::vector<NodeAccess>& nodes);
@@ -146,7 +148,7 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void> plan_reads(MemorySpaceID space, const std::vector<BufferRegion>& reads,
                                                       std::size_t node, CopyPlan& plan);
 
-                /** @brief Records each of writes on space, after an instance is made there. */
+                /** @brief Records each of writes on space in the planned copy, and adds its Write effect. */
                 [[nodiscard]] Result<void> plan_writes(MemorySpaceID space, const std::vector<BufferRegion>& writes,
                                                        std::size_t node, CopyPlan& plan);
 

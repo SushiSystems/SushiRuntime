@@ -275,7 +275,7 @@ job builds on them.
 | R02 | per-part regions from the consumer in `NodeSplit` | R01 | done |
 | R03 | concurrent split parts | R02 | done |
 | R04 | one partition session per graph, ledger keyed by problem | R01 | done |
-| R05 | coherence map: planned state apart from current state, enforced phases | R01 | running |
+| R05 | coherence map: planned state apart from current state, enforced phases | R01 | done |
 | R06 | `RuntimeContext` narrowed to ports | R01 | done |
 | R07 | `Buffer` storage modes, no sentinel device; SushiBLAS `PlannedBlock` contract | R01 | done |
 | R08 | space and path kinds typed, not strings | R01 | done |

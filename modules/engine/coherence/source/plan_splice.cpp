@@ -125,7 +125,8 @@ namespace SushiRuntime
             if (!planned)
                 return make_error(std::move(planned.error()));
             const std::vector<PlannedStep>& steps = planned.value().steps;
-            if (steps.empty())
+            const std::vector<PlannedEffect>& effects = planned.value().effects;
+            if (steps.empty() && effects.empty())
                 return std::move(planned.value());
 
             // Every node is built before the graph changes, so a refused step leaves it whole.
@@ -137,6 +138,15 @@ namespace SushiRuntime
                 if (!node)
                     return make_error(std::move(node.error()));
                 made.push_back(std::move(node.value()));
+            }
+            std::vector<sushi_ptr<Node>> made_effects;
+            made_effects.reserve(effects.size());
+            for (const PlannedEffect& effect : effects)
+            {
+                Result<sushi_ptr<Node>> node = factory.make_effect(effect);
+                if (!node)
+                    return make_error(std::move(node.error()));
+                made_effects.push_back(std::move(node.value()));
             }
 
             std::unordered_map<const Node*, std::vector<Node*>> predecessors;
@@ -150,6 +160,28 @@ namespace SushiRuntime
             std::map<InstanceKey, std::vector<Node*>> touching;
             std::map<InstanceKey, std::vector<Node*>> users;
             std::map<std::uint32_t, std::vector<Node*>> evicted;
+            // The last Hold or Write of each buffer; every later step, effect and use of it waits for it.
+            std::map<GlobalHandle, Node*> barrier;
+
+            // Links every node that touched an instance of handle, and its barrier, to to.
+            const auto after_handle = [&edges, &touching, &barrier](GlobalHandle handle, Node* to)
+            {
+                for (auto key = touching.lower_bound({handle, 0}); key != touching.end() && key->first.first == handle;
+                     ++key)
+                    edges.link_all(key->second, to);
+                const auto held = barrier.find(handle);
+                if (held != barrier.end())
+                    edges.link(held->second, to);
+            };
+            const auto link_barrier = [&edges, &barrier](GlobalHandle handle, Node* to)
+            {
+                const auto held = barrier.find(handle);
+                if (held != barrier.end())
+                    edges.link(held->second, to);
+            };
+            std::size_t next_effect = 0;
+            for (; next_effect < effects.size() && effects[next_effect].kind == PlannedEffectKind::Hold; ++next_effect)
+                barrier[effects[next_effect].handle] = made_effects[next_effect].get();
 
             // An allocation waits for the evictions that made room on its space.
             const auto order_by_capacity = [&edges, &evicted](const PlannedStep& step, Node* step_node)
@@ -167,6 +199,7 @@ namespace SushiRuntime
                 {
                     Node* const step_node = made[next].get();
                     edges.link_all(predecessors[target], step_node);
+                    link_barrier(steps[next].handle, step_node);
                     for (const InstanceKey& key : instances_of(steps[next]))
                     {
                         edges.link_all(touching[key], step_node);
@@ -182,11 +215,12 @@ namespace SushiRuntime
 
                 if (!accesses[index].planned)
                     continue;
-                const auto use = [&edges, &touching, &users, target](std::uint32_t space,
-                                                                    const std::vector<BufferRegion>& regions)
+                const auto use = [&edges, &touching, &users, &link_barrier, target](
+                                     std::uint32_t space, const std::vector<BufferRegion>& regions)
                 {
                     for (const BufferRegion& region : regions)
                     {
+                        link_barrier(region.base, target);
                         edges.link_all(touching[{region.base, space}], target);
                         users[{region.base, space}].push_back(target);
                     }
@@ -201,6 +235,17 @@ namespace SushiRuntime
                     use(part.space.value(), part.reads);
                     use(part.space.value(), part.writes);
                 }
+
+                // A node's writes are recorded once it has completed; every later step and use of the buffer waits for that.
+                for (; next_effect < effects.size() && effects[next_effect].node == index; ++next_effect)
+                {
+                    const PlannedEffect& effect = effects[next_effect];
+                    Node* const effect_node = made_effects[next_effect].get();
+                    after_handle(effect.handle, effect_node);
+                    edges.link(target, effect_node);
+                    barrier[effect.handle] = effect_node;
+                    touching[{effect.handle, effect.space.value()}].push_back(effect_node);
+                }
             }
 
             std::vector<Node*> leaves;
@@ -210,12 +255,16 @@ namespace SushiRuntime
             for (std::size_t step = 0; step < next; ++step)
                 if (is_leaf(*made[step]))
                     leaves.push_back(made[step].get());
+            for (std::size_t effect = 0; effect < next_effect; ++effect)
+                if (is_leaf(*made_effects[effect]))
+                    leaves.push_back(made_effects[effect].get());
 
             for (; next < steps.size(); ++next)
             {
                 Node* const step_node = made[next].get();
                 edges.link_all(leaves, step_node);
                 order_by_capacity(steps[next], step_node);
+                link_barrier(steps[next].handle, step_node);
                 for (const InstanceKey& key : instances_of(steps[next]))
                 {
                     edges.link_all(touching[key], step_node);
@@ -223,7 +272,16 @@ namespace SushiRuntime
                 }
             }
 
+            // A Leave runs after every node and every step, so the run holds the buffer to its end.
+            for (; next_effect < effects.size(); ++next_effect)
+            {
+                Node* const effect_node = made_effects[next_effect].get();
+                edges.link_all(leaves, effect_node);
+                after_handle(effects[next_effect].handle, effect_node);
+            }
+
             nodes.insert(nodes.end(), made.begin(), made.end());
+            nodes.insert(nodes.end(), made_effects.begin(), made_effects.end());
             return std::move(planned.value());
         }
     } // namespace Internal::Coherence

@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -170,10 +171,12 @@ namespace
         if (!queue)
             GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
 
+        directory_.coherence(buffer_)->reset(K_BYTES, K_DEVICE_0);
         const Result<sushi_ptr<Node>> allocate = factory_.make(step(PlannedStepKind::Allocate));
         const Result<sushi_ptr<Node>> copy = factory_.make(step(PlannedStepKind::Copy));
         const Result<sushi_ptr<Node>> free = factory_.make(step(PlannedStepKind::Free));
         ASSERT_TRUE(allocate && copy && free);
+        const std::uint64_t both = (std::uint64_t{1} << K_DEVICE_0.value()) | (std::uint64_t{1} << K_DEVICE_1.value());
 
         ASSERT_TRUE(allocate.value()->execute_host_checked(*queue, {}));
         const ResolveOutcome made = directory_.resolve(buffer_, K_DEVICE_1);
@@ -182,10 +185,44 @@ namespace
         ASSERT_TRUE(copy.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(path_.copies(), 1);
         EXPECT_EQ(static_cast<unsigned char*>(made.address)[7], 8);
+        // Each step records its effect on the map when it runs, not when it was planned.
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), both);
 
         ASSERT_TRUE(free.value()->execute_host_checked(*queue, {}));
         EXPECT_EQ(directory_.resolve(buffer_, K_DEVICE_1).status, HandleStatus::NotResident);
         EXPECT_EQ(allocator_->held, 0);
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), std::uint64_t{1} << K_DEVICE_0.value());
+    }
+
+    TEST_F(Small_DirectoryPlannedNodeFactory, EffectNodesHoldTheBufferRecordAWriteAndLeaveItWhenTheyRun)
+    {
+        std::optional<sycl::queue> queue = any_queue();
+        if (!queue)
+            GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
+        directory_.coherence(buffer_)->reset(K_BYTES, K_DEVICE_0);
+        const Result<sushi_ptr<Node>> hold =
+            factory_.make_effect(PlannedEffect{PlannedEffectKind::Hold, buffer_, MemorySpaceID(), 0, 0, 0});
+        const Result<sushi_ptr<Node>> write =
+            factory_.make_effect(PlannedEffect{PlannedEffectKind::Write, buffer_, K_DEVICE_1, 0, 4, 0});
+        const Result<sushi_ptr<Node>> leave = factory_.make_effect(
+            PlannedEffect{PlannedEffectKind::Leave, buffer_, MemorySpaceID(), 0, 0, PlannedStep::K_GRAPH_END});
+        ASSERT_TRUE(hold && write && leave);
+        EXPECT_EQ(write.value()->mode, Node::ExecutionMode::Host);
+        // The hold and the leave run even on an aborted run; the write of a node that never ran is not recorded.
+        EXPECT_TRUE(hold.value()->runs_on_abort);
+        EXPECT_TRUE(leave.value()->runs_on_abort);
+        EXPECT_FALSE(write.value()->runs_on_abort);
+        // Building the nodes changes nothing; only running them does.
+        EXPECT_FALSE(directory_.coherence(buffer_).held_by_run());
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), std::uint64_t{1} << K_DEVICE_0.value());
+
+        ASSERT_TRUE(hold.value()->execute_host_checked(*queue, {}));
+        EXPECT_TRUE(directory_.coherence(buffer_).held_by_run());
+        ASSERT_TRUE(write.value()->execute_host_checked(*queue, {}));
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(0), std::uint64_t{1} << K_DEVICE_1.value());
+        EXPECT_EQ(directory_.coherence(buffer_)->valid_spaces_at(4), std::uint64_t{1} << K_DEVICE_0.value());
+        ASSERT_TRUE(leave.value()->execute_host_checked(*queue, {}));
+        EXPECT_FALSE(directory_.coherence(buffer_).held_by_run());
     }
 
     TEST_F(Small_DirectoryPlannedNodeFactory, AnAllocationTheSpaceRefusesIsAnAllocationFailedStatus)

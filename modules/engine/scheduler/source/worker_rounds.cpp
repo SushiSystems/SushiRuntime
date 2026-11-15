@@ -383,9 +383,9 @@ namespace SushiRuntime
             // An aborting run executes no more kernels (modules/engine/scheduler/README.md).
             if (run_.outcome.is_aborting())
             {
-                bool is_sentinel = task->is_graph_node() &&
-                                   static_cast<SushiRuntime::Internal::Graph::Node*>(task)->is_sentinel;
-                if (!is_sentinel)
+                const auto* const node = task->is_graph_node()
+                    ? static_cast<const SushiRuntime::Internal::Graph::Node*>(task) : nullptr;
+                if (node == nullptr || (!node->is_sentinel && !node->runs_on_abort))
                 {
                     run_.skipped_aborted.fetch_add(1, std::memory_order_relaxed);
                     events.push(skipped_dispatch_event(task));

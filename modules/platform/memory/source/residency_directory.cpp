@@ -31,6 +31,7 @@
 #include <SushiRuntime/memory/residency_directory.hpp>
 
 #include <thread>
+#include <utility>
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/handle/local_handle_space.hpp>
@@ -168,7 +169,11 @@ namespace SushiRuntime
                 entry->element_size.store(1, std::memory_order_relaxed);
                 entry->element_alignment.store(1, std::memory_order_relaxed);
                 entry->home.store(0, std::memory_order_relaxed);
-                entry->coherence.clear();
+                {
+                    const std::lock_guard<std::mutex> map_lock(entry->coherence_mutex);
+                    entry->coherence.clear();
+                    entry->runs_holding = 0;
+                }
                 entry->host_write.store(0, std::memory_order_relaxed);
 
                 // A slot whose generation wrapped to 0 is never reused, so no old handle matches it.
@@ -315,18 +320,18 @@ namespace SushiRuntime
             return view;
         }
 
-        CoherenceIntervals* ResidencyDirectory::coherence(GlobalHandle handle) noexcept
+        LockedCoherence ResidencyDirectory::coherence(GlobalHandle handle)
         {
             HandleStatus status = HandleStatus::Ok;
             Entry* const entry = live_entry(handle, status);
-            return entry ? &entry->coherence : nullptr;
-        }
-
-        const CoherenceIntervals* ResidencyDirectory::coherence(GlobalHandle handle) const noexcept
-        {
-            HandleStatus status = HandleStatus::Ok;
-            const Entry* const entry = live_entry(handle, status);
-            return entry ? &entry->coherence : nullptr;
+            if (!entry)
+                return LockedCoherence{};
+            std::unique_lock<std::mutex> lock(entry->coherence_mutex);
+            // The slot may have been retired between the check and the lock; retire() clears it under this lock.
+            if (entry->generation.load(std::memory_order_acquire) != handle.generation() ||
+                !entry->live.load(std::memory_order_acquire))
+                return LockedCoherence{};
+            return LockedCoherence{std::move(lock), entry->coherence, entry->runs_holding};
         }
 
         std::size_t ResidencyDirectory::retire_coherence_history()
@@ -336,8 +341,10 @@ namespace SushiRuntime
             for (std::uint32_t slot = 0; slot < next_fresh_slot_; ++slot)
             {
                 Entry* const entry = find_entry(slot);
-                if (entry && entry->live.load(std::memory_order_relaxed))
-                    intervals += entry->coherence.retire_history();
+                if (!entry || !entry->live.load(std::memory_order_relaxed))
+                    continue;
+                const std::lock_guard<std::mutex> map_lock(entry->coherence_mutex);
+                intervals += entry->coherence.retire_history();
             }
             return intervals;
         }

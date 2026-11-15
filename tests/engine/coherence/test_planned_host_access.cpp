@@ -135,14 +135,41 @@ namespace
                 return outcome.status == HandleStatus::Ok ? outcome.address : nullptr;
             }
 
-            /** @brief Runs the steps of a plan that are ordered before node. */
+            /** @brief Runs the steps and the hold or leave effects of a plan that come before node. */
             void run_steps_before(const CopyPlan& plan, std::size_t node)
             {
+                for (const PlannedEffect& effect : plan.effects)
+                    if (effect.node == node && effect.kind == PlannedEffectKind::Hold)
+                        apply(effect);
                 for (const PlannedStep& step : plan.steps)
                 {
                     if (step.node != node)
                         continue;
                     run(step);
+                }
+                for (const PlannedEffect& effect : plan.effects)
+                    if (effect.node == node && effect.kind == PlannedEffectKind::Leave)
+                        apply(effect);
+            }
+
+            /** @brief Records the writes of node, as its Write effects do once it has run. */
+            void record_writes_of(const CopyPlan& plan, std::size_t node)
+            {
+                for (const PlannedEffect& effect : plan.effects)
+                    if (effect.node == node && effect.kind == PlannedEffectKind::Write)
+                        apply(effect);
+            }
+
+            /** @brief Applies one planned effect to the map, as the effect's node does. */
+            void apply(const PlannedEffect& effect)
+            {
+                Internal::Memory::LockedCoherence map = directory_.coherence(effect.handle);
+                ASSERT_TRUE(map != nullptr);
+                switch (effect.kind)
+                {
+                    case PlannedEffectKind::Hold:  map.enter_run(); break;
+                    case PlannedEffectKind::Write: map->record_write(effect.begin, effect.end, effect.space); break;
+                    case PlannedEffectKind::Leave: map.leave_run(); break;
                 }
             }
 
@@ -162,12 +189,14 @@ namespace
                         std::memcpy(static_cast<unsigned char*>(instance(step.handle, step.space)) + step.begin,
                                     static_cast<unsigned char*>(instance(step.handle, step.source)) + step.begin,
                                     step.end - step.begin);
+                        directory_.coherence(step.handle)->record_copy(step.begin, step.end, step.space);
                         break;
                     case PlannedStepKind::Free:
                     {
                         void* const address = instance(step.handle, step.space);
                         ASSERT_EQ(directory_.drop_instance(step.handle, step.space), HandleStatus::Ok);
                         allocator_.release(step.space, address);
+                        directory_.coherence(step.handle)->drop_space(step.space);
                         break;
                     }
                 }
@@ -244,6 +273,7 @@ namespace
         EXPECT_EQ(std::vector<std::int32_t>(device_bytes, device_bytes + K_COUNT), before);
         const std::vector<std::int32_t> written = pattern(700);
         std::memcpy(device_bytes, written.data(), K_BYTES);
+        record_writes_of(plan.value(), 0);
         run_steps_before(plan.value(), PlannedStep::K_GRAPH_END);
 
         std::vector<std::int32_t> read(K_COUNT);
@@ -357,6 +387,78 @@ namespace
         ASSERT_TRUE(access_.write(handle, 0, values.data(), K_BYTES));
 
         EXPECT_GT(directory_.host_write_of(handle), before);
+        access_.release(handle);
+    }
+    TEST_F(Small_PlannedHostAccess, AHostReadBetweenAPlanAndItsRunSeesTheStateBeforeTheRun)
+    {
+        const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
+        const std::vector<std::int32_t> before = pattern(100);
+        ASSERT_TRUE(access_.write(handle, 0, before.data(), K_BYTES));
+        LogicalTimeEviction policy;
+        CoherencePlanner subject = planner();
+        ResidencyOptions options;
+        options.policy = &policy;
+        options.host = K_HOST;
+        subject.set_residency(options);
+
+        const Result<CopyPlan> plan = subject.plan({node(K_DEVICE_1, {handle}, {handle})});
+        ASSERT_TRUE(plan);
+
+        // The plan wrote nothing: the host still holds the only valid bytes, and they read back unchanged.
+        EXPECT_EQ(directory_.coherence(handle)->valid_spaces_at(0), std::uint64_t{1} << K_HOST.value());
+        std::vector<std::int32_t> read(K_COUNT);
+        ASSERT_TRUE(access_.read(handle, 0, read.data(), K_BYTES));
+        EXPECT_EQ(read, before);
+        EXPECT_EQ(path_.copies(), 0);
+        access_.release(handle);
+    }
+
+    TEST_F(Small_PlannedHostAccess, HostAccessIsRefusedWhileARunHoldsTheBufferAndAllowedAfterItLeaves)
+    {
+        const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
+        const std::vector<std::int32_t> before = pattern(100);
+        ASSERT_TRUE(access_.write(handle, 0, before.data(), K_BYTES));
+        CoherencePlanner subject = planner();
+        const Result<CopyPlan> plan = subject.plan({node(K_DEVICE_1, {handle}, {handle})});
+        ASSERT_TRUE(plan);
+        ASSERT_FALSE(plan.value().effects.empty());
+        EXPECT_EQ(plan.value().effects.front().kind, PlannedEffectKind::Hold);
+        EXPECT_EQ(plan.value().effects.back().kind, PlannedEffectKind::Leave);
+
+        run_steps_before(plan.value(), 0);
+        std::vector<std::int32_t> read(K_COUNT);
+        const Result<void> refused_read = access_.read(handle, 0, read.data(), K_BYTES);
+        ASSERT_FALSE(refused_read);
+        EXPECT_EQ(refused_read.error().code, ErrorCode::InvalidState);
+        const Result<void> refused_write = access_.write(handle, 0, before.data(), K_BYTES);
+        ASSERT_FALSE(refused_write);
+        EXPECT_EQ(refused_write.error().code, ErrorCode::InvalidState);
+
+        run_steps_before(plan.value(), PlannedStep::K_GRAPH_END);
+        ASSERT_TRUE(access_.read(handle, 0, read.data(), K_BYTES));
+        EXPECT_EQ(read, before);
+        access_.release(handle);
+        EXPECT_EQ(allocator_.held, 0);
+    }
+    TEST_F(Small_PlannedHostAccess, ARunWhoseNodeFailsLeavesNoBufferHeldAndHostAccessWorksAfterIt)
+    {
+        const GlobalHandle handle = access_.mint(HandleKind::Buffer, K_BYTES, ElementLayout{4, 4}).value();
+        const std::vector<std::int32_t> before = pattern(100);
+        ASSERT_TRUE(access_.write(handle, 0, before.data(), K_BYTES));
+        CoherencePlanner subject = planner();
+        const Result<CopyPlan> plan = subject.plan({node(K_DEVICE_1, {handle}, {handle})});
+        ASSERT_TRUE(plan);
+
+        // The node fails: an aborted run skips its steps and its Write, and runs only the hold and the leave.
+        for (const PlannedEffect& effect : plan.value().effects)
+            if (effect.kind != PlannedEffectKind::Write)
+                apply(effect);
+
+        EXPECT_FALSE(directory_.coherence(handle).held_by_run());
+        std::vector<std::int32_t> read(K_COUNT);
+        ASSERT_TRUE(access_.read(handle, 0, read.data(), K_BYTES));
+        EXPECT_EQ(read, before);
+        ASSERT_TRUE(access_.write(handle, 0, before.data(), K_BYTES));
         access_.release(handle);
     }
 } // namespace

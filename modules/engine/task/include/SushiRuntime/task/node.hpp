@@ -149,6 +149,13 @@ namespace SushiRuntime
             bool is_sentinel = false;
 
             /**
+             * @brief Marks a node that still runs once a task failure or a cancellation aborts the
+             *        run, such as the node that releases what the run holds.
+             * @see modules/engine/graph/README.md
+             */
+            bool runs_on_abort = false;
+
+            /**
              * @brief Hold the USM read and write regions this node touches.
              * @see modules/engine/graph/README.md
              */

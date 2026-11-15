@@ -104,6 +104,12 @@ must run even after a task exception flips the scheduler into drain-without-exec
 it would leave the completion promise unset and hang execute(). SchedulerExecutionEngine sets the flag when
 it wires the sentinel.
 
+### runs_on_abort
+
+A node with `runs_on_abort` set also runs once the run aborts, like the sentinel. Its predecessors
+that were skipped count as done. `engine/coherence` sets it on the nodes that take and release a
+run's hold on a buffer, so a failed or cancelled run leaves no buffer held.
+
 ### io_reads_ and io_writes_
 
 io_reads_ and io_writes_ are retained on every build, not just the distributed one, so the scheduler

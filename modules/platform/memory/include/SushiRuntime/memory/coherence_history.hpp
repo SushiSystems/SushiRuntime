@@ -44,7 +44,7 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Retires the history of every live handle.
-                 * @pre No plan is being made.
+                 * Each map is retired under its own lock, so a plan or a run may be in flight.
                  * @return The intervals left across the live handles.
                  */
                 [[nodiscard]] virtual std::size_t retire_coherence_history() = 0;

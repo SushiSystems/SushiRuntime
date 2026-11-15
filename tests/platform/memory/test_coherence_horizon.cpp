@@ -49,10 +49,10 @@ namespace
     {
         const MintOutcome outcome = directory.mint(HandleKind::Buffer, HandleFlags::None);
         EXPECT_EQ(outcome.status, HandleStatus::Ok);
-        CoherenceIntervals& map = *directory.coherence(outcome.handle);
-        map.reset(8, K_HOST_SPACE);
-        map.record_write(0, 1, K_DEVICE_SPACE);
-        map.record_write(1, 2, K_DEVICE_SPACE);
+        LockedCoherence map = directory.coherence(outcome.handle);
+        map->reset(8, K_HOST_SPACE);
+        map->record_write(0, 1, K_DEVICE_SPACE);
+        map->record_write(1, 2, K_DEVICE_SPACE);
         return outcome.handle;
     }
 

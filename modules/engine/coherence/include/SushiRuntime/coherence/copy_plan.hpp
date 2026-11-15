@@ -23,7 +23,7 @@
 
 /**
  * @file copy_plan.hpp
- * @brief Declares CopyPlan, the allocate, copy and free steps the planner adds to a graph.
+ * @brief Declares CopyPlan, the allocate, copy and free steps and the map effects the planner adds to a graph.
  * @see modules/engine/coherence/README.md
  * @author Mustafa Garip
  */
@@ -77,8 +77,39 @@ namespace SushiRuntime
             }
         };
 
+        /** @brief Names what one planned effect does to the coherence map of a buffer. */
+        enum class PlannedEffectKind : std::uint8_t
+        {
+            Hold,  /**< Counts the run as holding the buffer; host access is refused until Leave. */
+            Write, /**< Records the write of a node on the map. */
+            Leave  /**< Counts the run as no longer holding the buffer. */
+        };
+
         /**
-         * @brief Holds the steps of one plan in the order they are added.
+         * @brief Holds one change the run of a graph makes to the coherence map of a buffer.
+         *
+         * Copy and free steps record their own change when they execute. An effect carries what
+         * no step carries: that a run holds the buffer, and the writes of the graph's own nodes.
+         */
+        struct PlannedEffect
+        {
+            PlannedEffectKind kind = PlannedEffectKind::Write; /**< What the effect does. */
+            GlobalHandle handle;                               /**< Buffer the effect works on. */
+            MemorySpaceID space;                               /**< Space a write lands on; unused otherwise. */
+            std::size_t begin = 0;                             /**< First byte a write covers. */
+            std::size_t end = 0;                               /**< One past the last byte a write covers. */
+            std::size_t node = 0;                              /**< Node a Write follows, node 0 for a Hold, K_GRAPH_END for a Leave. */
+
+            /** @brief Returns whether both effects are equal in every field. */
+            [[nodiscard]] bool operator==(const PlannedEffect& other) const noexcept
+            {
+                return kind == other.kind && handle == other.handle && space == other.space &&
+                       begin == other.begin && end == other.end && node == other.node;
+            }
+        };
+
+        /**
+         * @brief Holds the steps and the effects of one plan in the order they are added.
          *
          * Steps before a node come in node order; steps at K_GRAPH_END come last, copies before
          * frees. Only a steady plan may be replayed as it is.
@@ -87,6 +118,11 @@ namespace SushiRuntime
         {
             std::vector<PlannedStep> steps; /**< The steps, in order. */
             bool steady = true;             /**< Whether a run keeps every valid space and instance it found. */
+            /**
+             * @brief The map effects: a Hold per buffer before node 0, the Writes of each node
+             *        after it, a Leave per buffer at K_GRAPH_END.
+             */
+            std::vector<PlannedEffect> effects;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

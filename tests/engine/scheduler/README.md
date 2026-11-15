@@ -249,6 +249,7 @@ count follows the row.
 | `ACheckedHostBodyThatFailsFailsTheRunWithItsCode` | A host body that returns `AllocationFailed` fails the run with that code and the node's name, on the worker or on the funnel thread. |
 | `AThrowingSubmissionFailsTheRunNamingTheNode` | A command group that throws fails the run with an error naming the node, on the worker or on the funnel thread. |
 | `AKernelNodeAfterAFailedSubmissionIsSkipped` | After that failure, a later kernel node of the run does not run and is not funnelled. |
+| `ANodeMarkedToRunOnAbortRunsAfterAFailureAndAnUnmarkedOneIsSkipped` | After a failure, a host node marked `runs_on_abort` still runs and an unmarked one is skipped. |
 | `StopEndsAPoolWhoseFunnelIsIdle` | `stop()` after `disarm()` ends the pool with its funnel idle, and the run and the count stand. |
 | `StopRightAfterSubmitRunsEveryKernelNode` | `stop()` right after 200 submissions runs every node, all through the funnel when it is on. |
 | `DeviceSubmittingHostNodesSubmitOnlyFromTheFunnelThread` | Sixteen HOST nodes whose body submits a host task on its queue and sixteen kernel nodes all run; with the funnel on all 32 are funnelled and every body and command group runs on one thread that is not the test's (`support/submitting_threads.hpp`). |

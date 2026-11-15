@@ -64,7 +64,8 @@ namespace SushiRuntime
          * @brief Maps handles to the instances of their buffer on each memory space.
          *
          * Writers (mint, retire, describe, set_instance, drop_instance) serialise on one mutex.
-         * Readers (resolve, is_stale, inspect) take no lock and never wait on a writer.
+         * Readers (resolve, is_stale, inspect) take no lock and never wait on a writer. Each
+         * entry's coherence map has its own lock, taken after the writer mutex, never before it.
          */
         class ResidencyDirectory final : public HandleRegistry,
                                          public ResidencyView,
@@ -161,22 +162,14 @@ namespace SushiRuntime
                     return universe_;
                 }
 
-                /**
-                 * @brief Returns the coherence map of a live handle, or null when it is not live.
-                 *
-                 * The planner is the map's only writer, at plan time; the map takes no lock.
-                 */
-                [[nodiscard]] CoherenceIntervals* coherence(GlobalHandle handle) noexcept override;
-
-                /** @brief Returns the coherence map of a live handle, or null when it is not live. */
-                [[nodiscard]] const CoherenceIntervals* coherence(GlobalHandle handle) const noexcept override;
+                /** @brief Returns the coherence map of a live handle under its entry's lock. */
+                [[nodiscard]] LockedCoherence coherence(GlobalHandle handle) override;
 
                 /**
                  * @brief Retires the coherence history of every live handle at a horizon.
                  *
                  * Calls CoherenceIntervals::retire_history() on each live entry, under the writer
-                 * mutex. A horizon node calls it between runs, when no plan is being made, since
-                 * the maps take no lock.
+                 * mutex and then that entry's coherence lock, so it may run beside a plan or a run.
                  * @return The intervals left across the live handles.
                  */
                 [[nodiscard]] std::size_t retire_coherence_history() override;
@@ -234,8 +227,12 @@ namespace SushiRuntime
                     /// @brief Kind of the instance on each space plus one, or 0 when unknown.
                     std::array<std::atomic<std::uint8_t>, K_MAX_MEMORY_SPACES> instance_kinds{};
 
-                    /// @brief Valid spaces and version of each byte range; written by the planner only.
+                    /// @brief Guards coherence and runs_holding.
+                    std::mutex coherence_mutex;
+                    /// @brief Valid spaces and version of each byte range, as the completed steps left them.
                     CoherenceIntervals coherence;
+                    /// @brief Runs in flight of graphs that hold the buffer.
+                    std::uint32_t runs_holding = 0;
 
                     /// @brief Host-write generation of the last host write on the buffer, or 0.
                     std::atomic<std::uint64_t> host_write{0};

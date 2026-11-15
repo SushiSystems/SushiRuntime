@@ -118,6 +118,18 @@ namespace SushiRuntime
                 return access;
             }
 
+            /** @brief Runs the node a factory builds for effect and waits for its event. */
+            inline void run_effect(PlannedNodeFactory& factory, const PlannedEffect& effect, sycl::queue& queue)
+            {
+                const Result<sushi_ptr<Graph::Node>> node = factory.make_effect(effect);
+                if (!node)
+                    throw std::runtime_error("the factory refused a planned effect: " + node.error().message);
+                Result<sycl::event> ran = node.value()->execute_host_checked(queue, {});
+                if (!ran)
+                    throw std::runtime_error("a planned effect failed: " + ran.error().message);
+                ran.value().wait();
+            }
+
             /** @brief Runs the node a factory builds for step and waits for its event. */
             inline void run_step(PlannedNodeFactory& factory, const PlannedStep& step, sycl::queue& queue)
             {
@@ -134,9 +146,9 @@ namespace SushiRuntime
         /**
          * @brief Runs graph on its devices through the planner and the planned nodes.
          *
-         * The buffers start on device 0, in memory the run owns. Each device is a memory space of
-         * host memory, so the run needs no accelerator. A plan step runs before the node it names,
-         * the steps at the graph end run last, and the bytes of device 0 are the result.
+         * The buffers start on device 0. Each device is a host memory space. The holds run first,
+         * a node's steps before it and its writes after it; the graph end runs last. The bytes of device 0
+         * are the result, and the map must show device 0 holding them.
          * @throws std::runtime_error when the plan or a step is refused or an instance is missing.
          */
         [[nodiscard]] inline PlannedRun run_planned(const GraphCase& graph, sycl::queue& queue)
@@ -183,11 +195,17 @@ namespace SushiRuntime
 
             const auto allocator = std::make_shared<HeapInstanceAllocator>();
             DirectoryPlannedNodeFactory factory(directory, allocator, {&path});
+            const std::vector<PlannedEffect>& effects = plan.value().effects;
             std::size_t next = 0;
+            std::size_t next_effect = 0;
             for (std::size_t index = 0; index < graph.nodes.size(); ++index)
             {
                 for (; next < run.steps.size() && run.steps[next].node == index; ++next)
                     Detail::run_step(factory, run.steps[next], queue);
+                // The holds come first; a node's writes are recorded after it has run.
+                for (; next_effect < effects.size() && effects[next_effect].kind == PlannedEffectKind::Hold;
+                     ++next_effect)
+                    Detail::run_effect(factory, effects[next_effect], queue);
                 const GraphNode& node = graph.nodes[index];
                 const MemorySpaceID space = Detail::space_of_device(node.device);
                 run.outcome.digests.push_back(run_node(node, [&](std::size_t buffer)
@@ -197,9 +215,24 @@ namespace SushiRuntime
                         throw std::runtime_error("a node found no instance on its device.");
                     return static_cast<unsigned char*>(found.address);
                 }));
+                for (; next_effect < effects.size() && effects[next_effect].node == index; ++next_effect)
+                    Detail::run_effect(factory, effects[next_effect], queue);
             }
             for (; next < run.steps.size(); ++next)
                 Detail::run_step(factory, run.steps[next], queue);
+            for (; next_effect < effects.size(); ++next_effect)
+                Detail::run_effect(factory, effects[next_effect], queue);
+
+            // The plan restores device 0, so the map the run recorded must show it holding every byte.
+            for (const GlobalHandle handle : handles)
+            {
+                Memory::LockedCoherence map = directory.coherence(handle);
+                if (map == nullptr || map.held_by_run())
+                    throw std::runtime_error("a run left a buffer held or its map gone.");
+                for (const Memory::CoherenceInterval& interval : map->intervals())
+                    if ((interval.valid_spaces & (std::uint64_t{1} << Detail::space_of_device(0).value())) == 0)
+                        throw std::runtime_error("a run left bytes device 0 does not hold.");
+            }
 
             run.leftover = static_cast<std::size_t>(allocator->held());
             for (const GlobalHandle handle : handles)

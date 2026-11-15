@@ -61,7 +61,7 @@ namespace
     const MemorySpaceID K_DEVICE_1(2);
     constexpr std::size_t K_BYTES = 16;
 
-    /** @brief Builds a plain node per step, labelled by the step's kind, and keeps the steps. */
+    /** @brief Builds a plain node per step and effect, labelled by its kind, and keeps them. */
     class RecordingFactory final : public PlannedNodeFactory
     {
         public:
@@ -74,7 +74,17 @@ namespace
                 return node;
             }
 
-            std::vector<PlannedStep> steps; /**< Steps built, in order. */
+            [[nodiscard]] Result<sushi_ptr<Node>> make_effect(const PlannedEffect& effect) override
+            {
+                effects.push_back(effect);
+                sushi_ptr<Node> node = make_sushi<Node>();
+                node->metadata.name = effect.kind == PlannedEffectKind::Hold  ? "hold"
+                                    : effect.kind == PlannedEffectKind::Write ? "write" : "leave";
+                return node;
+            }
+
+            std::vector<PlannedStep> steps;     /**< Steps built, in order. */
+            std::vector<PlannedEffect> effects; /**< Effects built, in order. */
     };
 
     /** @brief Reports a pool of K_BYTES bytes, all of it free. */
@@ -156,8 +166,8 @@ namespace
 
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
-        // Allocate and copy before the reader, then the copy back and the free at the end.
-        ASSERT_EQ(nodes_.size(), 6U);
+        // Allocate, copy, copy back and free; then the hold, the two writes and the leave.
+        ASSERT_EQ(nodes_.size(), 10U);
         Node* const allocate = nodes_[2].get();
         Node* const copy = nodes_[3].get();
         Node* const copy_back = nodes_[4].get();
@@ -166,14 +176,29 @@ namespace
         EXPECT_TRUE(precedes(*writer_, copy));
         EXPECT_TRUE(precedes(*allocate, copy));
         EXPECT_TRUE(precedes(*copy, reader_.get()));
-        EXPECT_EQ(reader_->in_degree.load(), 3);
-        EXPECT_TRUE(precedes(*reader_, copy_back));
+        EXPECT_EQ(reader_->in_degree.load(), 4);
         EXPECT_TRUE(precedes(*copy_back, free));
+
+        Node* const hold = nodes_[6].get();
+        Node* const write_of_writer = nodes_[7].get();
+        Node* const write_of_reader = nodes_[8].get();
+        Node* const leave = nodes_[9].get();
+        EXPECT_STREQ(hold->metadata.name, "hold");
+        EXPECT_STREQ(leave->metadata.name, "leave");
+        EXPECT_TRUE(precedes(*hold, write_of_writer));
+        // A write is recorded after its node, and what follows on the buffer waits for the record.
+        EXPECT_TRUE(precedes(*writer_, write_of_writer));
+        EXPECT_TRUE(precedes(*write_of_writer, copy));
+        EXPECT_TRUE(precedes(*write_of_writer, reader_.get()));
+        EXPECT_TRUE(precedes(*reader_, write_of_reader));
+        EXPECT_TRUE(precedes(*write_of_reader, copy_back));
+        EXPECT_FALSE(precedes(*write_of_reader, reader_.get()));
+        EXPECT_TRUE(precedes(*free, leave));
         EXPECT_EQ(factory.steps[1].source, K_DEVICE_0);
         EXPECT_EQ(factory.steps[1].space, K_DEVICE_1);
     }
 
-    TEST_F(Small_PlanSplice, NodesOnOneDeviceAreLeftAsTheyAre)
+    TEST_F(Small_PlanSplice, NodesOnOneDeviceGetNoStepAndOnlyTheMapEffectsOfTheBuffer)
     {
         spaces_[reader_.get()] = K_DEVICE_0;
         CoherencePlanner planner(directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
@@ -182,8 +207,13 @@ namespace
 
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
-        EXPECT_EQ(nodes_.size(), 2U);
-        EXPECT_EQ(reader_->in_degree.load(), 1);
+        // The hold, a write before each node and the leave; no allocation, copy or free.
+        EXPECT_EQ(nodes_.size(), 6U);
+        EXPECT_TRUE(factory.steps.empty());
+        EXPECT_EQ(factory.effects.size(), 4U);
+        EXPECT_EQ(reader_->in_degree.load(), 2);
+        EXPECT_TRUE(precedes(*reader_, nodes_[4].get()));
+        EXPECT_TRUE(precedes(*nodes_[4], nodes_[5].get()));
     }
 
     TEST_F(Small_PlanSplice, AnEvictionRunsAfterTheNodesThatUsedTheInstanceAndBeforeTheAllocationItMakesRoomFor)
@@ -211,8 +241,8 @@ namespace
 
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
-        // The reader's buffer is the only copy on device 1, so it is written back and freed first.
-        ASSERT_EQ(nodes_.size(), 9U);
+        // The reader's sole copy on device 1 is written back and freed first; six effects follow the seven steps.
+        ASSERT_EQ(nodes_.size(), 15U);
         Node* const write_back = nodes_[5].get();
         Node* const free = nodes_[6].get();
         Node* const allocate_other = nodes_[7].get();

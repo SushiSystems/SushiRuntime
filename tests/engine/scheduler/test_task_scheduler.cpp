@@ -1047,6 +1047,36 @@ TEST_P(Medium_TaskSchedulerFunnel, AKernelNodeAfterAFailedSubmissionIsSkipped)
     EXPECT_EQ(scheduler_->funnelled_task_count(), funnelled_of_row(1));
 }
 
+/** @brief Tests that after a failure only a node marked runs_on_abort still runs its body. */
+TEST_P(Medium_TaskSchedulerFunnel, ANodeMarkedToRunOnAbortRunsAfterAFailureAndAnUnmarkedOneIsSkipped)
+{
+    std::atomic<int> runs{0};
+    const auto counting_host_node = [&runs](bool runs_on_abort)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->runs_on_abort = runs_on_abort;
+        node->checked_host_work = [&runs](sycl::queue&, const std::vector<sycl::event>&)
+            -> SushiRuntime::Result<sycl::event>
+        {
+            runs.fetch_add(1, std::memory_order_relaxed);
+            return sycl::event{};
+        };
+        return node;
+    };
+    const sushi_ptr<Node> refused = make_refusing_host_node("refused");
+    run(*refused);
+    ASSERT_TRUE(scheduler_->run_failed());
+    const sushi_ptr<Node> skipped = counting_host_node(false);
+    const sushi_ptr<Node> release = counting_host_node(true);
+
+    run(*skipped);
+    EXPECT_EQ(runs.load(), 0);
+    run(*release);
+
+    EXPECT_EQ(runs.load(), 1);
+}
+
 /** @brief Tests that stop() ends a pool whose funnel has gone idle after its run was disarmed. */
 TEST_P(Medium_TaskSchedulerFunnel, StopEndsAPoolWhoseFunnelIsIdle)
 {

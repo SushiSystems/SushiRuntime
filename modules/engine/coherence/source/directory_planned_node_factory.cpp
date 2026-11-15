@@ -104,8 +104,8 @@ namespace SushiRuntime
                 return sycl::event{};
             }
 
-            /** @brief Copies the bytes step names between the instances of its two spaces. */
-            [[nodiscard]] Result<sycl::event> copy_instance(const Memory::ResidencyView& directory,
+            /** @brief Copies the bytes step names, waits for the copy, then records it on the map. */
+            [[nodiscard]] Result<sycl::event> copy_instance(Memory::ResidencyView& directory,
                                                             TransferPath& path, const PlannedStep& step,
                                                             const std::vector<sycl::event>& dependencies)
             {
@@ -117,7 +117,16 @@ namespace SushiRuntime
                                             "coherence.copy: an instance the plan copies between is missing."});
                 const TransferRequest request{step.source, step.space, from + step.begin, to + step.begin,
                                               step.end - step.begin};
-                return path.copy(request, dependencies);
+                Result<sycl::event> copied = path.copy(request, dependencies);
+                if (!copied)
+                    return copied;
+                // The map is never ahead of the bytes: the copy is recorded once it has completed.
+                const Result<void> finished = wait_for({copied.value()});
+                if (!finished)
+                    return make_error(Error{finished.error()});
+                if (Memory::LockedCoherence map = directory.coherence(step.handle))
+                    map->record_copy(step.begin, step.end, step.space);
+                return sycl::event{};
             }
 
             /** @brief Drops the instance step names and frees what was allocated here. */
@@ -136,7 +145,35 @@ namespace SushiRuntime
                 static_cast<void>(directory.drop_instance(step.handle, step.space));
                 if (allocated)
                     allocator.release(step.space, address);
+                if (Memory::LockedCoherence map = directory.coherence(step.handle))
+                    map->drop_space(step.space);
                 return sycl::event{};
+            }
+
+            /** @brief Applies effect to the map of its buffer under the map's lock. */
+            void apply_effect(Memory::ResidencyView& directory, const PlannedEffect& effect)
+            {
+                Memory::LockedCoherence map = directory.coherence(effect.handle);
+                if (map == nullptr)
+                    return;
+                switch (effect.kind)
+                {
+                    case PlannedEffectKind::Hold:  map.enter_run(); break;
+                    case PlannedEffectKind::Write: map->record_write(effect.begin, effect.end, effect.space); break;
+                    case PlannedEffectKind::Leave: map.leave_run(); break;
+                }
+            }
+
+            /** @brief Returns the label a planned effect node of kind carries. */
+            const char* label_of(PlannedEffectKind kind) noexcept
+            {
+                switch (kind)
+                {
+                    case PlannedEffectKind::Hold:  return "coherence.hold";
+                    case PlannedEffectKind::Write: return "coherence.write";
+                    case PlannedEffectKind::Leave: return "coherence.leave";
+                }
+                return "coherence.effect";
             }
 
             /** @brief Returns the label a planned node of kind carries. */
@@ -209,6 +246,32 @@ namespace SushiRuntime
                     };
                     break;
             }
+            return node;
+        }
+
+        Result<sushi_ptr<Graph::Node>> DirectoryPlannedNodeFactory::make_effect(const PlannedEffect& effect)
+        {
+            sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+            node->metadata.name = label_of(effect.kind);
+            node->mode = Graph::Node::ExecutionMode::Host;
+            // The map is host state; the node needs no device and is not placed again.
+            node->cached_queue_index_ = 0;
+            node->locality_checked_ = true;
+            // A hold is taken and released on every outcome of the run, so a failed run holds nothing.
+            node->runs_on_abort = effect.kind != PlannedEffectKind::Write;
+
+            Memory::ResidencyView* const directory = directory_;
+            node->checked_host_work = [directory, effect](sycl::queue&, const std::vector<sycl::event>& dependencies)
+                -> Result<sycl::event>
+            {
+                const Result<void> waited = wait_for(dependencies);
+                if (!waited && effect.kind == PlannedEffectKind::Write)
+                    return make_error(Error{waited.error()});
+                apply_effect(*directory, effect);
+                if (!waited)
+                    return make_error(Error{waited.error()});
+                return sycl::event{};
+            };
             return node;
         }
     } // namespace Internal::Coherence

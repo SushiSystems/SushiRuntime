@@ -23,7 +23,7 @@
 
 /**
  * @file planned_node_factory.hpp
- * @brief Declares PlannedNodeFactory, the port that turns a planned step into a graph node.
+ * @brief Declares PlannedNodeFactory, the port that turns a planned step or effect into a graph node.
  * @see modules/engine/coherence/README.md
  * @author Mustafa Garip
  */
@@ -39,7 +39,7 @@ namespace SushiRuntime
 {
     namespace Internal::Coherence
     {
-        /** @brief Builds the graph node that carries out one planned step. */
+        /** @brief Builds the graph node that carries out one planned step or effect. */
         class PlannedNodeFactory
         {
             public:
@@ -50,6 +50,12 @@ namespace SushiRuntime
                  * @return The node, or the error that keeps the step from being built.
                  */
                 [[nodiscard]] virtual Result<sushi_ptr<Graph::Node>> make(const PlannedStep& step) = 0;
+
+                /**
+                 * @brief Returns a node, with no edge yet, that applies effect to the map when it runs.
+                 * @return The node, or the error that keeps the effect from being built.
+                 */
+                [[nodiscard]] virtual Result<sushi_ptr<Graph::Node>> make_effect(const PlannedEffect& effect) = 0;
         };
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

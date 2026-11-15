@@ -177,6 +177,17 @@ namespace SushiRuntime
             Result<void> restored = residency_.policy != nullptr ? settle_resident(plan) : restore(plan);
             if (!restored)
                 return make_error(std::move(restored.error()));
+
+            // Each buffer is held by the run from before node 0 to after every other node and step.
+            std::vector<PlannedEffect> effects;
+            effects.reserve(plan.effects.size() + 2 * buffers_.size());
+            for (const auto& entry : buffers_)
+                effects.push_back(PlannedEffect{PlannedEffectKind::Hold, entry.first, MemorySpaceID(), 0, 0, 0});
+            effects.insert(effects.end(), plan.effects.begin(), plan.effects.end());
+            for (const auto& entry : buffers_)
+                effects.push_back(PlannedEffect{PlannedEffectKind::Leave, entry.first, MemorySpaceID(), 0, 0,
+                                                PlannedStep::K_GRAPH_END});
+            plan.effects = std::move(effects);
             return plan;
         }
 
@@ -212,6 +223,8 @@ namespace SushiRuntime
                     return make_error(std::move(ensured.error()));
                 const std::pair<std::size_t, std::size_t> range = byte_range(write, state->size);
                 state->current.record_write(range.first, range.second, space);
+                plan.effects.push_back(PlannedEffect{PlannedEffectKind::Write, write.base, space, range.first,
+                                                     range.second, node});
             }
             return {};
         }
@@ -225,16 +238,21 @@ namespace SushiRuntime
                 return nullptr;
 
             const Memory::EntryView entry = directory_->inspect(handle);
-            Memory::CoherenceIntervals* const map = directory_->coherence(handle);
-            if (entry.status != HandleStatus::Ok || entry.size == 0 || map == nullptr)
+            if (entry.status != HandleStatus::Ok || entry.size == 0)
                 return nullptr;
-            // A buffer with no instance is planned only when its map covers its bytes, as a planned buffer's does.
-            if (entry.valid_spaces == 0 && map->size() != entry.size)
-                return nullptr;
-
-            // A buffer no plan has met yet holds its bytes on its home space.
-            if (map->size() != entry.size)
-                map->reset(entry.size, entry.home);
+            Memory::CoherenceIntervals snapshot;
+            {
+                Memory::LockedCoherence map = directory_->coherence(handle);
+                if (map == nullptr)
+                    return nullptr;
+                // A buffer with no instance is planned only when its map covers its bytes, as a planned buffer's does.
+                if (entry.valid_spaces == 0 && map->size() != entry.size)
+                    return nullptr;
+                // A buffer no plan has met yet holds its bytes on its home space; that is its present state.
+                if (map->size() != entry.size)
+                    map->reset(entry.size, entry.home);
+                snapshot = *map;
+            }
 
             BufferState state;
             state.size = entry.size;
@@ -242,8 +260,8 @@ namespace SushiRuntime
             state.instances = entry.valid_spaces;
             state.start_instances = entry.valid_spaces;
             state.home = entry.home;
-            state.start = *map;
-            state.current = *map;
+            state.start = snapshot;
+            state.current = std::move(snapshot);
             if (residency_.policy != nullptr)
                 for (std::uint32_t space = 0; space < planned_bytes_.size(); ++space)
                     if ((state.instances & (std::uint64_t{1} << space)) != 0)
@@ -468,9 +486,6 @@ namespace SushiRuntime
             }
 
             plan.steady = is_steady();
-            for (auto& entry : buffers_)
-                if (Memory::CoherenceIntervals* const map = directory_->coherence(entry.first))
-                    *map = entry.second.current;
             return {};
         }
 
