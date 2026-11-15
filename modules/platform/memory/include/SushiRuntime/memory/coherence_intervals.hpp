@@ -97,6 +97,16 @@ namespace SushiRuntime
                  */
                 void drop_space(MemorySpaceID space);
 
+                /**
+                 * @brief Retires the history of the map at a horizon.
+                 *
+                 * Drops every version to 0 and joins each run of intervals that hold the same
+                 * spaces. The valid spaces of every byte do not change, and a later write takes
+                 * a version above every one handed out before.
+                 * @return The number of intervals left.
+                 */
+                [[nodiscard]] std::size_t retire_history();
+
                 /** @brief Returns the intervals, sorted by begin. */
                 [[nodiscard]] const std::vector<CoherenceInterval>& intervals() const noexcept
                 {

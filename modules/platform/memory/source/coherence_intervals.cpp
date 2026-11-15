@@ -136,6 +136,16 @@ namespace SushiRuntime
             merge_around(0, intervals_.size() - 1);
         }
 
+        std::size_t CoherenceIntervals::retire_history()
+        {
+            if (intervals_.empty())
+                return 0;
+            for (CoherenceInterval& interval : intervals_)
+                interval.version = 0;
+            merge_around(0, intervals_.size() - 1);
+            return intervals_.size();
+        }
+
         std::uint64_t CoherenceIntervals::valid_spaces_at(std::size_t offset) const noexcept
         {
             const auto after = std::upper_bound(

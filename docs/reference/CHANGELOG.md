@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — memory: Added `ResidencyDirectory::retire_coherence_history()`, which joins runs of equal valid spaces and drops their versions so the interval maps stop growing with run length (GLOBAL_HANDLE H5).
 - 2026-11-15 — runtime: Changed placement so a node whose kernel captured raw addresses runs elsewhere only where those addresses hold; another SYCL context or a sibling's device USM is refused with `InvalidGraph` (GLOBAL_HANDLE H3).
 - 2026-11-15 — runtime: Changed a kernel pointer bind with no instance on the node's device to fail its verify, unless the home is host-visible memory (GLOBAL_HANDLE H3).
 - 2026-11-15 — coherence: Added the `Partitioner` port and a list-scheduling partitioner that ranks nodes, places each where it finishes earliest within its pool and holds the plan against the floor of the fill plans (GLOBAL_HANDLE H7).

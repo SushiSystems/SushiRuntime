@@ -157,4 +157,50 @@ namespace
         EXPECT_TRUE(map.intervals().empty());
         EXPECT_EQ(map.valid_spaces_at(0), 0U);
     }
+
+    TEST(Small_CoherenceIntervals, RetireHistoryJoinsRunsThatHoldTheSameSpaces)
+    {
+        CoherenceIntervals map;
+        map.reset(16, K_HOST);
+        map.record_write(0, 4, K_DEVICE);
+        map.record_copy(0, 4, K_HOST);
+        map.record_write(4, 8, K_DEVICE);
+        map.record_copy(4, 8, K_HOST);
+        ASSERT_EQ(map.intervals().size(), 3U);
+
+        EXPECT_EQ(map.retire_history(), 2U);
+        ASSERT_EQ(map.intervals().size(), 2U);
+        EXPECT_EQ(map.intervals()[0].end, 8U);
+        EXPECT_EQ(map.intervals()[0].version, 0U);
+        EXPECT_EQ(map.intervals()[0].valid_spaces, bit(K_HOST) | bit(K_DEVICE));
+        EXPECT_EQ(map.intervals()[1].valid_spaces, bit(K_HOST));
+        EXPECT_EQ(map.valid_spaces_at(0), bit(K_HOST) | bit(K_DEVICE));
+        EXPECT_EQ(map.valid_spaces_at(7), bit(K_HOST) | bit(K_DEVICE));
+        EXPECT_EQ(map.valid_spaces_at(8), bit(K_HOST));
+        EXPECT_EQ(map.valid_spaces_at(15), bit(K_HOST));
+    }
+
+    TEST(Small_CoherenceIntervals, RetireHistoryIsIdempotentAndEmptyMapsStayEmpty)
+    {
+        CoherenceIntervals map;
+        EXPECT_EQ(map.retire_history(), 0U);
+        map.reset(16, K_HOST);
+        map.record_copy(0, 8, K_DEVICE);
+        EXPECT_EQ(map.retire_history(), 2U);
+        EXPECT_EQ(map.retire_history(), 2U);
+        EXPECT_EQ(map.size(), 16U);
+    }
+
+    TEST(Small_CoherenceIntervals, AWriteAfterRetireTakesANewVersion)
+    {
+        CoherenceIntervals map;
+        map.reset(16, K_HOST);
+        map.record_copy(0, 8, K_DEVICE);
+        EXPECT_EQ(map.retire_history(), 2U);
+
+        const std::uint64_t version = map.record_write(0, 8, K_OTHER_DEVICE);
+        EXPECT_NE(version, 0U);
+        EXPECT_EQ(map.valid_spaces_at(0), bit(K_OTHER_DEVICE));
+        EXPECT_EQ(map.valid_spaces_at(8), bit(K_HOST));
+    }
 } // namespace

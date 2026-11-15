@@ -54,6 +54,48 @@ namespace
         return outcome.handle;
     }
 
+    /** @brief Space 0 plays the host and space 1 the device in the write and read pattern. */
+    const MemorySpaceID K_HOST_SPACE(0);
+    const MemorySpaceID K_DEVICE_SPACE(1);
+    constexpr std::uint64_t K_HOST_MASK = 1U;
+    constexpr std::uint64_t K_DEVICE_MASK = 2U;
+
+    /** @brief Steps of the pattern; step s writes byte s, so the buffer holds one byte more. */
+    constexpr std::size_t K_STEPS = 100000;
+    constexpr std::size_t K_BUFFER_BYTES = K_STEPS + 1;
+
+    /** @brief A horizon falls after every K_HORIZON_EVERY steps. */
+    constexpr std::size_t K_HORIZON_EVERY = 100;
+
+    /** @brief Writes one byte on writer, then copies it to reader, as one step does. */
+    void write_then_read(CoherenceIntervals& map, std::size_t byte, MemorySpaceID writer,
+                         MemorySpaceID reader)
+    {
+        map.record_write(byte, byte + 1, writer);
+        map.record_copy(byte, byte + 1, reader);
+    }
+
+    /**
+     * @brief Runs steps [first, last) of the two-buffer pattern, retiring history at each horizon
+     *        when horizons is set.
+     * @return The interval count the last horizon reached, or 0 when no horizon fell in the range.
+     */
+    std::size_t run_steps(ResidencyDirectory& directory, GlobalHandle first_buffer,
+                          GlobalHandle second_buffer, std::size_t first, std::size_t last,
+                          bool horizons)
+    {
+        std::size_t intervals = 0;
+        for (std::size_t step = first; step < last; ++step)
+        {
+            write_then_read(*directory.coherence(first_buffer), step, K_HOST_SPACE, K_DEVICE_SPACE);
+            write_then_read(*directory.coherence(second_buffer), step, K_DEVICE_SPACE,
+                            K_HOST_SPACE);
+            if (horizons && (step + 1) % K_HORIZON_EVERY == 0)
+                intervals = directory.retire_coherence_history();
+        }
+        return intervals;
+    }
+
     TEST(Small_ResidencyDirectory, MintResolveAndRetire)
     {
         ResidencyDirectory directory(K_UNIVERSE);
@@ -250,5 +292,41 @@ namespace
         const GlobalHandle reused = mint_buffer(directory);
         ASSERT_NE(directory.coherence(reused), nullptr);
         EXPECT_TRUE(directory.coherence(reused)->intervals().empty());
+    }
+
+    TEST(Small_ResidencyDirectory, WithoutHorizonsEveryStepAddsAnInterval)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle first = mint_buffer(directory);
+        const GlobalHandle second = mint_buffer(directory);
+        directory.coherence(first)->reset(K_BUFFER_BYTES, K_HOST_SPACE);
+        directory.coherence(second)->reset(K_BUFFER_BYTES, K_HOST_SPACE);
+
+        run_steps(directory, first, second, 0, 1000, false);
+        // Each byte carries its own version, so no two written neighbours join.
+        EXPECT_GT(directory.coherence(first)->intervals().size(), 1000U);
+    }
+
+    TEST(Medium_ResidencyDirectory, CoherenceHistoryStaysFlatOverOneHundredThousandSteps)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle first = mint_buffer(directory);
+        const GlobalHandle second = mint_buffer(directory);
+        directory.coherence(first)->reset(K_BUFFER_BYTES, K_HOST_SPACE);
+        directory.coherence(second)->reset(K_BUFFER_BYTES, K_HOST_SPACE);
+
+        const std::size_t after_one_thousand = run_steps(directory, first, second, 0, 1000, true);
+        const std::size_t after_one_hundred_thousand =
+            run_steps(directory, first, second, 1000, K_STEPS, true);
+
+        EXPECT_EQ(after_one_thousand, after_one_hundred_thousand);
+        // Each buffer is one written prefix on host and device, then one untouched host tail.
+        EXPECT_EQ(after_one_hundred_thousand, 4U);
+        EXPECT_EQ(directory.coherence(first)->valid_spaces_at(K_STEPS - 1),
+                  K_HOST_MASK | K_DEVICE_MASK);
+        EXPECT_EQ(directory.coherence(first)->valid_spaces_at(K_STEPS), K_HOST_MASK);
+        EXPECT_EQ(directory.coherence(second)->valid_spaces_at(K_STEPS - 1),
+                  K_HOST_MASK | K_DEVICE_MASK);
+        EXPECT_EQ(directory.coherence(second)->valid_spaces_at(K_STEPS), K_HOST_MASK);
     }
 } // namespace

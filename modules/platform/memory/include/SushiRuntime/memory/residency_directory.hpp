@@ -157,6 +157,16 @@ namespace SushiRuntime
                 /** @brief Returns the coherence map of a live handle, or null when it is not live. */
                 [[nodiscard]] const CoherenceIntervals* coherence(GlobalHandle handle) const noexcept override;
 
+                /**
+                 * @brief Retires the coherence history of every live handle at a horizon.
+                 *
+                 * Calls CoherenceIntervals::retire_history() on each live entry, under the writer
+                 * mutex. A horizon node calls it between runs, when no plan is being made, since
+                 * the maps take no lock.
+                 * @return The intervals left across the live handles.
+                 */
+                [[nodiscard]] std::size_t retire_coherence_history();
+
                 /** @brief Returns the address of the entry of slot, or null when its chunk is absent. */
                 [[nodiscard]] const void* entry_address(std::uint32_t slot) const noexcept;
 

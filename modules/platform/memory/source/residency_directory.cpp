@@ -323,6 +323,19 @@ namespace SushiRuntime
             return entry ? &entry->coherence : nullptr;
         }
 
+        std::size_t ResidencyDirectory::retire_coherence_history()
+        {
+            std::lock_guard<std::mutex> lock(writer_mutex_);
+            std::size_t intervals = 0;
+            for (std::uint32_t slot = 0; slot < next_fresh_slot_; ++slot)
+            {
+                Entry* const entry = find_entry(slot);
+                if (entry && entry->live.load(std::memory_order_relaxed))
+                    intervals += entry->coherence.retire_history();
+            }
+            return intervals;
+        }
+
         ErrorCode error_code_of(HandleStatus status) noexcept
         {
             switch (status)
