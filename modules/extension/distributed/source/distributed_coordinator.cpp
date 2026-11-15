@@ -420,7 +420,7 @@ namespace SushiRuntime
                 if (sent != SendStatus::Queued)
                     SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "pull of buffer {} version {} by worker {} was not queued "
                                  "(status {}); the worker's pull timeout fails the task",
-                                 request.id.value, request.version, peer.value,
+                                 request.id.to_low_word(), request.version, peer.value,
                                  static_cast<int>(sent));
             }
 
@@ -839,13 +839,13 @@ namespace SushiRuntime
 
             try
             {
-                const std::vector<GlobalBufferID> released = impl.buffers.unshare_retired();
+                const std::vector<GlobalHandle> released = impl.buffers.unshare_retired();
                 if (released.empty())
                     return;
 
                 std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);
-                for (const GlobalBufferID id : released)
+                for (const GlobalHandle id : released)
                 {
                     Wire::BufferReleaseMessage release;
                     release.id = id;

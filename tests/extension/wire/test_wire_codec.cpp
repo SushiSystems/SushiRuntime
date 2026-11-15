@@ -51,6 +51,8 @@
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "support/made_up_handle.hpp"
+
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -84,7 +86,9 @@ namespace
     BufferHandle random_handle(std::mt19937_64& random)
     {
         BufferHandle handle;
-        handle.id.value = random();
+        const std::uint64_t high = random();
+        const std::uint64_t low = random();
+        handle.id = GlobalHandle::from_words(high, low);
         handle.version = static_cast<std::uint32_t>(random());
         handle.size_bytes = random();
         return handle;
@@ -202,7 +206,7 @@ namespace
         BufferChunkMessage chunk;
         chunk.purpose = ChunkPurpose::TaskOutput;
         chunk.task_id = 11;
-        chunk.handle = BufferHandle{GlobalBufferID{3}, 2, chunk_data.size()};
+        chunk.handle = BufferHandle{TestSupport::made_up_handle(3), 2, chunk_data.size()};
         chunk.data = view_of(chunk_data);
 
         std::vector<Sample> samples;

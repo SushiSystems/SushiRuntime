@@ -23,7 +23,7 @@
 
 /**
  * @file wire_messages.cpp
- * @brief Encodes and decodes the sixteen messages of protocol version 4.
+ * @brief Encodes and decodes the sixteen messages of protocol version 5.
  * @author Mustafa Garip
  * @see modules/extension/wire/README.md
  */
@@ -37,10 +37,25 @@ namespace SushiRuntime::Distributed::Wire
         /** @brief Holds the encoded size of one operation identifier. */
         constexpr std::size_t K_OP_ID_BYTES = 4;
 
-        /** @brief Appends a handle as id, version, size: 20 bytes. */
+        /** @brief Appends a global handle as its high word then its low word: 16 bytes. */
+        void put_global_handle(FieldWriter& writer, GlobalHandle handle)
+        {
+            writer.put_u64(handle.to_high_word());
+            writer.put_u64(handle.to_low_word());
+        }
+
+        /** @brief Reads a global handle written by put_global_handle(). */
+        GlobalHandle read_global_handle(FieldReader& reader) noexcept
+        {
+            const std::uint64_t high = reader.read_u64();
+            const std::uint64_t low = reader.read_u64();
+            return GlobalHandle::from_words(high, low);
+        }
+
+        /** @brief Appends a handle as id, version, size: 28 bytes. */
         void put_handle(FieldWriter& writer, const BufferHandle& handle)
         {
-            writer.put_u64(handle.id.value);
+            put_global_handle(writer, handle.id);
             writer.put_u32(handle.version);
             writer.put_u64(handle.size_bytes);
         }
@@ -49,7 +64,7 @@ namespace SushiRuntime::Distributed::Wire
         BufferHandle read_handle(FieldReader& reader) noexcept
         {
             BufferHandle handle;
-            handle.id.value = reader.read_u64();
+            handle.id = read_global_handle(reader);
             handle.version = reader.read_u32();
             handle.size_bytes = reader.read_u64();
             return handle;
@@ -340,7 +355,7 @@ namespace SushiRuntime::Distributed::Wire
     CodecStatus BufferRequestMessage::encode(std::vector<std::byte>& out) const
     {
         FieldWriter writer(out);
-        writer.put_u64(id.value);
+        put_global_handle(writer, id);
         writer.put_u32(version);
         return writer.status();
     }
@@ -349,7 +364,7 @@ namespace SushiRuntime::Distributed::Wire
                                               BufferRequestMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.read_u64();
+        out.id = read_global_handle(reader);
         out.version = reader.read_u32();
         return reader.finish();
     }
@@ -380,7 +395,7 @@ namespace SushiRuntime::Distributed::Wire
     CodecStatus BufferAbortMessage::encode(std::vector<std::byte>& out) const
     {
         FieldWriter writer(out);
-        writer.put_u64(id.value);
+        put_global_handle(writer, id);
         writer.put_u32(version);
         writer.put_u64(task_id);
         writer.put_enum(reason);
@@ -391,7 +406,7 @@ namespace SushiRuntime::Distributed::Wire
                                             BufferAbortMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.read_u64();
+        out.id = read_global_handle(reader);
         out.version = reader.read_u32();
         out.task_id = reader.read_u64();
         out.reason = reader.read_enum(AbortReason::Stale, AbortReason::Gone);
@@ -401,7 +416,7 @@ namespace SushiRuntime::Distributed::Wire
     CodecStatus BufferReleaseMessage::encode(std::vector<std::byte>& out) const
     {
         FieldWriter writer(out);
-        writer.put_u64(id.value);
+        put_global_handle(writer, id);
         return writer.status();
     }
 
@@ -409,7 +424,7 @@ namespace SushiRuntime::Distributed::Wire
                                               BufferReleaseMessage& out)
     {
         FieldReader reader(payload);
-        out.id.value = reader.read_u64();
+        out.id = read_global_handle(reader);
         return reader.finish();
     }
 

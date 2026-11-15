@@ -23,21 +23,41 @@
 
 /**
  * @file test_buffer_handle.cpp
- * @brief Tests GlobalBufferID: only id 0 names no buffer.
+ * @brief Tests BufferHandle: it names its buffer by a GlobalHandle, and a default one names none.
  * @see tests/extension/transport/README.md
  * @author Mustafa Garip
  */
 
+#include <cstdint>
+
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that id 0 names no buffer and a non-zero id does. */
-TEST(Small_BufferHandle, OnlyIDZeroIsInvalid)
+/** @brief Tests that a default buffer handle names no buffer and holds no version or size. */
+TEST(Small_BufferHandle, ADefaultHandleNamesNoBuffer)
 {
-    EXPECT_FALSE(GlobalBufferID{0}.valid());
-    EXPECT_TRUE(GlobalBufferID{3}.valid());
+    const BufferHandle handle;
+
+    EXPECT_TRUE(handle.id.is_null());
+    EXPECT_EQ(handle.version, 0u);
+    EXPECT_EQ(handle.size_bytes, 0u);
+}
+
+/** @brief Tests that a buffer handle keeps all 128 bits of the global handle it names. */
+TEST(Small_BufferHandle, AHandleKeepsTheWholeGlobalHandle)
+{
+    const GlobalHandle named(0x11223344u, 0x0506u, HandleKind::Buffer, HandleFlags::HostOnly, 7u,
+                             0x0A0B0C0Du);
+    BufferHandle handle;
+    handle.id = named;
+
+    EXPECT_FALSE(handle.id.is_null());
+    EXPECT_EQ(handle.id, named);
+    EXPECT_EQ(handle.id.to_high_word(), named.to_high_word());
+    EXPECT_EQ(handle.id.to_low_word(), named.to_low_word());
 }

@@ -37,7 +37,7 @@ module `transport`; the offload policy and the cluster's statistics are the publ
 | `worker_options_parser.hpp` | `parse_worker_options()`, `WorkerOptionsResult`, `WorkerOptionsStatus`, `EnvironmentReader` |
 | `registered_task.hpp` | `record_registered_task()` |
 
-`MessageType`, `GlobalBufferID` and `BufferHandle` are also reachable as `Wire::` names, which the
+`MessageType` and `BufferHandle` are also reachable as `Wire::` names, which the
 codec of `wire` uses.
 
 `distributed.hpp` includes every header of the table except `worker_options_parser.hpp`, and the headers of `transport` and
@@ -114,7 +114,7 @@ new master, binds it to `RuntimeContext::offload_sink()` and calls
 DistributedCoordinator::start(). Only when that returns `TransportStatus::Ok` does it stop and remove the
 coordinator the runtime held before, set the release observer and install the new coordinator.
 start() starts the transport, then the monitor, and logs
-`distributed master listening on 127.0.0.1:7000, protocol v4, authentication off`. The endpoint is
+`distributed master listening on 127.0.0.1:7000, protocol v5, authentication off`. The endpoint is
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
 

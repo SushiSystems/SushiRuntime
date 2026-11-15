@@ -78,8 +78,8 @@ class SharedBufferRig
             return buffers_.share(table_.place(address), size_bytes);
         }
 
-        /** @brief Stops sharing the memory at @p address; returns the id it had. */
-        SushiRuntime::Distributed::GlobalBufferID unshare(void* address)
+        /** @brief Stops sharing the memory at @p address; returns the handle it had. */
+        SushiRuntime::GlobalHandle unshare(void* address)
         {
             return buffers_.unshare(table_.place(address));
         }

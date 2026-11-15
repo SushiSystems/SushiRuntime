@@ -36,6 +36,8 @@
 
 #include <SushiRuntime/offload_coordination/offload_handles.hpp>
 
+#include "support/made_up_handle.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
@@ -43,13 +45,13 @@ using namespace SushiRuntime::Distributed;
 TEST(Small_OffloadHandles, InputsThenOutputs)
 {
     OffloadHandles handles;
-    handles.handles = {BufferHandle{GlobalBufferID{1}, 1, 8}, BufferHandle{GlobalBufferID{2}, 1, 8},
-                       BufferHandle{GlobalBufferID{3}, 1, 8}};
+    handles.handles = {BufferHandle{TestSupport::made_up_handle(1), 1, 8}, BufferHandle{TestSupport::made_up_handle(2), 1, 8},
+                       BufferHandle{TestSupport::made_up_handle(3), 1, 8}};
     handles.input_count = 1;
     ASSERT_EQ(handles.inputs().size(), 1u);
-    EXPECT_EQ(handles.inputs()[0].id, GlobalBufferID{1});
+    EXPECT_EQ(handles.inputs()[0].id, TestSupport::made_up_handle(1));
     ASSERT_EQ(handles.outputs().size(), 2u);
-    EXPECT_EQ(handles.outputs()[1].id, GlobalBufferID{3});
+    EXPECT_EQ(handles.outputs()[1].id, TestSupport::made_up_handle(3));
     handles.outputs()[0].version = 4;
     EXPECT_EQ(handles.handles[1].version, 4u) << "the outputs view writes the handle itself";
 }

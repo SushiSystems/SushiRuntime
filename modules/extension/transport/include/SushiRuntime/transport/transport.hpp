@@ -279,7 +279,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Moves frames of protocol version 4 between this process and its peers.
+         * @brief Moves frames of protocol version 5 between this process and its peers.
          *
          * One object serves one session: it is started once, by the coordinator or the worker
          * agent that is its only event receiver. send(), send_stream(), close_peer() and

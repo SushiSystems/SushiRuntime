@@ -71,7 +71,7 @@ namespace SushiRuntime
 
         bool WorkerBufferCache::evict_one()
         {
-            for (const std::uint64_t id : recency_)
+            for (const GlobalHandle id : recency_)
             {
                 const Live::iterator position = live_.find(id);
                 if (position->second.pins > 0)
@@ -109,15 +109,15 @@ namespace SushiRuntime
             entry.data = data;
             entry.size_bytes = size;
             entry.version = handle.version;
-            entry.recency = recency_.insert(recency_.end(), handle.id.value);
+            entry.recency = recency_.insert(recency_.end(), handle.id);
             bytes_.fetch_add(size, std::memory_order_relaxed);
-            return &live_.insert_or_assign(handle.id.value, std::move(entry)).first->second;
+            return &live_.insert_or_assign(handle.id, std::move(entry)).first->second;
         }
 
-        WorkerBufferCache::Entry* WorkerBufferCache::find_transfer(GlobalBufferID id,
+        WorkerBufferCache::Entry* WorkerBufferCache::find_transfer(GlobalHandle id,
                                                                    std::uint32_t version)
         {
-            const Live::iterator position = live_.find(id.value);
+            const Live::iterator position = live_.find(id);
             if (position != live_.end() && position->second.version == version &&
                 position->second.transfer != Transfer::None)
                 return &position->second;
@@ -131,7 +131,7 @@ namespace SushiRuntime
             return nullptr;
         }
 
-        WorkerBufferCache::Entry* WorkerBufferCache::find_detached(GlobalBufferID id)
+        WorkerBufferCache::Entry* WorkerBufferCache::find_detached(GlobalHandle id)
         {
             for (Entry& entry : detached_)
             {
@@ -158,7 +158,7 @@ namespace SushiRuntime
             }
             else if (!entry.valid && entry.transfer == Transfer::None)
             {
-                retire(live_.find(entry.id.value));
+                retire(live_.find(entry.id));
             }
         }
 
@@ -188,7 +188,7 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex_);
             Entry* entry = nullptr;
 
-            const Live::iterator position = live_.find(handle.id.value);
+            const Live::iterator position = live_.find(handle.id);
             if (position != live_.end())
             {
                 Entry& found = position->second;
@@ -291,7 +291,7 @@ namespace SushiRuntime
             bool discarded = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                const Live::iterator position = live_.find(chunk.handle.id.value);
+                const Live::iterator position = live_.find(chunk.handle.id);
                 if (position == live_.end())
                     return;
 
@@ -332,15 +332,15 @@ namespace SushiRuntime
             if (discarded)
                 SR_LOG_DEBUG(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "pull of buffer {} version {} discarded: chunk at offset {} with {} "
                              "bytes does not continue the transfer",
-                             chunk.handle.id.value, chunk.handle.version, chunk.offset,
+                             chunk.handle.id.to_low_word(), chunk.handle.version, chunk.offset,
                              chunk.data.size());
         }
 
-        void WorkerBufferCache::abort_transfer(GlobalBufferID id, std::uint32_t version)
+        void WorkerBufferCache::abort_transfer(GlobalHandle id, std::uint32_t version)
         {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                const Live::iterator position = live_.find(id.value);
+                const Live::iterator position = live_.find(id);
                 if (position == live_.end())
                     return;
 
@@ -358,7 +358,7 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex_);
             Entry* entry = nullptr;
 
-            const Live::iterator position = live_.find(handle.id.value);
+            const Live::iterator position = live_.find(handle.id);
             if (position != live_.end())
             {
                 if (position->second.size_bytes == handle.size_bytes)
@@ -381,7 +381,7 @@ namespace SushiRuntime
         void WorkerBufferCache::commit_output(const BufferHandle& handle)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
-            const Live::iterator position = live_.find(handle.id.value);
+            const Live::iterator position = live_.find(handle.id);
             if (position == live_.end())
                 return;
 
@@ -390,7 +390,7 @@ namespace SushiRuntime
             touch(position->second);
         }
 
-        void WorkerBufferCache::unpin(GlobalBufferID id) noexcept
+        void WorkerBufferCache::unpin(GlobalHandle id) noexcept
         {
             const std::lock_guard<std::mutex> lock(mutex_);
 
@@ -401,16 +401,16 @@ namespace SushiRuntime
                 return;
             }
 
-            const Live::iterator position = live_.find(id.value);
+            const Live::iterator position = live_.find(id);
             if (position != live_.end())
                 drop_pin(position->second);
         }
 
-        void WorkerBufferCache::release(GlobalBufferID id)
+        void WorkerBufferCache::release(GlobalHandle id)
         {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                const Live::iterator position = live_.find(id.value);
+                const Live::iterator position = live_.find(id);
                 if (position == live_.end())
                     return;
 

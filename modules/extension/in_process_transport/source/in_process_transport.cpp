@@ -23,7 +23,7 @@
 
 /**
  * @file in_process_transport.cpp
- * @brief Moves version 4 frames between endpoints of one process, through a fault policy.
+ * @brief Moves version 5 frames between endpoints of one process, through a fault policy.
  * @author Mustafa Garip
  * @see modules/extension/in_process_transport/README.md
  */

@@ -61,7 +61,7 @@ namespace SushiRuntime
         /**
          * @brief Gives each shared buffer a version and copies its bytes; a buffer is a GlobalHandle.
          *
-         * The wire id of a buffer is wire_id_of() of its handle. The set keeps no address: a
+         * The wire carries the handle itself. The set keeps no address: a
          * copy asks the HandleResolver where the instance is. One mutex, held only inside the
          * members, covers each copy, so a buffer cannot be unshared in the middle of one.
          */
@@ -86,28 +86,25 @@ namespace SushiRuntime
                 /**
                  * @brief Shares a buffer; one already shared keeps its version.
                  * @param handle A live handle whose instance the host can read.
-                 * @return The buffer's wire handle; an invalid id for the null handle.
+                 * @return The buffer's wire handle; the null handle as id for the null handle.
                  */
                 BufferHandle share(GlobalHandle handle, std::uint64_t size_bytes);
 
                 /**
                  * @brief Stops sharing a buffer, under the mutex, so no copy is in progress when
                  *        this returns.
-                 * @return The id the buffer had, or an invalid id when it was not shared.
+                 * @return The handle, or the null handle when it was not shared.
                  */
-                GlobalBufferID unshare(GlobalHandle handle) noexcept;
+                GlobalHandle unshare(GlobalHandle handle) noexcept;
 
                 /**
                  * @brief Stops sharing every buffer whose handle was retired.
-                 * @return The ids of the buffers dropped.
+                 * @return The handles of the buffers dropped, in handle order.
                  */
-                std::vector<GlobalBufferID> unshare_retired();
+                std::vector<GlobalHandle> unshare_retired();
 
                 /** @brief Returns the current wire handle of a buffer, or nothing. */
                 [[nodiscard]] std::optional<BufferHandle> lookup(GlobalHandle handle) const;
-
-                /** @brief Returns the current wire handle of an id, or nothing. */
-                [[nodiscard]] std::optional<BufferHandle> lookup_by_id(GlobalBufferID id) const;
 
                 /**
                  * @brief Writes the current wire handle of each buffer into @p out, under one lock.
@@ -136,7 +133,7 @@ namespace SushiRuntime
                  * @brief Copies bytes out of a buffer while it is at exactly @p version.
                  * @param out Its size is the number of bytes wanted; 0 only checks.
                  */
-                [[nodiscard]] BufferAccessStatus read(GlobalBufferID id, std::uint32_t version,
+                [[nodiscard]] BufferAccessStatus read(GlobalHandle id, std::uint32_t version,
                                                       std::uint64_t offset,
                                                       SushiRuntime::span<std::byte> out) const;
 
@@ -144,7 +141,7 @@ namespace SushiRuntime
                  * @brief Copies bytes into a buffer while it is at exactly @p version; the
                  *        second half of the output fence. The version does not change.
                  */
-                [[nodiscard]] BufferAccessStatus write(GlobalBufferID id, std::uint32_t version,
+                [[nodiscard]] BufferAccessStatus write(GlobalHandle id, std::uint32_t version,
                                                        std::uint64_t offset,
                                                        SushiRuntime::span<const std::byte> in);
 
@@ -152,10 +149,7 @@ namespace SushiRuntime
                 /** @brief Holds which buffer an entry is and its current wire handle. */
                 struct Entry
                 {
-                    /** @brief The handle that names the buffer. */
-                    GlobalHandle handle;
-
-                    /** @brief Id, current version and size. */
+                    /** @brief Handle, current version and size. */
                     BufferHandle wire;
                 };
 
@@ -174,8 +168,8 @@ namespace SushiRuntime
                 /// @brief Guards every member below; held across each copy.
                 mutable std::mutex mutex_;
 
-                /// @brief Entries by the value of their wire id.
-                std::unordered_map<std::uint64_t, Entry> by_id_;
+                /// @brief Entries by the handle that names the buffer.
+                std::unordered_map<GlobalHandle, Entry> by_handle_;
         };
 
     } // namespace Distributed

@@ -23,7 +23,7 @@
 
 /**
  * @file wire_messages.hpp
- * @brief Declares the sixteen messages of protocol version 4, each with encode and decode.
+ * @brief Declares the sixteen messages of protocol version 5, each with encode and decode.
  * @author Mustafa Garip
  * @see modules/extension/wire/README.md
  */
@@ -44,6 +44,7 @@
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/operating_system.hpp>
 
+#include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 
@@ -58,7 +59,7 @@ namespace SushiRuntime::Distributed::Wire
     inline constexpr std::size_t K_PROOF_BYTES = 32;
 
     /** @brief Holds the encoded size of a BufferHandle: id, version, size. */
-    inline constexpr std::size_t K_BUFFER_HANDLE_BYTES = 20;
+    inline constexpr std::size_t K_BUFFER_HANDLE_BYTES = 28;
 
     /**
      * @brief Names why a handshake is refused.
@@ -415,7 +416,7 @@ namespace SushiRuntime::Distributed::Wire
         decode(SushiRuntime::span<const std::byte> payload, BufferRequestMessage& out);
 
         /** @brief Holds the buffer's identifier. */
-        GlobalBufferID id;
+        GlobalHandle id;
 
         /** @brief Holds the version the worker needs. */
         std::uint32_t version = 0;
@@ -474,7 +475,7 @@ namespace SushiRuntime::Distributed::Wire
         decode(SushiRuntime::span<const std::byte> payload, BufferAbortMessage& out);
 
         /** @brief Holds the buffer's identifier. */
-        GlobalBufferID id;
+        GlobalHandle id;
 
         /** @brief Holds the version whose transfer stops. */
         std::uint32_t version = 0;
@@ -502,7 +503,7 @@ namespace SushiRuntime::Distributed::Wire
         decode(SushiRuntime::span<const std::byte> payload, BufferReleaseMessage& out);
 
         /** @brief Holds the buffer's identifier. */
-        GlobalBufferID id;
+        GlobalHandle id;
     };
 
     /**

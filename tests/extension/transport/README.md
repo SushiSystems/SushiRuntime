@@ -21,11 +21,12 @@ every test is small.
 
 ## test_buffer_handle.cpp
 
-The file tests `GlobalBufferID`: the invalid id 0.
+The file tests `BufferHandle`: it names its buffer by a `GlobalHandle`.
 
 | Test | What it proves |
 | --- | --- |
-| `OnlyIDZeroIsInvalid` | Id 0 is invalid and a non-zero id is valid. |
+| `ADefaultHandleNamesNoBuffer` | A default handle has the null global handle, version 0 and size 0. |
+| `AHandleKeepsTheWholeGlobalHandle` | A handle that names a global handle returns both of its 64-bit words unchanged. |
 
 ## test_message_type.cpp
 

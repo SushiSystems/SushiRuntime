@@ -51,6 +51,8 @@
 
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 
+#include "support/made_up_handle.hpp"
+
 using namespace SushiRuntime;
 
 /** @brief Tests PendingTasks: ownership of offloaded nodes, the removals and the three reapers. */
@@ -94,7 +96,7 @@ namespace PendingTasksTests
         BufferHandle output_of(std::uint64_t id, std::uint32_t version)
         {
             BufferHandle handle;
-            handle.id = GlobalBufferID{id};
+            handle.id = TestSupport::made_up_handle(id);
             handle.version = version;
             handle.size_bytes = 64;
             return handle;
@@ -199,9 +201,9 @@ namespace PendingTasksTests
         EXPECT_EQ(taken->node, node.get());
         EXPECT_EQ(taken->worker, K_WORKER);
         ASSERT_EQ(taken->outputs.size(), 2u);
-        EXPECT_EQ(taken->outputs[0].id, GlobalBufferID{7});
+        EXPECT_EQ(taken->outputs[0].id, TestSupport::made_up_handle(7));
         EXPECT_EQ(taken->outputs[0].version, 3u);
-        EXPECT_EQ(taken->outputs[1].id, GlobalBufferID{8});
+        EXPECT_EQ(taken->outputs[1].id, TestSupport::made_up_handle(8));
         EXPECT_EQ(taken->outputs[1].size_bytes, 64u);
     }
 
@@ -311,7 +313,7 @@ namespace PendingTasksTests
 
         EXPECT_FALSE(table.take(1, K_OTHER_WORKER).has_value());
         EXPECT_FALSE(table.acknowledge(1, K_OTHER_WORKER));
-        EXPECT_FALSE(table.expects_output(1, K_OTHER_WORKER, GlobalBufferID{7}, 3));
+        EXPECT_FALSE(table.expects_output(1, K_OTHER_WORKER, TestSupport::made_up_handle(7), 3));
         EXPECT_EQ(table.size(), 1u);
         std::vector<PendingTask> returned;
         table.take_for_worker(K_OTHER_WORKER, returned);
@@ -330,13 +332,13 @@ namespace PendingTasksTests
                                  span<const BufferHandle>(outputs.data(), outputs.size()),
                                  at(milliseconds(0))));
 
-        EXPECT_TRUE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 3));
-        EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 2));
-        EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 4));
-        EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{8}, 3));
-        EXPECT_FALSE(table.expects_output(2, K_WORKER, GlobalBufferID{7}, 3));
+        EXPECT_TRUE(table.expects_output(1, K_WORKER, TestSupport::made_up_handle(7), 3));
+        EXPECT_FALSE(table.expects_output(1, K_WORKER, TestSupport::made_up_handle(7), 2));
+        EXPECT_FALSE(table.expects_output(1, K_WORKER, TestSupport::made_up_handle(7), 4));
+        EXPECT_FALSE(table.expects_output(1, K_WORKER, TestSupport::made_up_handle(8), 3));
+        EXPECT_FALSE(table.expects_output(2, K_WORKER, TestSupport::made_up_handle(7), 3));
         ASSERT_TRUE(table.take(1, K_WORKER).has_value());
-        EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 3));
+        EXPECT_FALSE(table.expects_output(1, K_WORKER, TestSupport::made_up_handle(7), 3));
     }
 
     TEST(Small_PendingTasks, AnUnacknowledgedTaskIsReapedOneMillisecondAfterTheLimit)

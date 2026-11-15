@@ -127,7 +127,7 @@ namespace SushiRuntime
                 void accept_chunk(const Wire::BufferChunkMessage& chunk, bool last_chunk);
 
                 /** @brief Ends an open transfer and wakes its waiter with Aborted. */
-                void abort_transfer(GlobalBufferID id, std::uint32_t version);
+                void abort_transfer(GlobalHandle id, std::uint32_t version);
 
                 /**
                  * @brief Pins memory for an output, reusing the buffer's allocation when the
@@ -140,10 +140,10 @@ namespace SushiRuntime
                 void commit_output(const BufferHandle& handle);
 
                 /** @brief Drops one pin; a buffer released or cleared meanwhile is freed. */
-                void unpin(GlobalBufferID id) noexcept;
+                void unpin(GlobalHandle id) noexcept;
 
                 /** @brief Evicts a buffer for BUFFER_RELEASE; a pinned one goes when unpinned. */
-                void release(GlobalBufferID id);
+                void release(GlobalHandle id);
 
                 /**
                  * @brief Empties the cache for a new master session and wakes every waiter
@@ -175,7 +175,7 @@ namespace SushiRuntime
                 struct Entry
                 {
                     /** @brief The buffer the memory belongs to. */
-                    GlobalBufferID id;
+                    GlobalHandle id;
 
                     /** @brief The allocation; null at size 0. */
                     void* data = nullptr;
@@ -205,11 +205,11 @@ namespace SushiRuntime
                     std::uint64_t chunks = 0;
 
                     /** @brief Its place in recency_ while it is live. */
-                    std::list<std::uint64_t>::iterator recency;
+                    std::list<GlobalHandle>::iterator recency;
                 };
 
                 /** @brief Names the table of buffers a task can ask for, by id value. */
-                using Live = std::unordered_map<std::uint64_t, Entry>;
+                using Live = std::unordered_map<GlobalHandle, Entry>;
 
                 /** @brief Moves a live entry to the most recently used end. */
                 void touch(Entry& entry);
@@ -230,10 +230,10 @@ namespace SushiRuntime
                 [[nodiscard]] Entry* create(const BufferHandle& handle);
 
                 /** @brief Returns the entry whose pull of this version is open or uncollected. */
-                [[nodiscard]] Entry* find_transfer(GlobalBufferID id, std::uint32_t version);
+                [[nodiscard]] Entry* find_transfer(GlobalHandle id, std::uint32_t version);
 
                 /** @brief Returns the detached entry of an id that still owes an unpin. */
-                [[nodiscard]] Entry* find_detached(GlobalBufferID id);
+                [[nodiscard]] Entry* find_detached(GlobalHandle id);
 
                 /** @brief Drops one pin and frees what nothing can use any more. */
                 void drop_pin(Entry& entry);
@@ -263,7 +263,7 @@ namespace SushiRuntime
                 Live live_;
 
                 /// @brief The id values of the live buffers, least recently used first.
-                std::list<std::uint64_t> recency_;
+                std::list<GlobalHandle> recency_;
 
                 /// @brief Buffers released, replaced or cleared while pinned.
                 std::list<Entry> detached_;

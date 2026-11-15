@@ -40,6 +40,7 @@
 
 #include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
+#include "support/made_up_handle.hpp"
 #include "support/shared_buffer_rig.hpp"
 
 using namespace SushiRuntime;
@@ -106,7 +107,7 @@ TEST(Small_SharedBuffersTest, BumpRaisesTheVersionOfALiveHandleAndLeavesAGoneOne
     TestSupport::SharedBufferRig rig;
     const BufferHandle handle = rig.share(buffer.data(), buffer.size());
     BufferHandle gone;
-    gone.id.value = 999;
+    gone.id = TestSupport::made_up_handle(999);
     gone.version = 5;
     std::vector<BufferHandle> handles = {handle, gone};
 
@@ -270,7 +271,7 @@ TEST_P(Small_SharedBuffersRefusedRead, ReturnsItsStatusAndCopiesNothing)
     Bytes buffer = pattern(K_BUFFER_BYTES, 6);
     TestSupport::SharedBufferRig rig;
     const BufferHandle handle = rig.share(buffer.data(), buffer.size());
-    const GlobalBufferID id = row.id == 0 ? handle.id : GlobalBufferID{row.id};
+    const GlobalHandle id = row.id == 0 ? handle.id : TestSupport::made_up_handle(row.id);
     Bytes refused(K_CHUNK, K_GUARD);
 
     EXPECT_EQ(rig.buffers().read(id, handle.version + row.version_added, row.offset,
@@ -360,22 +361,22 @@ TEST(Small_SharedBuffersTest, WriteLeavesTheVersionAsItWas)
     ASSERT_EQ(rig.buffers().write(handle.id, handle.version, 8, {incoming.data(), incoming.size()}),
               BufferAccessStatus::Ok);
 
-    const std::optional<BufferHandle> current = rig.buffers().lookup_by_id(handle.id);
+    const std::optional<BufferHandle> current = rig.buffers().lookup(handle.id);
 
     ASSERT_TRUE(current.has_value());
     EXPECT_EQ(current->version, handle.version);
 }
 
-TEST(Small_SharedBuffersTest, UnshareReturnsTheIDOfASharedHandleOnce)
+TEST(Small_SharedBuffersTest, UnshareReturnsTheHandleOfASharedBufferOnce)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 9);
     Bytes never_shared = pattern(K_BUFFER_BYTES, 10);
     TestSupport::SharedBufferRig rig;
     const BufferHandle handle = rig.share(buffer.data(), buffer.size());
 
-    EXPECT_FALSE(rig.unshare(never_shared.data()).valid());
+    EXPECT_TRUE(rig.unshare(never_shared.data()).is_null());
     EXPECT_EQ(rig.unshare(buffer.data()), handle.id);
-    EXPECT_FALSE(rig.unshare(buffer.data()).valid());
+    EXPECT_TRUE(rig.unshare(buffer.data()).is_null());
 }
 
 TEST(Small_SharedBuffersTest, AnUnregisteredBufferIsGone)
@@ -387,7 +388,7 @@ TEST(Small_SharedBuffersTest, AnUnregisteredBufferIsGone)
     Bytes out(K_CHUNK, K_GUARD);
 
     EXPECT_FALSE(rig.lookup(buffer.data()).has_value());
-    EXPECT_FALSE(rig.buffers().lookup_by_id(handle.id).has_value());
+    EXPECT_FALSE(rig.buffers().lookup(handle.id).has_value());
     EXPECT_EQ(rig.buffers().read(handle.id, handle.version, 0, {out.data(), out.size()}),
               BufferAccessStatus::Gone);
     EXPECT_EQ(rig.buffers().write(handle.id, handle.version, 0, {out.data(), out.size()}),
@@ -414,7 +415,7 @@ TEST(Small_SharedBuffersTest, TheNullHandleIsNeverShared)
 
     const BufferHandle shared = rig.buffers().share(GlobalHandle::null(), K_BUFFER_BYTES);
 
-    EXPECT_FALSE(shared.id.valid());
+    EXPECT_TRUE(shared.id.is_null());
     EXPECT_FALSE(rig.buffers().lookup(GlobalHandle::null()).has_value());
 }
 
@@ -427,12 +428,12 @@ TEST(Small_SharedBuffersTest, UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRet
     const BufferHandle retired_handle = rig.share(retired.data(), retired.size());
     ASSERT_EQ(rig.table().retire(retired.data()), HandleStatus::Ok);
 
-    const std::vector<GlobalBufferID> dropped = rig.buffers().unshare_retired();
+    const std::vector<GlobalHandle> dropped = rig.buffers().unshare_retired();
 
     ASSERT_EQ(dropped.size(), 1u);
     EXPECT_EQ(dropped.front(), retired_handle.id);
-    EXPECT_TRUE(rig.buffers().lookup_by_id(kept_handle.id).has_value());
-    EXPECT_FALSE(rig.buffers().lookup_by_id(retired_handle.id).has_value());
+    EXPECT_TRUE(rig.buffers().lookup(kept_handle.id).has_value());
+    EXPECT_FALSE(rig.buffers().lookup(retired_handle.id).has_value());
 }
 
 TEST(Small_SharedBuffersTest, ABufferWhoseInstanceIsGoneIsGoneToAReader)

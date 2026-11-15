@@ -36,6 +36,8 @@
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "support/made_up_handle.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
@@ -45,7 +47,7 @@ namespace
     BufferHandle handle_of(std::uint64_t id)
     {
         BufferHandle handle;
-        handle.id = GlobalBufferID{id};
+        handle.id = TestSupport::made_up_handle(id);
         return handle;
     }
 } // namespace
@@ -100,23 +102,23 @@ TEST(Small_DispatchPlan, ADeviceOutsideTheCacheContextIsNamed)
 TEST(Small_DispatchPlan, AJobReadingABufferTheBatchWritesOpensTheNextBatch)
 {
     const std::vector<BufferHandle> inputs = {handle_of(1), handle_of(4)};
-    const std::vector<GlobalBufferID> written = {GlobalBufferID{3}, GlobalBufferID{4}};
+    const std::vector<GlobalHandle> written = {TestSupport::made_up_handle(3), TestSupport::made_up_handle(4)};
 
     EXPECT_TRUE(reads_a_written_buffer(span<const BufferHandle>(inputs.data(), inputs.size()),
-                                       span<const GlobalBufferID>(written.data(), written.size())));
+                                       span<const GlobalHandle>(written.data(), written.size())));
 }
 
 /** @brief Tests that a job reading nothing the batch writes joins it. */
 TEST(Small_DispatchPlan, AJobReadingNothingTheBatchWritesJoinsIt)
 {
     const std::vector<BufferHandle> inputs = {handle_of(1)};
-    const std::vector<GlobalBufferID> written = {GlobalBufferID{3}};
+    const std::vector<GlobalHandle> written = {TestSupport::made_up_handle(3)};
 
     EXPECT_FALSE(reads_a_written_buffer(span<const BufferHandle>(inputs.data(), inputs.size()),
-                                        span<const GlobalBufferID>(written.data(), written.size())));
-    EXPECT_FALSE(reads_a_written_buffer(span<const BufferHandle>(), span<const GlobalBufferID>(written.data(), written.size())))
+                                        span<const GlobalHandle>(written.data(), written.size())));
+    EXPECT_FALSE(reads_a_written_buffer(span<const BufferHandle>(), span<const GlobalHandle>(written.data(), written.size())))
         << "a job with no input reads nothing";
-    EXPECT_FALSE(reads_a_written_buffer(span<const BufferHandle>(inputs.data(), inputs.size()), span<const GlobalBufferID>()))
+    EXPECT_FALSE(reads_a_written_buffer(span<const BufferHandle>(inputs.data(), inputs.size()), span<const GlobalHandle>()))
         << "an empty batch writes nothing";
 }
 

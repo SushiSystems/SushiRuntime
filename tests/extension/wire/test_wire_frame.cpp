@@ -71,7 +71,7 @@ namespace
     /** @brief Decodes a frame header after one of its bytes is replaced. */
     FrameStatus header_status_with_byte(std::size_t offset, unsigned value, FrameHeader& out)
     {
-        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0E, 0x00, 0x08, 0x00,
+        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0E, 0x00, 0x08, 0x00,
                                   0x00, 0x00 });
         header[offset] = static_cast<std::byte>(value);
         return decode_frame_header(view_of(header), out);
@@ -120,7 +120,7 @@ TEST_P(Small_WireOlderPeer, IsRefusedWithProtocolMismatch)
         << refused.error().message;
 }
 
-INSTANTIATE_TEST_SUITE_P(Rows, Small_WireOlderPeer, ::testing::Values(2u, 3u), name_of_version);
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireOlderPeer, ::testing::Values(2u, 3u, 4u), name_of_version);
 
 /** @brief Tests that the version of this build is accepted. */
 TEST(Small_WireFormat, TheVersionOfThisBuildIsAccepted)
@@ -131,7 +131,7 @@ TEST(Small_WireFormat, TheVersionOfThisBuildIsAccepted)
 /** @brief Tests the 12-byte header layout in both directions. */
 TEST(Small_WireFormat, FrameHeaderGolden)
 {
-    const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x07, 0x00, 0x0C, 0x0B,
+    const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x07, 0x00, 0x0C, 0x0B,
                                     0x0A, 0x00 });
     Bytes encoded;
     append_frame_header(FrameHeader{ K_PROTOCOL_VERSION, MessageType::TaskDispatch, 0, 0x000A0B0C }, encoded);
@@ -139,7 +139,7 @@ TEST(Small_WireFormat, FrameHeaderGolden)
 
     FrameHeader header;
     ASSERT_EQ(decode_frame_header(view_of(golden), header), FrameStatus::Ok);
-    EXPECT_EQ(header.version, 4u);
+    EXPECT_EQ(header.version, 5u);
     EXPECT_EQ(header.type, MessageType::TaskDispatch);
     EXPECT_EQ(header.flags, 0u);
     EXPECT_EQ(header.payload_length, 0x000A0B0Cu);
@@ -148,7 +148,7 @@ TEST(Small_WireFormat, FrameHeaderGolden)
 /** @brief Tests that the last-chunk flag of a header decodes. */
 TEST(Small_WireFormat, TheLastChunkFlagDecodes)
 {
-    const Bytes last_chunk = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x01, 0x25,
+    const Bytes last_chunk = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0B, 0x01, 0x25,
                                         0x00, 0x00, 0x00 });
     FrameHeader header;
 
@@ -162,7 +162,7 @@ TEST(Small_WireFormat, TheLastChunkFlagDecodes)
 /** @brief Tests the bytes of a whole PING frame. */
 TEST(Small_WireFormat, PingFrameGolden)
 {
-    const Bytes ping_frame = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0E, 0x00, 0x08,
+    const Bytes ping_frame = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0E, 0x00, 0x08,
                                         0x00, 0x00, 0x00, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33,
                                         0x22, 0x11 });
     PingMessage ping;

@@ -51,6 +51,7 @@
 #include "support/heap_cache_allocator.hpp"
 #include "support/host_runtime.hpp"
 #include "support/worker_wire.hpp"
+#include "support/made_up_handle.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -305,7 +306,7 @@ TEST_F(Small_DispatchExecutor, AReleasedOutputStillStreamsItsOwnCopy)
     enqueue(dispatch_of(9, op, {}, {handle_of(5, 2, 10)}), 4);
     ASSERT_TRUE(executor_.step());
 
-    cache_.release(GlobalBufferID{5});
+    cache_.release(TestSupport::made_up_handle(5));
     EXPECT_EQ(cache_.bytes(), 0u) << "the stream kept the cached output pinned";
     fabric_.settle();
 

@@ -19,17 +19,27 @@ It depends on `core` and `transport`.
 
 ## Protocol versions
 
-`K_PROTOCOL_VERSION` in `wire_frame.hpp` is 4. The header and the first three fields of `REJECT` and
+`K_PROTOCOL_VERSION` in `wire_frame.hpp` is 5. The header and the first three fields of `REJECT` and
 `GOODBYE` are frozen for every version, so a peer of another version is answered with a `REJECT` of
 reason `Version` that names both versions: this build's in `sender_version`, the peer's in its text.
 
-| Version | What the code does with it | How it differs from version 4 |
+| Version | What the code does with it | How it differs from version 5 |
 | --- | --- | --- |
-| 4 | reads and writes | the current version |
+| 5 | reads and writes | the current version |
+| 4 | rejects with `ProtocolMismatch` naming both versions | a buffer id is one 64-bit word, the low word of the handle; a buffer handle is 20 bytes |
 | 3 | rejects with `ProtocolMismatch` naming both versions | `HELLO` ends at the node name; `TASK_DISPATCH` ends at the output handles |
 | 2 and 1 | rejects with `ProtocolMismatch` naming both versions | earlier layouts; see `modules/extension/distributed/README.md` |
 
-## Messages that gained fields in version 4
+## The buffer name in version 5
+
+Every field that named a buffer in version 4 holds a `GlobalHandle` in version 5: the inputs and
+outputs of `TASK_DISPATCH`, the outputs of `TASK_RESULT`, the handle of `BUFFER_CHUNK`, and the id
+of `BUFFER_REQUEST`, `BUFFER_ABORT` and `BUFFER_RELEASE`. A handle is two little-endian 64-bit words,
+`to_high_word()` first and `to_low_word()` second (16 bytes). A buffer handle is then the global
+handle, a 32-bit version and a 64-bit size: 28 bytes. A decoder accepts the null handle, which is 16
+zero bytes; the layer above refuses it where a buffer is required.
+
+## Messages that gained fields in version 4 and keep them in version 5
 
 | Message | Fields after the version 3 fields |
 | --- | --- |

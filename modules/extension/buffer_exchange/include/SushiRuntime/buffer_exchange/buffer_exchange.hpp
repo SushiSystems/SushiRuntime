@@ -108,7 +108,7 @@ namespace SushiRuntime
                  * source's final frame is BUFFER_ABORT with that reason.
                  * @return Never null.
                  */
-                [[nodiscard]] std::unique_ptr<FrameSource> serve_pull(GlobalBufferID id,
+                [[nodiscard]] std::unique_ptr<FrameSource> serve_pull(GlobalHandle id,
                                                                       std::uint32_t version);
 
                 /**

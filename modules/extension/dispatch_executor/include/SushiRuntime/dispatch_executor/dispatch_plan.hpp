@@ -89,7 +89,7 @@ namespace SushiRuntime
          */
         [[nodiscard]] SUSHIRUNTIME_API bool reads_a_written_buffer(
             SushiRuntime::span<const BufferHandle> inputs,
-            SushiRuntime::span<const GlobalBufferID> written) noexcept;
+            SushiRuntime::span<const GlobalHandle> written) noexcept;
 
         /** @brief Returns a chunk size one frame can carry; 0 takes the default of 256 KiB. */
         [[nodiscard]] SUSHIRUNTIME_API std::uint32_t usable_chunk_bytes(

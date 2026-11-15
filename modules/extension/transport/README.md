@@ -15,7 +15,7 @@ It depends on `core`. The in-memory adapter of `Transport`, `InProcessTransport`
 | --- | --- |
 | `endpoint.hpp` | `Endpoint`, `EndpointParseResult`, `EndpointParseStatus` |
 | `message_type.hpp` | `MessageType`, `message_type_name()` |
-| `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` |
+| `buffer_handle.hpp` | `BufferHandle` |
 | `transport.hpp` | `Transport`, `TransportEvents`, `FrameSource`, `PeerID`, `PeerLoss`, `SendStatus`, `TransportResult` |
 | `recording_transport_events.hpp` | `RecordingTransportEvents`, `RecordedFrame`, `RecordedLoss` |
 
@@ -23,7 +23,7 @@ It depends on `core`. The in-memory adapter of `Transport`, `InProcessTransport`
 
 ### The transport contract
 
-A transport moves frames of protocol version 4. It checks each frame's 12-byte header and knows
+A transport moves frames of protocol version 5. It checks each frame's 12-byte header and knows
 nothing about what a payload means; the handshake runs above it, so both transports exercise the
 same session code.
 

@@ -40,6 +40,7 @@
 
 #include "support/heap_cache_allocator.hpp"
 #include "support/worker_wire.hpp"
+#include "support/made_up_handle.hpp"
 
 using namespace SushiRuntime::Distributed;
 using namespace TestSupport::WorkerWire;
@@ -95,7 +96,7 @@ TEST_F(Small_WorkerBufferCache, ReleaseFreesAnUnpinnedBuffer)
     store(handle_of(1, 1, 64));
     ASSERT_EQ(cache_.bytes(), 64u);
 
-    cache_.release(GlobalBufferID{1});
+    cache_.release(TestSupport::made_up_handle(1));
 
     EXPECT_EQ(cache_.bytes(), 0u);
     EXPECT_EQ(cache_.evictions(), 1u);

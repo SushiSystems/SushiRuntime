@@ -598,8 +598,8 @@ namespace OffloadDispatcherTests
         ASSERT_TRUE(state.offloadable);
         EXPECT_EQ(state.payload, nullptr);
 
-        const GlobalBufferID first_id = buffers_.lookup(handles_.place(first_.data()))->id;
-        const GlobalBufferID second_id = buffers_.lookup(handles_.place(second_.data()))->id;
+        const GlobalHandle first_id = buffers_.lookup(handles_.place(first_.data()))->id;
+        const GlobalHandle second_id = buffers_.lookup(handles_.place(second_.data()))->id;
 
         ASSERT_TRUE(dispatcher_.try_offload(*node));
         ASSERT_EQ(offered().size(), 1u);

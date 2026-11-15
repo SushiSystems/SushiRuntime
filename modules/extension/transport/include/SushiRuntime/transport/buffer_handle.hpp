@@ -23,7 +23,7 @@
 
 /**
  * @file buffer_handle.hpp
- * @brief Declares GlobalBufferID and BufferHandle, the cluster-wide name of a shared buffer.
+ * @brief Declares BufferHandle, the version and size of one shared buffer named by its GlobalHandle.
  * @author Mustafa Garip
  * @see modules/extension/transport/README.md
  */
@@ -32,42 +32,17 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/handle/global_handle.hpp>
+
 namespace SushiRuntime::Distributed
 {
-    /**
-     * @brief Identifies one shared buffer across the master and its workers.
-     */
-    struct GlobalBufferID
-    {
-        /** @brief Holds the identifier; 0 names no buffer. */
-        std::uint64_t value = 0;
-
-        /** @brief Returns whether two identifiers name the same buffer. */
-        [[nodiscard]] constexpr bool operator==(const GlobalBufferID& other) const noexcept
-        {
-            return value == other.value;
-        }
-
-        /** @brief Returns whether two identifiers name different buffers. */
-        [[nodiscard]] constexpr bool operator!=(const GlobalBufferID& other) const noexcept
-        {
-            return value != other.value;
-        }
-
-        /** @brief Returns whether the identifier names a buffer. */
-        [[nodiscard]] constexpr bool valid() const noexcept
-        {
-            return value != 0;
-        }
-    };
-
     /**
      * @brief Names one version of a shared buffer and its size.
      */
     struct BufferHandle
     {
-        /** @brief Holds the buffer's identifier. */
-        GlobalBufferID id;
+        /** @brief Holds the buffer's global handle. */
+        GlobalHandle id;
 
         /** @brief Holds the version, which the master raises on every write. */
         std::uint32_t version = 0;
@@ -77,11 +52,10 @@ namespace SushiRuntime::Distributed
     };
 
     /**
-     * @brief Holds the private codec of protocol version 4; these names reach it unqualified.
+     * @brief Holds the private codec of protocol version 5; these names reach it unqualified.
      */
     namespace Wire
     {
         using Distributed::BufferHandle;
-        using Distributed::GlobalBufferID;
     } // namespace Wire
 } // namespace SushiRuntime::Distributed

@@ -46,6 +46,8 @@
 #include <SushiRuntime/wire/wire_codec.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "made_up_handle.hpp"
+
 namespace TestSupport::WorkerWire
 {
     using namespace SushiRuntime;
@@ -59,7 +61,7 @@ namespace TestSupport::WorkerWire
                                   std::uint64_t size_bytes)
     {
         BufferHandle handle;
-        handle.id = GlobalBufferID{id};
+        handle.id = TestSupport::made_up_handle(id);
         handle.version = version;
         handle.size_bytes = size_bytes;
         return handle;
@@ -115,7 +117,7 @@ namespace TestSupport::WorkerWire
     inline Wire::BufferReleaseMessage release_of(std::uint64_t id)
     {
         Wire::BufferReleaseMessage release;
-        release.id = GlobalBufferID{id};
+        release.id = TestSupport::made_up_handle(id);
         return release;
     }
 

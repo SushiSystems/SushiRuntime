@@ -99,7 +99,7 @@ namespace SushiRuntime
             const KernelRegistry::HostKernel* host_kernel = nullptr;
 
             /// @brief One cache pin per input and output; the batch drops them.
-            std::vector<GlobalBufferID> pins;
+            std::vector<GlobalHandle> pins;
 
             /// @brief The memory of each input.
             std::vector<BufferView> inputs;

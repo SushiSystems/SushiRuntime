@@ -23,7 +23,7 @@
 
 /**
  * @file message_type.hpp
- * @brief Declares MessageType, the type byte of a version 4 distributed frame.
+ * @brief Declares MessageType, the type byte of a version 5 distributed frame.
  * @author Mustafa Garip
  * @see modules/extension/transport/README.md
  */
@@ -36,7 +36,7 @@
 namespace SushiRuntime::Distributed
 {
     /**
-     * @brief Names the sixteen messages of protocol version 4 by their type byte.
+     * @brief Names the sixteen messages of protocol version 5 by their type byte.
      */
     enum class MessageType : std::uint8_t
     {
@@ -90,7 +90,7 @@ namespace SushiRuntime::Distributed
     }
 
     /**
-     * @brief Holds the private codec of protocol version 4; these names reach it unqualified.
+     * @brief Holds the private codec of protocol version 5; these names reach it unqualified.
      */
     namespace Wire
     {

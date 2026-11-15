@@ -93,7 +93,7 @@ namespace
             [[nodiscard]] std::uint64_t id_of(std::size_t n)
             {
                 const std::optional<BufferHandle> handle = rig_.lookup(storage_[n].data());
-                return handle->id.value;
+                return handle->id.to_low_word();
             }
 
         private:
@@ -124,7 +124,7 @@ namespace
                                                             frame.payload.size()),
                         chunk)
                         .ok());
-        return StreamPosition{chunk.handle.id.value, chunk.offset};
+        return StreamPosition{chunk.handle.id.to_low_word(), chunk.offset};
     }
 
     /** @brief Pops one control frame and returns its first payload byte as a number. */

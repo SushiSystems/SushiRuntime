@@ -76,18 +76,9 @@ in progress: that needs a way to stop a thread inside `read()`, which `SharedBuf
 | `Small_SharedBuffersRefusedWrite.ReturnsItsStatusAndWritesNothing` | After `bump`, a write at the version the task was dispatched with is `Stale`, as is one at a version the buffer has not reached; a write past the end is `OutOfRange`. None changes a byte. |
 | `WriteAtTheCurrentVersionLandsAtItsOffsetOnly` | A write at the current version lands at its offset and leaves the bytes around it. |
 | `WriteLeavesTheVersionAsItWas` | A landed write does not raise the buffer's version. |
-| `UnshareReturnsTheIDOfASharedHandleOnce` | `unshare` returns the id of a shared handle, and an invalid id for one that was never shared or was already released. |
+| `UnshareReturnsTheHandleOfASharedBufferOnce` | `unshare` returns the handle of a shared buffer, and the null handle for one that was never shared or was already released. |
 | `AnUnregisteredBufferIsGone` | Lookups by handle and by id find nothing, and `read` and `write` report `Gone`. |
 | `AHandleSharedAgainAfterUnshareStartsAtVersionOne` | A handle shared again after `unshare` starts at version 1. |
-| `TheNullHandleIsNeverShared` | Sharing the null handle gives an invalid id and a lookup finds nothing. |
-| `UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRetired` | `unshare_retired` drops the buffer of a retired handle, returns its id and keeps the others. |
+| `TheNullHandleIsNeverShared` | Sharing the null handle gives a buffer handle with the null id and a lookup finds nothing. |
+| `UnshareRetiredDropsOnlyTheBuffersWhoseHandleWasRetired` | `unshare_retired` drops the buffer of a retired handle, returns its handle and keeps the others. |
 | `ABufferWhoseInstanceIsGoneIsGoneToAReader` | A buffer whose handle was retired reads as `Gone` and copies nothing. |
-
-## test_buffer_wire_id.cpp
-
-| Test | What it proves |
-| --- | --- |
-| `TheSameHandleGivesTheSameID` | `wire_id_of` is a pure function of the handle. |
-| `ASlotMintedAgainGivesANewID` | The same slot at a new generation gets a new id. |
-| `TwoSlotsGiveTwoIDs` | Two slots of one generation get two ids. |
-| `ALiveHandleGivesAValidIDAndTheNullHandleDoesNot` | A live handle gets a valid id; the null handle gets the invalid one. |

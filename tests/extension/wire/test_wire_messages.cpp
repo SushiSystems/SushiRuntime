@@ -44,6 +44,8 @@
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "support/made_up_handle.hpp"
+
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed::Wire;
@@ -194,8 +196,18 @@ namespace
     }
 
     /**
-     * @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles, device 2.
+     * @brief Returns a handle whose six fields all differ, so a swapped word shows in the bytes.
+     *
+     * Universe 0x11223344, machine 0x0506, buffer, the DoNotCache flag, generation 7 and slot
+     * 0x0A0B0C0D.
      */
+    GlobalHandle known_handle()
+    {
+        return GlobalHandle(0x11223344u, 0x0506u, HandleKind::Buffer, HandleFlags::DoNotCache, 7u,
+                            0x0A0B0C0Du);
+    }
+
+    /** @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles, device 2 */
     Bytes golden_task_dispatch()
     {
         return bytes_of({
@@ -206,14 +218,17 @@ namespace
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x40,
             0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x02, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x06, 0x05, 0x44, 0x33, 0x22, 0x11,
+            0x0D, 0x0C, 0x0B, 0x0A, 0x07, 0x00, 0x00, 0x00,
             0x03, 0x00, 0x00, 0x00,
             0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x01, 0x00, 0x00, 0x00,
             0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x01, 0x00, 0x00, 0x00,
-            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x01, 0x00, 0x00, 0x00,
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x02, 0x00, 0x00, 0x00,
@@ -233,7 +248,8 @@ namespace
             0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x01,
             0x01, 0x00, 0x00, 0x00,
-            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x02, 0x00, 0x00, 0x00,
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         });
@@ -243,7 +259,8 @@ namespace
     Bytes golden_buffer_request()
     {
         return bytes_of({
-            0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x09, 0x00, 0x00, 0x00,
         });
     }
@@ -254,7 +271,8 @@ namespace
         return bytes_of({
             0x02,
             0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x02, 0x00, 0x00, 0x00,
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -266,7 +284,8 @@ namespace
     Bytes golden_buffer_abort()
     {
         return bytes_of({
-            0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x09, 0x00, 0x00, 0x00,
             0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x02,
@@ -276,7 +295,10 @@ namespace
     /** @brief Returns the BUFFER_RELEASE payload: buffer 5. */
     Bytes golden_buffer_release()
     {
-        return bytes_of({ 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+        return bytes_of({
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        });
     }
 
     /** @brief Returns the PING payload: token 0x1122334455667788. */
@@ -347,7 +369,7 @@ namespace
     /** @brief Decodes a frame header after one of its bytes is replaced. */
     FrameStatus header_status_with_byte(std::size_t offset, unsigned value, FrameHeader& out)
     {
-        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0E, 0x00, 0x08, 0x00,
+        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0E, 0x00, 0x08, 0x00,
                                   0x00, 0x00 });
         header[offset] = static_cast<std::byte>(value);
         return decode_frame_header(view_of(header), out);
@@ -511,9 +533,9 @@ TEST(Small_WireFormat, GoldenBytes_TaskDispatch)
     message.parameter_count = 2;
     message.parameters[0] = 0x4004000000000000ull;
     message.parameters[1] = 9;
-    message.inputs = { BufferHandle{ GlobalBufferID{ 1 }, 3, 256 },
-                       BufferHandle{ GlobalBufferID{ 2 }, 1, 512 } };
-    message.outputs = { BufferHandle{ GlobalBufferID{ 3 }, 1, 128 } };
+    message.inputs = { BufferHandle{ known_handle(), 3, 256 },
+                       BufferHandle{ TestSupport::made_up_handle(2), 1, 512 } };
+    message.outputs = { BufferHandle{ TestSupport::made_up_handle(3), 1, 128 } };
     message.device_index = 2;
 
     const Bytes golden = golden_task_dispatch();
@@ -526,17 +548,73 @@ TEST(Small_WireFormat, GoldenBytes_TaskDispatch)
     EXPECT_EQ(decoded.parameters[1], 9u);
     EXPECT_EQ(decoded.parameters[2], 0u);
     ASSERT_EQ(decoded.inputs.size(), 2u);
-    EXPECT_EQ(decoded.inputs[0].id.value, 1u);
+    EXPECT_EQ(decoded.inputs[0].id, known_handle());
     EXPECT_EQ(decoded.inputs[0].version, 3u);
     EXPECT_EQ(decoded.inputs[0].size_bytes, 256u);
-    EXPECT_EQ(decoded.inputs[1].id.value, 2u);
+    EXPECT_EQ(decoded.inputs[1].id, TestSupport::made_up_handle(2));
     EXPECT_EQ(decoded.inputs[1].version, 1u);
     EXPECT_EQ(decoded.inputs[1].size_bytes, 512u);
     ASSERT_EQ(decoded.outputs.size(), 1u);
-    EXPECT_EQ(decoded.outputs[0].id.value, 3u);
+    EXPECT_EQ(decoded.outputs[0].id, TestSupport::made_up_handle(3));
     EXPECT_EQ(decoded.outputs[0].version, 1u);
     EXPECT_EQ(decoded.outputs[0].size_bytes, 128u);
     EXPECT_EQ(decoded.device_index, 2u);
+}
+
+/**
+ * @brief Tests the whole TASK_DISPATCH frame at version 5: the header, then a payload that names
+ *        its first input by a GlobalHandle of two little-endian words.
+ */
+TEST(Small_WireFormat, TaskDispatchFrameAtVersionFiveCarriesTheGlobalHandle)
+{
+    TaskDispatchMessage message;
+    message.task_id = 42;
+    message.operation = OperationID(0xCAFEF00Du);
+    message.name = "axpy";
+    message.parameter_count = 2;
+    message.parameters[0] = 0x4004000000000000ull;
+    message.parameters[1] = 9;
+    message.inputs = { BufferHandle{ known_handle(), 3, 256 },
+                       BufferHandle{ TestSupport::made_up_handle(2), 1, 512 } };
+    message.outputs = { BufferHandle{ TestSupport::made_up_handle(3), 1, 128 } };
+    message.device_index = 2;
+
+    Bytes expected = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x07, 0x00, 0x83, 0x00,
+                                0x00, 0x00 });
+    const Bytes payload = golden_task_dispatch();
+    expected.insert(expected.end(), payload.begin(), payload.end());
+
+    Bytes frame;
+    ASSERT_EQ(append_frame(message, 0, frame), CodecStatus::Ok);
+    EXPECT_EQ(frame, expected);
+
+    FrameHeader header;
+    ASSERT_EQ(decode_frame_header(view_of(frame), header), FrameStatus::Ok);
+    EXPECT_EQ(header.version, 5u);
+    EXPECT_EQ(header.payload_length, payload.size());
+
+    TaskDispatchMessage decoded;
+    const span<const std::byte> body(frame.data() + K_FRAME_HEADER_BYTES,
+                                     frame.size() - K_FRAME_HEADER_BYTES);
+    ASSERT_EQ(TaskDispatchMessage::decode(body, decoded).status, CodecStatus::Ok);
+    ASSERT_EQ(decoded.inputs.size(), 2u);
+    EXPECT_EQ(decoded.inputs[0].id, known_handle());
+    EXPECT_EQ(decoded.inputs[0].id.universe(), 0x11223344u);
+    EXPECT_EQ(decoded.inputs[0].id.machine(), 0x0506u);
+    EXPECT_EQ(decoded.inputs[0].id.generation(), 7u);
+    EXPECT_EQ(decoded.inputs[0].id.slot(), 0x0A0B0C0Du);
+}
+
+/** @brief Tests that a frame of version 4 is refused by the version check of this build. */
+TEST(Small_WireFormat, AFrameAtVersionFourIsRefusedAsAMismatch)
+{
+    const Bytes version_four = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x07, 0x00, 0x00,
+                                          0x00, 0x00, 0x00 });
+    FrameHeader header;
+
+    ASSERT_EQ(decode_frame_header(view_of(version_four), header), FrameStatus::VersionMismatch);
+    EXPECT_EQ(header.version, 4u);
+    EXPECT_FALSE(check_protocol_version(header.version).has_value());
 }
 
 /** @brief Tests the TASK_ACCEPTED bytes. */
@@ -556,14 +634,14 @@ TEST(Small_WireFormat, GoldenBytes_TaskResult)
     TaskResultMessage message;
     message.task_id = 42;
     message.status = TaskResultStatus::Succeeded;
-    message.outputs = { BufferHandle{ GlobalBufferID{ 3 }, 2, 128 } };
+    message.outputs = { BufferHandle{ TestSupport::made_up_handle(3), 2, 128 } };
 
     const Bytes golden = golden_task_result();
     const TaskResultMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.task_id, 42u);
     EXPECT_EQ(decoded.status, TaskResultStatus::Succeeded);
     ASSERT_EQ(decoded.outputs.size(), 1u);
-    EXPECT_EQ(decoded.outputs[0].id.value, 3u);
+    EXPECT_EQ(decoded.outputs[0].id, TestSupport::made_up_handle(3));
     EXPECT_EQ(decoded.outputs[0].version, 2u);
     EXPECT_EQ(decoded.outputs[0].size_bytes, 128u);
 }
@@ -572,12 +650,12 @@ TEST(Small_WireFormat, GoldenBytes_TaskResult)
 TEST(Small_WireFormat, GoldenBytes_BufferRequest)
 {
     BufferRequestMessage message;
-    message.id = GlobalBufferID{ 5 };
+    message.id = TestSupport::made_up_handle(5);
     message.version = 9;
 
     const Bytes golden = golden_buffer_request();
     const BufferRequestMessage decoded = expect_golden(message, golden);
-    EXPECT_EQ(decoded.id.value, 5u);
+    EXPECT_EQ(decoded.id, TestSupport::made_up_handle(5));
     EXPECT_EQ(decoded.version, 9u);
 }
 
@@ -588,7 +666,7 @@ TEST(Small_WireFormat, GoldenBytes_BufferChunk)
     BufferChunkMessage message;
     message.purpose = ChunkPurpose::TaskOutput;
     message.task_id = 42;
-    message.handle = BufferHandle{ GlobalBufferID{ 3 }, 2, 128 };
+    message.handle = BufferHandle{ TestSupport::made_up_handle(3), 2, 128 };
     message.offset = 64;
     message.data = view_of(data);
 
@@ -596,7 +674,7 @@ TEST(Small_WireFormat, GoldenBytes_BufferChunk)
     const BufferChunkMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.purpose, ChunkPurpose::TaskOutput);
     EXPECT_EQ(decoded.task_id, 42u);
-    EXPECT_EQ(decoded.handle.id.value, 3u);
+    EXPECT_EQ(decoded.handle.id, TestSupport::made_up_handle(3));
     EXPECT_EQ(decoded.handle.version, 2u);
     EXPECT_EQ(decoded.handle.size_bytes, 128u);
     EXPECT_EQ(decoded.offset, 64u);
@@ -609,14 +687,14 @@ TEST(Small_WireFormat, GoldenBytes_BufferChunk)
 TEST(Small_WireFormat, GoldenBytes_BufferAbort)
 {
     BufferAbortMessage message;
-    message.id = GlobalBufferID{ 5 };
+    message.id = TestSupport::made_up_handle(5);
     message.version = 9;
     message.task_id = 42;
     message.reason = AbortReason::Gone;
 
     const Bytes golden = golden_buffer_abort();
     const BufferAbortMessage decoded = expect_golden(message, golden);
-    EXPECT_EQ(decoded.id.value, 5u);
+    EXPECT_EQ(decoded.id, TestSupport::made_up_handle(5));
     EXPECT_EQ(decoded.version, 9u);
     EXPECT_EQ(decoded.task_id, 42u);
     EXPECT_EQ(decoded.reason, AbortReason::Gone);
@@ -626,11 +704,11 @@ TEST(Small_WireFormat, GoldenBytes_BufferAbort)
 TEST(Small_WireFormat, GoldenBytes_BufferRelease)
 {
     BufferReleaseMessage message;
-    message.id = GlobalBufferID{ 5 };
+    message.id = TestSupport::made_up_handle(5);
 
     const Bytes golden = golden_buffer_release();
     const BufferReleaseMessage decoded = expect_golden(message, golden);
-    EXPECT_EQ(decoded.id.value, 5u);
+    EXPECT_EQ(decoded.id, TestSupport::made_up_handle(5));
 }
 
 /** @brief Tests the PING bytes. */
@@ -871,7 +949,7 @@ INSTANTIATE_TEST_SUITE_P(Rows, Small_WireHeaderRange, ::testing::ValuesIn(K_HEAD
 /** @brief Tests that a payload of exactly the frame limit passes the header check. */
 TEST(Small_WireFormat, APayloadOfExactlyTheFrameLimitIsAccepted)
 {
-    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x00,
+    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0B, 0x00, 0x00,
                                      0x00, 0x10, 0x00 });
     FrameHeader header;
 
@@ -881,7 +959,7 @@ TEST(Small_WireFormat, APayloadOfExactlyTheFrameLimitIsAccepted)
 /** @brief Tests that a payload one byte over the frame limit is refused. */
 TEST(Small_WireFormat, APayloadOneByteOverTheFrameLimitIsTooLong)
 {
-    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x01,
+    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x05, 0x00, 0x0B, 0x00, 0x01,
                                       0x00, 0x10, 0x00 });
     FrameHeader header;
 

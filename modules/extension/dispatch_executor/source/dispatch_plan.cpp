@@ -69,10 +69,10 @@ namespace SushiRuntime
         }
 
         bool reads_a_written_buffer(SushiRuntime::span<const BufferHandle> inputs,
-                                    SushiRuntime::span<const GlobalBufferID> written) noexcept
+                                    SushiRuntime::span<const GlobalHandle> written) noexcept
         {
             for (const BufferHandle& input : inputs)
-                for (const GlobalBufferID id : written)
+                for (const GlobalHandle id : written)
                     if (input.id == id)
                         return true;
             return false;

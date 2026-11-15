@@ -52,7 +52,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
 | T13 | `engine/coherence` planner | T08, T12 | done |
-| T14 | `engine/coherence` eviction | T13 | todo |
+| T14 | `engine/coherence` eviction | T13 | running |
 | T39 | `engine/task`, `engine/scheduler`: kernels receive the instance resolved on their device | T13 | todo |
 | T40 | `engine/task` `node_placement.cpp`: no refusal across SYCL contexts | T13 | todo |
 | T41 | `platform/memory` directory port; `engine/coherence` on it | T13 | todo |
@@ -75,7 +75,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T35 | hardware test, H9 graphs | T19, T34 | todo |
 | T36 | splitting | T25, T30 | todo |
 | T27 | rebalancing and journal | T22, T34 | todo |
-| T28 | wire version 5 | T10 | running |
+| T28 | wire version 5 | T10 | done |
 | T29 | owner per handle and recovery | T28 | todo |
 | T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
 | T31 | SushiEngine runtime adapter, SushiAI build | T06 | done |

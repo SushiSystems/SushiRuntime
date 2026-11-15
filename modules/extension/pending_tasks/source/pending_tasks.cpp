@@ -108,7 +108,7 @@ namespace SushiRuntime
         }
 
         bool PendingTasks::expects_output(std::uint64_t task_id, PeerID worker,
-                                          GlobalBufferID id, std::uint32_t version) const
+                                          GlobalHandle id, std::uint32_t version) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = tasks_.find(task_id);

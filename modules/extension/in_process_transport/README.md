@@ -1,7 +1,7 @@
 # in_process_transport
 
 The in-memory adapter of the `Transport` port: a master endpoint and any number of worker endpoints
-that pass version 4 frames inside one process, through a fault policy a test sets. It is built with
+that pass version 5 frames inside one process, through a fault policy a test sets. It is built with
 the distributed layer, under `SR_ENABLE_DISTRIBUTED`, and every name it declares is in
 `SushiRuntime::Distributed`. Its headers are installed.
 

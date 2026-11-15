@@ -7,4 +7,4 @@ sushiruntime_add_module(
     NAME transport TIER extension
     SOURCES
         endpoint.cpp
-    DEPENDS core)
+    DEPENDS core handle)

@@ -54,7 +54,7 @@ namespace SushiRuntime
                 struct Step
                 {
                     std::uint64_t task_id = 0;    /**< The task the bytes belong to. */
-                    GlobalBufferID id;            /**< The buffer the bytes go into. */
+                    GlobalHandle id;            /**< The buffer the bytes go into. */
                     PeerID from;                  /**< The connection the chunk arrived on. */
                     std::uint64_t size_bytes = 0; /**< The whole size the chunk declares. */
                     std::uint64_t offset = 0;     /**< The position of the chunk's first byte. */
@@ -107,7 +107,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Forgets one transfer, if it is known. */
-                void discard(std::uint64_t task_id, GlobalBufferID id) noexcept
+                void discard(std::uint64_t task_id, GlobalHandle id) noexcept
                 {
                     const auto task = by_task_.find(task_id);
                     if (task == by_task_.end())
@@ -151,7 +151,7 @@ namespace SushiRuntime
                 /** @brief Holds how far one buffer of one task has come. */
                 struct Transfer
                 {
-                    GlobalBufferID id;             /**< The buffer being written. */
+                    GlobalHandle id;             /**< The buffer being written. */
                     PeerID from;                   /**< The connection that started it. */
                     std::uint64_t size_bytes = 0;  /**< The size its first chunk declared. */
                     std::uint64_t next_offset = 0; /**< The only offset accepted besides 0. */
@@ -166,7 +166,7 @@ namespace SushiRuntime
 
                 /** @brief Returns the transfer of a buffer, or the end of the vector. */
                 [[nodiscard]] static Transfers::iterator find(Transfers& transfers,
-                                                              GlobalBufferID id) noexcept
+                                                              GlobalHandle id) noexcept
                 {
                     return std::find_if(transfers.begin(), transfers.end(),
                                         [id](const Transfer& transfer)
@@ -324,7 +324,7 @@ namespace SushiRuntime
                 if (chunk.offset != 0)
                     return std::nullopt;
 
-                const std::optional<BufferHandle> current = buffers.lookup_by_id(chunk.handle.id);
+                const std::optional<BufferHandle> current = buffers.lookup(chunk.handle.id);
                 if (!current)
                     return ChunkStatus::Gone;
 
@@ -353,10 +353,10 @@ namespace SushiRuntime
 
         BufferExchange::~BufferExchange() = default;
 
-        std::unique_ptr<FrameSource> BufferExchange::serve_pull(GlobalBufferID id,
+        std::unique_ptr<FrameSource> BufferExchange::serve_pull(GlobalHandle id,
                                                                 std::uint32_t version)
         {
-            const std::optional<BufferHandle> current = buffers_.lookup_by_id(id);
+            const std::optional<BufferHandle> current = buffers_.lookup(id);
 
             // A buffer that is gone has size 0: the first read() reports it and the stream aborts.
             BufferHandle wanted;
@@ -373,7 +373,7 @@ namespace SushiRuntime
                                                        bool last_chunk)
         {
             const std::uint64_t task_id = chunk.task_id;
-            const GlobalBufferID id = chunk.handle.id;
+            const GlobalHandle id = chunk.handle.id;
 
             std::optional<ChunkStatus> refusal = refusal_of(buffers_, chunk, last_chunk);
             if (!refusal)

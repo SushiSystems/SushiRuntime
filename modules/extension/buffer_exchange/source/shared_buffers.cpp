@@ -33,7 +33,6 @@
 #include <algorithm>
 #include <cstring>
 
-#include <SushiRuntime/buffer_exchange/buffer_wire_id.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
@@ -71,7 +70,7 @@ namespace SushiRuntime
         void* SharedBuffers::address_of(const Entry& entry) const noexcept
         {
             const std::optional<Internal::Graph::HandleLocation> location =
-                Internal::Graph::locate(resolver_, entry.handle, device_count_);
+                Internal::Graph::locate(resolver_, entry.wire.id, device_count_);
             return location ? location->address : nullptr;
         }
 
@@ -82,47 +81,43 @@ namespace SushiRuntime
 
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const GlobalBufferID id = wire_id_of(handle);
-            const auto known = by_id_.find(id.value);
-            if (known != by_id_.end())
+            const auto known = by_handle_.find(handle);
+            if (known != by_handle_.end())
                 return known->second.wire;
 
             Entry entry;
-            entry.handle = handle;
-            entry.wire.id = id;
+            entry.wire.id = handle;
             entry.wire.version = 1;
             entry.wire.size_bytes = size_bytes;
-            by_id_.emplace(id.value, entry);
+            by_handle_.emplace(handle, entry);
             return entry.wire;
         }
 
-        GlobalBufferID SharedBuffers::unshare(GlobalHandle handle) noexcept
+        GlobalHandle SharedBuffers::unshare(GlobalHandle handle) noexcept
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto known = by_id_.find(wire_id_of(handle).value);
-            if (known == by_id_.end() || !(known->second.handle == handle))
-                return GlobalBufferID{};
+            const auto known = by_handle_.find(handle);
+            if (known == by_handle_.end())
+                return GlobalHandle::null();
 
-            const GlobalBufferID id = known->second.wire.id;
-            by_id_.erase(known);
-            return id;
+            by_handle_.erase(known);
+            return handle;
         }
 
-        std::vector<GlobalBufferID> SharedBuffers::unshare_retired()
+        std::vector<GlobalHandle> SharedBuffers::unshare_retired()
         {
-            std::vector<GlobalBufferID> dropped;
+            std::vector<GlobalHandle> dropped;
 
             std::lock_guard<std::mutex> lock(mutex_);
-            for (const auto& [value, entry] : by_id_)
-                if (resolver_.is_stale(entry.handle))
-                    dropped.push_back(entry.wire.id);
+            for (const auto& [handle, entry] : by_handle_)
+                if (resolver_.is_stale(handle))
+                    dropped.push_back(handle);
 
-            // The map's order is not defined; the ids go out in value order.
-            std::sort(dropped.begin(), dropped.end(),
-                      [](GlobalBufferID left, GlobalBufferID right) { return left.value < right.value; });
-            for (const GlobalBufferID id : dropped)
-                by_id_.erase(id.value);
+            // The map's order is not defined; the handles go out in handle order.
+            std::sort(dropped.begin(), dropped.end());
+            for (const GlobalHandle handle : dropped)
+                by_handle_.erase(handle);
             return dropped;
         }
 
@@ -130,22 +125,11 @@ namespace SushiRuntime
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto known = by_id_.find(wire_id_of(handle).value);
-            if (known == by_id_.end() || !(known->second.handle == handle))
+            const auto known = by_handle_.find(handle);
+            if (known == by_handle_.end())
                 return std::nullopt;
 
             return known->second.wire;
-        }
-
-        std::optional<BufferHandle> SharedBuffers::lookup_by_id(GlobalBufferID id) const
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-
-            const auto entry = by_id_.find(id.value);
-            if (entry == by_id_.end())
-                return std::nullopt;
-
-            return entry->second.wire;
         }
 
         bool SharedBuffers::resolve(SushiRuntime::span<const GlobalHandle> handles,
@@ -157,8 +141,8 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
             for (const GlobalHandle handle : handles)
             {
-                const auto known = by_id_.find(wire_id_of(handle).value);
-                if (known == by_id_.end() || !(known->second.handle == handle))
+                const auto known = by_handle_.find(handle);
+                if (known == by_handle_.end())
                     return false;
 
                 out.push_back(known->second.wire);
@@ -171,8 +155,8 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
             for (BufferHandle& handle : handles)
             {
-                const auto entry = by_id_.find(handle.id.value);
-                if (entry == by_id_.end())
+                const auto entry = by_handle_.find(handle.id);
+                if (entry == by_handle_.end())
                     return false;
 
                 handle.version = entry->second.wire.version;
@@ -185,8 +169,8 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
             for (BufferHandle& handle : handles)
             {
-                const auto entry = by_id_.find(handle.id.value);
-                if (entry == by_id_.end())
+                const auto entry = by_handle_.find(handle.id);
+                if (entry == by_handle_.end())
                     continue;
 
                 handle.version = ++entry->second.wire.version;
@@ -198,22 +182,22 @@ namespace SushiRuntime
             std::lock_guard<std::mutex> lock(mutex_);
             for (const GlobalHandle handle : handles)
             {
-                const auto known = by_id_.find(wire_id_of(handle).value);
-                if (known == by_id_.end() || !(known->second.handle == handle))
+                const auto known = by_handle_.find(handle);
+                if (known == by_handle_.end())
                     continue;
 
                 ++known->second.wire.version;
             }
         }
 
-        BufferAccessStatus SharedBuffers::read(GlobalBufferID id, std::uint32_t version,
+        BufferAccessStatus SharedBuffers::read(GlobalHandle id, std::uint32_t version,
                                                std::uint64_t offset,
                                                SushiRuntime::span<std::byte> out) const
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto entry = by_id_.find(id.value);
-            if (entry == by_id_.end())
+            const auto entry = by_handle_.find(id);
+            if (entry == by_handle_.end())
                 return BufferAccessStatus::Gone;
 
             const BufferAccessStatus status =
@@ -229,14 +213,14 @@ namespace SushiRuntime
             return BufferAccessStatus::Ok;
         }
 
-        BufferAccessStatus SharedBuffers::write(GlobalBufferID id, std::uint32_t version,
+        BufferAccessStatus SharedBuffers::write(GlobalHandle id, std::uint32_t version,
                                                 std::uint64_t offset,
                                                 SushiRuntime::span<const std::byte> in)
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
-            const auto entry = by_id_.find(id.value);
-            if (entry == by_id_.end())
+            const auto entry = by_handle_.find(id);
+            if (entry == by_handle_.end())
                 return BufferAccessStatus::Gone;
 
             const BufferAccessStatus status =

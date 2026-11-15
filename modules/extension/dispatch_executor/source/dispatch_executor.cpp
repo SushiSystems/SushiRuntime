@@ -86,7 +86,7 @@ namespace SushiRuntime
                     /** @brief Drops every pin still guarded. */
                     ~PinGuard()
                     {
-                        for (const GlobalBufferID id : ids_)
+                        for (const GlobalHandle id : ids_)
                             cache_.unpin(id);
                     }
 
@@ -102,7 +102,7 @@ namespace SushiRuntime
                     }
 
                     /** @brief Guards one pin; reserve() covered it. */
-                    void add(GlobalBufferID id) noexcept
+                    void add(GlobalHandle id) noexcept
                     {
                         ids_.push_back(id);
                     }
@@ -111,7 +111,7 @@ namespace SushiRuntime
                      * @brief Stops guarding: another owner unpins from here on.
                      * @return The ids of the pins handed on.
                      */
-                    [[nodiscard]] std::vector<GlobalBufferID> hand_on() noexcept
+                    [[nodiscard]] std::vector<GlobalHandle> hand_on() noexcept
                     {
                         return std::move(ids_);
                     }
@@ -121,7 +121,7 @@ namespace SushiRuntime
                     WorkerBufferCache& cache_;
 
                     /// @brief One id per pin.
-                    std::vector<GlobalBufferID> ids_;
+                    std::vector<GlobalHandle> ids_;
             };
         } // namespace
 
@@ -143,7 +143,7 @@ namespace SushiRuntime
                 ~Batch()
                 {
                     for (DispatchEntry& entry : entries_)
-                        for (const GlobalBufferID id : entry.pins)
+                        for (const GlobalHandle id : entry.pins)
                             cache_.unpin(id);
                 }
 
@@ -165,9 +165,9 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns the ids the jobs of the batch write. */
-                [[nodiscard]] SushiRuntime::span<const GlobalBufferID> written() const noexcept
+                [[nodiscard]] SushiRuntime::span<const GlobalHandle> written() const noexcept
                 {
-                    return SushiRuntime::span<const GlobalBufferID>(written_.data(),
+                    return SushiRuntime::span<const GlobalHandle>(written_.data(),
                                                                     written_.size());
                 }
 
@@ -191,7 +191,7 @@ namespace SushiRuntime
                 std::deque<DispatchEntry> entries_;
 
                 /// @brief The ids the jobs of the batch write.
-                std::vector<GlobalBufferID> written_;
+                std::vector<GlobalHandle> written_;
         };
 
         DispatchExecutor::DispatchExecutor(sushi_ptr<KernelRegistry> kernels,
@@ -433,7 +433,7 @@ namespace SushiRuntime
         {
             SR_LOG_ERROR(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: cannot allocate {} bytes for buffer {} (budget {}, in use "
                          "{}); reported as {}",
-                         task_id, handle.size_bytes, handle.id.value, cache_.budget(),
+                         task_id, handle.size_bytes, handle.id.to_low_word(), cache_.budget(),
                          cache_.bytes(), consequence);
         }
 
@@ -516,7 +516,7 @@ namespace SushiRuntime
                     else
                         SR_LOG_WARN(K_DISPATCH_EXECUTOR_LOG_CATEGORY, "task {}: input buffer {} version {} did not arrive from "
                                     "peer {}: {}; reported as input unavailable",
-                                    task_id, handle.id.value, handle.version, job.from.value,
+                                    task_id, handle.id.to_low_word(), handle.version, job.from.value,
                                     cache_status_name(status));
                     settler_.fail(job.from, task_id, job.generation,
                                   Wire::TaskResultStatus::InputUnavailable);

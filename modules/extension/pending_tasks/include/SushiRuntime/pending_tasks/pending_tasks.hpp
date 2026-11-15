@@ -161,7 +161,7 @@ namespace SushiRuntime
                  *        this output at exactly this version; the first half of the fence.
                  */
                 [[nodiscard]] bool expects_output(std::uint64_t task_id, PeerID worker,
-                                                  GlobalBufferID id, std::uint32_t version) const;
+                                                  GlobalHandle id, std::uint32_t version) const;
 
                 /**
                  * @brief Removes one task, for its result or to undo a dispatch that failed.

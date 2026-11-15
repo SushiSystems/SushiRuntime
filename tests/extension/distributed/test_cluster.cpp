@@ -81,7 +81,7 @@ TEST_F(Medium_Cluster, ASharedBufferGetsAHandle)
 
     const std::optional<BufferHandle> handle = cluster.buffer_handle(buffer.handle());
     ASSERT_TRUE(handle.has_value());
-    EXPECT_TRUE(handle->id.valid());
+    EXPECT_FALSE(handle->id.is_null());
     EXPECT_EQ(handle->size_bytes, 16 * sizeof(float));
     cluster.bump_buffer(buffer.handle());
     EXPECT_EQ(cluster.buffer_handle(buffer.handle())->version, handle->version + 1);

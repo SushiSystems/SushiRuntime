@@ -48,6 +48,7 @@
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
 #include <SushiRuntime/buffer_exchange/shared_buffers.hpp>
 
+#include "support/made_up_handle.hpp"
 #include "support/shared_buffer_rig.hpp"
 
 using namespace SushiRuntime;
@@ -458,7 +459,7 @@ namespace BufferExchangeTests
         TestSupport::SharedBufferRig rig;
         BufferExchange exchange(rig.buffers(), K_CHUNK_BYTES);
         BufferHandle unknown;
-        unknown.id.value = 999;
+        unknown.id = TestSupport::made_up_handle(999);
         unknown.version = 1;
 
         const std::vector<SentFrame> only = pull_all(exchange, unknown);
