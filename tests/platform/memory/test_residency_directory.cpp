@@ -188,4 +188,20 @@ namespace
 
         EXPECT_EQ(wrong.load(), 0);
     }
+
+    TEST(Small_ResidencyDirectory, CoherenceMapLivesWithTheHandle)
+    {
+        ResidencyDirectory directory(K_UNIVERSE);
+        const GlobalHandle handle = mint_buffer(directory);
+        CoherenceIntervals* const map = directory.coherence(handle);
+        ASSERT_NE(map, nullptr);
+        map->reset(64, MemorySpaceID(0));
+        EXPECT_EQ(directory.coherence(handle)->size(), 64U);
+
+        EXPECT_EQ(directory.retire(handle), HandleStatus::Ok);
+        EXPECT_EQ(directory.coherence(handle), nullptr);
+        const GlobalHandle reused = mint_buffer(directory);
+        ASSERT_NE(directory.coherence(reused), nullptr);
+        EXPECT_TRUE(directory.coherence(reused)->intervals().empty());
+    }
 } // namespace

@@ -7,10 +7,16 @@ sushiruntime_add_module_tests(
     MODULE memory
     SOURCES
         compile_memory_log_category.cpp
+        compile_memory_probe.cpp
+        compile_memory_space.cpp
         compile_usm_request.cpp
         compile_usm_source.cpp
+        test_coherence_intervals.cpp
+        test_device_memory_space.cpp
         test_epoch_reclamation.cpp
+        test_host_memory_space.cpp
         test_host_usm_source.cpp
+        test_memory_pool_capacity.cpp
         test_recording_usm_release_observer.cpp
         test_residency_directory.cpp
         test_sycl_queues.cpp

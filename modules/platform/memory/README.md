@@ -1,7 +1,8 @@
 # memory
 
-The USM allocator and its allocation owner, the USM registry, the residency directory and
-epoch-based reclamation.
+The USM allocator and its allocation owner, the USM registry, the residency directory with its
+coherence interval map, the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`)
+and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
 Everything is in `SushiRuntime::Internal::Memory`.
@@ -329,3 +330,23 @@ device: a shared allocation that matches is returned at once, a device allocatio
 kept while the remaining queues are tried, host USM resolves to nothing, and a context that throws
 for an address it does not know counts as no match. The host source looks the address up among
 the shared and device allocations it made.
+
+## coherence_intervals.hpp
+
+### CoherenceIntervals
+
+Each directory entry holds one map from `[begin, end)` to the valid spaces and the version of those
+bytes. A write makes the written space the only valid one at a fresh version; a copy adds a space
+and keeps the version. The map then joins neighbours with equal state, so a buffer written whole is
+one interval again. The intervals sit in a sorted vector, so the order never depends on a hash.
+The planner is the only writer of a buffer's map, at plan time, and the map takes no lock.
+
+## memory_space.hpp
+
+### MemorySpace
+
+Each kind of space is a class of its own behind `MemorySpace`, so the file space adds a file and
+edits no sibling. A space measures its reserve once, when it is built, through a `MemoryProbe`:
+the reserve is the bytes the probe reports as not free. Tests pass a fake probe.
+`usable_pool_bytes` sums capacity less reserve per `shared_pool`, so an integrated GPU that shares
+the host pool is counted once.

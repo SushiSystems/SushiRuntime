@@ -47,6 +47,7 @@
 #include <SushiRuntime/handle/handle_space.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
+#include <SushiRuntime/memory/coherence_intervals.hpp>
 
 namespace SushiRuntime
 {
@@ -135,11 +136,21 @@ namespace SushiRuntime
                     return universe_;
                 }
 
+                /**
+                 * @brief Returns the coherence map of a live handle, or null when it is not live.
+                 *
+                 * The planner is the map's only writer, at plan time; the map takes no lock.
+                 */
+                [[nodiscard]] CoherenceIntervals* coherence(GlobalHandle handle) noexcept;
+
+                /** @brief Returns the coherence map of a live handle, or null when it is not live. */
+                [[nodiscard]] const CoherenceIntervals* coherence(GlobalHandle handle) const noexcept;
+
                 /** @brief Returns the address of the entry of slot, or null when its chunk is absent. */
                 [[nodiscard]] const void* entry_address(std::uint32_t slot) const noexcept;
 
             private:
-                /** @brief Holds one slot of the table; T12 adds the coherence interval map here. */
+                /** @brief Holds one slot of the table. */
                 struct Entry
                 {
                     /// @brief Generation of the live handle, or of the next one while the slot is free.
@@ -165,6 +176,9 @@ namespace SushiRuntime
 
                     /// @brief Address of the instance on each space, or null.
                     std::array<std::atomic<void*>, K_MAX_MEMORY_SPACES> instances{};
+
+                    /// @brief Valid spaces and version of each byte range; written by the planner only.
+                    CoherenceIntervals coherence;
                 };
 
                 /** @brief Holds K_CHUNK_ENTRIES entries; a chunk never moves once made. */

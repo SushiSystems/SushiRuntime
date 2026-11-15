@@ -41,6 +41,7 @@ dispatch: T01 — opus low, 37 turns, passed, rung 1
 dispatch: T05 — opus low, rung 1, passed
 dispatch: T02 — sonnet medium, rung 1, passed
 dispatch: T04 — sonnet low, rung 1, passed
+dispatch: T12 — opus low, rung 1, passed
 ```
 
 ## T05: the residency directory

@@ -139,6 +139,7 @@ namespace SushiRuntime
             entry->element_size.store(1, std::memory_order_relaxed);
             entry->element_alignment.store(1, std::memory_order_relaxed);
             entry->home.store(0, std::memory_order_relaxed);
+            entry->coherence.clear();
 
             // A slot whose generation wrapped to 0 is never reused, so no old handle matches it.
             if (next_generation != 0)
@@ -240,6 +241,20 @@ namespace SushiRuntime
                 !entry->live.load(std::memory_order_relaxed))
                 return EntryView{0, ElementLayout{}, MemorySpaceID(), 0, HandleStatus::StaleHandle};
             return view;
+        }
+
+        CoherenceIntervals* ResidencyDirectory::coherence(GlobalHandle handle) noexcept
+        {
+            HandleStatus status = HandleStatus::Ok;
+            Entry* const entry = live_entry(handle, status);
+            return entry ? &entry->coherence : nullptr;
+        }
+
+        const CoherenceIntervals* ResidencyDirectory::coherence(GlobalHandle handle) const noexcept
+        {
+            HandleStatus status = HandleStatus::Ok;
+            const Entry* const entry = live_entry(handle, status);
+            return entry ? &entry->coherence : nullptr;
         }
 
         ErrorCode error_code_of(HandleStatus status) noexcept

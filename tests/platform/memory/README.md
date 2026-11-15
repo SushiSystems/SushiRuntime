@@ -277,3 +277,27 @@ address.
 | Test | What it proves |
 | --- | --- |
 | `HearsEachReleaseWithItsAddress` | The observer hears the release of the address the allocator gave. |
+
+## compile_memory_probe.cpp and compile_memory_space.cpp
+
+Each file includes one interface header alone.
+
+## fake_memory_probe.hpp
+
+`FakeMemoryProbe` reports the total and free bytes it was built with and counts its calls, so a
+test can check that a space probes once and derives its reserve from the result.
+
+## test_coherence_intervals.cpp
+
+The tests cover a partial write splitting one interval into three, a write invalidating every
+other space, two copies joining back into one interval, and a whole-buffer write leaving one
+interval.
+
+## test_device_memory_space.cpp and test_host_memory_space.cpp
+
+Each builds a space on a fake probe and checks capacity, the measured reserve and sorted direct
+targets.
+
+## test_memory_pool_capacity.cpp
+
+A host and an integrated GPU share pool 0 and a discrete GPU has pool 1; the sum counts pool 0 once.
