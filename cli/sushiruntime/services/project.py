@@ -430,6 +430,8 @@ def _configure_args_windows(cmake: str, cfg: Config, build_dir: Path, build_type
         args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
     if rocm_route is not None:
         args += rocm_route.configure_arguments(os.environ)
+    else:
+        args += ["-USR_ROCM_PATH", "-USR_ROCM_DEVICE_LIBS"]
     if cfg.rc_exe:
         args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
     # Always passed, so a tree configured with other flags is rewritten to these.
