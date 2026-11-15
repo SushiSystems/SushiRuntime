@@ -51,7 +51,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T10 | `extension/buffer_exchange` | T06 | todo |
 | T11 | resolve benchmark | T09 | todo |
 | T12 | `platform/memory` spaces and intervals | T05 | done |
-| T13 | `engine/coherence` planner | T08, T12 | todo |
+| T13 | `engine/coherence` planner | T08, T12 | running |
 | T14 | `engine/coherence` eviction | T13 | todo |
 | T15 | reference interpreter test | T13 | todo |
 | T16 | determinism suite | T13 | todo |

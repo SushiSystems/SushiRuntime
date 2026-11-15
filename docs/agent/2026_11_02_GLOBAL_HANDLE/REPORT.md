@@ -44,6 +44,7 @@ dispatch: T04 — sonnet low, rung 1, passed
 dispatch: T12 — opus low, rung 1, passed
 dispatch: T06 — opus low, 270 turns, rung 1, passed
 dispatch: T08 — sonnet low, 18 turns, rung 1, passed
+dispatch: T09 — haiku high, rung 1, failed (stopped on an interface ruling)
 ```
 
 ## T05: the residency directory
@@ -65,3 +66,13 @@ dispatch: T08 — sonnet low, 18 turns, rung 1, passed
 - Syntax-checked: every changed module source and most tests. Not checked one by one: some
   profiling, dynamic-graph and recorder tests, `test_replay`, the benchmarks and most examples.
   The closing build covers them, since a `BufferRegion` no longer converts from a pointer.
+
+## T09: the ruling on USMAllocator
+
+`USMRegistry` is the pointer table inside `USMAllocator`, and about twenty files ask it for a
+pointer's device, kind, owner and base. The orchestrator ruled, under the owner's delegation:
+`USMAllocator` allocates and frees and keeps no table; the directory entry records the instance
+and its kind (host, shared, device); every pointer query becomes a query on the handle; raw
+memory a caller brings is reached through `BorrowedIndex` only. An address index for owned
+memory would be the registry under a new name, against "address-to-handle serves borrowed
+memory only". T09 runs again one rung up, after T13, because it touches `runtime_context` too.
