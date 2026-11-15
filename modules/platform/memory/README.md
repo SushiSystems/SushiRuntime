@@ -1,7 +1,7 @@
 # memory
 
 The USM allocator and its allocation owner, the residency directory with its retire observer and
-coherence interval map, the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`)
+coherence interval map, the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`, `FileMemorySpace`)
 and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
@@ -320,3 +320,18 @@ the host pool is counted once.
 `SystemMemoryProbe` is the `MemoryProbe` of host memory. It reads the physical and available bytes
 from `GlobalMemoryStatusEx()` on Windows and from `sysconf()` elsewhere; a refused query reports zero
 bytes. `RuntimeContext` builds the host's `HostMemorySpace` through it.
+
+## file_memory_space.hpp
+
+### FileMemorySpace
+
+A `FileMemorySpace` is one byte range of a file, named by `FileRange` (path, offset, bytes). Its
+capacity is the range size, its reserve is zero, its pool is its own id, and it lists no direct
+target, so no device addresses it and every copy out of it goes through a transfer path. It is
+read-only: nothing writes to it.
+
+The residency directory records a buffer's instance on a file space as the fixed token
+`instance_address()` returns, with no kind of USM. The token is never dereferenced; it lets the
+planner add a byte offset to the instance as it does for any other space, and `file_offset()` turns
+the result back into a file offset. Because the token is a constant, the plan is the same in every
+run. Because the instance has no kind, a release and a planned free leave it alone.

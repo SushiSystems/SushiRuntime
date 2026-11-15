@@ -31,6 +31,8 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 #include <atomic>
+#include <filesystem>
+#include <system_error>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -468,6 +470,27 @@ namespace SushiRuntime
         const std::vector<Internal::Coherence::TransferPath*>& RuntimeContext::transfer_paths() const noexcept
         {
             return impl_->paths.views;
+        }
+
+        Result<MemorySpaceID> RuntimeContext::add_file_space(Internal::Memory::FileRange range)
+        {
+            std::error_code failed;
+            const std::uintmax_t file_bytes = std::filesystem::file_size(range.path, failed);
+            if (failed)
+                return make_error(Error{ErrorCode::InvalidArgument,
+                                        "cannot read the size of " + range.path + ": " + failed.message() + "."});
+            if (range.offset > file_bytes || range.bytes > file_bytes - range.offset)
+                return make_error(Error{ErrorCode::InvalidArgument,
+                                        range.path + " holds " + std::to_string(file_bytes) +
+                                            " bytes, fewer than the range of " + std::to_string(range.bytes) +
+                                            " bytes at offset " + std::to_string(range.offset) + " needs."});
+            if (impl_->spaces.views.size() >= Internal::Memory::ResidencyDirectory::K_MAX_MEMORY_SPACES)
+                return make_error(Error{ErrorCode::AllocationFailed,
+                                        "every memory space id a residency entry can name is taken."});
+            const Internal::Memory::FileMemorySpace& space =
+                add_file_space_to(impl_->spaces, std::move(range));
+            impl_->paths.file->add(space);
+            return space.id();
         }
 
         Internal::Memory::BorrowedIndex& RuntimeContext::borrowed_handles() noexcept

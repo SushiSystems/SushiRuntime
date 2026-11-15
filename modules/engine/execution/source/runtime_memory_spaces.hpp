@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 
@@ -57,5 +58,12 @@ namespace SushiRuntime
          */
         [[nodiscard]] RuntimeMemorySpaces build_memory_spaces(const Device::DeviceQueueSet& devices,
                                                               const Memory::MemoryProbe& host_probe);
+
+        /**
+         * @brief Adds the space of a file range with the next free id: the count of spaces, so a
+         *        space's id stays its index.
+         * @return The new space; spaces owns it.
+         */
+        [[nodiscard]] const Memory::FileMemorySpace& add_file_space_to(RuntimeMemorySpaces& spaces, Memory::FileRange range);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

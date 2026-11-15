@@ -141,6 +141,18 @@ namespace SushiRuntime
             std::size_t element_size, std::size_t element_alignment);
 
         /**
+         * @brief Mints the handle of a Residency::Planned buffer whose bytes are a file range:
+         *        the range's read-only space holds the one valid instance.
+         * @return The handle, the null handle for no bytes, an InvalidArgument error when the
+         *         file is shorter than the range, or an AllocationFailed error when no handle or
+         *         space id is left.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> mint_file_handle(
+            const ContextHandle& context, HandleKind kind, const std::string& path,
+            std::uint64_t offset, std::size_t bytes, std::size_t element_size,
+            std::size_t element_alignment);
+
+        /**
          * @brief Copies bytes of a planned buffer to host memory from a space that holds them.
          * @param begin First byte of the buffer to read.
          * @return Nothing, or the error the directory, a transfer path or the host space failed
@@ -539,6 +551,37 @@ namespace SushiRuntime
                 const std::size_t bytes = Detail::checked_byte_count(call, count, sizeof(T));
                 Result<GlobalHandle> handle = Detail::mint_planned_handle(
                     context, kind, bytes, sizeof(T), alignof(T));
+                if (!handle)
+                    return make_error(std::move(handle.error()));
+                std::optional<Buffer> made;
+                Result<void> built = Detail::translate_exceptions([&]()
+                {
+                    made.emplace(Buffer(context, count, *handle));
+                });
+                if (!built)
+                {
+                    Detail::release_planned_handle(context, *handle);
+                    return make_error(std::move(built.error()));
+                }
+                return std::move(*made);
+            }
+
+            /**
+             * @brief Makes a Residency::Planned buffer of count elements of a file, from byte
+             *        offset; the file is read only when a space needs the bytes.
+             * @param call Names the public operation in a message.
+             * @return The buffer, InvalidArgument for a short file, or AllocationFailed.
+             * @pre count's bytes fit.
+             */
+            [[nodiscard]] static Result<Buffer> plan_from_file(const char* call,
+                                                               const ContextHandle& context,
+                                                               const std::string& path,
+                                                               std::uint64_t offset,
+                                                               std::size_t count)
+            {
+                const std::size_t bytes = Detail::checked_byte_count(call, count, sizeof(T));
+                Result<GlobalHandle> handle = Detail::mint_file_handle(
+                    context, HandleKind::Buffer, path, offset, bytes, sizeof(T), alignof(T));
                 if (!handle)
                     return make_error(std::move(handle.error()));
                 std::optional<Buffer> made;

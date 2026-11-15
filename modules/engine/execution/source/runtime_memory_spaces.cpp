@@ -77,5 +77,15 @@ namespace SushiRuntime
                 spaces.views.push_back(space.get());
             return spaces;
         }
+
+        const Memory::FileMemorySpace& add_file_space_to(RuntimeMemorySpaces& spaces, Memory::FileRange range)
+        {
+            const MemorySpaceID id(static_cast<std::uint32_t>(spaces.views.size()));
+            auto space = std::make_unique<Memory::FileMemorySpace>(id, std::move(range));
+            const Memory::FileMemorySpace& added = *space;
+            spaces.owned.push_back(std::move(space));
+            spaces.views.push_back(&added);
+            return added;
+        }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Added `Runtime::buffer_from_file<T>(path, offset, count)`, a planned buffer whose valid copy is a file range streamed through the staging ring (GLOBAL_HANDLE H4).
+- 2026-11-15 — memory: Added `FileMemorySpace` and the `FilePath` transfer path that reads it through the staging ring (GLOBAL_HANDLE H4).
 - 2026-11-15 — api: Changed a static `Graph` with nodes on two devices to plan its copies at compile and replay the plan with no planner call while it is steady (GLOBAL_HANDLE H5).
 - 2026-11-15 — api: Added `Graph::coherence_plan_count()` (GLOBAL_HANDLE H5).
 - 2026-11-15 — runtime: Changed an integrated GPU to share the host memory pool, so its RAM is counted once (GLOBAL_HANDLE H3).

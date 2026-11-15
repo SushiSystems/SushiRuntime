@@ -25,6 +25,7 @@ sushiruntime_add_module_tests(
         test_device_profile_file.cpp
         test_device_profile_set.cpp
         test_directory_planned_node_factory.cpp
+        test_file_path.cpp
         test_host_staged_path.cpp
         test_logical_time_eviction.cpp
         test_peer_path.cpp

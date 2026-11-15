@@ -33,6 +33,7 @@
 #include <memory>
 #include <vector>
 
+#include <SushiRuntime/coherence/file_path.hpp>
 #include <SushiRuntime/coherence/transfer_observer.hpp>
 #include <SushiRuntime/coherence/transfer_path.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -44,7 +45,7 @@ namespace SushiRuntime
         /**
          * @brief Owns the transfer paths of one runtime and the objects they stand on.
          *
-         * A path lists first the cheapest way: the copy inside one context, then the peer copy, then the copy staged through pinned host memory.
+         * A path lists first the cheapest way: the copy inside one context, then the peer copy, then the copy staged through pinned host memory, then the read out of a file.
          */
         struct RuntimeTransferPaths
         {
@@ -59,6 +60,7 @@ namespace SushiRuntime
             std::unique_ptr<Support> support;                          /**< The queues and the access the paths use. */
             std::vector<std::unique_ptr<Coherence::TransferPath>> owned; /**< The paths. */
             std::vector<Coherence::TransferPath*> views;               /**< The same paths, in the order they are tried. */
+            Coherence::FilePath* file = nullptr;                       /**< The path that reads file spaces; owned holds it. */
         };
 
         /**

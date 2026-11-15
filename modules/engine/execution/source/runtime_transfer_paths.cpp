@@ -185,6 +185,9 @@ namespace SushiRuntime
                 std::make_unique<Coherence::PeerPath>(paths.support->queues, paths.support->access, observer));
             paths.owned.push_back(
                 std::make_unique<Coherence::HostStagedPath>(paths.support->queues, paths.support->ring, observer));
+            auto file = std::make_unique<Coherence::FilePath>(paths.support->queues, paths.support->ring, observer);
+            paths.file = file.get();
+            paths.owned.push_back(std::move(file));
             for (const auto& path : paths.owned)
                 paths.views.push_back(path.get());
             return paths;

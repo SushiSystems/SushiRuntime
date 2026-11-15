@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -160,6 +161,23 @@ namespace SushiRuntime
                 if (residency != Residency::Planned)
                     return make_error(Detail::residency_needs_device("Runtime::buffer", residency));
                 return Buffer<T>::plan("Runtime::buffer", context_, count);
+            }
+
+            /**
+             * @brief Makes a Residency::Planned buffer of @p count elements whose one valid copy
+             *        is the file at @p path from byte @p offset; the file must not change.
+             * @return The buffer, an InvalidArgument error when the file cannot be read or is
+             *         shorter than the range, or AllocationFailed when no handle or space is left.
+             * @pre The byte size of count fits std::size_t.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            template <typename T>
+            [[nodiscard]] Result<Buffer<T>> buffer_from_file(const std::string& path,
+                                                             std::uint64_t offset,
+                                                             std::size_t count) const
+            {
+                return Buffer<T>::plan_from_file("Runtime::buffer_from_file", context_, path,
+                                                 offset, count);
             }
 
             /**

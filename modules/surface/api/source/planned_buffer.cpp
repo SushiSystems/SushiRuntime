@@ -30,6 +30,8 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 
+#include <cstdint>
+#include <string>
 #include <utility>
 
 #include <SushiRuntime/coherence/planned_host_access.hpp>
@@ -37,6 +39,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 
 namespace SushiRuntime
@@ -73,6 +76,25 @@ namespace SushiRuntime
             {
                 return access.mint(kind, bytes,
                                    Internal::Memory::ElementLayout{element_size, element_alignment});
+            });
+        }
+
+        Result<GlobalHandle> mint_file_handle(const ContextHandle& context, HandleKind kind,
+                                              const std::string& path, std::uint64_t offset,
+                                              std::size_t bytes, std::size_t element_size,
+                                              std::size_t element_alignment)
+        {
+            if (!context || bytes == 0)
+                return GlobalHandle::null();
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            Result<MemorySpaceID> space = runtime.add_file_space(Internal::Memory::FileRange{path, offset, bytes});
+            if (!space)
+                return make_error(std::move(space.error()));
+            return with_access(context, [&](Internal::Coherence::PlannedHostAccess& access)
+            {
+                return access.mint_held(kind, bytes,
+                                        Internal::Memory::ElementLayout{element_size, element_alignment},
+                                        *space, Internal::Memory::FileMemorySpace::instance_address());
             });
         }
 

@@ -259,6 +259,14 @@ allocate nothing: the runtime places the memory when a node uses it. The forms w
 refuse `Residency::Planned`, and the forms without one refuse every other residency, both with
 `InvalidArgument`. `api/data/README.md`, section "Residency::Planned", has the rules.
 
+`buffer_from_file<T>(path, offset, count)` makes a `Residency::Planned` buffer of `count` elements
+whose bytes are the file at `path` from byte `offset`. The file range is the buffer's one valid
+copy: the runtime adds a read-only memory space for it and streams the bytes a device or the host
+needs through its staging ring, never the whole file. A file that cannot be read or is shorter than
+the range is an `InvalidArgument` error. Each call takes one memory space id for the life of the
+runtime, and a residency entry names at most 64 spaces, host and devices included, so a runtime
+holds at most that many file ranges; past that the call returns `AllocationFailed`.
+
 Both take an alignment in bytes as their last argument. Zero, the default, asks for the device's
 own alignment. Any other value must be a power of two and reaches `USMRequest::alignment`, so the
 address is a multiple of it; a State aligns both fields. A value that is not a power of two stops

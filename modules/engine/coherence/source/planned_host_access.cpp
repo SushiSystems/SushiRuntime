@@ -32,6 +32,7 @@
 
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -96,6 +97,24 @@ namespace SushiRuntime
             return minted.handle;
         }
 
+        Result<GlobalHandle> PlannedHostAccess::mint_held(HandleKind kind, std::size_t bytes,
+                                                          Memory::ElementLayout layout, MemorySpaceID space,
+                                                          void* address)
+        {
+            Result<GlobalHandle> minted = mint(kind, bytes, layout);
+            if (!minted || minted->is_null())
+                return minted;
+            const HandleStatus set = directory_->set_instance(*minted, space, address, std::nullopt);
+            if (set != HandleStatus::Ok)
+            {
+                static_cast<void>(directory_->retire(*minted));
+                return make_error(directory_error(set, "the residency directory refused the held instance"));
+            }
+            // The held instance is the one valid copy of every byte.
+            directory_->coherence(*minted)->reset(bytes, space);
+            return minted;
+        }
+
         Result<void> PlannedHostAccess::write(GlobalHandle handle, std::size_t begin, const void* source,
                                               std::size_t bytes)
         {
@@ -154,8 +173,10 @@ namespace SushiRuntime
                     if ((entry.valid_spaces & (std::uint64_t{1} << space)) == 0)
                         continue;
                     const ResolveOutcome instance = directory_->resolve(handle, MemorySpaceID(space));
+                    // An instance with no kind was not allocated here, so it is not freed here.
+                    const bool allocated = directory_->instance_kind(handle, MemorySpaceID(space)).has_value();
                     static_cast<void>(directory_->drop_instance(handle, MemorySpaceID(space)));
-                    if (instance.status == HandleStatus::Ok)
+                    if (instance.status == HandleStatus::Ok && allocated)
                         allocator_->release(MemorySpaceID(space), instance.address);
                 }
             static_cast<void>(directory_->retire(handle));

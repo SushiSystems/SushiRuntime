@@ -62,7 +62,7 @@ when its own context would not hold their reading; it still reviews and commits 
 | T16 | determinism suite | T13 | done |
 | T17 | `engine/coherence` same-context and peer paths | T13 | done |
 | T18 | `engine/coherence` host-staged path | T17 | done |
-| T19 | file space and file path | T18 | running |
+| T19 | file space and file path | T18 | done |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | done |
 | T21 | copy plan replay | T13 | done |
 | T45 | `engine/graph` `PlanCache`, `surface/api` static `Graph`: the coherence hook and copy-plan replay | T21 | done |
@@ -132,7 +132,7 @@ The directory is built before the identity switches to it, so H1 has a minter to
 | T41 | `sonnet` `medium` | `platform/memory` `ResidencyView` port; `engine/coherence` planner and node factory | T13 | The planner and the node factory depend on the port, not on `ResidencyDirectory` |
 | T43 | `sonnet` `medium` | `engine/execution` runtime context and `RuntimeConfig`, `surface/api/source/region_coherence.cpp`, a device `ProfileProbe` | T24, T18 | The eviction policy reaches the composer's hook through `RuntimeContext`, the pages T21 made false are right, a runtime given a profile file prices copies through `CostModel`, a runtime without one keeps the uniform cost, and `ProfileMeasurement` runs on a device through the real probe; a caller installs a `TransferObserver` through `AdvancedControls`, and T20 asserts the path of each copy through it |
 | T45 | `opus` `low` | `engine/graph` `PlanCache`, `surface/api` static `Graph` | T21 | A static `Graph` with nodes on two devices gets its copies planned at compile, keeps the plan with the compiled graph and replays it with no planner call, as a `DynamicGraph` does |
-| T46 | `opus` `low` | the dynamic and static step drivers, the directory's retire path, `engine/task` `placement_of` | T37, T21 | A `write_range()` after a steady plan forces a replan before the next run; retiring a handle frees every instance the planner made for it; a node using only planned buffers is placed on the default device until the partitioner gives one |
+| T46 | `opus` `low` | the dynamic and static step drivers, the directory's retire path, `engine/task` `placement_of` | T37, T21 | A `write_range()` after a steady plan forces a replan before the next run; retiring a handle frees every instance the planner made for it and the file space a file-backed buffer added; a node using only planned buffers is placed on the default device until the partitioner gives one |
 | T44 | `opus` `low` | `engine/task` `kernel_pointers`, node placement metadata, `surface/api` recorder `DeviceSlot` path | T39, T37 | A node whose kernel captures raw addresses is marked fixed to its home device and refused elsewhere with `InvalidGraph`; a bind with no instance on the node's device fails its verify; the dynamic `DeviceSlot` path binds through `KernelPointers` |
 | T42 | `sonnet` `low` | `engine/execution/source/runtime_memory_spaces.cpp`, `platform/device` | T13 | An integrated GPU reports the host pool as its shared pool, and `usable_pool_bytes` counts it once |
 

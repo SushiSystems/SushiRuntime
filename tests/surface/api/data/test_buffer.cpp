@@ -31,8 +31,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -420,6 +423,34 @@ namespace DataHandlesTests
 
         EXPECT_EQ(buffer.read_range({0, K_SIZE}).value(), values);
         EXPECT_EQ(field.read_range({0, K_SIZE}).value(), values);
+    }
+
+    /** @brief Tests that a buffer made from a file range reads back the range's elements and that a short file is refused. */
+    TEST_F(Small_DataHandles, AFileBackedBufferReadsBackItsRangeOfTheFile)
+    {
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / "sushiruntime_test_buffer_from_file.bin";
+        std::vector<int> values(K_SIZE + 2);
+        for (std::size_t index = 0; index < values.size(); ++index)
+            values[index] = static_cast<int>(index * 7 + 1);
+        {
+            std::ofstream out(path, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(values.data()),
+                      static_cast<std::streamsize>(values.size() * sizeof(int)));
+        }
+
+        {
+            const auto buffer = runtime().buffer_from_file<int>(path.string(), sizeof(int), K_SIZE).value();
+            const auto too_long = runtime().buffer_from_file<int>(path.string(), sizeof(int), K_SIZE + 2);
+
+            EXPECT_EQ(buffer.residency(), Residency::Planned);
+            EXPECT_EQ(buffer.read_range({0, K_SIZE}).value(),
+                      std::vector<int>(values.begin() + 1, values.begin() + 1 + K_SIZE));
+            ASSERT_FALSE(too_long.has_value());
+            EXPECT_EQ(too_long.error().code, ErrorCode::InvalidArgument);
+        }
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
     }
 
     /** @brief Tests that the two fields of a State carry two State handles. */

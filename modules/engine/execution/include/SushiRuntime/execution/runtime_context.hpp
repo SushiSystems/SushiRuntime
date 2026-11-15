@@ -44,6 +44,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
+#include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -169,6 +170,14 @@ namespace SushiRuntime
                  *        they are tried; the context owns them.
                  */
                 [[nodiscard]] const std::vector<Internal::Coherence::TransferPath*>& transfer_paths() const noexcept;
+
+                /**
+                 * @brief Adds the read-only memory space of a file range, for the life of the
+                 *        context, and lets the file transfer path read it; called between runs.
+                 * @return The id of the space, InvalidArgument when the file cannot be read or is
+                 *         shorter than the range, or AllocationFailed when no space id is left.
+                 */
+                [[nodiscard]] Result<MemorySpaceID> add_file_space(Internal::Memory::FileRange range);
 
                 /** @brief Returns the index that gives one Borrowed handle per range of caller-owned memory. */
                 [[nodiscard]] Internal::Memory::BorrowedIndex& borrowed_handles() noexcept;

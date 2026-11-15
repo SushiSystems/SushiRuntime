@@ -154,8 +154,11 @@ namespace SushiRuntime
                         void* const address = instance_on(*directory, step.handle, step.space);
                         if (address == nullptr)
                             return sycl::event{};
+                        // An instance with no kind, such as a file range, was not allocated here.
+                        const bool allocated = directory->instance_kind(step.handle, step.space).has_value();
                         static_cast<void>(directory->drop_instance(step.handle, step.space));
-                        allocator->release(step.space, address);
+                        if (allocated)
+                            allocator->release(step.space, address);
                         return sycl::event{};
                     };
                     break;

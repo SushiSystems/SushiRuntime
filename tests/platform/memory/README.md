@@ -238,3 +238,8 @@ A host and an integrated GPU share pool 0 and a discrete GPU has pool 1; the sum
 ## test_system_memory_probe.cpp
 
 The probe reports some memory and no more free bytes than total.
+
+## test_file_memory_space.cpp
+
+Checks that a `FileMemorySpace` reports its range as capacity with no reserve, its own pool and no
+direct target, and maps addresses inside its instance token to file offsets.

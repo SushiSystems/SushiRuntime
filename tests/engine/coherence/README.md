@@ -179,3 +179,14 @@ The uniform cost prices every path by its bytes.
 The instance of a space is made on its device and released there with no ERROR, host memory is
 released on the device it was made on, a device space names device USM and the host space host
 USM, and a space past the devices is refused.
+
+## test_file_path.cpp
+
+`Small_FilePath` writes a temporary file and checks that `FilePath` connects an added file space to
+any space that is not a file, streams ranges onto a SYCL CPU device through a two-slot ring with
+equal bytes and a peak of pinned memory equal to the ring, reads straight into the host with no
+slot, and refuses a space it does not hold or a range past the end of the file.
+`Large_FilePath` writes a file 1 GiB larger than the first CUDA GPU's memory into `temp` under the
+working directory, streams it window by window onto the GPU, checks the first and last 4 KiB of each
+window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
+with no CUDA GPU or too little disk, and deletes the file.

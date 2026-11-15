@@ -76,6 +76,16 @@ namespace SushiRuntime
                                                         Memory::ElementLayout layout);
 
                 /**
+                 * @brief Mints a planned handle whose one valid instance is address on space, an
+                 *        instance recorded with no kind that release() and a planned free leave alone.
+                 * @return The handle, the null handle for zero bytes, or the error the directory
+                 *         refused the entry or the instance with.
+                 */
+                [[nodiscard]] Result<GlobalHandle> mint_held(HandleKind kind, std::size_t bytes,
+                                                             Memory::ElementLayout layout,
+                                                             MemorySpaceID space, void* address);
+
+                /**
                  * @brief Writes host bytes into [begin, begin + bytes) of the host instance and
                  *        records the write on the host space.
                  * @return Nothing, AllocationFailed when no host instance can be made, or the

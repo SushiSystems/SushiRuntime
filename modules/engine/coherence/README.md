@@ -24,6 +24,7 @@ It depends on `core`, `handle`, `region`, `memory` and `task`.
 | `same_context_path.hpp` | `SameContextPath`, one memcpy between two devices of one SYCL context |
 | `peer_path.hpp` | `PeerPath`, one peer copy between two contexts of one backend |
 | `host_staged_path.hpp` | `HostStagedPath`, the copy through pinned host staging buffers |
+| `file_path.hpp` | `FilePath`, the read of a file space into a host or device space through the staging ring |
 | `staging_ring.hpp` | `StagingRing`, `StagingRingShape` and `StagingSlot`, the fixed ring of pinned slots |
 | `pinned_host_memory.hpp` | `PinnedHostMemory`, the port that makes and frees pinned host memory |
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
@@ -117,8 +118,8 @@ path connects nothing. Each path tells its optional `TransferObserver` the path 
 and the byte count of every copy it starts; the runtime registers no observer.
 
 The runtime builds the paths once, in `engine/execution`'s `build_transfer_paths()`, and the
-context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`, `PeerPath`, then
-`HostStagedPath`. The planner takes the first path that connects, so each later path serves only
+context hands them out as `RuntimeContext::transfer_paths()`: `SameContextPath`, `PeerPath`,
+`HostStagedPath`, then `FilePath`. The planner takes the first path that connects, so each later path serves only
 what the earlier ones refuse.
 
 ## HostStagedPath and StagingRing
@@ -144,6 +145,23 @@ for that event. The ring locks only to hand a slot out or take it back.
 The path does not keep the host bytes as a valid instance: the slot is reused, and the directory
 never hears of it. Keeping a host instance when a later reader needs it is a planner refinement,
 not part of this path.
+
+## FilePath
+
+`FilePath` reads a file space into any space that is not a file. It connects a source only when the
+source is a `FileMemorySpace` added to it with `add()`; the runtime adds each file space when a
+buffer is made from a file range, between runs. A copy to a space with a queue cuts the range into
+chunks of one ring slot, in file order: the path reads a chunk from the file into a slot and copies
+the slot to the destination on the destination's queue, and the read of the next chunk runs while
+that copy does. The host memory a copy holds is therefore the ring, `slot_bytes * slot_count`, and
+the file stream's own buffer, far under the 512 MB the design allows for read buffering. A copy to
+a space with no queue, the host, reads the file straight into the destination. Reads go through
+`std::ifstream`, so the path is the same on Windows and Linux. The file must not change while a
+buffer made from it lives.
+
+`PlannedHostAccess::mint_held()` mints the buffer: its one valid instance is the file space's token,
+and the coherence map names the file space as the holder of every byte. A read from the host, or a
+node the planner places on a device, then copies from the file through this path.
 
 ## splice_plan
 
