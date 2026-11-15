@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -210,6 +211,65 @@ namespace
         const Result<CopyPlan> plan = subject.plan({skipped});
         ASSERT_TRUE(plan);
         EXPECT_TRUE(plan.value().steps.empty());
+    }
+
+    /** @brief The FNV-1a 64-bit offset basis. */
+    constexpr std::uint64_t K_FNV_OFFSET = 14695981039346656037ULL;
+
+    /** @brief The FNV-1a 64-bit prime. */
+    constexpr std::uint64_t K_FNV_PRIME = 1099511628211ULL;
+
+    /** @brief Folds one 64-bit word into an FNV-1a hash, one byte at a time, lowest byte first. */
+    std::uint64_t fold_word(std::uint64_t hash, std::uint64_t word) noexcept
+    {
+        for (int shift = 0; shift < 64; shift += 8)
+            hash = (hash ^ ((word >> shift) & 0xFFU)) * K_FNV_PRIME;
+        return hash;
+    }
+
+    /**
+     * @brief Returns a canonical hash of a plan: its step count, then every field of each step in
+     *        declaration order.
+     */
+    std::uint64_t plan_hash(const CopyPlan& plan) noexcept
+    {
+        std::uint64_t hash = fold_word(K_FNV_OFFSET, plan.steps.size());
+        for (const PlannedStep& step : plan.steps)
+        {
+            hash = fold_word(hash, static_cast<std::uint64_t>(step.kind));
+            hash = fold_word(hash, step.handle.to_high_word());
+            hash = fold_word(hash, step.handle.to_low_word());
+            hash = fold_word(hash, step.space.value());
+            hash = fold_word(hash, step.source.value());
+            hash = fold_word(hash, step.begin);
+            hash = fold_word(hash, step.end);
+            hash = fold_word(hash, step.alignment);
+            hash = fold_word(hash, step.path);
+            hash = fold_word(hash, step.node);
+        }
+        return hash;
+    }
+
+    TEST_F(Small_CoherencePlanner, ThePlanOfAMultiDeviceGraphHashesEqualAcrossRuns)
+    {
+        // A second buffer, written on device 1, so the graph moves two buffers across three devices.
+        const GlobalHandle second = directory_.mint(HandleKind::Buffer, HandleFlags::None).handle;
+        ASSERT_EQ(directory_.describe(second, K_BYTES, ElementLayout{4, 4}, K_DEVICE_1), HandleStatus::Ok);
+        ASSERT_EQ(directory_.set_instance(second, K_DEVICE_1, &device_1_bytes_), HandleStatus::Ok);
+        const std::vector<NodeAccess> graph{node(K_DEVICE_0, {}, {buffer_}),
+                                            node(K_DEVICE_1, {buffer_}, {second}),
+                                            node(K_DEVICE_2, {second, buffer_}, {}),
+                                            node(K_DEVICE_0, {second}, {buffer_})};
+
+        // Each run plans with a planner of its own, as a run of the program would.
+        const Result<CopyPlan> first = planner().plan(graph);
+        const Result<CopyPlan> again = planner().plan(graph);
+        const Result<CopyPlan> last = planner().plan(graph);
+        ASSERT_TRUE(first && again && last);
+        ASSERT_FALSE(first.value().steps.empty());
+        EXPECT_EQ(plan_hash(first.value()), plan_hash(again.value()));
+        EXPECT_EQ(plan_hash(first.value()), plan_hash(last.value()));
+        EXPECT_EQ(first.value().steps, again.value().steps);
     }
 
     TEST(Small_CoherencePlannerByteRange, ClipsARegionToTheBuffer)

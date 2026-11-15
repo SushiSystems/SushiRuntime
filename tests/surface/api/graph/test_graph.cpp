@@ -1233,10 +1233,11 @@ namespace DeterminismTests
         // What one configuration produced, and the pool it actually ran on.
         struct Outcome
         {
-            std::vector<float> output;  /**< The graph's output buffer, copied out. */
-            float              first_total  = 0.0f;
-            float              second_total = 0.0f;
-            std::size_t        workers      = 0;
+            std::vector<float>       output;  /**< The graph's output buffer, copied out. */
+            float                    first_total  = 0.0f;
+            float                    second_total = 0.0f;
+            std::size_t              workers      = 0;
+            std::vector<GlobalHandle> handles;   /**< Handles of the five buffers, in creation order. */
         };
 
         /**
@@ -1284,8 +1285,62 @@ namespace DeterminismTests
             outcome.first_total  = total_a[0];
             outcome.second_total = total_b[0];
             outcome.workers      = rt.advanced().worker_pool().count;
+            outcome.handles      = {first.handle(), second.handle(), total_a.handle(), total_b.handle(),
+                                    out.handle()};
             return outcome;
         }
+
+        /**
+         * @brief Runs the fixed workload on the program's runtime of one worker count and one instance.
+         * @param worker_count The pool's worker count; 0 is the whole machine.
+         * @param instance Tells apart two runtimes of one worker count, so each instance starts a
+         *        directory of its own and mints from slot 0.
+         */
+        Outcome run_on_runtime_instance(std::size_t worker_count, std::size_t instance)
+        {
+            TestSupport::RuntimeShape shape;
+            shape.worker_count = worker_count;
+            shape.instance     = instance;
+
+            return run_workload(TestSupport::RuntimeEnvironment::runtime(shape));
+        }
+
+        /**
+         * @brief Returns the outcomes of three worker counts, {1, 2, whole machine}, each run twice
+         *        on its own runtime, in that order: entry 2 * w + r is worker count w, run r.
+         *
+         * Each run gets a runtime of its own, so every run starts the directory at slot 0. The
+         * outcomes are made once and shared, since the runtimes they came from live as long as the
+         * program does.
+         */
+        const std::vector<Outcome>& determinism_runs()
+        {
+            static const std::vector<Outcome> runs = []
+            {
+                const std::size_t counts[] = {1, 2, 0};
+                std::vector<Outcome> made;
+                std::size_t instance = 1;
+                for (std::size_t count : counts)
+                    for (std::size_t run = 0; run < 2; ++run)
+                        made.push_back(run_on_runtime_instance(count, instance++));
+                return made;
+            }();
+            return runs;
+        }
+
+        /** @brief Expects every run to name the same handle for each of its five buffers. */
+        void expect_every_run_has_the_same_handles(const std::vector<Outcome>& runs)
+        {
+            for (const Outcome& run : runs)
+            {
+                EXPECT_EQ(run.handles.size(), 5u);
+                EXPECT_EQ(run.handles, runs.front().handles)
+                    << "a run named different handles for the same program";
+                for (const GlobalHandle& handle : run.handles)
+                    EXPECT_FALSE(handle.is_null()) << "a buffer has the null handle";
+            }
+        }
+
 
         /**
          * @brief Runs the fixed workload on the program's runtime of the given worker count and copies the
@@ -1316,6 +1371,24 @@ namespace DeterminismTests
                 if (std::memcmp(&a[i], &b[i], sizeof(float)) != 0)
                     return i;
             return n;
+        }
+
+        /**
+         * @brief Expects every run to give the same bytes in each output buffer: the graph's output
+         *        and both totals.
+         */
+        void expect_every_run_has_the_same_output_bytes(const std::vector<Outcome>& runs)
+        {
+            const Outcome& first = runs.front();
+            for (const Outcome& run : runs)
+            {
+                EXPECT_TRUE(bytes_equal(first.output, run.output))
+                    << "the output buffer diverged at element " << first_difference(first.output, run.output);
+                EXPECT_EQ(std::memcmp(&first.first_total, &run.first_total, sizeof(float)), 0)
+                    << "the first total's bytes differ";
+                EXPECT_EQ(std::memcmp(&first.second_total, &run.second_total, sizeof(float)), 0)
+                    << "the second total's bytes differ";
+            }
         }
     } // namespace
 
@@ -1374,6 +1447,18 @@ namespace DeterminismTests
         EXPECT_EQ(std::memcmp(&single.first_total, &full.first_total, sizeof(float)), 0);
         EXPECT_EQ(std::memcmp(&single.second_total, &pair.second_total, sizeof(float)), 0);
         EXPECT_EQ(std::memcmp(&single.second_total, &full.second_total, sizeof(float)), 0);
+    }
+
+    /** @brief Tests that the program records equal handles in every run, at one, two and the whole machine's workers. */
+    TEST_F(Medium_Determinism, HandleValuesAreEqualAcrossRunsAndWorkerCounts)
+    {
+        expect_every_run_has_the_same_handles(determinism_runs());
+    }
+
+    /** @brief Tests that every output buffer of the graph is byte-equal across runs and worker counts. */
+    TEST_F(Medium_Determinism, EveryOutputBufferIsByteEqualAcrossRunsAndWorkerCounts)
+    {
+        expect_every_run_has_the_same_output_bytes(determinism_runs());
     }
 
     /** @brief Tests that the same configuration run again lands on the same bytes. */

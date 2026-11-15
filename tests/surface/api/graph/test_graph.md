@@ -217,6 +217,31 @@ because the count is fixed at creation; each is made once per program.
 The test guards against a vacuous pass: if every configuration collapsed to the same pool, the
 schedule would not have varied at all.
 
+### `determinism_runs`
+
+Makes the runs the two conformance tests below compare: worker counts {1, 2, whole machine}, each
+run twice. Every run is a runtime of its own, made through `run_on_runtime_instance`, so each run's
+directory starts at slot 0. Entry `2 * w + r` is worker count `w`, run `r`. The runs are made once and
+shared, since the runtimes they came from live as long as the program does.
+
+`determinism_runs` does not skip on a single-core machine. The handle and byte checks hold for any pool
+size, so with fewer than two workers the three counts still run and agree.
+
+### `HandleValuesAreEqualAcrossRunsAndWorkerCounts`
+
+Each of the five buffers of the workload (both inputs, both totals and the output) has the same
+`GlobalHandle` in every run at every worker count, and no handle is null. The handle is the identity a
+replay or a remote machine keys on, so a run that names a different handle for the same program is a
+defect even when the bytes agree. The expectations run in `expect_every_run_has_the_same_handles`.
+
+### `EveryOutputBufferIsByteEqualAcrossRunsAndWorkerCounts`
+
+Every output buffer agrees in bytes across runs and worker counts: the graph's output, and the two totals
+the graph reads. `OutputIsByteEqualAcrossWorkerCounts` compares the output alone; this test covers each
+output buffer, and it repeats each worker count, so a run that differs only from its repeat is caught.
+The comparison is on raw bytes, as the suite requires. The expectations run in
+`expect_every_run_has_the_same_output_bytes`.
+
 ### `RepeatedConfigurationsAgreeByteForByte`
 
 The same configuration, run again, must land on the same bytes.

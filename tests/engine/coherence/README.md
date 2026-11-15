@@ -54,6 +54,12 @@ device a space of host memory. The operation is test code; the runtime holds no 
 
 ### test_planned_steps.cpp
 
+`ThePlanOfAMultiDeviceGraphHashesEqualAcrossRuns` plans a four-node graph over three devices and two
+buffers three times, each time with a planner of its own. The steps compare equal, and a canonical FNV-1a
+hash of the steps (count, then each field in declaration order) is equal across the runs. The planner
+takes no worker count, so this check does not vary the pool; its determinism is a property of the plan
+alone.
+
 A node on device 1 reading a buffer written on device 0 gets an allocation and a copy, and its
 write makes a later reader on device 0 copy back. A node on the device that holds the bytes gets no
 step. Of two valid sources at one cost, the first space in the given order is the source, and two
