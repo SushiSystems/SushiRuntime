@@ -28,6 +28,55 @@ The owner chose two subagents and inline work, running asynchronously, with no w
 
 Model per task follows `model-routing`; `opus` at `high` is not used.
 
+On 2026-11-15 the owner changed two rules and delegated every engineering decision. No task runs a
+build or a test: the one build and the one test run per repository come after the last task, as
+`build-throughput` boundary 8 says, and the hardware tasks (T20, T33, T35, T36) are written with
+the code and measured in that run. The orchestrator also gives the `inline` tasks to subagents
+when its own context would not hold their reading; it still reviews and commits each one.
+
+## Jobs
+
+| Job | Files | Waits on | Status |
+| --- | --- | --- | --- |
+| T01 | `foundation/handle` | | todo |
+| T02 | `platform/topology` | T01 | todo |
+| T03 | HIP probe | | done |
+| T38 | `cli`, `cmake/gpu`: the HIP backend on Windows | T03 | todo |
+| T04 | `foundation/placement`, `surface/api` | T02 | todo |
+| T05 | `platform/memory` directory | T01 | todo |
+| T06 | `foundation/region`, `engine/region_boundary`, `engine/task`, live IO, `surface/api` | T05 | todo |
+| T07 | `surface/api` region composer | T06 | todo |
+| T08 | `engine/scheduler` and `engine/task` placement | T06 | todo |
+| T09 | `platform/memory` `usm_registry` | T06 | todo |
+| T10 | `extension/buffer_exchange` | T06 | todo |
+| T11 | resolve benchmark | T09 | todo |
+| T12 | `platform/memory` spaces and intervals | T05 | todo |
+| T13 | `engine/coherence` planner | T08, T12 | todo |
+| T14 | `engine/coherence` eviction | T13 | todo |
+| T15 | reference interpreter test | T13 | todo |
+| T16 | determinism suite | T13 | todo |
+| T17 | `engine/coherence` same-context and peer paths | T13 | todo |
+| T18 | `engine/coherence` host-staged path | T17 | todo |
+| T19 | file space and file path | T18 | todo |
+| T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | todo |
+| T21 | copy plan replay | T13 | todo |
+| T22 | horizons | T21 | todo |
+| T23 | `foundation/core` `NodeCost` | T06 | todo |
+| T37 | `surface/api` `Residency::Planned` | T13 | todo |
+| T24 | device profile and cost model | T04, T23 | todo |
+| T25 | partitioner | T14, T24, T37 | todo |
+| T26 | partitioner search and floor tests | T25 | todo |
+| T34 | `Runtime::partition_report()` | T25 | todo |
+| T35 | hardware test, H9 graphs | T19, T34 | todo |
+| T36 | splitting | T25, T30 | todo |
+| T27 | rebalancing and journal | T22, T34 | todo |
+| T28 | wire version 5 | T10 | todo |
+| T29 | owner per handle and recovery | T28 | todo |
+| T30 | SushiBLAS handle, cost and split | T23, T25 | todo |
+| T31 | SushiEngine runtime adapter, SushiAI build | T06 | todo |
+| T32 | SushiBLAS conformance kernels | T30 | todo |
+| T33 | SushiBLAS file-backed large test | T19, T27, T30 | todo |
+
 ## Tasks
 
 `inline` is the orchestrator (`opus` `medium`). Paths are under `modules/` unless a repository is
