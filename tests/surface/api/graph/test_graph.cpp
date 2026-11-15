@@ -1131,7 +1131,7 @@ namespace CrossContextGuardTests
         int* pb = b.data();
         const int* pa = a.data();
 
-        // No one queue can run a node that reads context 0 and writes context 1; see README.md.
+        // The kernel captured raw addresses, which cannot be rebound to another device's instance; see README.md.
         auto g = runtime().graph();
         g.add(N, Reads(a), Writes(b),
               [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });

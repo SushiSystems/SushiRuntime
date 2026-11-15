@@ -110,7 +110,7 @@ state.
 
 The file covers the placement a node states and the rule `Internal::Graph::placement_of()` applies to it:
 a stated placement wins over the owner of the first write region, else of the first read region,
-when the two share a SYCL context, and is refused when they do not; a node that states nothing runs
+when the two share a SYCL context or the node has a `KernelPointers` table, and is refused when they do not and it has none; a node that states nothing runs
 on the owner; a node with no owner runs on its stated placement, else device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a dispatch receives.
 
@@ -144,7 +144,8 @@ second device.
 
 | Test | What it proves |
 | --- | --- |
-| `AStatedDeviceInAnotherContextIsRefused` | A stated device in the other context is an `InvalidGraph` error naming the owner. |
+| `AStatedDeviceInAnotherContextIsRefused` | A node with no pointer table (raw captured addresses) on a stated device in the other context is an `InvalidGraph` error naming the owner and the raw addresses. |
+| `ANodeWithAPointerTableIsPlacedOnAStatedDeviceInAnotherContext` | A node with a `KernelPointers` table on a stated device in the other context is placed there. |
 | `StatingTheOwnerItselfIsAccepted` | Stating the owner itself is accepted. |
 | `AStatedIndexPastTheDevicesIsLeftToTheDispatch` | A stated index past the memory's devices is returned as stated, for `place_for_dispatch()` to refuse with the count. |
 

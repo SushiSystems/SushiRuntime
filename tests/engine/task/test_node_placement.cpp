@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,7 +40,9 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
+#include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/task/in_memory_placement_memory.hpp>
+#include <SushiRuntime/task/kernel_pointers.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
 #include "support/handle_table.hpp"
@@ -161,6 +164,22 @@ TEST_F(Small_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
     EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
     EXPECT_NE(placed.error().message.find("device 1 in another SYCL context"), std::string::npos)
         << placed.error().message;
+    EXPECT_NE(placed.error().message.find("raw addresses"), std::string::npos) << placed.error().message;
+}
+
+/** @brief Tests that a node with a kernel pointer table is placed on a stated device in another context than the owner's. */
+TEST_F(Small_NodePlacementContexts, ANodeWithAPointerTableIsPlacedOnAStatedDeviceInAnotherContext)
+{
+    int cell = 0;
+    memory_.record(TestSupport::region_at(&cell).base, 1);
+    SushiRuntime::Internal::Memory::ResidencyDirectory directory(0);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(TestSupport::region_at(&cell));
+    node->kernel_pointers_ = std::make_unique<SushiRuntime::Internal::Graph::KernelPointers>(
+        std::vector<SushiRuntime::Internal::Graph::KernelPointerSlot>{}, directory);
+    node->place_on(0);
+
+    EXPECT_EQ(placement_of(*node, memory_).value(), 0u) << "the planner copies the region to device 0";
 }
 
 /** @brief Tests that stating the owner itself is accepted, whatever the contexts. */

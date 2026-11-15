@@ -645,9 +645,11 @@ A graph node therefore has one placement, and `Internal::Graph::placement_of()` 
 the one function that names it, from the first of these that applies:
 
 1. The node states a placement with `Node::place_on()` and names a region a device owns: the
-   stated device, when its queue shares a SYCL context with the owner's. When it does not,
-   `placement_of()` returns an `ErrorCode::InvalidGraph` error naming both devices, and the
-   run fails; the node is never moved to the owner.
+   stated device, when its queue shares a SYCL context with the owner's or when the node has a
+   `KernelPointers` table (the planner copies the regions to the stated device and the table
+   rebinds the kernel's pointers there). A node with no table, whose kernel captured raw
+   addresses, in another context gets an `ErrorCode::InvalidGraph` error naming both devices
+   and that reason, and the run fails; the node is never moved to the owner.
 2. The node names a region a device owns and states no placement: the owner of its first
    write region, else of its first read region.
 3. The node states a placement and names no owned region: that device.

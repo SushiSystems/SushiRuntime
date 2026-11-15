@@ -82,11 +82,16 @@ namespace SushiRuntime
             if (*stated >= memory.device_count() || memory.shares_context(*stated, *owner))
                 return *stated;
 
+            // A pointer table rebinds the kernel to its device's instance, which the planner copies there.
+            if (node.kernel_pointers_)
+                return *stated;
+
             return make_error(Error{
                 ErrorCode::InvalidGraph,
                 "it is placed on device " + std::to_string(*stated) + ", but its memory belongs "
-                "to device " + std::to_string(*owner) + " in another SYCL context; place it on "
-                "a device of that context."});
+                "to device " + std::to_string(*owner) + " in another SYCL context, and its kernel "
+                "captured raw addresses that cannot be rebound to another device's instance; "
+                "place it on a device of that context."});
         }
 
     } // namespace Graph

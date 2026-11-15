@@ -64,6 +64,7 @@ dispatch: T29 — opus low, rung 1, passed (skipped loading four style skills; c
 dispatch: T39 — opus low, 122 turns, rung 1, passed
 dispatch: T21 — opus low, rung 1, passed
 dispatch: T37 — opus low, 137 turns, rung 1, passed
+dispatch: T40 — sonnet medium, 33 turns, rung 1, passed
 ```
 
 ## T05: the residency directory

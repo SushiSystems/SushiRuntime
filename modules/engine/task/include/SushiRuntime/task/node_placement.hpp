@@ -74,8 +74,8 @@ namespace SushiRuntime
          * @brief Returns the device @p node runs on.
          * @param node A node whose regions and stated placement are final.
          * @param memory,handles Resolve each region's handle and name its device and context.
-         * @return The device by the rule order in the README, or an InvalidGraph error when
-         *         the stated device and the memory's owner are in different contexts.
+         * @return The device by the rule order in the README, or an InvalidGraph error for a
+         *         node with no KernelPointers table whose stated device is in another context.
          * @see modules/engine/task/README.md
          */
         SUSHIRUNTIME_API Result<std::size_t>

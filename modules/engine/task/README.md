@@ -104,7 +104,10 @@ the table takes no lock. The scope's pointer is a `thread_local` defined once in
 
 1. A stated device (`Node::place_on()`) on a node whose first write region, else first read
    region, a device owns: the stated device when its queue shares a SYCL context with the
-   owner's; otherwise an `ErrorCode::InvalidGraph` error. The node is never moved silently.
+   owner's, or when the node has a `KernelPointers` table, which rebinds each captured buffer to
+   the instance on the stated device while the coherence planner copies the regions there.
+   Otherwise, a node with no table, whose kernel captured raw addresses, gets an
+   `ErrorCode::InvalidGraph` error naming that reason. The node is never moved silently.
 2. No stated device: the owner.
 3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
 

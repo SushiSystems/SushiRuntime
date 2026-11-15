@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-15 — runtime: Changed placement to put a captured node on a device in another SYCL context than its data, with the copy planned; a node with raw captures is still refused (GLOBAL_HANDLE H3).
 - 2026-11-15 — api: Added `Residency::Planned`: a buffer or state asked for with no device gets a handle and no memory, and the runtime allocates it where the first node uses it (GLOBAL_HANDLE H9).
 - 2026-11-15 — api: Added `Runtime::buffer(count, Residency)` and `state(count, Residency)`; a device stated with `Planned`, or another residency without one, is refused (GLOBAL_HANDLE H9).
 - 2026-11-15 — api: Changed a dynamic graph to keep each region's copy plan with its compiled sub-graph and replay it without running the planner; a plan that is not steady is planned again (GLOBAL_HANDLE H5).
