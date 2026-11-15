@@ -69,6 +69,15 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t compile_count() const noexcept { return compiles_; }
 
                 /**
+                 * @brief Returns how many builds ran the coherence planner.
+                 *
+                 * A build plans copies only when the runtime has two devices or more. A plan whose
+                 * copy plan is steady runs again with no planner call; one that is not is stale.
+                 * @return The count since this cache was created or last moved from.
+                 */
+                [[nodiscard]] std::size_t coherence_plan_count() const noexcept { return coherence_plans_; }
+
+                /**
                  * @brief Returns the process-wide id of this graph, never 0 for a graph in use.
                  * @return 0 after a move from this cache.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
@@ -114,7 +123,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether the plan is missing or older than what recorder holds,
-                 *        than the context's placement record or than its device timing request.
+                 *        than the context's placement record or than its device timing request,
+                 *        or holds a copy plan that is not steady.
                  * @param context The runtime whose rule set the plan was compiled under.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -190,6 +200,9 @@ namespace SushiRuntime
 
                 /** @brief Counts how many times the backing graph has been compiled. */
                 std::size_t compiles_ = 0;
+
+                /** @brief Counts the builds that ran the coherence planner. */
+                std::size_t coherence_plans_ = 0;
 
                 /** @brief Set until the first build, and after a discard. */
                 bool dirty_ = true;

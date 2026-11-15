@@ -144,6 +144,13 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Checks the roots and the cycles of graph, gives it sentinel and drains the tracker.
+             * @return The plan, or an InvalidGraph error for no root or a cycle.
+             */
+            Result<CompiledGraph> finish_compile(CompiledGraph graph, sushi_ptr<Node> sentinel,
+                                                 Profile::Collector& collector);
+
+            /**
              * @brief Stops the process for a registration index this graph did not issue.
              * @param call The public call checked, as its message names it.
              * @pre registration, when given, is below the count of indices issued.
@@ -503,18 +510,40 @@ namespace SushiRuntime
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
          * @param collector The collector the zone and the values record into.
-         * @return The compiled graph ready to run, empty when no node was added, or an
-         *         InvalidGraph error for no root or a cycle.
+         * @param splice When set, changes the nodes, in insertion order, before roots and leaves are found.
+         * @return The compiled graph ready to run, empty when no node was added, the splice's
+         *         error, or an InvalidGraph error for no root or a cycle.
          */
-        Result<CompiledGraph> TaskGraph::compile(Profile::Collector& collector)
+        Result<CompiledGraph> TaskGraph::compile(Profile::Collector& collector, const NodeSplice& splice)
         {
             SR_ZONE(collector, "plan.compile");
 
             CompiledGraph graph;
-            
+
+            if (splice)
+            {
+                // take_nodes() empties the candidate stacks, so roots and leaves are found by a scan.
+                graph.all_nodes = take_nodes();
+                if (graph.all_nodes.empty())
+                    return graph;
+                Result<void> spliced = splice(graph.all_nodes);
+                if (!spliced)
+                    return make_error(std::move(spliced.error()));
+                auto sentinel = make_sushi<Node>();
+                for (const sushi_ptr<Node>& node : graph.all_nodes)
+                {
+                    if (node->in_degree.load(std::memory_order_relaxed) == 0)
+                        graph.roots.push_back(node.get());
+                    if (node->inline_successor_count.load(std::memory_order_relaxed) == 0 &&
+                        node->successor_list.load(std::memory_order_relaxed) == nullptr)
+                        impl_->tracker.add_dependency(node.get(), sentinel.get());
+                }
+                return impl_->finish_compile(std::move(graph), std::move(sentinel), collector);
+            }
+
             // Acquire the entire lifetime stack atomically
             NodeEntry* head = impl_->all_nodes.exchange(nullptr, std::memory_order_acquire);
-            if (!head) 
+            if (!head)
             {
                 return graph; // Empty graph
             }
@@ -522,7 +551,7 @@ namespace SushiRuntime
             auto sentinel = make_sushi<Node>();
 
             // Transfer node ownership to CompiledGraph securely
-            while (head) 
+            while (head)
             {
                 graph.all_nodes.push_back(std::move(head->node));
                 NodeEntry* next = head->next;
@@ -558,6 +587,16 @@ namespace SushiRuntime
                 p_leaf = next;
             }
 
+            return impl_->finish_compile(std::move(graph), std::move(sentinel), collector);
+        }
+
+        /**
+         * @brief Checks the roots and the cycles of graph, gives it sentinel and drains the tracker.
+         * @return The plan, or an InvalidGraph error for no root or a cycle.
+         */
+        Result<CompiledGraph> TaskGraph::Impl::finish_compile(CompiledGraph graph, sushi_ptr<Node> sentinel,
+                                                              Profile::Collector& collector)
+        {
             if (graph.roots.empty())
             {
                 // all_nodes is not empty here, and with no root every node waits on another.
@@ -569,7 +608,7 @@ namespace SushiRuntime
                     waiting.in_degree.load(std::memory_order_relaxed));
                 SR_LOG_ERROR(K_GRAPH_LOG_CATEGORY, "{}", message);
                 // The tracker is drained before the return (modules/engine/graph/README.md).
-                impl_->tracker.reset();
+                tracker.reset();
                 return make_error(Error{ErrorCode::InvalidGraph, message});
             }
 
@@ -625,19 +664,19 @@ namespace SushiRuntime
                         undrained != graph.all_nodes.end() ? describe_node(**undrained)
                                                            : std::string("an unidentified node"));
                     SR_LOG_ERROR(K_GRAPH_LOG_CATEGORY, "{}", message);
-                    impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
+                    tracker.reset(); // same UAF-avoidance as the no-roots path
                     return make_error(Error{ErrorCode::InvalidGraph, message});
                 }
             }
 
             graph.sentinel = std::move(sentinel);
-            impl_->tracker.reset(); // Safely clear the lock-free history
+            tracker.reset(); // Safely clear the lock-free history
 
             SR_VALUE(collector, "graph.nodes", "nodes", static_cast<double>(graph.all_nodes.size()));
             SR_VALUE(collector, "graph.roots", "nodes", static_cast<double>(graph.roots.size()));
 
             // One line per compile for what the dependency tracker could not see (modules/engine/graph/README.md).
-            const std::uint32_t untracked = impl_->untracked_regions.exchange(0, std::memory_order_relaxed);
+            const std::uint32_t untracked = untracked_regions.exchange(0, std::memory_order_relaxed);
             if (untracked != 0)
                 SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "{} regions named no base address, so they created no dependency.",
                              untracked);

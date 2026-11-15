@@ -65,14 +65,14 @@ when its own context would not hold their reading; it still reviews and commits 
 | T19 | file space and file path | T18 | running |
 | T20 | hardware test, 3080 Ti to integrated GPU | T03, T18, T38 | done |
 | T21 | copy plan replay | T13 | done |
-| T45 | `engine/graph` `PlanCache`, `surface/api` static `Graph`: the coherence hook and copy-plan replay | T21 | running |
+| T45 | `engine/graph` `PlanCache`, `surface/api` static `Graph`: the coherence hook and copy-plan replay | T21 | done |
 | T22 | horizons | T21 | todo |
 | T23 | `foundation/core` `NodeCost` | T06 | done |
 | T37 | `surface/api` `Residency::Planned` | T13 | done |
 | T46 | step driver, `platform/memory` retire, `engine/task` placement: host writes force a replan, retired handles free planned instances, planned-only nodes placed | T37, T21 | todo |
 | T24 | device profile and cost model | T04, T23 | done |
 | T43 | `engine/execution`, `surface/api`: profile file loaded at start, the planner priced by it, the device probe | T24, T18 | todo |
-| T25 | partitioner | T14, T24, T37 | todo |
+| T25 | partitioner | T14, T24, T37 | running |
 | T26 | partitioner search and floor tests | T25 | todo |
 | T34 | `Runtime::partition_report()` | T25 | todo |
 | T35 | hardware test, H9 graphs | T19, T34 | todo |

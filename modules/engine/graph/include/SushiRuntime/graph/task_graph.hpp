@@ -63,6 +63,12 @@ namespace SushiRuntime
                 /** @brief Stands for "no node carries an index yet". */
                 static constexpr std::uint32_t K_NO_REGISTRATION = static_cast<std::uint32_t>(-1);
 
+                /**
+                 * @brief Adds nodes and edges to the nodes of a graph, given in insertion order,
+                 *        before compile() finds the roots and leaves.
+                 */
+                using NodeSplice = std::function<Result<void>(std::vector<sushi_ptr<Node>>&)>;
+
                 /** @brief Creates an empty task graph. */
                 TaskGraph();
 
@@ -180,14 +186,15 @@ namespace SushiRuntime
 
                 /**
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
-                 * @pre Every node is inserted first; not thread-safe against add_node() or
-                 *        add_task().
+                 * @pre Every node is inserted first; not thread-safe against add_node() or add_task().
                  * @param collector Takes the compile's zone and values.
-                 * @return The plan, or an InvalidGraph error that names one node of a cycle.
+                 * @param splice When set, changes the nodes first, in insertion order.
+                 * @return The plan, the splice's error, or an InvalidGraph error naming a cycle node.
                  * @see modules/engine/graph/README.md
                  */
                 [[nodiscard]] Result<CompiledGraph>
-                compile(Profile::Collector& collector = Profile::process_collector());
+                compile(Profile::Collector& collector = Profile::process_collector(),
+                        const NodeSplice& splice = NodeSplice());
 
                 /**
                  * @brief Hands off the built nodes without finalising a plan.

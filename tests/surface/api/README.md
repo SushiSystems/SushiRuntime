@@ -237,7 +237,7 @@ header by name.
 `Testing::HookedCopyTask` is a host task that does nothing when it runs. It shares a
 `std::function<void()>` slot with the test; the first copy made after the test fills the slot
 empties it and calls the hook once. Recording moves the task and a plan build copies it, so a hook
-armed after recording runs inside the next build. `graph/plumbing/test_plan_cache.cpp` and
+armed after recording runs inside the next build. `graph/plumbing/test_plan_cache/test_plan_cache.cpp` and
 `graph/plumbing/test_region_composer/test_region_composer.cpp` include the header by name.
 
 ## run_recorder.hpp

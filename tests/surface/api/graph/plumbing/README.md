@@ -125,7 +125,7 @@ Ten regions each write their own buffer, so every task is an independent root. T
 fresh runtimes with the same seeded executor, and the order the tasks ran in must equal the first
 run's. A plan that lists its roots by node address changes that order from run to run (KI-23).
 
-## test_plan_cache.cpp
+## test_plan_cache/test_plan_cache.cpp
 
 The file tests PlanCache through Graph: a plan is compiled once and again only when it changes.
 
@@ -140,6 +140,15 @@ The file tests PlanCache through Graph: a plan is compiled once and again only w
 The three regression tests install the in-memory coordinator of `task` through
 `TestSupport::InstalledOffload`, which calls `AdvancedControls::install_offload()` for their own scope and
 removes it after, since each test owns its host runtime and the install is undone with the test.
+
+## test_plan_cache/test_copy_plan_replay.cpp
+
+`Medium_StaticCopyPlanReplay` records into a static Graph a node that writes a buffer homed on
+device 0 and a node that reads it into a buffer on device 1, so each step needs one planned copy.
+It skips on a runtime with fewer than two devices. The first build plans the copies
+(coherence_plan_count() is 1). Once the second build has planned the steady state, four more runs
+build nothing and call no planner, by compile_count() and coherence_plan_count(). The result of the
+first run and of a replayed run both equal a host reference.
 
 ## test_step_driver/test_step_driver.cpp
 

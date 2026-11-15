@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-15 — api: Changed a static `Graph` with nodes on two devices to plan its copies at compile and replay the plan with no planner call while it is steady (GLOBAL_HANDLE H5).
+- 2026-11-15 — api: Added `Graph::coherence_plan_count()` (GLOBAL_HANDLE H5).
 - 2026-11-15 — runtime: Changed an integrated GPU to share the host memory pool, so its RAM is counted once (GLOBAL_HANDLE H3).
 - 2026-11-15 — runtime: Changed placement to put a captured node on a device in another SYCL context than its data, with the copy planned; a node with raw captures is still refused (GLOBAL_HANDLE H3).
 - 2026-11-15 — api: Added `Residency::Planned`: a buffer or state asked for with no device gets a handle and no memory, and the runtime allocates it where the first node uses it (GLOBAL_HANDLE H9).

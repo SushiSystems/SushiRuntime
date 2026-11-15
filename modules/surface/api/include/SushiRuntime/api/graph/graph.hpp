@@ -175,6 +175,15 @@ namespace SushiRuntime
             }
 
             using PlanCache::compile_count;
+
+            /**
+             * @brief Returns how many plan builds ran the coherence planner; a build on a runtime
+             *        with two devices or more plans the copies its nodes need.
+             *
+             * A plan whose copy plan is steady runs again with no planner call; one that is not
+             * steady is built again at the next run.
+             */
+            using PlanCache::coherence_plan_count;
             using PlanCache::id;
 
             /**

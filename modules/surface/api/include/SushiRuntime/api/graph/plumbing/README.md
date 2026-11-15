@@ -267,18 +267,20 @@ name, and so does a null `const char*`.
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, whenever the recorder's generation() differs from the one the
 plan was built at, and whenever the context's placement generation differs from the one the plan was
-compiled under. stale() therefore takes the ContextHandle beside the recorder; it is defined in
+compiled under, and whenever the plan holds a copy plan that is not steady. stale() therefore takes the ContextHandle beside the recorder; it is defined in
 `source/plan_cache.cpp`, since the header cannot see the context. The plan and the list of its recorded nodes sit behind one pointer to
 `Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
 first build. compiled_plan() is protected because the test seams of the owning Graph read it; it
 returns a `Detail::Plan*`, which `engine_handles/plan_access.hpp` turns into the engine's type. It
-keeps one registration index per rule. compile_count() is its one public member. The source of a move has no plan, is stale, and counts zero
-compiles.
+keeps one registration index per rule. compile_count() and coherence_plan_count() are its public members. The source of a move has no plan, is
+stale, and counts zero compiles and zero coherence plans.
 
 ### build
 
 build() builds a fresh backing graph by replaying the recorder, compiles it, hands the plan to
-`ExecutionEngine::prepare()` and caches it. During the replay it resolves every node once against
+`ExecutionEngine::prepare()` and caches it. Its compile calls `plan_region_coherence()`, the
+composer's hook, through a `TaskGraph::NodeSplice`; the plan state keeps the `CopyPlan`, a steady
+one replays with no planner call and one that is not steady makes the plan stale. During the replay it resolves every node once against
 the rules in force and stores the winning position in the node's `placement_rule`; the plan state
 also keeps a share of the rule set, so a later `set_placement_rules()` cannot free what a compiled
 plan was resolved against. `describe_plan()` reports the position as `PlanNode::placement_rule`.

@@ -23,7 +23,7 @@
 
 /**
  * @file region_coherence.hpp
- * @brief Declares plan_region_coherence, the composer's hook that adds a region's planned copies.
+ * @brief Declares plan_region_coherence, the hook through which the composer and PlanCache add the planned copies of a region or a static graph.
  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  * @author Mustafa Garip
  */
@@ -48,7 +48,7 @@ namespace SushiRuntime
          *
          * A runtime with one device is left alone. Instances stay resident across steps, and
          * every buffer with a host-visible home is copied back to it at the graph end.
-         * @param nodes A built, stamped region; gains the planned nodes.
+         * @param nodes A built, stamped region or static graph, in insertion order; gains the planned nodes.
          * @return The spliced plan, nothing when no planner ran, or its error; nodes then stays.
          */
         [[nodiscard]] Result<std::optional<Internal::Coherence::CopyPlan>>

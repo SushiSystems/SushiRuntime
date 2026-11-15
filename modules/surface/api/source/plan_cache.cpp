@@ -39,6 +39,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/api_log_category.hpp>
+#include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -53,6 +54,7 @@
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "region_coherence.hpp"
 #include "rule_stamp.hpp"
 
 namespace SushiRuntime
@@ -81,6 +83,9 @@ namespace SushiRuntime
             /** @brief The placement record plan was compiled under; its rules may be null. */
             std::shared_ptr<const Internal::Execution::RuntimeContext::PlacementSnapshot>
                 placement;
+
+            /** @brief Copy plan spliced into plan; nothing when the planner did not run. */
+            std::optional<Internal::Coherence::CopyPlan> copy_plan;
         };
 
         PlanCache::PlanCache() noexcept = default;
@@ -135,10 +140,25 @@ namespace SushiRuntime
                 });
             if (refusal)
                 return make_error(std::move(*refusal));
+            // The planned copies join the nodes before compile() finds the roots and leaves.
+            bool planned = false;
+            const TaskGraph::NodeSplice coherence =
+                [&built, &runtime, &planned](std::vector<sushi_ptr<Internal::Graph::Node>>& nodes) -> Result<void>
+            {
+                Result<std::optional<Internal::Coherence::CopyPlan>> coherent = plan_region_coherence(nodes, runtime);
+                if (!coherent)
+                    return make_error(std::move(coherent.error()));
+                planned = coherent.value().has_value();
+                built->copy_plan = std::move(coherent.value());
+                return {};
+            };
             // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
-            Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile(runtime.profile_collector());
+            Result<Internal::Graph::CompiledGraph> compiled =
+                backing_graph.compile(runtime.profile_collector(), coherence);
             if (!compiled)
                 return make_error(std::move(compiled.error()));
+            if (planned)
+                ++coherence_plans_;
             built->plan = std::move(*compiled);
             {
                 SR_ZONE_FINE(runtime.profile_collector(), "plan.prepare");
@@ -172,12 +192,17 @@ namespace SushiRuntime
                 return "the recorder changed";
             if (state_->placement->generation != runtime.placement()->generation)
                 return "the placement changed";
+            if (state_->copy_plan && !state_->copy_plan->steady)
+                return "the copy plan is not steady";
             return "the plan was marked for a rebuild";
         }
 
         bool PlanCache::stale(const Recorder& recorder, const ContextHandle& context) const noexcept
         {
             if (state_ == nullptr || dirty_ || built_generation_ != recorder.generation())
+                return true;
+            // A copy plan that is not steady left the directory where it cannot run again.
+            if (state_->copy_plan && !state_->copy_plan->steady)
                 return true;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
             return state_->placement->generation != runtime.placement()->generation;
@@ -244,6 +269,7 @@ namespace SushiRuntime
             registrations_ = std::exchange(other.registrations_, {});
             built_generation_ = std::exchange(other.built_generation_, 0);
             compiles_ = std::exchange(other.compiles_, 0);
+            coherence_plans_ = std::exchange(other.coherence_plans_, 0);
             dirty_ = std::exchange(other.dirty_, true);
             label_ = std::exchange(other.label_, {});
             id_ = std::move(other.id_);

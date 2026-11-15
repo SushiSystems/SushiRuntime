@@ -297,6 +297,11 @@ and transfers node ownership to the returned CompiledGraph. It does not submit a
 compile() is not thread-safe with respect to add_node() and add_task(). All nodes must be inserted
 before it is called.
 
+compile() takes an optional `NodeSplice`. When one is given, compile() first takes the nodes in
+insertion order, as take_nodes() does, and hands them to the splice, which may add nodes and edges;
+`PlanCache` passes one that adds the planned copies of `engine/coherence`. The plan then lists the
+nodes in insertion order with the spliced ones last, and a splice error is returned unchanged.
+
 compile() is the stage zone `plan.compile`, and it writes the values `graph.nodes` and `graph.roots` at its end. It logs the nodes it added at `TRACE` and one `DEBUG` line per compile when some regions named no base address.
 
 A graph with no root, or with a cycle behind a root, makes compile() return an
@@ -420,6 +425,8 @@ reference its add call returned needs neither accessor; it sets `baked_width` on
 the nodes tagged as candidates during insertion: a candidate with in-degree zero is a root,
 and a candidate with no successor, inline or spilled, is a leaf and gets an edge to the
 sentinel.
+With a splice, compile() scans every node once for roots and leaves, since the candidates do
+not name the nodes and edges the splice adds.
 
 When no root is found, `compile()` drains the tracker before it returns the error. The
 `CompiledGraph` and every node it owns are destroyed on that return, but the tracker's access

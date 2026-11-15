@@ -83,11 +83,13 @@ namespace CopyPlanReplayTests
             {
                 Recorder& recorder = world.region(0).recorder();
                 recorder.captured_kernel(K_COUNT, Access(Reads(), Writes(written)), std::make_tuple(written.data()),
+                                         std::vector<GlobalHandle>{written.handle()},
                                          [](std::size_t index, std::uint32_t* target)
                                          { target[index] = static_cast<std::uint32_t>(index) * K_SPREAD; });
                 recorder.captured_kernel(K_COUNT, Access(Reads(written), Writes(result)),
                                          std::make_tuple(static_cast<const std::uint32_t*>(written.data()),
                                                          result.data()),
+                                         std::vector<GlobalHandle>{written.handle(), result.handle()},
                                          [](std::size_t index, const std::uint32_t* source, std::uint32_t* target)
                                          { target[index] = source[index] + 1u; });
             }
