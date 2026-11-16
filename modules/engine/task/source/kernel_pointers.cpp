@@ -57,12 +57,17 @@ namespace SushiRuntime
 
         bool home_is_host_visible(const HandleHome& home, GlobalHandle handle) noexcept
         {
-            if (home.status != HandleStatus::Ok || !home.resident)
+            if (home.status != HandleStatus::Ok)
+                return false;
+            // A host write lands in host-accessible memory, so its home stays current whatever the map says.
+            if (home.memory == HomeMemory::HostAccessible)
+                return true;
+            if (!home.resident)
                 return false;
             if (home.home == host_memory_space())
                 return true;
             if (home.memory != HomeMemory::Unknown)
-                return home.memory == HomeMemory::HostAccessible;
+                return false;
             return has_flags(handle.flags(), HandleFlags::Borrowed);
         }
 

@@ -128,6 +128,21 @@ namespace
         EXPECT_EQ(seen, &home) << "the host run's body saw no operand scope, or the device copy";
     }
 
+    /** @brief Tests that a host-accessible home stays visible after a host write left only the host space valid. */
+    TEST(Small_KernelPointers, AHostAccessibleHomeIsVisibleWhateverTheMapSaysOfItsSpace)
+    {
+        HandleHome written_on_host;
+        written_on_host.home = device_memory_space(1);
+        written_on_host.resident = false;
+        written_on_host.memory = HomeMemory::HostAccessible;
+        HandleHome device_only = written_on_host;
+        device_only.memory = HomeMemory::DeviceOnly;
+
+        EXPECT_TRUE(home_is_host_visible(written_on_host, GlobalHandle::null()));
+        EXPECT_FALSE(home_is_host_visible(device_only, GlobalHandle::null()))
+            << "device memory whose map is stale is not read in place";
+    }
+
     /** @brief Tests that a node on the home device keeps the home address and reads no directory. */
     TEST(Small_KernelPointers, ANodeOnTheHomeDeviceTakesTheFastPath)
     {

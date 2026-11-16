@@ -110,11 +110,12 @@ the two cases.
 `make_kernel_pointer_slot()` builds a slot from a `HandleHomeReader` once, when the node is
 built, so `bind()` reads no entry kind. The slot also takes the element layout of the buffer, which
 the view checks a typed read against. The home device is the lowest device whose instance is the
-recorded address. The home is host visible when the reader says the home space holds the instance
-(`HandleHome::resident`) and one of these is true:
+recorded address. The home is host visible when its instance lives in host or shared USM
+(`HomeMemory::HostAccessible`), whatever the map says of its space: a host write lands in that memory, so
+it stays current even when the map last marked only the host space valid. Otherwise it is host visible
+when the reader says the home space holds the instance (`HandleHome::resident`) and one of these is true:
 
 - the home is the host space;
-- the home instance lives in host or shared USM (`HomeMemory::HostAccessible`);
 - the kind is unknown (`HomeMemory::Unknown`) and the handle carries `HandleFlags::Borrowed`. The runtime is not told the
   kind of borrowed caller memory, and whoever borrowed it vouches that the devices reach it.
 
