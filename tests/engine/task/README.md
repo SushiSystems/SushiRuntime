@@ -98,7 +98,8 @@ two devices.
 
 `Medium_KernelPointersDeathTest.ABindWithNoInstanceOnTheDeviceFailsItsVerify` binds a slot of device
 memory on a device that holds no instance, and checks the process stops with the handle's slot and
-generation and the device in the message. A death test starts a child process.
+generation, the device, and the home facts the slot was made from (space, residency, memory kind,
+ownership and home device) in the message. A death test starts a child process.
 
 `Small_KernelPointerSlot` checks `make_kernel_pointer_slot()` against directory entries:
 

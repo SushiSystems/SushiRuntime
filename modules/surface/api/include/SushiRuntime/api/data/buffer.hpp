@@ -106,12 +106,14 @@ namespace SushiRuntime
          * @brief Returns the Borrowed handle of caller-owned memory: the live one when the same
          *        range is borrowed already, else a new one.
          * @param device Device the memory is recorded on: its handle's home space.
+         * @param residency The kind of memory, when the caller checked it; none leaves it unknown.
          * @return The handle, the null handle for a null address or no bytes, or an
          *         InvalidArgument error when the range overlaps another borrowed range.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<GlobalHandle> borrow_handle(
             const ContextHandle& context, void* address, std::size_t bytes,
-            std::size_t element_size, std::size_t element_alignment, DeviceIndex device);
+            std::size_t element_size, std::size_t element_alignment, DeviceIndex device,
+            std::optional<Residency> residency);
 
         /** @brief Retires a minted handle, or drops one borrow of a Borrowed handle. */
         SUSHIRUNTIME_API void release_handle(const ContextHandle& context,

@@ -58,7 +58,7 @@ class BorrowedAllocation
                   SushiRuntime::Internal::ContextAccess::shared(runtime)))
         {
             SushiRuntime::Result<SushiRuntime::GlobalHandle> borrowed = SushiRuntime::Detail::borrow_handle(
-                context_, address, bytes, 1, 1, SushiRuntime::DeviceIndex{0});
+                context_, address, bytes, 1, 1, SushiRuntime::DeviceIndex{0}, std::nullopt);
             if (borrowed)
                 handle_ = *borrowed;
         }

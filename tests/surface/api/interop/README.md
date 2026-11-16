@@ -59,6 +59,7 @@ a device cannot be made to drop its UUID.
 | `DroppingTheBorrowedHandleLeavesTheRunValid` | The borrowed handle is destroyed after recording and the run still executes the task, because the owner token lives. |
 | `ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate` | Over shared USM from `sycl::malloc_shared`, which the runtime does not record, `write_range()` and `read_range()` copy through the queue of the buffer's device. |
 | `AMismatchedResidencyIsRefusedWithBothNames` | Host USM from `sycl::malloc_host` borrowed as `Residency::Shared` is refused with `InvalidArgument`, and the message names both residencies. |
+| `ALateCountTaskWritesABorrowedRegionFilledOnTheHost` | A late count borrowed as `Residency::Host` sizes a device kernel that writes a region `borrowed_region()` took over shared memory the host filled; both borrows record their USM kind, so the bind reads them in place. |
 | `ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord` | A `Residency::Host` buffer the runtime allocated, borrowed as `Residency::Shared`, is refused with `InvalidArgument` from the kind the allocator recorded. |
 | `ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted` | Borrowed as `Residency::Host` it is accepted. |
 

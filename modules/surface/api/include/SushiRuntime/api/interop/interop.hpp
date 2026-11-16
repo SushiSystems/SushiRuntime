@@ -142,7 +142,7 @@ namespace SushiRuntime
                 if (!agreed)
                     return make_error(std::move(agreed.error()));
                 Result<GlobalHandle> handle = Detail::borrow_handle(
-                    context_, address, bytes, sizeof(T), alignof(T), device);
+                    context_, address, bytes, sizeof(T), alignof(T), device, residency);
                 if (!handle)
                     return make_error(std::move(handle.error()));
                 Detail::MemoryBlock block{Detail::Allocation(address, bytes, nullptr)};

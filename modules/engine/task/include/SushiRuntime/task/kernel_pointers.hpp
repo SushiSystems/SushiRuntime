@@ -64,6 +64,7 @@ namespace SushiRuntime
             void* home = nullptr;                   /**< Address recorded at add(). */
             std::optional<std::size_t> home_device; /**< Device that holds the home instance; none for host or planned memory. */
             bool host_visible = false;              /**< The home instance is host memory every device reads in place. */
+            HandleHome facts{};                     /**< What the directory said of the home when the slot was made. */
             ElementLayout layout{};                 /**< Layout of one element of the buffer; raw bytes until stated. */
         };
 

@@ -176,18 +176,20 @@ namespace
         EXPECT_EQ(pointers.resolved_binds(), 1u);
     }
 
-    /** @brief Tests that a bind finding no instance of a device-only buffer stops, naming the handle and the device. A death test starts a child process. */
+    /** @brief Tests that a bind finding no instance of a device-only buffer stops, naming the handle, the device and the home facts the slot was made from. A death test starts a child process. */
     TEST(Medium_KernelPointersDeathTest, ABindWithNoInstanceOnTheDeviceFailsItsVerify)
     {
         Internal::Memory::ResidencyDirectory directory(0);
         int home = 1;
         const GlobalHandle handle = minted(directory);
         place(directory, handle, &home, 0);
-        KernelPointers pointers({KernelPointerSlot{handle, &home, 0, false}}, directory);
+        KernelPointers pointers({make_kernel_pointer_slot(directory, handle, &home, 2)}, directory);
 
         EXPECT_DEATH(pointers.bind(1),
                      "handle slot " + std::to_string(handle.slot()) + " generation " +
-                         std::to_string(handle.generation()) + " has no instance on device 1");
+                         std::to_string(handle.generation()) + " has no instance on device 1.*"
+                         "Home when the slot was made: space \\d+, not resident, memory unknown, owned, "
+                         "home device 0");
     }
 
     /** @brief Records a described buffer homed on @p home with an instance there of @p kind. */

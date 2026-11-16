@@ -44,14 +44,42 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Returns the message of a bind that found no instance of @p handle on @p device. */
-            std::string missing_instance_message(GlobalHandle handle, std::size_t device)
+            /** @brief Returns the name of @p memory as a bind failure prints it. */
+            const char* memory_name(HomeMemory memory) noexcept
             {
-                return "KernelPointers::bind(" + std::to_string(device) + "): the buffer of handle slot " +
-                       std::to_string(handle.slot()) + " generation " + std::to_string(handle.generation()) +
-                       " has no instance on device " + std::to_string(device) +
-                       " and its home is not host visible; the coherence plan must copy it there "
-                       "before the node runs.";
+                switch (memory)
+                {
+                    case HomeMemory::HostAccessible:
+                        return "host accessible";
+                    case HomeMemory::DeviceOnly:
+                        return "device only";
+                    default:
+                        return "unknown";
+                }
+            }
+
+            /**
+             * @brief Returns the message of a bind that found no instance of @p slot's buffer on
+             *        @p device, with the home facts the host-visibility rule read when the slot was made.
+             */
+            std::string missing_instance_message(const KernelPointerSlot& slot, const HandleHome& home,
+                                                 std::size_t device)
+            {
+                const GlobalHandle handle = slot.handle;
+                std::string message = "KernelPointers::bind(" + std::to_string(device) +
+                                      "): the buffer of handle slot " + std::to_string(handle.slot()) +
+                                      " generation " + std::to_string(handle.generation()) +
+                                      " has no instance on device " + std::to_string(device) +
+                                      " and its home is not host visible; the coherence plan must copy it "
+                                      "there before the node runs. Home when the slot was made: space " +
+                                      std::to_string(home.home.value()) + ", " +
+                                      (home.resident ? "resident" : "not resident") + ", memory " +
+                                      memory_name(home.memory) + ", " +
+                                      (has_flags(handle.flags(), HandleFlags::Borrowed) ? "borrowed" : "owned") +
+                                      ", home device ";
+                message += slot.home_device ? std::to_string(*slot.home_device) : std::string("none");
+                message += home.status == HandleStatus::Ok ? "." : ", and the directory refused the read.";
+                return message;
             }
         } // namespace
 
@@ -84,6 +112,7 @@ namespace SushiRuntime
             const HandleHome facts = directory.home_of(handle);
             slot.layout = facts.layout;
             slot.host_visible = home_is_host_visible(facts, handle);
+            slot.facts = facts;
             return slot;
         }
 
@@ -138,7 +167,7 @@ namespace SushiRuntime
                     bound_[index] = instance;
                     continue;
                 }
-                SR_VERIFY(slot.host_visible, missing_instance_message(slot.handle, device).c_str());
+                SR_VERIFY(slot.host_visible, missing_instance_message(slot, slot.facts, device).c_str());
                 bound_[index] = slot.home;
             }
             if (resolved)

@@ -60,6 +60,29 @@
 
 namespace SushiRuntime
 {
+    namespace
+    {
+        /**
+         * @brief Returns the residency SYCL reports for @p address on @p device, or none when that
+         *        device's context does not know the address.
+         */
+        [[nodiscard]] std::optional<Residency> residency_of(
+            Internal::Execution::RuntimeContext& context, const void* address, DeviceIndex device)
+        {
+            switch (Detail::usm_kind_of(context, address, device.value()))
+            {
+                case sycl::usm::alloc::host:
+                    return Residency::Host;
+                case sycl::usm::alloc::shared:
+                    return Residency::Shared;
+                case sycl::usm::alloc::device:
+                    return Residency::Device;
+                default:
+                    return std::nullopt;
+            }
+        }
+    } // namespace
+
     std::size_t Recorder::record(Detail::NodeDescription&& description,
                                  std::vector<LivenessObserver>& lives,
                                  const NodeOptions& options)
@@ -145,7 +168,8 @@ namespace SushiRuntime
                                                    DeviceIndex device)
     {
         Result<GlobalHandle> handle = Detail::borrow_handle(
-            context_, const_cast<void*>(address), bytes, 1, 1, device);
+            context_, const_cast<void*>(address), bytes, 1, 1, device,
+            residency_of(Internal::ContextAccess::context(context_), address, device));
         if (!handle)
             return make_error(std::move(handle.error()));
         if (handle->is_null())

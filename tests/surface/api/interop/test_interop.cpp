@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -448,4 +449,50 @@ TEST_F(Medium_InteropBorrowHostUSM, AMismatchedResidencyIsRefusedWithBothNames)
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
     expect_message_holds(refused.error().message, {"Residency::Host", "Residency::Shared"});
+}
+
+/** @brief Tests that a late count borrowed as host memory sizes a device task writing a borrowed region filled on the host. */
+TEST_F(Medium_InteropBorrowHostUSM, ALateCountTaskWritesABorrowedRegionFilledOnTheHost)
+{
+    constexpr std::size_t CAPACITY = 8;
+    auto memory = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    const LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> counter = runtime().interop().borrow(
+        memory.data(), 1, DeviceIndex{0}, Residency::Host, owner).value();
+    const std::vector<std::uint32_t> count = {3u};
+    ASSERT_TRUE(counter.write_range(ElementRange{0, 1}, span<const std::uint32_t>(count.data(), 1)));
+    auto marks = runtime().buffer<int>(CAPACITY).value();
+    TestSupport::fill_with(marks, 0);
+    int* out = marks.data();
+
+    auto graph = runtime().graph();
+    const BufferRegion region =
+        graph.recorder().borrowed_region(out, CAPACITY * sizeof(int), DeviceIndex{0}).value();
+    graph.recorder().dynamic_kernel(sized_from_device(counter), CAPACITY,
+                                    Access(Reads(), Writes(region)),
+                                    [out](std::size_t i) { out[i] = 1; });
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_EQ(TestSupport::contents(marks), TestSupport::window_of(CAPACITY, 0, 3, 1, 0));
+}
+
+/** @brief Tests that a late-count kernel runs over a count borrowed from a Host buffer that still owns it, after raw host writes. */
+TEST_F(Medium_InteropBorrowHostUSM, ALateCountBorrowedBesideItsOwningBufferRunsAfterRawHostWrites)
+{
+    auto out = runtime().buffer<std::byte>(256, DeviceIndex{0}, Residency::Shared).value();
+    std::memset(out.data(), 0, 16);
+    auto count_bytes = runtime().buffer<std::byte>(256, DeviceIndex{0}, Residency::Host).value();
+    *reinterpret_cast<std::int32_t*>(count_bytes.data()) = 2;
+    const LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> words = runtime().interop().borrow(
+        reinterpret_cast<std::uint32_t*>(count_bytes.data()), 64, DeviceIndex{0}, Residency::Host, owner).value();
+    float* marks = reinterpret_cast<float*>(out.data());
+
+    auto graph = runtime().graph();
+    graph.recorder().dynamic_kernel(sized_from_device(words, 0), 4,
+                                    Access(Reads(), Writes(out.region(ElementRange{0, 16}))),
+                                    [marks](std::size_t i) { marks[i] = 1.0f; });
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_EQ(std::vector<float>(marks, marks + 4), (std::vector<float>{1.0f, 1.0f, 0.0f, 0.0f}));
 }

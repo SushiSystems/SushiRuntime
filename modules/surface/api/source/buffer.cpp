@@ -129,7 +129,8 @@ namespace SushiRuntime
 
         Result<GlobalHandle> borrow_handle(const ContextHandle& context, void* address,
                                            std::size_t bytes, std::size_t element_size,
-                                           std::size_t element_alignment, DeviceIndex device)
+                                           std::size_t element_alignment, DeviceIndex device,
+                                           std::optional<Residency> residency)
         {
             if (address == nullptr || bytes == 0 || !context)
                 return GlobalHandle::null();
@@ -143,7 +144,9 @@ namespace SushiRuntime
 
             Result<void> described = describe_entry(runtime.handle_ports(), borrowed->handle, address,
                                                     bytes, element_size, element_alignment,
-                                                    device.value(), std::nullopt);
+                                                    device.value(),
+                                                    residency ? std::optional<Internal::Memory::USMKind>(usm_kind_for(*residency))
+                                                              : std::nullopt);
             if (!described)
             {
                 static_cast<void>(runtime.borrowed_handles().release(borrowed->handle));
