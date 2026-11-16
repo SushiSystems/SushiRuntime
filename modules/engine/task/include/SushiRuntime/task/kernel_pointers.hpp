@@ -122,6 +122,9 @@ namespace SushiRuntime
                  */
                 SUSHIRUNTIME_API void bind(std::size_t device) noexcept;
 
+                /** @brief Points every slot at its home address, for a node that runs with no device. */
+                SUSHIRUNTIME_API void bind_home() noexcept;
+
                 /**
                  * @brief Returns the view of the pointers of the last bind(), one per slot, in slot
                  *        order, each with the layout of its buffer's elements.

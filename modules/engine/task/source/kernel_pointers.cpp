@@ -108,6 +108,13 @@ namespace SushiRuntime
             }
         }
 
+        void KernelPointers::bind_home() noexcept
+        {
+            for (std::size_t index = 0; index < slots_.size(); ++index)
+                bound_[index] = slots_[index].home;
+            ++home_binds_;
+        }
+
         void KernelPointers::bind(std::size_t device) noexcept
         {
             bool resolved = false;

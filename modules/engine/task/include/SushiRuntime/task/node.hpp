@@ -40,6 +40,7 @@
 #include <string>
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
@@ -445,7 +446,21 @@ namespace SushiRuntime
              *         host form: an NdRange, a raw command group or a queue body.
              * @see modules/engine/task/README.md
              */
-            [[nodiscard]] Result<void> run_on_host();
+            [[nodiscard]] SUSHIRUNTIME_API Result<void> run_on_host();
+
+            /**
+             * @brief Binds the kernel pointers to the node's device, or to their homes when no device is
+             *        cached, as on a host run, and returns them.
+             * @pre kernel_pointers_ is set.
+             */
+            [[nodiscard]] KernelPointers& bound_pointers() noexcept
+            {
+                if (cached_queue_index_ >= 0)
+                    kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
+                else
+                    kernel_pointers_->bind_home();
+                return *kernel_pointers_;
+            }
 
             /**
              * @brief Executes the task work within a SYCL handler, with the kernel's pointers bound
@@ -456,13 +471,12 @@ namespace SushiRuntime
             {
                 if (!work)
                     return;
-                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                if (!kernel_pointers_)
                 {
                     work(h);
                     return;
                 }
-                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
-                const KernelPointerScope scope(*kernel_pointers_);
+                const KernelPointerScope scope(bound_pointers());
                 work(h);
             }
 
@@ -476,10 +490,9 @@ namespace SushiRuntime
             {
                 if (!host_work)
                     return {};
-                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                if (!kernel_pointers_)
                     return host_work(queue, dependencies);
-                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
-                const KernelPointerScope scope(*kernel_pointers_);
+                const KernelPointerScope scope(bound_pointers());
                 return host_work(queue, dependencies);
             }
 
@@ -494,10 +507,9 @@ namespace SushiRuntime
             {
                 if (!checked_host_work)
                     return execute_host(queue, dependencies);
-                if (!kernel_pointers_ || cached_queue_index_ < 0)
+                if (!kernel_pointers_)
                     return checked_host_work(queue, dependencies);
-                kernel_pointers_->bind(static_cast<std::size_t>(cached_queue_index_));
-                const KernelPointerScope scope(*kernel_pointers_);
+                const KernelPointerScope scope(bound_pointers());
                 return checked_host_work(queue, dependencies);
             }
 

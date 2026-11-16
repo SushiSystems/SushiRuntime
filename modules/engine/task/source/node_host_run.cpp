@@ -30,6 +30,8 @@
 
 #include <SushiRuntime/task/node.hpp>
 
+#include <optional>
+
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -52,6 +54,13 @@ namespace SushiRuntime
 
         Result<void> Node::run_on_host()
         {
+            // A host run has no device, so a body reads its operands at their homes.
+            std::optional<KernelPointerScope> operands;
+            if (kernel_pointers_)
+            {
+                kernel_pointers_->bind_home();
+                operands.emplace(*kernel_pointers_);
+            }
             const bool native = mode == ExecutionMode::Host && !submits_device_work_;
             if (native)
                 return Detail::translate_exceptions([this]() { execute_native(); });

@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,6 +40,7 @@
 #include <SushiRuntime/memory/residency_directory.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/task/kernel_pointers.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
@@ -77,6 +79,53 @@ namespace
         EXPECT_EQ(pointers.operands().untyped(0), &copy);
         EXPECT_EQ(pointers.resolved_binds(), 1u);
         EXPECT_EQ(pointers.home_binds(), 0u);
+    }
+
+    /** @brief Tests that bind_home() returns a table bound to another device to the home addresses. */
+    TEST(Small_KernelPointers, BindHomeReturnsEverySlotToItsHomeAddress)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        int copy = 2;
+        const GlobalHandle handle = minted(directory);
+        place(directory, handle, &home, 0);
+        place(directory, handle, &copy, 1);
+        KernelPointers pointers({KernelPointerSlot{handle, &home, 0}}, directory);
+        pointers.bind(1);
+
+        pointers.bind_home();
+
+        ASSERT_EQ(pointers.operands().size(), 1u);
+        EXPECT_EQ(pointers.operands().untyped(0), &home);
+        EXPECT_EQ(pointers.home_binds(), 1u);
+    }
+
+    /** @brief Tests that a node with no cached device binds its operands at their homes, on a dispatch and on a host run. */
+    TEST(Small_KernelPointers, ANodeWithNoCachedDeviceBindsItsOperandsAtTheirHomes)
+    {
+        Internal::Memory::ResidencyDirectory directory(0);
+        int home = 1;
+        int copy = 2;
+        const GlobalHandle handle = minted(directory);
+        place(directory, handle, &home, 0);
+        place(directory, handle, &copy, 1);
+        Node node;
+        node.kernel_pointers_ = std::make_unique<KernelPointers>(
+            std::vector<KernelPointerSlot>{KernelPointerSlot{handle, &home, 0}}, directory);
+        node.kernel_pointers_->bind(1);
+        ASSERT_LT(node.cached_queue_index_, 0);
+
+        EXPECT_EQ(node.bound_pointers().operands().untyped(0), &home);
+
+        node.kernel_pointers_->bind(1);
+        const void* seen = nullptr;
+        node.host_form = [&seen]()
+        {
+            const KernelPointers* const current = KernelPointerScope::current();
+            seen = current != nullptr ? current->operands().untyped(0) : nullptr;
+        };
+        ASSERT_TRUE(node.run_on_host());
+        EXPECT_EQ(seen, &home) << "the host run's body saw no operand scope, or the device copy";
     }
 
     /** @brief Tests that a node on the home device keeps the home address and reads no directory. */

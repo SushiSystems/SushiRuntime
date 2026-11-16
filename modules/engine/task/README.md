@@ -92,7 +92,7 @@ node on another device, the kernel must read the instance there. `Node::kernel_p
 `Node::execute()` calls `KernelPointers::bind()` with the node's device, `cached_queue_index_`, and
 opens a `KernelPointerScope` around the work; the capture launch's command group reads the table
 from the scope while it is built. `Node::execute_host()` does the same around a task's queue body,
-which reads the table through `bound_operands()` for every kernel it submits. The scope hands out the node's table as one `BoundOperands` view (`KernelPointers::operands()`): the pointers of the last bind with the element layout of each slot's buffer. The API's `bound_operands()`, a capture launch, a split slice and the consumer libraries read that view and no other copy of the table. A node with no table, or not yet placed, runs its work as before.
+which reads the table through `bound_operands()` for every kernel it submits. The scope hands out the node's table as one `BoundOperands` view (`KernelPointers::operands()`): the pointers of the last bind with the element layout of each slot's buffer. The API's `bound_operands()`, a capture launch, a split slice and the consumer libraries read that view and no other copy of the table. Both go through `Node::bound_pointers()`, which binds to the cached device, or, for a node with no cached device, calls `KernelPointers::bind_home()`, so the body still reads its operands at their homes; `run_on_host()` binds home too, since a host run has no device. A node with no table runs its work as before.
 
 A host node whose body can fail sets `Node::checked_host_work`, a `CheckedHostWork` that returns
 `Result<sycl::event>`. `Task::execute_host_checked()` is the one entry the submission calls for a

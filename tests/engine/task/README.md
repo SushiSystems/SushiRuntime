@@ -88,6 +88,8 @@ two devices.
 | Test | What it proves |
 | --- | --- |
 | `ANodeOnAnotherDeviceReceivesTheInstanceThere` | A bind on device 1 gives the instance on device 1 and counts one resolved bind. |
+| `ANodeWithNoCachedDeviceBindsItsOperandsAtTheirHomes` | A node with a table and no cached device binds at the homes through `bound_pointers()`, and `run_on_host()` opens the operand scope there, so its body reads the home address. |
+| `BindHomeReturnsEverySlotToItsHomeAddress` | After a bind on device 1, `bind_home()` gives the home address and counts one home bind, as a node with no cached device or a host run binds. |
 | `ANodeOnTheHomeDeviceTakesTheFastPath` | A bind on the home device keeps the home address and counts only home binds. |
 | `AHostVisibleBufferWithNoInstanceThereKeepsItsHomeAddress` | A host-visible slot with no instance on the node's device keeps its home address. |
 | `AScopeOpensItsTableAndRestoresThePreviousOne` | Scopes nest, and each restores the table that was open before it. |
