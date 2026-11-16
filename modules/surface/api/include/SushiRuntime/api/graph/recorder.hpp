@@ -1035,6 +1035,13 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Returns the refusal of a node whose read or write region names a handle this
+             *        runtime holds no live entry for, or nothing.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API std::optional<Error> dead_region_refusal(
+                const Detail::NodeDescription& description) const;
+
+            /**
              * @brief Keeps a refusal when it is the first, and tells whether there was none.
              * @return True when refused is empty, so the recording may go on.
              */

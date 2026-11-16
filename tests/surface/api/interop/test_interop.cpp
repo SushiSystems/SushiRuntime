@@ -496,3 +496,29 @@ TEST_F(Medium_InteropBorrowHostUSM, ALateCountBorrowedBesideItsOwningBufferRunsA
 
     EXPECT_EQ(std::vector<float>(marks, marks + 4), (std::vector<float>{1.0f, 1.0f, 0.0f, 0.0f}));
 }
+
+/** @brief Tests that a node naming a region of a released borrow is refused when recorded, and the run returns the refusal. */
+TEST_F(Medium_InteropBorrowHostUSM, ARegionOfAReleasedBorrowIsRefusedWhenRecorded)
+{
+    constexpr std::size_t CAPACITY = 4;
+    auto memory = runtime().buffer<std::uint32_t>(CAPACITY, DeviceIndex{0}, Residency::Host).value();
+    auto count = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    count.host()[0] = 2u;
+    BufferRegion released;
+    {
+        const LivenessToken owner = make_liveness();
+        const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
+            memory.data(), CAPACITY, DeviceIndex{0}, Residency::Host, owner).value();
+        released = borrowed.region(ElementRange{0, CAPACITY});
+    }
+    std::uint32_t* out = memory.data();
+
+    auto graph = runtime().graph();
+    graph.recorder().dynamic_kernel(sized_from_device(count), CAPACITY, Access(Reads(), Writes(released)),
+                                    [out](std::size_t i) { out[i] = 1u; });
+    const Result<RunReport> ran = graph.run();
+
+    ASSERT_FALSE(ran) << "a node naming a released borrow ran";
+    EXPECT_EQ(ran.error().code, ErrorCode::InvalidAccess);
+    EXPECT_NE(ran.error().message.find("holds no live handle"), std::string::npos) << ran.error().message;
+}

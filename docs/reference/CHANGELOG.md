@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-16 — api: Refused a node whose region names a released or foreign buffer when it is recorded, so the run returns the refusal (`recorder.cpp`).
 - 2026-11-16 — report: Moved the transfer observer and its record into the installed report module as public types, so a consumer can implement one (`transfer_observer.hpp`).
 - 2026-11-16 — distributed: Removed the `BufferView` overload of `record_registered_task()`; a caller wraps a view as `TaskBuffer{view, GlobalHandle::null()}` to borrow it (`registered_task.hpp`).
 - 2026-11-16 — memory: Added the pure virtual `USMSource::kind_of()`, which every source must answer; interop reads a borrowed address's residency through it (`usm_source.hpp`).

@@ -89,6 +89,8 @@ namespace SushiRuntime
     {
         if (!admits(options))
             return rule_count();
+        if (!admit(dead_region_refusal(description)))
+            return rule_count();
         Detail::NodeSpec spec(std::move(description));
         spec.stamp = Detail::NodeStamp(options, label_of(options.name), label_of(options.origin));
         if (placement_scope_ && !options.placement_class.is_named())
@@ -106,6 +108,32 @@ namespace SushiRuntime
             watch(std::move(life));
         ++generation_;
         return rule_names_.size() - 1;
+    }
+
+    std::optional<Error> Recorder::dead_region_refusal(const Detail::NodeDescription& description) const
+    {
+        const Internal::Memory::HandlePorts ports =
+            Internal::ContextAccess::context(context_).handle_ports();
+        const auto refusal = [&](const std::vector<BufferRegion>& regions, const char* role) -> std::optional<Error>
+        {
+            for (std::size_t index = 0; index < regions.size(); ++index)
+            {
+                const GlobalHandle handle = regions[index].base;
+                if (handle.is_null() || ports.residency_reader.inspect(handle).status == HandleStatus::Ok)
+                    continue;
+                return Error{ErrorCode::InvalidAccess,
+                             "rule " + std::to_string(next_rule()) + ": " + role + " region " +
+                             std::to_string(index) + " names handle slot " + std::to_string(handle.slot()) +
+                             " generation " + std::to_string(handle.generation()) +
+                             ", and this runtime holds no live handle for it: its buffer or borrow was "
+                             "released, or another runtime made it. Name a buffer this runtime holds."};
+            }
+            return std::nullopt;
+        };
+        std::optional<Error> refused = refusal(description.reads, "read");
+        if (!refused)
+            refused = refusal(description.writes, "write");
+        return refused;
     }
 
     bool Recorder::admit(std::optional<Error> refused)

@@ -61,6 +61,7 @@ a device cannot be made to drop its UUID.
 | `AMismatchedResidencyIsRefusedWithBothNames` | Host USM from `sycl::malloc_host` borrowed as `Residency::Shared` is refused with `InvalidArgument`, and the message names both residencies. |
 | `ALateCountTaskWritesABorrowedRegionFilledOnTheHost` | A late count borrowed as `Residency::Host` sizes a device kernel that writes a region `borrowed_region()` took over shared memory the host filled; both borrows record their USM kind, so the bind reads them in place. |
 | `ALateCountBorrowedBesideItsOwningBufferRunsAfterRawHostWrites` | A count borrowed as `Residency::Host` from a Host buffer that stays alive beside the borrow, both written through raw pointers, sizes a device kernel writing a region of a shared buffer, and the kernel runs the count written there. |
+| `ARegionOfAReleasedBorrowIsRefusedWhenRecorded` | A dynamic kernel writing a region of a borrow already released is refused when recorded; the run returns InvalidAccess naming the dead handle, and nothing runs. |
 | `ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord` | A `Residency::Host` buffer the runtime allocated, borrowed as `Residency::Shared`, is refused with `InvalidArgument` from the kind the allocator recorded. |
 | `ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted` | Borrowed as `Residency::Host` it is accepted. |
 
