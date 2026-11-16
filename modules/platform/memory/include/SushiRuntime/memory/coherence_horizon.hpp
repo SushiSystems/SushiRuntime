@@ -32,6 +32,7 @@
 
 #include <cstddef>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/coherence_history.hpp>
 
 namespace SushiRuntime
@@ -44,7 +45,7 @@ namespace SushiRuntime
          *
          * A step driver calls advance() between runs, when no plan is being made.
          */
-        class CoherenceHorizon final
+        class SUSHIRUNTIME_API CoherenceHorizon final
         {
             public:
                 /** @brief Steps between two horizons when the runtime names no other interval. */

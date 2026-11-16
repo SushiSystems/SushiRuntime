@@ -33,6 +33,7 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/copy_submitter.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
 #include <SushiRuntime/transfer/staging_rings.hpp>
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * to slot on the source's queue, then slot to destination on the destination's queue;
          * copy() submits every leg and waits for none. A host copy is one memcpy.
          */
-        class HostStagedPath final : public TransferPath
+        class SUSHIRUNTIME_API HostStagedPath final : public TransferPath
         {
             public:
                 /**

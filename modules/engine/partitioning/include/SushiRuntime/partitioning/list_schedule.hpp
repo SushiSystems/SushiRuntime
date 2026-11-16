@@ -33,6 +33,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_model.hpp>
 
 namespace SushiRuntime
@@ -56,7 +57,7 @@ namespace SushiRuntime
          * Ranks are means over devices of node and edge times, so a node ranks at least as high as
          * each successor and the order runs every edge forward.
          */
-        [[nodiscard]] std::vector<std::size_t> rank_order(const PartitionModel& model);
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<std::size_t> rank_order(const PartitionModel& model);
 
         /**
          * @brief Places the nodes of model in rank order, each where a StepSimulation finishes it earliest.
@@ -65,7 +66,7 @@ namespace SushiRuntime
          * device index; a fixed node stays on its device.
          * @return Nothing when a movable node fits in no pool.
          */
-        [[nodiscard]] std::optional<ScheduledPlan> place_by_rank(const PartitionModel& model);
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<ScheduledPlan> place_by_rank(const PartitionModel& model);
 
         /**
          * @brief Moves nodes of plan onto a neighbour's device while the step falls and the plan fits.
@@ -73,9 +74,9 @@ namespace SushiRuntime
          * Moves are tried in recording order, the order of plan kept, for at most K_REFINE_PASSES
          * passes; each pass prices at most two moves per edge.
          */
-        void refine_schedule(const PartitionModel& model, ScheduledPlan& plan);
+        SUSHIRUNTIME_API void refine_schedule(const PartitionModel& model, ScheduledPlan& plan);
 
         /** @brief Returns place_by_rank() refined, or nothing when a movable node fits in no pool. */
-        [[nodiscard]] std::optional<ScheduledPlan> list_schedule(const PartitionModel& model);
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<ScheduledPlan> list_schedule(const PartitionModel& model);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

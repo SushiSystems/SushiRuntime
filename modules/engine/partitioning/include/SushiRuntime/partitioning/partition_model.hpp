@@ -34,6 +34,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/partitioning/partition_problem.hpp>
@@ -52,7 +53,7 @@ namespace SushiRuntime
          * once. A step runs the nodes in recording order; an edge between two pools waits for the
          * copy over the source device's path.
          */
-        class PartitionModel
+        class SUSHIRUNTIME_API PartitionModel
         {
             public:
                 /** @brief Holds the bytes [begin, end) of the handle of dense index handle. */

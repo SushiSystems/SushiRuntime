@@ -33,6 +33,7 @@
 #include <memory>
 #include <optional>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
@@ -46,7 +47,7 @@ namespace SushiRuntime
          *
          * The port co-owns the allocator, so a planned node that holds the port keeps it alive.
          */
-        class USMInstanceAllocator final : public InstanceAllocator
+        class SUSHIRUNTIME_API USMInstanceAllocator final : public InstanceAllocator
         {
             public:
                 /** @brief Builds the port over allocator. */

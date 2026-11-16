@@ -34,6 +34,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/coherence_planner.hpp>
 #include <SushiRuntime/coherence/planned_node_factory.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -59,7 +60,7 @@ namespace SushiRuntime
          * @param space_of_device Space of a cut node's part's device; empty plans every node whole.
          * @return The spliced plan, or the error the planner or the factory gave; nodes is then unchanged.
          */
-        [[nodiscard]] Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Graph::Node>>& nodes,
+        [[nodiscard]] SUSHIRUNTIME_API Result<CopyPlan> splice_plan(std::vector<sushi_ptr<Graph::Node>>& nodes,
                                                const SpaceOfNode& space_of, CoherencePlanner& planner,
                                                PlannedNodeFactory& factory,
                                                const SpaceOfDevice& space_of_device = {});

@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 
 namespace SushiRuntime
@@ -44,7 +45,7 @@ namespace SushiRuntime
          * The paths take their observer when they are built; the slot lets a caller install one
          * later. install() runs between runs only, so copied() reads the observer without a lock.
          */
-        class TransferObserverSlot final : public TransferObserver
+        class SUSHIRUNTIME_API TransferObserverSlot final : public TransferObserver
         {
             public:
                 /**

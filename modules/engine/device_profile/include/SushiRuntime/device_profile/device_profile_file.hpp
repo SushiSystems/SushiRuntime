@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
 
@@ -49,7 +50,7 @@ namespace SushiRuntime
          * set always gives the same bytes. Doubles are written with 17 significant digits and read
          * back equal.
          */
-        class DeviceProfileFile
+        class SUSHIRUNTIME_API DeviceProfileFile
         {
             public:
                 /** @brief Holds the version the writer writes and the reader reads without upgrading. */

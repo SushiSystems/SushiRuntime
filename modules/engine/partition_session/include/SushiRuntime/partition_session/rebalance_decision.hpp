@@ -32,6 +32,7 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/report/partition_report.hpp>
 
 namespace SushiRuntime
@@ -67,10 +68,10 @@ namespace SushiRuntime
          * modelled step by more than margin tries the floor, once per pair. A report with no measured
          * step, or a refused one, keeps the plan. The result is a pure function of its arguments.
          */
-        [[nodiscard]] RebalanceAction decide_rebalance(const PartitionReport& report, double margin,
+        [[nodiscard]] SUSHIRUNTIME_API RebalanceAction decide_rebalance(const PartitionReport& report, double margin,
                                                        const RebalanceState& state) noexcept;
 
         /** @brief Returns the name of action, one lower-case word, as the placement journal writes it. */
-        [[nodiscard]] const char* to_text(RebalanceAction action) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API const char* to_text(RebalanceAction action) noexcept;
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

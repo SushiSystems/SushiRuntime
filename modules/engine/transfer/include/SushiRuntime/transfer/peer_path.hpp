@@ -33,6 +33,7 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/peer_access.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
@@ -49,7 +50,7 @@ namespace SushiRuntime
          * and PeerAccess grants the destination's device the source's memory. Where the backend has
          * no peer access, PeerAccess refuses and the path connects nothing.
          */
-        class PeerPath final : public TransferPath
+        class SUSHIRUNTIME_API PeerPath final : public TransferPath
         {
             public:
                 /**

@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/machine/split_part.hpp>
 
 namespace SushiRuntime
@@ -55,7 +56,7 @@ namespace SushiRuntime
          * @param device_times Seconds the whole node takes on each device.
          * @return The parts in device order; empty when extent is zero or no device can run the node.
          */
-        [[nodiscard]] std::vector<SizedPart> size_split(std::uint32_t axis, std::uint64_t extent,
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<SizedPart> size_split(std::uint32_t axis, std::uint64_t extent,
                                                         const std::vector<double>& device_times);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

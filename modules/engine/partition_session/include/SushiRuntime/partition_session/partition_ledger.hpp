@@ -35,6 +35,7 @@
 #include <map>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
 #include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
@@ -51,7 +52,7 @@ namespace SushiRuntime
          * The step driver adds to it after each run and folds it at a horizon, between runs, so
          * it takes no lock. The time per device sums the dispatches the device ran.
          */
-        class PartitionLedger final
+        class SUSHIRUNTIME_API PartitionLedger final
         {
             public:
                 /** @brief Adds the dispatches of a run. */

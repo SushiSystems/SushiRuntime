@@ -41,6 +41,7 @@
 #include <queue>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
@@ -68,7 +69,7 @@ namespace SushiRuntime
          * Readers (resolve, is_stale, inspect) take no lock and never wait on a writer. Each
          * entry's coherence map has its own lock, taken after the writer mutex, never before it.
          */
-        class ResidencyDirectory final : public HandleRegistry,
+        class SUSHIRUNTIME_API ResidencyDirectory final : public HandleRegistry,
                                          public ResidencyReader,
                                          public ResidencyWriter,
                                          public CoherenceHistory,

@@ -35,6 +35,7 @@
 #include <string_view>
 #include <utility>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
@@ -51,7 +52,7 @@ namespace SushiRuntime
          * takes the path's latency plus its bytes over the path's bandwidth. A rate of zero under
          * work gives an infinite time.
          */
-        class CostModel
+        class SUSHIRUNTIME_API CostModel
         {
             public:
                 /** @brief Builds a model over profiles. */

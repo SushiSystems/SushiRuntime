@@ -34,6 +34,7 @@
 #include <set>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/memory/residency_reader.hpp>
@@ -61,7 +62,7 @@ namespace SushiRuntime
          * @param assigned Nodes an earlier partition placed; they count as unstated. nodes outlive the result.
          * @return The problem, or the placement error of a fixed node.
          */
-        [[nodiscard]] Result<GraphPartitionProblem>
+        [[nodiscard]] SUSHIRUNTIME_API Result<GraphPartitionProblem>
         make_graph_partition_problem(const std::vector<sushi_ptr<Graph::Node>>& nodes,
                                      const Graph::PlacementMemory& memory, const Memory::ResidencyReader& directory,
                                      const std::vector<PartitionDevice>& devices,

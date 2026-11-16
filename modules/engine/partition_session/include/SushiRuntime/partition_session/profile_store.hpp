@@ -35,6 +35,7 @@
 #include <mutex>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * The sessions of two graphs may reach a horizon at once, so each fold, in memory or into the
          * profile file, takes the store's lock. A fold happens at a horizon, never per dispatch.
          */
-        class ProfileStore final
+        class SUSHIRUNTIME_API ProfileStore final
         {
             public:
                 /** @brief Builds a store over model; null holds no profiles, and no session plans on its own. */

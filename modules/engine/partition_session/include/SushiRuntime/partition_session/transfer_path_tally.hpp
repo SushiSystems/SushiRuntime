@@ -37,6 +37,7 @@
 #include <string>
 #include <utility>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 #include <SushiRuntime/handle/transfer_path_id.hpp>
 
@@ -61,7 +62,7 @@ namespace SushiRuntime
          * Paths call copied() from several workers, so the count takes a lock per copy; a copy is
          * one transfer, never a kernel dispatch. set_next() runs between runs only.
          */
-        class TransferPathTally final : public TransferObserver
+        class SUSHIRUNTIME_API TransferPathTally final : public TransferObserver
         {
             public:
                 /**

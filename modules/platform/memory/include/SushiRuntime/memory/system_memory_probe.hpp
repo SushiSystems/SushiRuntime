@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
 
 namespace SushiRuntime
@@ -41,7 +42,7 @@ namespace SushiRuntime
          *
          * A query the system refuses reports zero bytes.
          */
-        class SystemMemoryProbe final : public MemoryProbe
+        class SUSHIRUNTIME_API SystemMemoryProbe final : public MemoryProbe
         {
             public:
                 [[nodiscard]] ProbedMemory probe() const override;

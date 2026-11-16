@@ -35,6 +35,7 @@
 
 #include <SushiProfiler/environment/environment_contributor.hpp>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/profiling/profiled_runtime.hpp>
 
 namespace SushiRuntime
@@ -49,7 +50,7 @@ namespace SushiRuntime
          * host's. The facts of a runtime are keyed by its node name, `sushiruntime.<node>.`.
          * @see modules/surface/profiling/README.md
          */
-        class RuntimeEnvironment final : public SushiProfiler::EnvironmentContributor
+        class SUSHIRUNTIME_API RuntimeEnvironment final : public SushiProfiler::EnvironmentContributor
         {
             public:
                 /** @brief Builds a contributor over @p runtimes, which outlives it and may grow between sessions. */

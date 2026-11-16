@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <string>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 
 namespace SushiRuntime
@@ -55,7 +56,7 @@ namespace SushiRuntime
          * no device addresses it. A buffer's instance on it is the token instance_address()
          * returns; file_offset() turns an address inside that instance into a file offset.
          */
-        class FileMemorySpace final : public MemorySpace
+        class SUSHIRUNTIME_API FileMemorySpace final : public MemorySpace
         {
             public:
                 /**

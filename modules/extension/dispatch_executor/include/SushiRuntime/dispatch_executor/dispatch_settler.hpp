@@ -35,6 +35,7 @@
 #include <memory>
 #include <string>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/distributed/worker_statistics.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
@@ -54,7 +55,7 @@ namespace SushiRuntime
          * Every way a task leaves goes through it, so each one lets its held id go once.
          * @see modules/extension/dispatch_executor/README.md
          */
-        class DispatchSettler final
+        class SUSHIRUNTIME_API DispatchSettler final
         {
             public:
                 /**

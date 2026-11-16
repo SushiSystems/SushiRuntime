@@ -33,6 +33,7 @@
 #include <filesystem>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
 
@@ -47,7 +48,7 @@ namespace SushiRuntime
          * failed write leaves the old file.
          * @return The error of the read or of the write; a missing file is an error.
          */
-        [[nodiscard]] Result<bool> update_profile_file(const std::filesystem::path& path,
+        [[nodiscard]] SUSHIRUNTIME_API Result<bool> update_profile_file(const std::filesystem::path& path,
                                                        const std::vector<DispatchObservation>& observations);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

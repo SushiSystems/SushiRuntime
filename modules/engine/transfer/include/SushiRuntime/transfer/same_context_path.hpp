@@ -33,6 +33,7 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
 #include <SushiRuntime/transfer/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
@@ -47,7 +48,7 @@ namespace SushiRuntime
          * Two spaces are in one context when the source lists the destination among its direct
          * targets.
          */
-        class SameContextPath final : public TransferPath
+        class SUSHIRUNTIME_API SameContextPath final : public TransferPath
         {
             public:
                 /**

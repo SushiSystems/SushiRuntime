@@ -33,6 +33,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_model.hpp>
 
 namespace SushiRuntime
@@ -62,7 +63,7 @@ namespace SushiRuntime
          * is then false. A fixed node stays on its device.
          * @param subset Device indices of model; must not be empty.
          */
-        [[nodiscard]] FillWalk fill_plan(const PartitionModel& model, const std::vector<std::size_t>& subset);
+        [[nodiscard]] SUSHIRUNTIME_API FillWalk fill_plan(const PartitionModel& model, const std::vector<std::size_t>& subset);
 
         /** @brief The most fill plans floor_plan() walks over D devices: D prefixes and D(D-1)/2 prefixes less one device. */
         [[nodiscard]] constexpr std::size_t floor_candidate_count(std::size_t devices) noexcept
@@ -78,6 +79,6 @@ namespace SushiRuntime
          * step is lower, so the floor is a pure function of the model.
          * @return Nothing when no candidate's fill plan fits.
          */
-        [[nodiscard]] std::optional<FloorPlan> floor_plan(const PartitionModel& model);
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<FloorPlan> floor_plan(const PartitionModel& model);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

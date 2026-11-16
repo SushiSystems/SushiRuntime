@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <optional>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/element_layout.hpp>
@@ -68,7 +69,7 @@ namespace SushiRuntime
          * ResidencyDirectory implements it; a consumer that changes the directory takes
          * ResidencyWriter as well. The calls take no lock.
          */
-        class ResidencyReader : public HandleHomeReader
+        class SUSHIRUNTIME_API ResidencyReader : public HandleHomeReader
         {
             public:
                 /** @brief Frees nothing. */
@@ -93,9 +94,9 @@ namespace SushiRuntime
          * @brief Returns the ErrorCode a failed handle operation is reported with.
          * @pre status is not HandleStatus::Ok.
          */
-        [[nodiscard]] ErrorCode error_code_of(HandleStatus status) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API ErrorCode error_code_of(HandleStatus status) noexcept;
 
         /** @brief Returns the resolved address, or the Error the outcome's status maps to. */
-        [[nodiscard]] Result<void*> to_result(const ResolveOutcome& outcome);
+        [[nodiscard]] SUSHIRUNTIME_API Result<void*> to_result(const ResolveOutcome& outcome);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

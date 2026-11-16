@@ -38,6 +38,7 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
@@ -96,7 +97,7 @@ namespace SushiRuntime
          * The text format is line based and versioned; modules/engine/coherence/README.md holds its schema.
          * One list of entries always gives the same bytes, and the file holds exactly serialise(entries()).
          */
-        class PlacementJournal final
+        class SUSHIRUNTIME_API PlacementJournal final
         {
             public:
                 /** @brief Holds the version the writer writes. */

@@ -33,6 +33,7 @@
 #include <memory>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/coherence/planned_node_factory.hpp>
 #include <SushiRuntime/memory/residency_reader.hpp>
@@ -51,7 +52,7 @@ namespace SushiRuntime
          * host space runs on device 0. Each node shares the allocator; the directory and the paths
          * must outlive every node built.
          */
-        class DirectoryPlannedNodeFactory final : public PlannedNodeFactory
+        class SUSHIRUNTIME_API DirectoryPlannedNodeFactory final : public PlannedNodeFactory
         {
             public:
                 /**

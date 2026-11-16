@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/partition_session/graph_partition_problem.hpp>
 #include <SushiRuntime/partitioning/partition_assignment.hpp>
@@ -46,7 +47,7 @@ namespace SushiRuntime
          * home. A failed call changes nothing.
          * @return InvalidArgument when the assignment does not fit the problem.
          */
-        [[nodiscard]] Result<void> apply_partition(const GraphPartitionProblem& graph,
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> apply_partition(const GraphPartitionProblem& graph,
                                                    const PartitionAssignment& assignment);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

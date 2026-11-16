@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <limits>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
 
@@ -47,7 +48,7 @@ namespace SushiRuntime
          * DeviceQueueSet::free_memory() answers. The set must outlive the probe. A total limit
          * caps both: an integrated device cannot offer more than the host memory it shares.
          */
-        class DeviceMemoryProbe final : public Memory::MemoryProbe
+        class SUSHIRUNTIME_API DeviceMemoryProbe final : public Memory::MemoryProbe
         {
             public:
                 /**

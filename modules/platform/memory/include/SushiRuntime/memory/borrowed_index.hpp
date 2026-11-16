@@ -36,6 +36,7 @@
 #include <mutex>
 #include <optional>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_space.hpp>
@@ -60,7 +61,7 @@ namespace SushiRuntime
          * are made when a buffer is made or dropped, never on a dispatch, and serialise on one
          * mutex.
          */
-        class BorrowedIndex final
+        class SUSHIRUNTIME_API BorrowedIndex final
         {
             public:
                 /**

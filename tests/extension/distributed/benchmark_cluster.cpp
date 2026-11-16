@@ -314,7 +314,7 @@ namespace
             {
                 borrow_.reset();
                 if (data_ != nullptr)
-                    memory_->release(data_);
+                    memory_->release(data_, 0);
             }
 
             SharedFloats(const SharedFloats&) = delete;

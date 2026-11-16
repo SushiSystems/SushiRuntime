@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/partition_session/partitioner_factory.hpp>
 #include <SushiRuntime/partition_session/placement_journal.hpp>
@@ -48,7 +49,7 @@ namespace SushiRuntime
          * @return InvalidArgument when problem does not hash to the entry's problem, InvalidState when the
          *         answer does not hash to its assignment, or the error of a refusal.
          */
-        [[nodiscard]] Result<PartitionAssignment> replay_placement(const PlacementJournalEntry& entry,
+        [[nodiscard]] SUSHIRUNTIME_API Result<PartitionAssignment> replay_placement(const PlacementJournalEntry& entry,
                                                                    const PartitionProblem& problem,
                                                                    const PartitionerFactories& factories);
     } // namespace Internal::Coherence

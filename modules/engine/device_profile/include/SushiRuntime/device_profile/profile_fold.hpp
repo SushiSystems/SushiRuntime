@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
 
@@ -54,7 +55,7 @@ namespace SushiRuntime
          * K_FOLD_SMOOTHING_WEIGHT of the way to the lower median, or takes it when it holds no positive value.
          * The generic kind moves base_throughput. An observation with no profile or no time left is dropped.
          */
-        [[nodiscard]] DeviceProfileSet fold_observations(const DeviceProfileSet& profiles,
+        [[nodiscard]] SUSHIRUNTIME_API DeviceProfileSet fold_observations(const DeviceProfileSet& profiles,
                                                          const std::vector<DispatchObservation>& observations);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

@@ -34,6 +34,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_problem.hpp>
 #include <SushiRuntime/partitioning/range_max_tree.hpp>
 
@@ -48,7 +49,7 @@ namespace SushiRuntime
          * A carried buffer (read before any write, or last touched by a write) and a stated home
          * are live for the whole step. Nodes may be added in any order.
          */
-        class PoolOccupancy
+        class SUSHIRUNTIME_API PoolOccupancy
         {
             public:
                 /**

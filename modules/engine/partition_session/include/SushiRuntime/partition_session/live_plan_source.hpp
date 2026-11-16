@@ -35,6 +35,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partition_session/partitioner_factory.hpp>
 #include <SushiRuntime/partition_session/plan_source.hpp>
 #include <SushiRuntime/partition_session/profile_store.hpp>
@@ -51,7 +52,7 @@ namespace SushiRuntime
          * A horizon folds its dispatches into the shared ProfileStore and builds the scheduler again over
          * the folded model. A floor on trial keeps the plan it replaced, which LeaveFloor puts back.
          */
-        class LivePlanSource final : public PlanSource
+        class SUSHIRUNTIME_API LivePlanSource final : public PlanSource
         {
             public:
                 /**

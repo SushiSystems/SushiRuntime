@@ -34,6 +34,7 @@
 #include <memory>
 #include <optional>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
@@ -54,7 +55,7 @@ namespace SushiRuntime
          * @param model    The frozen model, or null when no profile file was loaded.
          * @param resolver Maps a memory space to its device; read only when model is not null.
          */
-        [[nodiscard]] TransferCost select_transfer_cost(std::shared_ptr<const CostModel> model,
+        [[nodiscard]] SUSHIRUNTIME_API TransferCost select_transfer_cost(std::shared_ptr<const CostModel> model,
                                                         SpaceDeviceResolver resolver);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

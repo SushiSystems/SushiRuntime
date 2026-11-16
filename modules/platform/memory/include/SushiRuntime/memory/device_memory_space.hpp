@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/memory_probe.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 
@@ -51,7 +52,7 @@ namespace SushiRuntime
          * The reserve is measured once, at construction, as the bytes the probe reports not free.
          * An integrated GPU names the host's pool as its shared pool.
          */
-        class DeviceMemorySpace final : public MemorySpace
+        class SUSHIRUNTIME_API DeviceMemorySpace final : public MemorySpace
         {
             public:
                 /** @brief Builds the space and measures its capacity and reserve through probe. */

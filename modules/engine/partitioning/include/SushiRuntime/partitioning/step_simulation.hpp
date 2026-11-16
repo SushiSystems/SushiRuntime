@@ -35,6 +35,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_model.hpp>
 
 namespace SushiRuntime
@@ -49,7 +50,7 @@ namespace SushiRuntime
          * from its writer's device; a second reader there waits for that copy and pays nothing.
          * @see modules/engine/partitioning/README.md
          */
-        class StepSimulation
+        class SUSHIRUNTIME_API StepSimulation
         {
             public:
                 /**

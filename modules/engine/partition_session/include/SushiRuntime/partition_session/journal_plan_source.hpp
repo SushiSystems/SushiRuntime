@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partition_session/partitioner_factory.hpp>
 #include <SushiRuntime/partition_session/placement_journal.hpp>
 #include <SushiRuntime/partition_session/plan_source.hpp>
@@ -49,7 +50,7 @@ namespace SushiRuntime
          * takes the next entry when it is not a First entry and was made at this horizon, or carries no
          * horizon; any other horizon keeps the plan. What the runs measured folds into nothing.
          */
-        class JournalPlanSource final : public PlanSource
+        class SUSHIRUNTIME_API JournalPlanSource final : public PlanSource
         {
             public:
                 /** @brief Builds a source over entries, replayed with partitioners. */

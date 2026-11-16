@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/instance_allocator.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
@@ -54,7 +55,7 @@ namespace SushiRuntime
          * InvalidState while a run of a graph that holds the buffer is in flight.
          * @see modules/engine/coherence/README.md
          */
-        class PlannedHostAccess final
+        class SUSHIRUNTIME_API PlannedHostAccess final
         {
             public:
                 /**

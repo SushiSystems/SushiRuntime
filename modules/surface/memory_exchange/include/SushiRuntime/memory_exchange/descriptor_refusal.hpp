@@ -47,7 +47,7 @@ namespace SushiRuntime
          * @param kind The kind to name.
          * @return "Unspecified", "OpaqueWin32" or "OpaqueFd", or "unknown" for any other value.
          */
-        [[nodiscard]] const char* kind_name(ExternalHandleKind kind) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API const char* kind_name(ExternalHandleKind kind) noexcept;
 
         /**
          * @brief Returns why @p descriptor cannot describe @p bytes on device @p device_index.

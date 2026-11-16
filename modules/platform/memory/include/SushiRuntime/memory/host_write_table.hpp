@@ -36,6 +36,7 @@
 #include <memory>
 #include <mutex>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/handle/handle_status.hpp>
 #include <SushiRuntime/memory/host_write_log.hpp>
@@ -53,7 +54,7 @@ namespace SushiRuntime
          * retired and reused does not show the old mark. Writers serialise on one mutex; the
          * reads take no lock.
          */
-        class HostWriteTable final : public HostWriteLog
+        class SUSHIRUNTIME_API HostWriteTable final : public HostWriteLog
         {
             public:
                 /** @brief Number of marks in one chunk. */

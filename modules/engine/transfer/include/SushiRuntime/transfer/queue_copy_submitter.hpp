@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/copy_submitter.hpp>
 
 namespace SushiRuntime
@@ -37,7 +38,7 @@ namespace SushiRuntime
     namespace Internal::Coherence
     {
         /** @brief Submits each copy as one sycl::queue::memcpy. */
-        class QueueCopySubmitter final : public CopySubmitter
+        class SUSHIRUNTIME_API QueueCopySubmitter final : public CopySubmitter
         {
             public:
                 [[nodiscard]] sycl::event submit(sycl::queue& queue, void* to, const void* from, std::size_t bytes,

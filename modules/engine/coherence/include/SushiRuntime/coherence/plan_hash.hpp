@@ -32,6 +32,7 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/copy_plan.hpp>
 
 namespace SushiRuntime
@@ -44,6 +45,6 @@ namespace SushiRuntime
          * Every field is hashed as eight little-endian bytes in a fixed order, so two plans of one
          * graph hash equal on every machine and run.
          */
-        [[nodiscard]] std::uint64_t plan_hash(const CopyPlan& plan) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API std::uint64_t plan_hash(const CopyPlan& plan) noexcept;
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

@@ -37,6 +37,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/copy_plan.hpp>
 #include <SushiRuntime/coherence/residency_options.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -85,7 +86,7 @@ namespace SushiRuntime
          * the spaces it was valid on before, so a graph run again meets the state it was planned for.
          * With ResidencyOptions it also evicts when a space is full; see the module README.
          */
-        class CoherencePlanner final
+        class SUSHIRUNTIME_API CoherencePlanner final
         {
             public:
                 /**

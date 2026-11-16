@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 
@@ -55,7 +56,7 @@ namespace SushiRuntime
          * @param list The paths in the order they are tried.
          * @param path The path to add; the list does not own it.
          */
-        [[nodiscard]] PathListStatus admit_path(std::vector<TransferPath*>& list, TransferPath& path);
+        [[nodiscard]] SUSHIRUNTIME_API PathListStatus admit_path(std::vector<TransferPath*>& list, TransferPath& path);
 
         /**
          * @brief Builds list from candidates with admit_path(), in order.
@@ -63,7 +64,7 @@ namespace SushiRuntime
          * @return Ok when every candidate was admitted, else InvalidState naming the first
          *         refused path; the candidates before and after it are still admitted.
          */
-        [[nodiscard]] Result<void> admit_paths(const std::vector<TransferPath*>& candidates,
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> admit_paths(const std::vector<TransferPath*>& candidates,
                                                std::vector<TransferPath*>& list);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

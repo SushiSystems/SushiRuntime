@@ -37,6 +37,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/dispatch_observation.hpp>
 #include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
@@ -70,7 +71,7 @@ namespace SushiRuntime
          * partitioners or a journal. Every plan put in force is an entry of the journal.
          * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
          */
-        class PartitionSession final
+        class SUSHIRUNTIME_API PartitionSession final
         {
             public:
                 /** @brief Builds a session from its parts and the source of its plans, which is not null. */

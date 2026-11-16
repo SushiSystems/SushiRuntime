@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
@@ -55,7 +56,7 @@ namespace SushiRuntime
          * thread calls it.
          * @see modules/extension/dispatch_executor/README.md
          */
-        class DispatchRecorder final
+        class SUSHIRUNTIME_API DispatchRecorder final
         {
             public:
                 /**

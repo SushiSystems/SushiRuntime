@@ -34,6 +34,7 @@
 #include <map>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/handle/global_handle.hpp>
 #include <SushiRuntime/partitioning/partition_model.hpp>
@@ -48,7 +49,7 @@ namespace SushiRuntime
          * It is the buffer's first writer in recording order, or its first reader when no node writes
          * it. A buffer with a stated device has no entry. The model and planned_homes() both use it.
          */
-        [[nodiscard]] std::map<GlobalHandle, std::size_t> planned_home_nodes(const PartitionProblem& problem);
+        [[nodiscard]] SUSHIRUNTIME_API std::map<GlobalHandle, std::size_t> planned_home_nodes(const PartitionProblem& problem);
 
         /**
          * @brief Returns the home device of every planned buffer a node of model touches.
@@ -56,7 +57,7 @@ namespace SushiRuntime
          * The home is the device of the buffer's planned_home_nodes() entry under placement.
          * @param placement Device index of each node of model.
          */
-        [[nodiscard]] std::map<GlobalHandle, DeviceKey> planned_homes(const PartitionModel& model,
+        [[nodiscard]] SUSHIRUNTIME_API std::map<GlobalHandle, DeviceKey> planned_homes(const PartitionModel& model,
                                                                       const std::vector<std::size_t>& placement);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

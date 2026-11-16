@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
 
 namespace SushiRuntime
@@ -44,6 +45,6 @@ namespace SushiRuntime
          *
          * Of the spaces that share a pool, the one with the lowest id speaks for it.
          */
-        [[nodiscard]] std::size_t usable_pool_bytes(const std::vector<const MemorySpace*>& spaces);
+        [[nodiscard]] SUSHIRUNTIME_API std::size_t usable_pool_bytes(const std::vector<const MemorySpace*>& spaces);
     } // namespace Internal::Memory
 } // namespace SushiRuntime

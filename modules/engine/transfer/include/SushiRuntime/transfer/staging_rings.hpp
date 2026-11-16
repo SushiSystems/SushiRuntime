@@ -35,6 +35,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transfer/pinned_host_memory.hpp>
 #include <SushiRuntime/transfer/staging_ring.hpp>
 
@@ -48,7 +49,7 @@ namespace SushiRuntime
          *
          * Rings are added between runs; ring_of() then only reads, and takes no lock.
          */
-        class StagingRings final
+        class SUSHIRUNTIME_API StagingRings final
         {
             public:
                 /** @param shape Size of every ring; a zero field is raised to 1. */

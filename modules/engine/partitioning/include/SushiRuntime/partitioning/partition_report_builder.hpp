@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/partitioning/partition_assignment.hpp>
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * the floor's modelled step and devices. A refusal gives rows of no nodes with each pool's
          * shortfall. The result is a pure function of its arguments.
          */
-        [[nodiscard]] PartitionReport make_partition_report(const PartitionProblem& problem,
+        [[nodiscard]] SUSHIRUNTIME_API PartitionReport make_partition_report(const PartitionProblem& problem,
                                                             const CostModel& model,
                                                             const Result<PartitionAssignment, PartitionRefusal>& answer,
                                                             const PartitionMeasurement& measured = PartitionMeasurement{});

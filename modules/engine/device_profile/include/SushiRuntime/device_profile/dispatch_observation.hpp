@@ -33,6 +33,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
@@ -64,7 +65,7 @@ namespace SushiRuntime
          * operations, the device index has no key, or the record's end does not follow its start. The
          * records are the ones ProfilingLedger::collect() appended to RunObservation::events.
          */
-        [[nodiscard]] std::vector<DispatchObservation> observe_dispatches(const std::vector<NodeEventRecord>& records,
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<DispatchObservation> observe_dispatches(const std::vector<NodeEventRecord>& records,
                                                                           const NodeTable& table,
                                                                           const DeviceKeyTable& devices);
     } // namespace Internal::Coherence

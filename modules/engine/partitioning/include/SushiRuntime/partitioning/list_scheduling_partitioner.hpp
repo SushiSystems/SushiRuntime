@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/partitioning/partitioner.hpp>
 
@@ -47,7 +48,7 @@ namespace SushiRuntime
          * slower plan. A declared split is taken when the node fits no pool whole or the step falls.
          * @see modules/engine/partitioning/README.md
          */
-        class ListSchedulingPartitioner final : public Partitioner
+        class SUSHIRUNTIME_API ListSchedulingPartitioner final : public Partitioner
         {
             public:
                 /** @brief Says whether the partitioner may cut a node that declares a split. */

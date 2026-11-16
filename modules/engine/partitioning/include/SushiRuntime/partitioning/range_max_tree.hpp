@@ -33,6 +33,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Coherence
@@ -43,7 +45,7 @@ namespace SushiRuntime
          * Each addition and each query costs O(log n); peak_with() answers the peak under further
          * additions without applying them, in O(k log k + k log n) for k additions.
          */
-        class RangeMaxTree
+        class SUSHIRUNTIME_API RangeMaxTree
         {
             public:
                 /** @brief Holds an addition of value to every slot from first to last. */

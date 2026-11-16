@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/operation_kind.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/device_profile_set.hpp>
@@ -72,7 +73,7 @@ namespace SushiRuntime
          * kind's throughput is the operations the probe reports over its seconds. The kinds are those
          * the caller registered; the measurement keeps no list of its own.
          */
-        class ProfileMeasurement
+        class SUSHIRUNTIME_API ProfileMeasurement
         {
             public:
                 /** @brief Builds a measurement; probe must outlive it. */

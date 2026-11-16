@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/coherence/eviction_policy.hpp>
 
 namespace SushiRuntime
@@ -43,7 +44,7 @@ namespace SushiRuntime
          * needs none goes before one that does; of the rest, the first candidate wins. The policy
          * reads graph positions and prices, never the clock.
          */
-        class LogicalTimeEviction final : public EvictionPolicy
+        class SUSHIRUNTIME_API LogicalTimeEviction final : public EvictionPolicy
         {
             public:
                 [[nodiscard]] std::optional<std::size_t>

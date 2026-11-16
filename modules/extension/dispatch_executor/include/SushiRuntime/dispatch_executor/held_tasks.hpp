@@ -34,6 +34,8 @@
 #include <mutex>
 #include <set>
 
+#include <SushiRuntime/core/export.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed
@@ -44,7 +46,7 @@ namespace SushiRuntime
          * An output stream may outlive the executor, so the two share this object. Its mutex
          * is a leaf: nothing is called while it is held.
          */
-        class HeldTasks final
+        class SUSHIRUNTIME_API HeldTasks final
         {
             public:
                 /**

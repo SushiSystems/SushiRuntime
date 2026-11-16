@@ -37,6 +37,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/transfer/pinned_host_memory.hpp>
 
@@ -73,7 +74,7 @@ namespace SushiRuntime
          * the event of its last read, the next holder gets that event and orders its write after
          * it. The ring locks only to hand a slot out or take it back, never while bytes move.
          */
-        class StagingRing
+        class SUSHIRUNTIME_API StagingRing
         {
             public:
                 /**

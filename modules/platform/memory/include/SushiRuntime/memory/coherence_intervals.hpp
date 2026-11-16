@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/memory_space_id.hpp>
 
 namespace SushiRuntime
@@ -62,7 +63,7 @@ namespace SushiRuntime
          * neighbours apart. The map takes no lock of its own: the directory hands it out under
          * its entry's lock (LockedCoherence), and the planner works on a copy of it.
          */
-        class CoherenceIntervals final
+        class SUSHIRUNTIME_API CoherenceIntervals final
         {
             public:
                 /** @brief Number of spaces a valid-space bitmask can name. */

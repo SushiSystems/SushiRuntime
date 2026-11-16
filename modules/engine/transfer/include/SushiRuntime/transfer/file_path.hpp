@@ -33,6 +33,7 @@
 #include <string_view>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
 #include <SushiRuntime/transfer/staging_rings.hpp>
@@ -50,7 +51,7 @@ namespace SushiRuntime
          * time, in file order, and copies each slot on the device's queue, so the host memory it
          * holds is the ring. A copy to the host reads the file straight into the destination.
          */
-        class FilePath final : public TransferPath
+        class SUSHIRUNTIME_API FilePath final : public TransferPath
         {
             public:
                 /**

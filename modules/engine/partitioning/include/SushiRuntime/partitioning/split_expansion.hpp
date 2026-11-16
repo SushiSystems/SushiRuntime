@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/device_key.hpp>
 #include <SushiRuntime/partitioning/partition_assignment.hpp>
 #include <SushiRuntime/partitioning/partition_problem.hpp>
@@ -57,7 +58,7 @@ namespace SushiRuntime
          * @param parts   Parts of each node of problem; fewer than two leaves the node whole.
          * @param devices Key of each device index the parts name.
          */
-        [[nodiscard]] SplitExpansion expand_splits(const PartitionProblem& problem,
+        [[nodiscard]] SUSHIRUNTIME_API SplitExpansion expand_splits(const PartitionProblem& problem,
                                                    const std::vector<std::vector<SizedPart>>& parts,
                                                    const std::vector<DeviceKey>& devices);
 
@@ -69,7 +70,7 @@ namespace SushiRuntime
          * @param parts   Parts of each node of problem, as expand_splits() took them.
          * @param devices Key of each device index the parts name.
          */
-        [[nodiscard]] std::vector<PlannedSplit> planned_splits(const PartitionProblem& problem,
+        [[nodiscard]] SUSHIRUNTIME_API std::vector<PlannedSplit> planned_splits(const PartitionProblem& problem,
                                                                const std::vector<std::vector<SizedPart>>& parts,
                                                                const std::vector<DeviceKey>& devices);
     } // namespace Internal::Coherence

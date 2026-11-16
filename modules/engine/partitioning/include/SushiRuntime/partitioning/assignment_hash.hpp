@@ -31,6 +31,7 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_assignment.hpp>
 
 namespace SushiRuntime
@@ -43,6 +44,6 @@ namespace SushiRuntime
          * Every field is hashed as little-endian bytes in a fixed order, so two assignments of one
          * graph and one profile file hash equal in every run.
          */
-        [[nodiscard]] std::uint64_t assignment_hash(const PartitionAssignment& assignment) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API std::uint64_t assignment_hash(const PartitionAssignment& assignment) noexcept;
     } // namespace Internal::Coherence
 } // namespace SushiRuntime

@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
 #include <SushiRuntime/partitioning/partitioner.hpp>
 
@@ -46,7 +47,7 @@ namespace SushiRuntime
          * slower than the floor's model.
          * @see docs/design/GLOBAL_HANDLE/PARTITIONING.md
          */
-        class FloorPartitioner final : public Partitioner
+        class SUSHIRUNTIME_API FloorPartitioner final : public Partitioner
         {
             public:
                 /** @brief Builds a partitioner priced by costs, which must not be null. */

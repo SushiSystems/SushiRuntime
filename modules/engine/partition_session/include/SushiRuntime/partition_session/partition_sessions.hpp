@@ -40,6 +40,7 @@
 #include <optional>
 #include <vector>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/profile_transfer_cost.hpp>
 #include <SushiRuntime/partition_session/partition_session.hpp>
@@ -74,7 +75,7 @@ namespace SushiRuntime
          * Two graphs may open, partition and fold at once, so every member takes the object's lock or
          * the ProfileStore's; no session's own state is shared.
          */
-        class PartitionSessions final
+        class SUSHIRUNTIME_API PartitionSessions final
         {
             public:
                 /** @brief Builds the registry from its parts. */

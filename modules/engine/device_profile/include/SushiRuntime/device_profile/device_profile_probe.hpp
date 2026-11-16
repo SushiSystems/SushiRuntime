@@ -38,6 +38,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/operation_kind.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device_profile/probe_devices.hpp>
@@ -62,7 +63,7 @@ namespace SushiRuntime
          * no kernel: the caller registers one per kind. The integrated-detection hook is in the
          * module README.
          */
-        class DeviceProfileProbe final : public ProfileProbe
+        class SUSHIRUNTIME_API DeviceProfileProbe final : public ProfileProbe
         {
             public:
                 /**

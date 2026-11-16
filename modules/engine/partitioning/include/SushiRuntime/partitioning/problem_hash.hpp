@@ -32,6 +32,7 @@
 
 #include <cstdint>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/partitioning/partition_problem.hpp>
 
 namespace SushiRuntime
@@ -45,6 +46,6 @@ namespace SushiRuntime
          * machine and in every run. A split's regions function is folded through the regions it
          * returns for the whole axis and for the equal cut into one part per listed device.
          */
-        [[nodiscard]] std::uint64_t problem_hash(const PartitionProblem& problem);
+        [[nodiscard]] SUSHIRUNTIME_API std::uint64_t problem_hash(const PartitionProblem& problem);
     } // namespace Internal::Coherence
 } // namespace SushiRuntime
