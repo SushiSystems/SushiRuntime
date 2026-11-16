@@ -102,7 +102,7 @@ namespace SushiRuntime
 
         Result<void> HostStepRun::run_node(Internal::Graph::Node& node, std::uint32_t step)
         {
-            if (!graph_.profiling)
+            if (!graph_.profiling || !node.has_timing_row())
                 return node.run_on_host();
 
             const Internal::Graph::NodeWidths widths = node.submits_device_work()

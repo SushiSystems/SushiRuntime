@@ -874,7 +874,7 @@ namespace
         {"ChunkPurposeThree",
          [] { return decode_with_byte<BufferChunkMessage>(golden_buffer_chunk(), 0, 3); }, 0},
         {"AbortReasonThree",
-         [] { return decode_with_byte<BufferAbortMessage>(golden_buffer_abort(), 20, 3); }, 20},
+         [] { return decode_with_byte<BufferAbortMessage>(golden_buffer_abort(), 28, 3); }, 28},
         {"HelloOperatingSystemThree",
          [] { return decode_with_byte<HelloMessage>(golden_hello(), K_HELLO_OS_OFFSET, 3); },
          K_HELLO_OS_OFFSET},

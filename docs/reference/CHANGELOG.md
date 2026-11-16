@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-16 — distributed: Removed the `BufferView` overload of `record_registered_task()`; a caller wraps a view as `TaskBuffer{view, GlobalHandle::null()}` to borrow it (`registered_task.hpp`).
+- 2026-11-16 — memory: Added the pure virtual `USMSource::kind_of()`, which every source must answer; interop reads a borrowed address's residency through it (`usm_source.hpp`).
+- 2026-11-16 — coherence: Marked spliced nodes with `Node::is_planned_step`, so the timing record leaves them out, and ran planned copies on the profiling queue (`plan_splice.cpp`).
 - 2026-11-16 — tools: Took the shared tools from SushiCore v0.14.1, which leaves out its two own checkers and writes this repository's licence header, through `hub bump` (`tools/shared_tools.lock`).
 - 2026-11-16 — tools: Took the shared tools from SushiCore v0.14.0 into a lock file and moved the SushiCore pin to 0.14 (`tools/shared_tools.lock`).
 - 2026-11-16 — docs: Updated the GLOBAL_HANDLE topic to the code: modules, margin, copy model, profile fold, per-graph journal, planned and current state, concurrent split parts (GLOBAL_HANDLE R14).

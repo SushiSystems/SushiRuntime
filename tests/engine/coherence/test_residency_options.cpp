@@ -221,13 +221,16 @@ namespace
         PinSet pins;
         pins.pin(b_, K_DEVICE);
         CoherencePlanner subject = planner(&pins);
-        // Without the pin b would go, as in the first test; with it a goes instead.
+        // Without the pin b would go, as in the first test; with it a goes for c, then c for a's return.
         const Result<CopyPlan> plan = subject.plan({node({a_}), node({b_}), node({c_}), node({a_})});
         ASSERT_TRUE(plan);
 
         const std::vector<PlannedStep> frees = steps_of(plan.value(), PlannedStepKind::Free);
-        ASSERT_EQ(frees.size(), 1U);
+        ASSERT_EQ(frees.size(), 2U);
         EXPECT_EQ(frees[0].handle, a_);
+        EXPECT_EQ(frees[0].node, 2U);
+        EXPECT_EQ(frees[1].handle, c_);
+        EXPECT_EQ(frees[1].node, 3U);
     }
 
     TEST_F(Small_CoherencePlannerResidency, ASpaceWhoseInstancesAreAllPinnedRefusesTheAllocation)
@@ -251,7 +254,7 @@ namespace
         EXPECT_EQ(plan.error().code, ErrorCode::AllocationFailed);
     }
 
-    TEST_F(Small_CoherencePlannerResidency, WithinCapacityInstancesStayResidentAtTheGraphEnd)
+    TEST_F(Small_CoherencePlannerResidency, WithinCapacityInstancesStayResidentAtTheGraphEndInAPlanThatIsNotSteady)
     {
         CoherencePlanner subject = planner();
         const Result<CopyPlan> plan = subject.plan({node({a_}), node({b_})});
@@ -259,7 +262,8 @@ namespace
 
         EXPECT_TRUE(steps_of(plan.value(), PlannedStepKind::Free).empty());
         EXPECT_EQ(steps_of(plan.value(), PlannedStepKind::Allocate).size(), 2U);
-        EXPECT_TRUE(plan.value().steady);
+        // The instances it leaves resident are new, so the next step is planned from them and this plan is not replayed.
+        EXPECT_FALSE(plan.value().steady);
         EXPECT_FALSE(std::any_of(plan.value().steps.begin(), plan.value().steps.end(),
                                  [](const PlannedStep& step) { return step.node == PlannedStep::K_GRAPH_END; }));
     }
@@ -287,7 +291,8 @@ namespace
         EXPECT_EQ(copies[0].space, K_HOST);
         EXPECT_EQ(copies[0].node, PlannedStep::K_GRAPH_END);
         EXPECT_FALSE(copies[0].evicts);
-        EXPECT_TRUE(plan.value().steady);
+        // The device instance it leaves resident is new, so the plan is not steady.
+        EXPECT_FALSE(plan.value().steady);
     }
 
     TEST_F(Small_CoherencePlannerResidency, ASecondPlanStartsFromTheStateTheFirstLeft)

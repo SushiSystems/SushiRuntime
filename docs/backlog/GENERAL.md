@@ -15,3 +15,4 @@
 
 | ID | Origin | Symptom | Workaround | Fix | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- |
+| KI-38 | own | A slow-case rerun charges SYCL adapter loading to its first small case | Rerun the case alone; its own time is under the limit | none, loading SYCL in every test main costs each death-test child about 1 GB | `modules/foundation/test_runner/source/test_main.cpp` | 2026-11-16 |

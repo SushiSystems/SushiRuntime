@@ -327,6 +327,14 @@ namespace SushiRuntime
                 after_handle(effects[next_effect].handle, effect_node);
             }
 
+            // No add() call registered these nodes, so the timing record leaves them out.
+            for (sushi_ptr<Node>& node : made)
+                node->is_planned_step = true;
+            for (sushi_ptr<Node>& node : made_effects)
+                node->is_planned_step = true;
+            for (sushi_ptr<Node>& record : made_records)
+                if (record)
+                    record->is_planned_step = true;
             nodes.insert(nodes.end(), made.begin(), made.end());
             nodes.insert(nodes.end(), made_effects.begin(), made_effects.end());
             for (sushi_ptr<Node>& record : made_records)

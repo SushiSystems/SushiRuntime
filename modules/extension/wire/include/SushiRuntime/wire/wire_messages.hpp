@@ -434,7 +434,7 @@ namespace SushiRuntime::Distributed::Wire
         static constexpr MessageType K_TYPE = MessageType::BufferChunk;
 
         /** @brief Holds the encoded size of the fields in front of the data. */
-        static constexpr std::size_t K_PREFIX_BYTES = 37;
+        static constexpr std::size_t K_PREFIX_BYTES = 45;
 
         /** @brief Appends the payload to out. */
         [[nodiscard]] SUSHIRUNTIME_API CodecStatus encode(std::vector<std::byte>& out) const;

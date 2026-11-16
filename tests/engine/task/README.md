@@ -145,7 +145,7 @@ state.
 
 The file covers the placement a node states and the rule `Internal::Graph::placement_of()` applies to it:
 a stated placement wins over the owner of the first write region, else of the first read region,
-when the node is `KernelAddressing::Rebindable`; a node fixed to its home is refused in another SYCL context, or in the owner's context over device USM of another device; a node that states nothing runs
+when the node is `KernelAddressing::Rebindable`; a node fixed to its home is refused in another SYCL context, or in the owner's context over device USM of another device, and so is one stating nothing whose regions span two contexts, while a rebindable one runs on its owner; a node that states nothing runs
 on the owner; a node with no owner runs on its stated placement, else device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a dispatch receives.
 

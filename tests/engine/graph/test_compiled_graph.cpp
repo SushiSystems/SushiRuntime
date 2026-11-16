@@ -157,6 +157,25 @@ TEST(Small_CompiledGraph, CapturesOneTableRowPerRegistrationIndex)
     EXPECT_FALSE(plan.node_table->find(0)->operation.is_named());
 }
 
+/** @brief Tests that a planned step, which keeps registration index zero, neither adds a row nor counts toward node 0. */
+TEST(Small_CompiledGraph, APlannedStepHasNoRowAndLeavesNodeZerosMultiplicity)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "load"));
+    sushi_ptr<Node> copy = node_of(0, "coherence.copy");
+    copy->is_planned_step = true;
+    plan.all_nodes.push_back(copy);
+
+    plan.capture_profiling_state();
+
+    EXPECT_FALSE(copy->has_timing_row());
+    ASSERT_NE(plan.node_table, nullptr);
+    ASSERT_EQ(plan.node_table->size(), 1u);
+    EXPECT_EQ(plan.node_table->find(0)->name, "load");
+    ASSERT_EQ(plan.profiling_multiplicities.size(), 1u);
+    EXPECT_EQ(plan.profiling_multiplicities[0], 1u) << "the planned copy was counted as node 0";
+}
+
 /** @brief Tests that several nodes sharing one index make one row that counts them. */
 TEST(Small_CompiledGraph, ASharedIndexKeepsItsMultiplicity)
 {

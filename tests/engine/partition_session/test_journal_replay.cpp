@@ -32,6 +32,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <SushiRuntime/partition_session/journal_replay.hpp>
@@ -53,7 +54,14 @@ namespace
         EXPECT_TRUE(session.partition(independent_nodes(3, 3)).has_value());
         measure_step(session, 2.5, {{host_key(1), 0.5}, {host_key(2), 0.5}, {host_key(3), 2.5}});
         EXPECT_EQ(session.rebalance(), RebalanceAction::Replan);
-        measure_step(session, 9.0, {{host_key(1), 0.5}, {host_key(1), 0.5}, {host_key(2), 0.5}});
+        // Each device runs in exactly its modelled time and only the step is slow, which tries the floor.
+        std::vector<std::pair<DeviceKey, double>> on_model;
+        for (const PartitionDeviceRow& row : session.report().rows)
+        {
+            if (row.nodes != 0)
+                on_model.emplace_back(row.device, row.modelled_seconds);
+        }
+        measure_step(session, 9.0, on_model);
         EXPECT_EQ(session.rebalance(), RebalanceAction::TryFloor);
         return session.journal().entries();
     }

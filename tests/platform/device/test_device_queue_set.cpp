@@ -94,6 +94,17 @@ namespace
         return descriptors;
     }
 
+    /** @brief Returns the first device SYCL reports that shares memory with the host, if any. */
+    std::optional<sycl::device> first_shared_memory_device()
+    {
+        for (const sycl::device& device : sycl::device::get_devices())
+        {
+            if (device.has(sycl::aspect::usm_shared_allocations))
+                return device;
+        }
+        return std::nullopt;
+    }
+
     /** @brief Builds descriptors of SYCL's first device, one per NUMA id given. */
     std::vector<DeviceDescriptor> describe_first_device_on(const std::vector<int>& numa_nodes)
     {
@@ -342,7 +353,10 @@ TEST(Small_DeviceQueueSet, RaisingTheAsynchronousErrorsOfAnEmptySetSucceeds)
 /** @brief Tests that wait_all waits for a kernel on a queue that was built lazily. */
 TEST_F(Medium_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)
 {
-    DeviceQueueSet set(describe_all_devices(), false);
+    const std::optional<sycl::device> shared = first_shared_memory_device();
+    if (!shared)
+        GTEST_SKIP() << "no device shares memory with the host";
+    DeviceQueueSet set({describe(*shared, 0)}, false);
     sycl::queue& lazy = set.queue(0, QueueFlavour{true, true});
     ASSERT_NE(&lazy, &set.queue(0));
 

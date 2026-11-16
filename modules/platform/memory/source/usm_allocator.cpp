@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -155,6 +156,12 @@ namespace SushiRuntime
             require_device(first);
             require_device(second);
             return source_->shares_context(first, second);
+        }
+
+        std::optional<USMKind> USMAllocator::kind_of(const void* address, std::size_t device) const
+        {
+            require_device(device);
+            return source_->kind_of(address, device);
         }
 
         void USMAllocator::require_device(std::size_t device_index) const

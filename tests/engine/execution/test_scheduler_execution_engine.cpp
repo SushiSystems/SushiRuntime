@@ -437,14 +437,15 @@ namespace HeterogeneousPipelineTests
                 });
         }
 
-        /** @brief Returns the queues of the context that sit on a CPU or a GPU, from its deduplicated set. */
+        /** @brief Returns the queues of the context that sit on a CPU or a GPU offering shared USM, from its deduplicated set. */
         std::vector<sycl::queue*> cpu_and_gpu_queues(RuntimeContext& context)
         {
             std::vector<sycl::queue*> queues;
             for (size_t i = 0; i < context.devices().count(); ++i)
             {
                 sycl::queue& queue = context.devices().queue(i);
-                if (queue.get_device().is_gpu() || queue.get_device().is_cpu())
+                const sycl::device device = queue.get_device();
+                if ((device.is_gpu() || device.is_cpu()) && device.has(sycl::aspect::usm_shared_allocations))
                     queues.push_back(&queue);
             }
             return queues;
@@ -517,6 +518,11 @@ namespace SYCLExecutionTests
         RuntimeContext& context = TestSupport::ContextEnvironment::context();
         TestSupport::HandleTable keys(context.handle_ports());
         TaskGraph graph;
+
+        if (!DevicePipelineTests::numa0_has_single_queue(context))
+            GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would place the kernel "
+                            "outside the USM context of its buffers. Cross-device paths are covered "
+                            "by HeterogeneousPipelineTest / AsyncOverlapBench.";
 
         sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
 
@@ -734,11 +740,16 @@ namespace ReplayHostWriteTests
             }
         }
 
-        /** @brief Replays the increment plan on every device of @p context with an input of @p input_kind. */
+        /** @brief Replays the increment plan on every device of @p context that takes shared memory, with an input of @p input_kind. */
         void replay_on_every_device(RuntimeContext& context, USMKind input_kind)
         {
             for (std::size_t device = 0; device < context.devices().count(); ++device)
+            {
+                // The output word is shared memory, which a device without the aspect cannot hold.
+                if (!context.devices().queue(device).get_device().has(sycl::aspect::usm_shared_allocations))
+                    continue;
                 replay_around_host_writes(context, input_kind, device);
+            }
         }
     } // namespace
 

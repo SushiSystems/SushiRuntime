@@ -167,7 +167,7 @@ reversed range. All tests are deterministic.
 | `CachesTheOwnerOfTheNodesRegion` | The device the placement rule picks, the owner of the written region, is the one cached. |
 | `APlacedNodeKeepsItsDeviceOnALaterDispatch` | A placed node is not placed again: after its region's owner changes, a second call keeps the first device. |
 | `RefusesAPlacementPastTheDeviceCount` | `place_on(2)` with two devices is refused with `InvalidGraph`, naming the index and the count, and nothing is cached. |
-| `PlacesANodeWhoseRegionsSpanTwoDevicesOnItsAnchor` | A node that writes on device 0 and reads on device 1 is placed on device 0, the owner of its written region, and marked placed. |
+| `PlacesARebindableNodeWhoseRegionsSpanTwoDevicesOnItsAnchor` | A rebindable node that writes on device 0 and reads on device 1 is placed on device 0, the owner of its written region, and marked placed; a fixed node over the two contexts is refused, as `tests/engine/task` checks. |
 
 ## test_task_scheduler.cpp
 

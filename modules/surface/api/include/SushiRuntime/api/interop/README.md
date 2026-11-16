@@ -70,12 +70,14 @@ an observer of that token and no share of it; the data README's "Borrowed Buffer
 what a run then checks. The Buffer's `Detail::Allocation` has no owner, so destroying the Buffer
 releases nothing.
 
-The call returns `Result<Buffer<T>>`. For a count above 0 it asks SYCL for the kind of the address
-with `sycl::get_pointer_type`, in the context of the stated device's queue. Host USM is
+The call returns `Result<Buffer<T>>`. For a count above 0 it asks the runtime's memory source for
+the kind of the address on the stated device (`USMAllocator::kind_of()`, see
+`modules/platform/memory/README.md`): on a device runtime that is `sycl::get_pointer_type` in the
+device's context, on a host runtime the source's record of its own allocations. Host USM is
 `Residency::Host`, shared USM is `Residency::Shared` and device USM is `Residency::Device`; a stated
-residency that differs is refused with `InvalidArgument`, and the message names both. Memory SYCL
-does not know, such as a `std::vector` or memory of another context, reports
-`sycl::usm::alloc::unknown` and keeps the stated residency unchecked.
+residency that differs is refused with `InvalidArgument`, and the message names both. Memory the
+source does not know, such as a `std::vector` or memory of another context, keeps the stated
+residency unchecked.
 
 A null token, a null address for a count above 0 and a device index the runtime does not drive
 are rules the caller broke, and stop the process through `SR_VERIFY`. The memory must be reachable

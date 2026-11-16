@@ -56,7 +56,8 @@ The file runs offload end to end on a real SYCL device, with a master and its wo
 process. Most tests use a real `WorkerAgent` on the in-process fabric; the tests that need a worker
 to misbehave use `ScriptedWorker`, the in-memory worker endpoint of the `scripted_worker` module. Every test skips when SYCL reports no device. The master is the
 program's one runtime, `TestSupport::RuntimeEnvironment::runtime()`; a test attaches its cluster to
-it and detaches when the cluster handle ends. A runtime of its own is kept by each in-process
+it. A dropped handle leaves its master attached, so the next attach displaces it, and a test that
+reads the runtime with no master first attaches and detaches one. A runtime of its own is kept by each in-process
 worker, by the CPU-only master of the settings test, by the second runtime of the two attach
 refusals, by the TCP fault fixture and by `ClusterHandleOutlivesRuntime`, which destroys its
 runtime.
@@ -155,7 +156,7 @@ leave the other.
 
 | Test | What it proves |
 | --- | --- |
-| `AttachStartFailureLeavesNothingInstalled` | `attach` on an `InProcessTransport` that was started before must return an error carrying the message a second `start()` gives, and leave `offload()` null. A second `attach` on the same context must then succeed. |
+| `AttachStartFailureLeavesNothingInstalled` | `attach` on an `InProcessTransport` that was started before must return an error carrying the message a second `start()` gives, and leave `offload()` as it was before the attach. A second `attach` on the same context must then succeed. |
 | `AttemptCapDoesNotOutliveTheRun` | A `Fail` worker fails every dispatch. One graph is compiled once and runs twice. In each run the worker must receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task runs locally, so the second run proves the cap of the first did not pin the node. `declined` rises by one per run and `redispatched` by the cap. |
 | `RefusesEmptySecretOnNetworkExposure` | A `TCPTransport` master bound to `0.0.0.0` reports `Network`. `attach` with an empty secret must return an error and leave that transport unstarted. With a 32-byte secret a transport of the same options attaches and is started. |
 | `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum` | `record_registered_task`, called through `Graph::extend()`, records the vector-add with no lambda. Run with no cluster, the master's own registry runs the kernel once. Run with a worker, the worker's registry runs it once and the master's not at all. Both outputs must be equal. |
@@ -325,7 +326,8 @@ SushiAI's replica does with a whole compiled step; the nested-run rule is in
 The kernel runs a one-task graph, `out = 2 * in`, and records how its `Graph::run()` ended. A worker
 runs each dispatch as a task of its runtime's run, and the master runs a local fallback as a task
 of its own run, so in both places the kernel's body is inside a run. Every master run goes through
-`BoundedRun`, which fails a test after 10 s instead of hanging it. The master runs on the program's
+`BoundedRun`, which fails a test after 10 s instead of hanging it. The task names its buffers as
+`TaskBuffer`s with the handles the cluster shares, so the offload reaches the worker. The master runs on the program's
 one runtime; the worker's runtime and the second runtime are made once for the program, on first
 use, by the fixture.
 

@@ -57,9 +57,9 @@ namespace SushiRuntime
                 virtual void release(MemorySpaceID space, void* address) noexcept = 0;
 
                 /**
-                 * @brief Returns the kind of USM allocate() makes on space, which the residency
-                 *        directory records with the instance.
-                 * @return Nothing when the memory is not USM.
+                 * @brief Returns the kind of memory allocate() makes on space, which the residency
+                 *        directory records with the instance; a free releases an instance only when it has one.
+                 * @return Nothing when this allocator makes no instance on space.
                  */
                 [[nodiscard]] virtual std::optional<Memory::USMKind> kind_of(MemorySpaceID space) const noexcept = 0;
         };

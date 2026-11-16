@@ -28,9 +28,11 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -42,13 +44,14 @@ using namespace SushiRuntime::Internal::Observability;
 /** @brief Tests that a profiled event reads a start no later than its end. */
 TEST(Medium_EventTimestamps, AProfiledEventReadsOrderedTimes)
 {
-    if (sycl::device::get_devices().empty())
-        GTEST_SKIP() << "no SYCL device";
-    sycl::queue queue(sycl::device::get_devices().front(),
-                      sycl::property_list{sycl::property::queue::enable_profiling()});
+    const std::vector<sycl::device> devices = sycl::device::get_devices();
+    const auto shared = std::find_if(devices.begin(), devices.end(), [](const sycl::device& device)
+                                     { return device.has(sycl::aspect::usm_shared_allocations); });
+    if (shared == devices.end())
+        GTEST_SKIP() << "no device shares memory with the host";
+    sycl::queue queue(*shared, sycl::property_list{sycl::property::queue::enable_profiling()});
     int* const value = sycl::malloc_shared<int>(1, queue);
-    if (value == nullptr)
-        GTEST_SKIP() << "the device gives no shared memory";
+    ASSERT_NE(value, nullptr);
     sycl::event event = queue.single_task([value] { *value = 1; });
     event.wait();
 

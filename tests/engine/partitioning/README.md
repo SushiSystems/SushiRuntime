@@ -99,7 +99,8 @@ are added in, and a buffer read before any write is live for the whole step.
 
 ## test_partition_model.cpp
 
-Devices that share a pool count it once and copy nothing between them, an edge across two pools adds
+Devices that share a pool count it once and copy nothing between them, the pool holds what its widest
+member reports whichever device sorts first, an edge across two pools adds
 its copy to the step, a backward edge is refused, a node that writes a buffer with a stated device is
 fixed to it, and a node placed on a device with no profile is refused.
 
@@ -144,7 +145,8 @@ parts, run through `dispatch_split()` and `join_split()` on a CPU queue, give th
 extent; the test skips without a CPU device.
 
 `Large_ListSchedulingPartitioner.ASplitProductStepIsShorterThanWithSplittingOff` runs on the first
-machine and skips with fewer than two GPUs. It times a product kernel whole on each GPU, builds the
+machine and skips with fewer than two GPUs, or when the GPUs differ so far in speed that the
+partitioner keeps the product whole. It times a product kernel whole on each GPU, builds the
 profiles from those times, and runs the parts the partitioner gives with splitting allowed and
 with it turned off; the split run, best of three after a warm-up, must take less wall time.
 

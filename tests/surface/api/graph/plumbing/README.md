@@ -172,10 +172,13 @@ planned buffer: the scheduler's abort ran the Leave, so no hold is left.
 naming what is missing, without a CPU and a second device. A two-region graph over planned buffers
 is partitioned as one problem: the report counts both nodes, has a measured step, the bytes equal a
 host computation, and after two horizons the profile file holds a throughput line for the nodes'
-kind. The split test also needs a device with memory of its own; it rewrites each capacity so no
+kind. The cost model has no launch latency, so a measured profile models these small kernels faster
+than they run and a horizon would replan and clear the measurement; `slow_compute()` divides each
+throughput and keeps the memory bandwidth, so no horizon replans and a fold still reads compute time. The split test also needs a device with memory of its own; it rewrites each capacity so no
 pool holds the node whole, and the node then runs as parts, at least two slices, with the bytes of
-the host computation. A dynamic graph and a static graph on one runtime each report their own nodes and
-measured step, the runtime reports the static graph, which partitioned last, and the profile file's folder
+the host computation. A dynamic graph and a static graph on one runtime each report their own nodes, each
+graph's runs are measured in its report or, when a horizon put a new plan in force, in its journal,
+the runtime reports the static graph, which partitioned last, and the profile file's folder
 holds one journal per graph, `journals_of()` finding them by name.
 
 ## test_region_composer/test_partition_hardware.cpp

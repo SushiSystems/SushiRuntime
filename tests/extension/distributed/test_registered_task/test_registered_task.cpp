@@ -84,13 +84,13 @@ TEST_F(Medium_RegisteredTask, TheKernelRunsLocally)
 
     NodeOptions options;
     options.operation = op;
-    const BufferView inputs[1] = {BufferView{in.data(), K_COUNT * sizeof(float)}};
-    const BufferView outputs[1] = {BufferView{out.data(), K_COUNT * sizeof(float)}};
+    const TaskBuffer inputs[1] = {{BufferView{in.data(), K_COUNT * sizeof(float)}, in.handle()}};
+    const TaskBuffer outputs[1] = {{BufferView{out.data(), K_COUNT * sizeof(float)}, out.handle()}};
     auto graph = runtime.graph();
     graph.extend([&](Recorder& recorder)
     {
-        record_registered_task(recorder, *kernels, options, span<const BufferView>(inputs, 1),
-                               span<const BufferView>(outputs, 1));
+        record_registered_task(recorder, *kernels, options, span<const TaskBuffer>(inputs, 1),
+                               span<const TaskBuffer>(outputs, 1));
     });
     graph.run().value();
     for (std::size_t index = 0; index < K_COUNT; ++index)

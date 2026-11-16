@@ -155,12 +155,21 @@ namespace EndToEndTests
         {
             public:
                 /**
-                 * @brief Allocates @p count floats and sets each to @p value.
+                 * @brief Allocates @p count floats on a queue of the program's one runtime and sets each to @p value.
                  * @throws std::runtime_error When the device gives no memory.
                  */
                 USMFloats(sycl::queue& queue, std::size_t count, float value)
+                    : USMFloats(TestSupport::RuntimeEnvironment::runtime(), queue, count, value)
+                {
+                }
+
+                /**
+                 * @brief Allocates @p count floats on a queue of @p runtime, borrowed in it, and sets each to @p value.
+                 * @throws std::runtime_error When the device gives no memory.
+                 */
+                USMFloats(Runtime& runtime, sycl::queue& queue, std::size_t count, float value)
                     : queue_(queue), data_(sycl::malloc_shared<float>(count, queue)), count_(count),
-                      borrow_(TestSupport::RuntimeEnvironment::runtime(), data_, count * sizeof(float))
+                      borrow_(runtime, data_, count * sizeof(float))
                 {
                     if (data_ == nullptr)
                         throw std::runtime_error("sycl::malloc_shared returned null for a test buffer");
@@ -608,15 +617,15 @@ namespace EndToEndTests
             NodeOptions options;
             options.name = "registered_sum";
             options.operation = K_VEC_ADD;
-            const BufferView inputs[] = {a.view(), b.view()};
-            const BufferView outputs[] = {out.view()};
+            const TaskBuffer inputs[] = {{a.view(), a.handle()}, {b.view(), b.handle()}};
+            const TaskBuffer outputs[] = {{out.view(), out.handle()}};
 
             auto graph = master_runtime.graph();
             graph.extend([&](Recorder& recorder)
             {
                 record_registered_task(recorder, *kernels, options,
-                                       span<const BufferView>(inputs, 2),
-                                       span<const BufferView>(outputs, 1));
+                                       span<const TaskBuffer>(inputs, 2),
+                                       span<const TaskBuffer>(outputs, 1));
             });
             graph.run().value();
 
@@ -1702,9 +1711,10 @@ namespace EndToEndTests
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
-        USMFloats a(queue, K_COUNT, 1.0f);
-        USMFloats b(queue, K_COUNT, 2.0f);
-        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+        // The buffers are borrowed in this test's own runtime, so the cluster shares the handles its node names.
+        USMFloats a(master_runtime, queue, K_COUNT, 1.0f);
+        USMFloats b(master_runtime, queue, K_COUNT, 2.0f);
+        USMFloats out(master_runtime, queue, K_COUNT, K_UNWRITTEN);
 
         InProcessFabric fabric;
         Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
@@ -1926,12 +1936,19 @@ namespace EndToEndTests
 
         Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        EXPECT_EQ(master_context.offload(), nullptr);
 
         const auto attach_master = [&master_runtime](InProcessFabric& fabric)
         {
             return Cluster::attach(master_runtime, InProcessTransport::make_master(fabric)).value();
         };
+
+        // An earlier test's dropped handle leaves its master on the shared runtime; this attach displaces it.
+        {
+            InProcessFabric clearing_fabric;
+            Cluster clearing = attach_master(clearing_fabric);
+            clearing.detach();
+        }
+        ASSERT_EQ(master_context.offload(), nullptr);
 
         InProcessFabric first_fabric;
         Cluster first = attach_master(first_fabric);
@@ -1956,6 +1973,10 @@ namespace EndToEndTests
         second.detach();
         EXPECT_EQ(master_context.offload(), third_installed)
             << "a displaced handle removed the master that replaced it";
+
+        // A dropped handle leaves its master attached, and the runtime is the program's shared one.
+        third.detach();
+        EXPECT_EQ(master_context.offload(), nullptr);
     }
 
     /** @brief Tests that a handle outlives its runtime and that its detach() then does nothing. */
@@ -2130,6 +2151,8 @@ namespace EndToEndTests
 
         Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        // An earlier test may leave its master on the shared runtime; a refused attach leaves it as it was.
+        const OffloadCoordinator* const installed_before = master_context.offload();
         InProcessFabric taken_fabric;
         RecordingTransportEvents taken_events;
         const std::shared_ptr<InProcessTransport> transport =
@@ -2145,7 +2168,7 @@ namespace EndToEndTests
         const std::string message = attached.error().message;
 
         EXPECT_NE(message.find(refusal), std::string::npos) << "the error says: " << message;
-        EXPECT_EQ(master_context.offload(), nullptr);
+        EXPECT_EQ(master_context.offload(), installed_before);
 
         InProcessFabric fabric;
         Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric)).value();
@@ -2213,6 +2236,8 @@ namespace EndToEndTests
 
         Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        // An earlier test may leave its master on the shared runtime; a refused attach leaves it as it was.
+        const OffloadCoordinator* const installed_before = master_context.offload();
         TCPMasterOptions network;
         network.bind = Endpoint{"0.0.0.0", 0};
         const std::shared_ptr<TCPTransport> refused = TCPTransport::make_master(network);
@@ -2220,7 +2245,7 @@ namespace EndToEndTests
 
         EXPECT_FALSE(Cluster::attach(master_runtime, refused).has_value());
         EXPECT_TRUE(was_never_started(*refused)) << "the transport was started before the refusal";
-        EXPECT_EQ(master_context.offload(), nullptr);
+        EXPECT_EQ(master_context.offload(), installed_before);
 
         const std::vector<std::uint8_t> key(SharedSecret::K_MINIMUM_BYTES, 0x42);
         ClusterOptions options;
@@ -2428,6 +2453,8 @@ namespace EndToEndTests
 
         Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        // An earlier test may leave its master on the shared runtime; a refused attach leaves it as it was.
+        const OffloadCoordinator* const installed_before = master_context.offload();
         const auto refusal_of = [&master_runtime](ClusterOptions options)
         {
             InProcessFabric refusal_fabric;
@@ -2453,7 +2480,7 @@ namespace EndToEndTests
         EXPECT_NE(handshake_refusal.find("ClusterOptions::handshake_timeout is 0 ms"),
                   std::string::npos)
             << "the error says: " << handshake_refusal;
-        EXPECT_EQ(master_context.offload(), nullptr);
+        EXPECT_EQ(master_context.offload(), installed_before);
 
         ClusterOptions without_deadline;
         without_deadline.task_deadline = std::chrono::milliseconds(0);

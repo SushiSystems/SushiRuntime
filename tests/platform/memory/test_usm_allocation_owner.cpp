@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -72,6 +73,11 @@ namespace
             void copy(void*, const void*, std::size_t, std::size_t) override {}
 
             [[nodiscard]] std::string device_name(std::size_t) const override { return "recording"; }
+
+            [[nodiscard]] std::optional<USMKind> kind_of(const void*, std::size_t) const override
+            {
+                return std::nullopt;
+            }
 
         private:
             /// @brief The block every allocation returns.

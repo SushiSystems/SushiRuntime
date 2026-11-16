@@ -36,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
 #include <SushiRuntime/transfer/host_staged_path.hpp>
 #include <SushiRuntime/transfer/peer_access.hpp>
@@ -61,7 +62,7 @@ namespace SushiRuntime
                 return std::nullopt;
             }
 
-            /** @brief Names the plain queue of each device of a set by the device's space. */
+            /** @brief Names the profiling queue of each device of a set by the device's space. */
             class DeviceSpaceQueues final : public Coherence::SpaceQueues
             {
                 public:
@@ -73,7 +74,8 @@ namespace SushiRuntime
                     [[nodiscard]] sycl::queue* queue_of(MemorySpaceID space) const override
                     {
                         const std::optional<std::size_t> device = device_in(*devices_, space);
-                        return device ? &devices_->queue(*device) : nullptr;
+                        // A copy is a planned node's device work, so a profiled run reads its timestamps.
+                        return device ? &devices_->queue(*device, Device::QueueFlavour{false, true}) : nullptr;
                     }
 
                 private:

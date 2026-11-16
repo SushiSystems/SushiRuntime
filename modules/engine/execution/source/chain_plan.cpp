@@ -86,14 +86,14 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Resolves the device a node runs on when every region of it belongs to one
-             *        device: placement_of(), so a stated device wins or is refused as at dispatch.
+             * @brief Resolves, through placement_of(), the device a node whose regions share one device runs on.
              * @param node A compiled, non-sentinel node.
-             * @param memory  The memory whose registry owns the regions.
-             * @return The queue index, or -1 for no region, an unknown region, two devices, or a
-             *         placement placement_of() refuses, which the scheduler then reports.
+             * @param memory The memory whose registry owns the regions.
+             * @param reason Set to why the node has no one queue, when it has none.
+             * @return The queue index, or -1 when the node has no one device or placement_of() refuses it.
              */
-            int chained_queue_index(const Internal::Graph::Node& node, const Internal::Graph::PlacementMemory& memory)
+            int chained_queue_index(const Internal::Graph::Node& node, const Internal::Graph::PlacementMemory& memory,
+                                    const char*& reason)
             {
                 int owner = -1;
                 auto visit = [&](const std::vector<BufferRegion>& regions)
@@ -103,19 +103,35 @@ namespace SushiRuntime
                         if (!r.valid())
                             continue;
                         const std::optional<std::size_t> device = memory.recorded_device(r.base);
-                        const int index = device ? static_cast<int>(*device) : -1;
-                        if (index < 0 || (owner >= 0 && index != owner))
+                        if (!device)
+                        {
+                            reason = "a node's region has no instance on a device";
                             return false;
+                        }
+                        const int index = static_cast<int>(*device);
+                        if (owner >= 0 && index != owner)
+                        {
+                            reason = "a node's regions live on two devices";
+                            return false;
+                        }
                         owner = index;
                     }
                     return true;
                 };
-                if (!visit(node.io_writes_) || !visit(node.io_reads_) || owner < 0)
+                if (!visit(node.io_writes_) || !visit(node.io_reads_))
                     return -1;
+                if (owner < 0)
+                {
+                    reason = "a node names no region";
+                    return -1;
+                }
 
                 const Result<std::size_t> placed = Internal::Graph::placement_of(node, memory);
                 if (!placed || placed.value() >= memory.device_count())
+                {
+                    reason = "a node's placement was refused";
                     return -1;
+                }
                 return static_cast<int>(placed.value());
             }
 
@@ -325,9 +341,10 @@ namespace SushiRuntime
                 if (node->placed_split)
                     return refuse("the partitioner cut a node into parts on several devices");
 
-                const int index = chained_queue_index(*node, memory);
+                const char* reason = "";
+                const int index = chained_queue_index(*node, memory, reason);
                 if (index < 0)
-                    return refuse("a node has no USM region on one known device, or its placement was refused");
+                    return refuse(reason);
                 if (device >= 0 && index != device)
                     return refuse("the nodes' regions live on two devices");
                 device = index;

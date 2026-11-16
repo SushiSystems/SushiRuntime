@@ -149,6 +149,23 @@ namespace SushiRuntime
             bool is_sentinel = false;
 
             /**
+             * @brief Marks a node the coherence planner spliced in: no add() call registered it, so the
+             *        node table and the timing record leave it out, and the transfer tally counts its copies.
+             * @see modules/engine/coherence/README.md
+             */
+            bool is_planned_step = false;
+
+            /**
+             * @brief Returns whether the node has a row of the node table and so of the timing record: no
+             *        sentinel and no planned step has one.
+             * @see modules/engine/graph/README.md
+             */
+            [[nodiscard]] bool has_timing_row() const noexcept
+            {
+                return !is_sentinel && !is_planned_step;
+            }
+
+            /**
              * @brief Marks a node that still runs once a task failure or a cancellation aborts the
              *        run, such as the node that releases what the run holds.
              * @see modules/engine/graph/README.md

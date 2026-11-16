@@ -1040,5 +1040,5 @@ TEST(Small_RuntimePartitionReport, ARuntimeHoldsNoPartitionYetAndItsReportHasNoR
 
     EXPECT_TRUE(report.rows.empty());
     EXPECT_FALSE(report.refused);
-    EXPECT_EQ(report.to_text(), "partition: step 0 s, floor not taken\n");
+    EXPECT_EQ(report.to_text(), "partition: step 0 s, measured 0 s, floor 0 s not taken\n");
 }

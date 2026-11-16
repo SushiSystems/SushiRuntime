@@ -49,7 +49,7 @@ namespace SushiRuntime
          * @brief Prices a placement in modelled seconds and counts its bytes per pool.
          *
          * A placement holds one device index per node. Devices are the profiled ones in DeviceKey
-         * order. A pool's usable bytes come from its first device's profile, so a shared pool counts
+         * order. A pool's usable bytes are the largest any of its devices' profiles gives, so a shared pool counts
          * once. A step runs the nodes in recording order; an edge between two pools waits for the
          * copy over the source device's path.
          */

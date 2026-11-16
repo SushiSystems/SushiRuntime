@@ -23,3 +23,4 @@
 | ID | Origin | Symptom | Workaround | Fix | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- |
 | KI-30 | own | WorkerBufferCache::accept_chunk faults (0xC0000006) in memmove over InProcessTransport | Rerun the test alone; it passes | RW-135 |  | 2026-11-11 |
+| KI-39 | own | DisconnectEndsAnOpenInputPull hangs 60 s about one run in five; no HELLO on reconnect | Rerun the shard | none, not yet investigated; seen 2026-11-16 on feature/global_handle | `tests/extension/distributed/test_worker_agent/test_worker_agent.cpp` | 2026-11-16 |

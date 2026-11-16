@@ -235,7 +235,7 @@ namespace SushiRuntime
                 failed_.store(true);
                 return;
             }
-            if (!running_->profiling)
+            if (!running_->profiling || !node.has_timing_row())
                 return;
             Internal::Observability::DispatchFacts facts;
             facts.node_index = node.registration_index;

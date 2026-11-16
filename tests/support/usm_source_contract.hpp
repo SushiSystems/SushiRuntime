@@ -119,6 +119,21 @@ namespace TestSupport
         this->source().free(destination, 0);
     }
 
+    /** @brief Tests that an allocation reports the kind it was asked for, and memory the source never made none. */
+    TYPED_TEST_P(USMSourceContract, AnAllocationReportsItsKindAndForeignMemoryNone)
+    {
+        SushiRuntime::Internal::Memory::USMRequest request;
+        request.kind = SushiRuntime::Internal::Memory::USMKind::Shared;
+        request.bytes = 16;
+        void* const address = this->source().allocate(request);
+        ASSERT_NE(address, nullptr);
+        const int foreign = 0;
+
+        EXPECT_EQ(this->source().kind_of(address, 0), SushiRuntime::Internal::Memory::USMKind::Shared);
+        EXPECT_FALSE(this->source().kind_of(&foreign, 0).has_value());
+        this->source().free(address, 0);
+    }
+
     /** @brief Tests that a source of one device reports one device. */
     TYPED_TEST_P(USMSourceContract, ASourceOfOneDeviceCountsOne)
     {
@@ -129,5 +144,6 @@ namespace TestSupport
                                 AnAlignedAllocationStartsOnItsAlignment,
                                 ADeviceSharesItsContextWithItself,
                                 ACopyPutsTheBytesInTheDestination,
+                                AnAllocationReportsItsKindAndForeignMemoryNone,
                                 ASourceOfOneDeviceCountsOne);
 } // namespace TestSupport

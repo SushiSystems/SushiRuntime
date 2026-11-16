@@ -313,12 +313,13 @@ namespace
         NodeOptions options;
         options.operation = K_NESTED_RUN;
         options.name = "nested_run";
-        const BufferView inputs[1] = {BufferView{input.data(), K_COUNT * sizeof(float)}};
-        const BufferView outputs[1] = {BufferView{output.data(), K_COUNT * sizeof(float)}};
+        // Named by their handles, the buffers the cluster shares are the ones the task reads and writes.
+        const TaskBuffer inputs[1] = {TaskBuffer{BufferView{input.data(), K_COUNT * sizeof(float)}, input.handle()}};
+        const TaskBuffer outputs[1] = {TaskBuffer{BufferView{output.data(), K_COUNT * sizeof(float)}, output.handle()}};
         graph.extend([&](Recorder& recorder)
         {
-            record_registered_task(recorder, kernels, options, span<const BufferView>(inputs, 1),
-                                   span<const BufferView>(outputs, 1));
+            record_registered_task(recorder, kernels, options, span<const TaskBuffer>(inputs, 1),
+                                   span<const TaskBuffer>(outputs, 1));
         });
     }
 

@@ -427,13 +427,14 @@ namespace
                 Graph graph = rig_.master().graph();
                 for (std::size_t task = 0; task < inputs_.size(); ++task)
                 {
-                    const BufferView input = inputs_[task].view();
-                    const BufferView output = outputs_[task].view();
+                    // A null handle borrows the view's range for the run.
+                    const TaskBuffer input{inputs_[task].view(), GlobalHandle::null()};
+                    const TaskBuffer output{outputs_[task].view(), GlobalHandle::null()};
                     graph.extend([&](Recorder& recorder)
                     {
                         record_registered_task(recorder, rig_.kernels(), options,
-                                               span<const BufferView>(&input, 1),
-                                               span<const BufferView>(&output, 1));
+                                               span<const TaskBuffer>(&input, 1),
+                                               span<const TaskBuffer>(&output, 1));
                     });
                 }
                 graph.compile().value();

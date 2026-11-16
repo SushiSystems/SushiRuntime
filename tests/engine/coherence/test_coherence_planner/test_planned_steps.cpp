@@ -32,6 +32,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -344,16 +345,19 @@ namespace
     {
     };
 
-    TEST_F(Medium_CoherencePlanner, TwoCommitsAtOnceOnASharedBufferAndAHorizonLeaveOneWholeMap)
+    TEST_F(Medium_CoherencePlanner, TwoThreadsCommittingInTurnOnASharedBufferAndAHorizonLeaveOneWholeMap)
     {
         constexpr int K_ROUNDS = 2000;
         std::atomic<int> refused{0};
-        const auto commit_and_run = [this, &refused](MemorySpaceID space)
+        // A plan is made against no buffer another run holds (KI-37), so each commit plans and runs in turn.
+        std::mutex turn;
+        const auto commit_and_run = [this, &refused, &turn](MemorySpaceID space)
         {
             CoherencePlanner subject = planner();
             const std::vector<NodeAccess> graph{node(space, {buffer_}, {buffer_})};
             for (int round = 0; round < K_ROUNDS; ++round)
             {
+                const std::lock_guard<std::mutex> lock(turn);
                 const Result<CopyPlan> plan = subject.plan(graph);
                 if (!plan)
                 {

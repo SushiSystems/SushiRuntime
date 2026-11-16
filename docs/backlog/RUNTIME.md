@@ -16,6 +16,10 @@
 | RW-150 | P2 | open | Count a host-placed run's tasks as host tasks in the run report | fill_run_report counts a Host run's tasks as host tasks on a GPU runtime, tested |  | `modules/foundation/report/include/SushiRuntime/report/run_report.hpp` | 2026-11-14 |
 | RW-151 | P3 | open | Record ExecutionLayer::Host in the PROFILING design topic | The PROFILING topic names ExecutionLayer::Host and links RUN_PLACEMENT |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
 | RW-152 | P3 | open | Measure host_step_refusal's per-run region lock cost | A benchmark row gives host_step_refusal's cost per run for a 4-node and a 64-node plan |  | `docs/design/LAYERED_EXECUTION/RUN_PLACEMENT.md` | 2026-11-14 |
+| RW-156 | P1 | open | Cut the per-node submit cost of planned graphs on the scheduler path | H9 independent and layered tests pass: planned step at most 1.05x CUDA alone; per-node submit near Device residency's 0.14 ms |  | `tests/surface/api/graph/plumbing/test_region_composer/test_partition_hardware.cpp` | 2026-11-16 |
+| RW-157 | P1 | open | Report the CPU's reachable host memory as its profile capacity | The CPU profile on the 7600X box gives about 16 GB, and the H9 chain test plans without a pool 0 refusal |  | `modules/engine/device_profile/source/profile_measurement.cpp` | 2026-11-16 |
+| RW-158 | P2 | open | Drop device seconds of devices that hold no nodes from the partition ledger | A test shows a device with no nodes in the plan in force reports zero measured seconds |  | `modules/engine/partition_session/source/partition_ledger.cpp` | 2026-11-16 |
+| RW-159 | P2 | open | Let a device with one node per step fold its throughput | A fold test with one sample per step per device moves the profile after enough steps |  | `modules/engine/device_profile/source/profile_fold.cpp` | 2026-11-16 |
 
 ## Known issues
 

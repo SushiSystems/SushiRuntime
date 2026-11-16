@@ -59,6 +59,12 @@ is the kernel registered for `options.operation`. A caller reaches the recorder 
 every recording member of `Recorder`. The node keeps its own copy of the kernel, the name, the
 parameters and the two view lists, and hands the kernel the options as the caller gave them.
 
+The lists are `TaskBuffer`s: a `BufferView` the kernel is handed and the `GlobalHandle` the node's
+region names. A buffer a `Cluster` shares must be named by the handle `Cluster::share()` took,
+since the offload dispatcher looks the node's regions up by handle. A null handle borrows the
+view's range through `Recorder::borrowed_region()`, which suits memory the caller allocated and never
+shares. There is one entry point, so a caller with plain views wraps each as `TaskBuffer{view, GlobalHandle::null()}`.
+
 ```cpp
 graph.extend([&](SushiRuntime::Recorder& recorder)
 {

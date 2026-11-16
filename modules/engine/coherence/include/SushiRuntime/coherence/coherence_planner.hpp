@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -181,7 +182,7 @@ namespace SushiRuntime
                 [[nodiscard]] bool used_at(GlobalHandle handle, std::uint32_t space,
                                            std::size_t node) const;
 
-                /** @brief Returns whether the end state of every buffer equals its start state. */
+                /** @brief Returns whether every buffer ends with the instances it started with and keeps its start validity. */
                 [[nodiscard]] bool is_steady() const;
 
                 /** @brief Adds the copies that make [begin, end) valid on space, before node. */
@@ -192,6 +193,12 @@ namespace SushiRuntime
 
                 /** @brief Adds the copies and frees that return every buffer to its start state. */
                 [[nodiscard]] Result<void> restore(CopyPlan& plan);
+
+                /**
+                 * @brief Returns the buffers whose map a run of @p plan changes: a step moves them, they start
+                 *        with other than one instance, or a node writes them where they have none.
+                 */
+                [[nodiscard]] std::set<GlobalHandle> tracked_buffers(const CopyPlan& plan) const;
 
                 /** @brief Copies the buffers the host reads back to their home and keeps the rest resident. */
                 [[nodiscard]] Result<void> settle_resident(CopyPlan& plan);

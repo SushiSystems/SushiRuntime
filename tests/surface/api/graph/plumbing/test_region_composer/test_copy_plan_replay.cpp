@@ -41,6 +41,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/runtime_environment.hpp"
+#include "support/shared_memory_devices.hpp"
 
 using namespace SushiRuntime;
 
@@ -78,12 +79,18 @@ namespace CopyPlanReplayTests
     class Medium_CopyPlanReplay : public TestSupport::RuntimeTest
     {
         protected:
-            /** @brief Skips the test when the runtime has no second device to copy to. */
+            /** @brief Takes the first two devices that share memory with the host, or skips with fewer. */
             void SetUp() override
             {
-                if (runtime().advanced().devices().size() < 2)
-                    GTEST_SKIP() << "the runtime drives one device; a copy plan needs two.";
+                const std::vector<DeviceIndex> shared = TestSupport::shared_memory_devices(runtime());
+                if (shared.size() < 2)
+                    GTEST_SKIP() << "the runtime has fewer than two devices that take shared memory; a copy plan needs two.";
+                first_ = shared[0];
+                second_ = shared[1];
             }
+
+            DeviceIndex first_{0};  /**< First device that takes shared memory. */
+            DeviceIndex second_{0}; /**< Second device that takes shared memory. */
 
             /**
              * @brief Records a node that writes a buffer on device 0 and a node that reads it on
@@ -112,8 +119,8 @@ namespace CopyPlanReplayTests
     TEST_F(Medium_CopyPlanReplay, APlanThatIsNotSteadyIsPlannedAgain)
     {
         const Runtime& rt = runtime();
-        auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{0}).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        auto written = rt.buffer<std::uint32_t>(K_COUNT, first_).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, second_).value();
         auto world = rt.dynamic_graph();
         record(world, written, result);
 
@@ -127,8 +134,8 @@ namespace CopyPlanReplayTests
     TEST_F(Medium_CopyPlanReplay, AReplayedStepRunsNoPlannerCode)
     {
         const Runtime& rt = runtime();
-        auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{0}).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        auto written = rt.buffer<std::uint32_t>(K_COUNT, first_).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, second_).value();
         auto world = rt.dynamic_graph();
         record(world, written, result);
 
@@ -148,8 +155,8 @@ namespace CopyPlanReplayTests
     TEST_F(Medium_CopyPlanReplay, AReplayedStepLeavesTheBytesOfAFreshlyPlannedOne)
     {
         const Runtime& rt = runtime();
-        auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{0}).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        auto written = rt.buffer<std::uint32_t>(K_COUNT, first_).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, second_).value();
         auto world = rt.dynamic_graph();
         record(world, written, result);
 
@@ -173,7 +180,7 @@ namespace CopyPlanReplayTests
     {
         const Runtime& rt = runtime();
         auto input = rt.buffer<std::uint32_t>(K_COUNT, Residency::Planned).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, second_).value();
         ASSERT_TRUE(input.write_range({0, K_COUNT}, values_with(0u)));
         auto world = rt.dynamic_graph();
         world.region(0).add(K_COUNT, In(input), Out(result),
@@ -201,7 +208,7 @@ namespace CopyPlanReplayTests
     {
         const Runtime& rt = runtime();
         auto input = rt.buffer<std::uint32_t>(K_COUNT, Residency::Planned).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{1}).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, second_).value();
         ASSERT_TRUE(input.write_range({0, K_COUNT}, values_with(0u)));
         auto world = rt.dynamic_graph();
         world.region(0).add(K_COUNT, In(input), Out(result),

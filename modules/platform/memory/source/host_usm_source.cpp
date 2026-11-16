@@ -34,8 +34,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 
 #include <SushiRuntime/core/assert.hpp>
@@ -65,7 +69,8 @@ namespace SushiRuntime
             /**
              * @brief Allocates every kind of USM from the host heap, for a fixed number of devices.
              *
-             * Every device shares one context. It records nothing about its allocations.
+             * Every device shares one context. It records the range and kind of each live allocation, so
+             * kind_of() answers as a device context would.
              */
             class HostUSMSource final : public USMSource
             {
@@ -81,10 +86,25 @@ namespace SushiRuntime
                     void copy(void* destination, const void* source, std::size_t bytes,
                               std::size_t device_index) override;
                     [[nodiscard]] std::string device_name(std::size_t index) const override;
+                    [[nodiscard]] std::optional<USMKind> kind_of(const void* address,
+                                                                 std::size_t device_index) const override;
 
                 private:
+                    /** @brief Holds the end and kind of one live allocation. */
+                    struct Live
+                    {
+                        std::uintptr_t end = 0;      /**< One past the allocation's last byte. */
+                        USMKind kind = USMKind::Host; /**< Kind the allocation was asked for. */
+                    };
+
                     /** @brief The number of devices the source stands for. */
                     std::size_t device_count_;
+
+                    /** @brief Guards live_. */
+                    mutable std::mutex mutex_;
+
+                    /** @brief Live allocations by their first byte. */
+                    std::map<std::uintptr_t, Live> live_;
             };
         } // namespace
 
@@ -117,6 +137,8 @@ namespace SushiRuntime
             const std::uintptr_t aligned = (start + alignment - 1) & ~(std::uintptr_t{alignment} - 1);
             void** const slot = reinterpret_cast<void**>(aligned);
             slot[-1] = raw;
+            const std::lock_guard<std::mutex> lock(mutex_);
+            live_[aligned] = Live{aligned + request.bytes, request.kind};
             return slot;
         }
 
@@ -125,6 +147,10 @@ namespace SushiRuntime
             require_device(device_index, device_count_);
             if (address == nullptr)
                 return;
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                live_.erase(reinterpret_cast<std::uintptr_t>(address));
+            }
             std::free(static_cast<void**>(address)[-1]);
         }
 
@@ -146,6 +172,20 @@ namespace SushiRuntime
         {
             require_device(index, device_count_);
             return "host device " + std::to_string(index);
+        }
+
+        std::optional<USMKind> HostUSMSource::kind_of(const void* address, std::size_t device_index) const
+        {
+            require_device(device_index, device_count_);
+            const auto at = reinterpret_cast<std::uintptr_t>(address);
+            const std::lock_guard<std::mutex> lock(mutex_);
+            auto found = live_.upper_bound(at);
+            if (found == live_.begin())
+                return std::nullopt;
+            found = std::prev(found);
+            if (at >= found->second.end && at != found->first)
+                return std::nullopt;
+            return found->second.kind;
         }
 
         std::unique_ptr<USMSource> make_host_usm_source(std::size_t device_count)

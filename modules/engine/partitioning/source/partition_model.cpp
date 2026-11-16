@@ -80,12 +80,19 @@ namespace SushiRuntime
                     continue;
                 model.devices_.push_back(entry.first);
                 model.copy_paths_.push_back(entry.second->copy_path);
+                const std::uint64_t usable = profile->capacity_bytes -
+                                           std::min(profile->reserve_bytes, profile->capacity_bytes);
                 const auto inserted = pool_index.emplace(entry.second->pool, model.pool_ids_.size());
                 if (inserted.second)
                 {
                     model.pool_ids_.push_back(entry.second->pool);
-                    model.usable_.push_back(profile->capacity_bytes -
-                                            std::min(profile->reserve_bytes, profile->capacity_bytes));
+                    model.usable_.push_back(usable);
+                }
+                else
+                {
+                    // Every member reaches the one memory, so the pool holds what its widest member reports.
+                    std::uint64_t& held = model.usable_[inserted.first->second];
+                    held = std::max(held, usable);
                 }
                 model.device_pool_.push_back(inserted.first->second);
             }

@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/handle/device_contexts.hpp>
@@ -104,6 +105,13 @@ namespace SushiRuntime
                  * @see modules/platform/memory/README.md
                  */
                 [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const override;
+
+                /**
+                 * @brief Returns the kind of USM an address is on a device, as the source knows it.
+                 * @return The kind, or nothing for memory the source does not know.
+                 * @pre device names a device of the allocator.
+                 */
+                [[nodiscard]] std::optional<USMKind> kind_of(const void* address, std::size_t device) const;
 
             private:
                 /**

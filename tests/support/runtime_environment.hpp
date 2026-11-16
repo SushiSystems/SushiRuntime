@@ -40,6 +40,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include "support/sycl_platform_environment.hpp"
 
 /**
  * @brief Test helpers shared by the modules of this repository.
@@ -132,8 +133,28 @@ class RuntimeEnvironment final : public ::testing::Environment
         {
             std::optional<sycl::queue>& held = held_queue();
             if (!held)
-                held.emplace();
+                held.emplace(shared_memory_device());
             return *held;
+        }
+
+        /**
+         * @brief Returns the device the default selector ranks first among those that share memory with the host.
+         * @return That device, or the default device when no device shares memory.
+         */
+        [[nodiscard]] static sycl::device shared_memory_device()
+        {
+            std::optional<sycl::device> best;
+            int best_score = -1;
+            for (const sycl::device& device : sycl::device::get_devices())
+            {
+                const int score = sycl::default_selector_v(device);
+                if (device.has(sycl::aspect::usm_shared_allocations) && score > best_score)
+                {
+                    best = device;
+                    best_score = score;
+                }
+            }
+            return best ? *best : sycl::device(sycl::default_selector_v);
         }
 
         /**

@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -91,6 +92,8 @@ namespace SushiRuntime
                     void copy(void* destination, const void* source, std::size_t bytes,
                               std::size_t device_index) override;
                     [[nodiscard]] std::string device_name(std::size_t index) const override;
+                    [[nodiscard]] std::optional<USMKind> kind_of(const void* address,
+                                                                 std::size_t device_index) const override;
 
                 private:
                     /** @brief Returns the queue of a device; stops the process for a bad index. */
@@ -141,6 +144,26 @@ namespace SushiRuntime
         std::string SYCLUSMSource::device_name(std::size_t index) const
         {
             return queue_at(index).get_device().get_info<sycl::info::device::name>();
+        }
+
+        std::optional<USMKind> SYCLUSMSource::kind_of(const void* address, std::size_t device_index) const
+        {
+            sycl::usm::alloc kind = sycl::usm::alloc::unknown;
+            try
+            {
+                kind = sycl::get_pointer_type(address, queue_at(device_index).get_context());
+            }
+            catch (const sycl::exception&)
+            {
+                return std::nullopt;
+            }
+            switch (kind)
+            {
+                case sycl::usm::alloc::host:   return USMKind::Host;
+                case sycl::usm::alloc::shared: return USMKind::Shared;
+                case sycl::usm::alloc::device: return USMKind::Device;
+                default:                       return std::nullopt;
+            }
         }
 
         const sycl::queue& SYCLUSMSource::queue_at(std::size_t device_index) const

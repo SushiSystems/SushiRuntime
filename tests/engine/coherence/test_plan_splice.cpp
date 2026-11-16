@@ -216,6 +216,22 @@ namespace
         EXPECT_EQ(factory.steps[1].space, K_DEVICE_1);
     }
 
+    /** @brief Tests that every node the splice adds is marked a planned step and the recorded nodes are not. */
+    TEST_F(Small_PlanSplice, EverySplicedNodeIsAPlannedStepAndNoRecordedNodeIs)
+    {
+        CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
+                                 uniform_transfer_cost());
+        RecordingFactory factory;
+
+        ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
+
+        ASSERT_EQ(nodes_.size(), 12U);
+        EXPECT_FALSE(writer_->is_planned_step);
+        EXPECT_FALSE(reader_->is_planned_step);
+        for (std::size_t index = 2; index < nodes_.size(); ++index)
+            EXPECT_TRUE(nodes_[index]->is_planned_step) << "node " << index;
+    }
+
     TEST_F(Small_PlanSplice, ACopysRecordFollowsTheCopyAndTheReaderWaitsForTheCopyNotTheRecord)
     {
         CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
@@ -291,7 +307,7 @@ namespace
         EXPECT_TRUE(precedes(*copies[1], second.get()));
     }
 
-    TEST_F(Small_PlanSplice, NodesOnOneDeviceGetNoStepAndOnlyTheMapEffectsOfTheBuffer)
+    TEST_F(Small_PlanSplice, NodesOnTheDeviceOfTheBuffersOnlyInstanceGetNoStepAndNoEffect)
     {
         spaces_[reader_.get()] = K_DEVICE_0;
         CoherencePlanner planner(directory_, directory_, {owned_[0].get(), owned_[1].get()}, {&path_},
@@ -300,13 +316,10 @@ namespace
 
         ASSERT_TRUE(splice_plan(nodes_, space_of(), planner, factory));
 
-        // The hold, a write before each node and the leave; no allocation, copy or free.
-        EXPECT_EQ(nodes_.size(), 6U);
+        // The buffer's one instance is read and written in place, so its map stays as it was.
+        EXPECT_EQ(nodes_.size(), 2U);
         EXPECT_TRUE(factory.steps.empty());
-        EXPECT_EQ(factory.effects.size(), 4U);
-        EXPECT_EQ(reader_->in_degree.load(), 2);
-        EXPECT_TRUE(precedes(*reader_, nodes_[4].get()));
-        EXPECT_TRUE(precedes(*nodes_[4], nodes_[5].get()));
+        EXPECT_TRUE(factory.effects.empty());
     }
 
     TEST_F(Small_PlanSplice, AnEvictionRunsAfterTheNodesThatUsedTheInstanceAndBeforeTheAllocationItMakesRoomFor)

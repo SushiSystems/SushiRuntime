@@ -45,8 +45,9 @@ with their declared size, edges, devices with their pool and copy path) and retu
 [PARTITIONING.md](../../../docs/design/GLOBAL_HANDLE/PARTITIONING.md).
 
 - `PartitionModel` keeps the devices that have a profile, in `DeviceKey` order, and numbers the
-  pools in the order their first device appears. A pool's usable bytes are its first device's
-  capacity less its reserve, so a pool that several devices share is counted once. It resolves each
+  pools in the order their first device appears. A pool's usable bytes are the largest capacity
+  less reserve among its devices, since each member reaches the one memory and an integrated GPU's
+  carve-out reports less than the CPU beside it, so a pool that several devices share is counted once. It resolves each
   node's reads and writes to byte ranges: `PartitionNode::read_ranges` and `write_ranges` when set,
   otherwise each listed buffer whole.
 - `PartitionModel::step_time(placement, order)` is the makespan of a `StepSimulation` that commits

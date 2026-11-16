@@ -142,13 +142,15 @@ namespace SushiRuntime
 
             auto* node = pe.task->is_graph_node()
                 ? static_cast<SushiRuntime::Internal::Graph::Node*>(pe.task) : nullptr;
+            if (node != nullptr && !node->has_timing_row())
+                return;
 
             Internal::Observability::EventTimestamps times;
             const bool have_start_end = pe.has_event && Internal::Observability::read_dispatch_timestamps(pe.event, pe.handed_over, times);
             if (!have_start_end)
             {
                 // A task that did not run, a sentinel and a native host node leave no event by design.
-                if (node != nullptr && pe.executed && !node->is_sentinel)
+                if (node != nullptr && pe.executed)
                 {
                     if (pe.has_event)
                         ledger->note_drop(DropCause::UnreadableEvent,

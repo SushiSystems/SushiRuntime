@@ -73,7 +73,9 @@ flag gives the same value in every run.
 A resident plan does not free what it allocated, so the next step meets the instances it needs. It
 copies back only the buffers named in `ResidencyOptions::host_read`, each to its home space; any
 other buffer a node wrote stays valid only where it was written. The plan sets `CopyPlan::steady`
-to whether every buffer is still valid on the spaces it was valid on before. It writes nothing into
+to whether every buffer holds the instances it held before and is still valid on the spaces it was
+valid on before; a plan that leaves a new instance resident is not steady, since a replay would
+allocate it again, and the plan made from the state it left is. It writes nothing into
 the directory's maps; the run records the end state as its steps complete (see "Planned state and
 current state").
 A plan that is not steady must be planned again before the next run and is never replayed.
@@ -123,9 +125,14 @@ carries what no step carries, each built into a host node by `PlannedNodeFactory
 
 | Effect | Placed | Records |
 | --- | --- | --- |
-| `Hold` | one per buffer, before node 0 | the run holds the buffer: host access is refused |
-| `Write` | one per written region, after its node has completed | `record_write()` on the node's space |
-| `Leave` | one per buffer, at the graph end after every node and step | the run's hold on the buffer ends |
+| `Hold` | one per tracked buffer, before node 0 | the run holds the buffer: host access is refused |
+| `Write` | one per written region of a tracked buffer, after its node has completed | `record_write()` on the node's space |
+| `Leave` | one per tracked buffer, at the graph end after every node and step | the run's hold on the buffer ends |
+
+A buffer is tracked when a run changes its map: a step moves it, it starts with no instance or with
+more than one, or a node writes it in a space that holds no instance of it. A buffer with one
+instance that every node reads and writes in place keeps its map, so it gets no effect; a graph of
+such buffers is spliced with no node and can still run as a chain or be replayed.
 
 A host read between a commit and its run therefore sees the state before the run. Effects are
 recorded in plan order on each buffer, so the map holds the plan's end state when the run leaves the
@@ -144,7 +151,8 @@ GLOBAL_HANDLE plan.
 ## splice_plan
 
 `splice_plan()` plans the nodes, builds every planned node through the factory before it changes the
-graph, and returns the `CopyPlan` it spliced, so the caller can keep it beside the graph it built. A
+graph, and returns the `CopyPlan` it spliced, so the caller can keep it beside the graph it built. Every
+node it adds carries `Node::is_planned_step`, so the timing record leaves it out. A
 refused step leaves the nodes as they were. A step before a node precedes it; an allocation or a
 free before a node also takes the node's predecessors, a copy does not. The splice keeps, for each
 instance, the nodes that wrote it (allocations, copies into it, frees, Writes), the copies that read

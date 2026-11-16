@@ -327,7 +327,7 @@ The file pins the rule `CompiledGraph::rearm` states: a replayed plan reads what
 between two executions. One kernel reads a word and writes it plus one. The plan is compiled
 once and replayed eight times; before each replay the host writes the word, and the output must
 follow. `Medium_ReplayHostWrite` has one row for a word in Shared USM and one for a word in Host USM, each
-replayed on every device queue of the context.
+replayed on every device queue of the context that takes shared memory, since the output word is shared.
 
 ### `Small_SchedulerSteps`
 

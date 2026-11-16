@@ -499,7 +499,7 @@ needs a second device and skips below two.
 | `AScopeOpenedBeforeTheRulesFollowsTheNewSet` | A scope made before the rules is refused once a `Fail` set is installed, since the recorder resolves it at record time. |
 | `APlannedBufferNamedByOnRefusesTheNode` | `On(buffer)` of a `Residency::Planned` buffer leaves an `InvalidArgument` refusal on the recorder, since the buffer states no device. |
 | `AClearedSetLeavesNothingToRefuse` | The same scope is accepted after `clear_placement_rules()`. |
-| `AScopeBufferAndItsTrackedNodesLandOnDeviceOne` | With a rule for device 1, the scope's buffer is on device 1, a tracked node recorded in the scope writes it and runs, and `On(scope)` on an untracked verb records. |
+| `AScopeBufferAndItsTrackedNodesLandOnTheRulesDevice` | With a rule for the second device that takes shared memory, the scope's buffer is on that device, a tracked node recorded in the scope writes it and runs, and `On(scope)` on an untracked verb records. |
 
 ### Placed tasks
 

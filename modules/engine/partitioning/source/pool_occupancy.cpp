@@ -106,8 +106,12 @@ namespace SushiRuntime
                 interval.first = std::min(interval.first, held->first);
                 interval.last = std::max(interval.last, held->last);
             }
+            // A buffer carried in is held before the step and freed by no node, so it is live for the whole step.
             if (carried_in_[buffer])
+            {
                 interval.first = 0;
+                interval.last = slots_ - 1;
+            }
             if (carried_out_[buffer])
                 interval.last = slots_ - 1;
             return interval;

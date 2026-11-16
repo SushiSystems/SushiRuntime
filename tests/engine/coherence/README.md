@@ -44,8 +44,9 @@ offers no queue.
 On a device that holds two of three buffers, the instance read furthest ahead is evicted in graph
 order, and the eviction plan has equal steps and an equal `plan_hash()` across planners. An instance
 holding the only valid copy is copied to the host before it is freed, a pinned instance is never
-chosen, a space with only pinned or in-use instances refuses the allocation as `AllocationFailed`,
-and a plan within capacity frees nothing and is steady. A write the host does not read leaves no copy
+chosen (the unpinned one goes instead and, read again, comes back by evicting another), a space with only pinned or
+in-use instances refuses the allocation as `AllocationFailed`, and a plan within capacity frees
+nothing and, since it leaves new instances resident, is not steady. A write the host does not read leaves no copy
 back and a plan that is not steady; a buffer named in `host_read` is copied back to its home. A
 second plan starts from the state the first left, and a planner with no options frees every
 instance as before.
@@ -81,9 +82,11 @@ missing instance gives `InvalidState`, and a failing path's error is passed on.
 The copy runs after the writer's Write and before the reader on the other device, and the copy back
 and the free follow the reader. A copy's record node follows it, the reader does not wait for it,
 and the free and the leave do. A copy does not wait for an unrelated predecessor of its reader, and
-two copies of one source to two devices do not wait for each other. Nodes on one device are left as they are, and a refused plan leaves the
-nodes unchanged. An eviction runs after the node that wrote the instance and before the
-allocation it makes room for.
+two copies of one source to two devices do not wait for each other. Nodes on the device of their
+buffer's only instance get no step and no effect, so the graph is left as it is, and a refused plan
+leaves the nodes unchanged. An eviction runs after the node that wrote the instance and before the
+allocation it makes room for. Every node the splice adds is marked a planned step and the recorded
+nodes are not, so the timing record leaves out only the added ones.
 
 ## test_planned_host_access.cpp
 

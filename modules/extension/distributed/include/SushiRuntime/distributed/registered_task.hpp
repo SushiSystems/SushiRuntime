@@ -36,6 +36,7 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/handle/global_handle.hpp>
 
 namespace SushiRuntime
 {
@@ -44,6 +45,16 @@ namespace SushiRuntime
 
     namespace Distributed
     {
+        /**
+         * @brief Names one buffer of a registered task: the memory the kernel is handed and the
+         *        handle coherence and a Cluster name it by.
+         */
+        struct TaskBuffer
+        {
+            BufferView view;     /**< The whole buffer's memory, handed to the kernel. */
+            GlobalHandle handle; /**< The buffer's handle, as Cluster::share() took it; null borrows the view's range. */
+        };
+
         /**
          * @brief Records a task that runs the kernel registered for options.operation here, or
          *        on a worker with that operation once a Cluster is attached.
@@ -54,8 +65,8 @@ namespace SushiRuntime
          */
         SUSHIRUNTIME_API std::size_t record_registered_task(
             Recorder& recorder, const KernelRegistry& kernels, const NodeOptions& options,
-            SushiRuntime::span<const BufferView> inputs,
-            SushiRuntime::span<const BufferView> outputs);
+            SushiRuntime::span<const TaskBuffer> inputs,
+            SushiRuntime::span<const TaskBuffer> outputs);
 
     } // namespace Distributed
 } // namespace SushiRuntime

@@ -30,7 +30,10 @@ bound, so no comparison spells one. `runtime_environment.hpp` registers one `tes
 per program that makes the runtime and the device queue on first use and releases them after the
 last test, and `context_environment.hpp` does the same for the one device `RuntimeContext` an engine
 test program shares; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
-never builds its own. A test that needs another configuration asks the environment for the runtime
+never builds its own. Both include `sycl_platform_environment.hpp`, whose environment loads the SYCL
+adapters once before the first case of a program, outside a death test's child, so a small case that
+reaches a device is not charged the 0.4 s the adapters take; the cost stays with the test programs, and
+the shared `main` in `modules/foundation/test_runner` keeps no SYCL edge. A test that needs another configuration asks the environment for the runtime
 of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer, the submit funnel, forced onto the chain), made once per
 shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
 scheduler (true). `stepping_tick_source.hpp` is a SushiProfiler tick source that moves by one on every reading, so the zones of a

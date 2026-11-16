@@ -651,8 +651,8 @@ the one function that names it, from the first of these that applies:
    stated device when it shares the owner's SYCL context and no region's home is device USM of
    another device. Otherwise it gets an `ErrorCode::InvalidGraph` error naming both devices and
    that reason, and the run fails; the node is never moved to the owner.
-2. The node names a region a device owns and states no placement: the owner of its first
-   write region, else of its first read region.
+2. A node with an owned region and no stated placement: the owner of its first write region, else
+   its first read region's; a fixed node that cannot reach its regions there fails as in rule 1.
 3. The node states a placement and names no owned region: that device.
 4. Otherwise device 0, `Internal::Graph::K_DEFAULT_PLACEMENT`, the device a default buffer is allocated
    on.

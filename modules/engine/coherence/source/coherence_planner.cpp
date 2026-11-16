@@ -178,17 +178,44 @@ namespace SushiRuntime
             if (!restored)
                 return make_error(std::move(restored.error()));
 
-            // Each buffer is held by the run from before node 0 to after every other node and step.
+            // Each tracked buffer is held by the run from before node 0 to after every other node and step.
+            const std::set<GlobalHandle> tracked = tracked_buffers(plan);
             std::vector<PlannedEffect> effects;
-            effects.reserve(plan.effects.size() + 2 * buffers_.size());
-            for (const auto& entry : buffers_)
-                effects.push_back(PlannedEffect{PlannedEffectKind::Hold, entry.first, MemorySpaceID(), 0, 0, 0});
-            effects.insert(effects.end(), plan.effects.begin(), plan.effects.end());
-            for (const auto& entry : buffers_)
-                effects.push_back(PlannedEffect{PlannedEffectKind::Leave, entry.first, MemorySpaceID(), 0, 0,
+            effects.reserve(plan.effects.size() + 2 * tracked.size());
+            for (const GlobalHandle handle : tracked)
+                effects.push_back(PlannedEffect{PlannedEffectKind::Hold, handle, MemorySpaceID(), 0, 0, 0});
+            for (const PlannedEffect& effect : plan.effects)
+            {
+                if (tracked.count(effect.handle) != 0)
+                    effects.push_back(effect);
+            }
+            for (const GlobalHandle handle : tracked)
+                effects.push_back(PlannedEffect{PlannedEffectKind::Leave, handle, MemorySpaceID(), 0, 0,
                                                 PlannedStep::K_GRAPH_END});
             plan.effects = std::move(effects);
             return plan;
+        }
+
+        std::set<GlobalHandle> CoherencePlanner::tracked_buffers(const CopyPlan& plan) const
+        {
+            std::set<GlobalHandle> tracked;
+            for (const PlannedStep& step : plan.steps)
+                tracked.insert(step.handle);
+            for (const auto& entry : buffers_)
+            {
+                const BufferState& state = entry.second;
+                const bool one_instance = state.start_instances != 0 &&
+                                          (state.start_instances & (state.start_instances - 1)) == 0;
+                if (!one_instance)
+                    tracked.insert(entry.first);
+            }
+            for (const PlannedEffect& effect : plan.effects)
+            {
+                const auto state = buffers_.find(effect.handle);
+                if (state != buffers_.end() && (state->second.start_instances & bit_of(effect.space)) == 0)
+                    tracked.insert(effect.handle);
+            }
+            return tracked;
         }
 
         Result<void> CoherencePlanner::plan_reads(MemorySpaceID space, const std::vector<BufferRegion>& reads,
@@ -461,8 +488,8 @@ namespace SushiRuntime
             for (const auto& entry : buffers_)
             {
                 const BufferState& state = entry.second;
-                if ((state.start_instances & ~state.instances) != 0 ||
-                    !keeps_validity(state.start, state.current))
+                // A replay allocates again what this plan allocated, so the instances must be those it met.
+                if (state.start_instances != state.instances || !keeps_validity(state.start, state.current))
                     return false;
             }
             return true;

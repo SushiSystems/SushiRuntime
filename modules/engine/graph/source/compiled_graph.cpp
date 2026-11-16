@@ -75,7 +75,7 @@ namespace SushiRuntime
         {
             std::uint32_t max_index = 0;
             for (auto& n : all_nodes)
-                if (!n->is_sentinel) max_index = std::max(max_index, n->registration_index);
+                if (n->has_timing_row()) max_index = std::max(max_index, n->registration_index);
             const std::size_t index_count = all_nodes.empty() ? 0 : static_cast<std::size_t>(max_index) + 1;
 
             profiling_multiplicities.assign(index_count, 0);
@@ -83,7 +83,7 @@ namespace SushiRuntime
             std::vector<bool> named(index_count, false);
             for (auto& n : all_nodes)
             {
-                if (n->is_sentinel) continue;
+                if (!n->has_timing_row()) continue;
                 const std::uint32_t index = n->registration_index;
                 ++profiling_multiplicities[index];
                 NodeTableRow& row = rows[index];

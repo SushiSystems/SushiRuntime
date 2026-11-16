@@ -401,12 +401,13 @@ namespace NvidiaTopologyTests
      */
     static sycl::queue* cuda_queue(RuntimeContext& context)
     {
-        const auto devices = sycl::device::get_devices(sycl::info::device_type::all);
-        for (std::size_t i = 0; i < devices.size(); ++i)
+        auto& queues = context.devices();
+        for (std::size_t i = 0; i < queues.count(); ++i)
         {
-            const std::string platform = devices[i].get_platform().get_info<sycl::info::platform::name>();
-            if (platform.find("CUDA") != std::string::npos || platform.find("cuda") != std::string::npos)
-                return &context.devices().queue(i);
+            const std::string platform =
+                queues.queue(i).get_device().get_platform().get_info<sycl::info::platform::name>();
+            if (platform.find("CUDA") != std::string::npos)
+                return &queues.queue(i);
         }
         return nullptr;
     }

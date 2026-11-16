@@ -50,17 +50,23 @@ namespace SushiRuntime
         namespace
         {
             /**
-             * @brief Returns the whole-buffer region of each view, in the views' order, each
-             *        named by the Borrowed handle the recorder keeps for its range.
-             * @pre Every view is a range the recorder can borrow; a refusal stops the process.
+             * @brief Returns the whole-buffer region of each buffer, in order: its handle, or the
+             *        Borrowed handle the recorder keeps for its view's range when it has none.
+             * @pre Every view without a handle is a range the recorder can borrow; a refusal stops the process.
              */
             std::vector<BufferRegion> regions_of(Recorder& recorder,
-                                                 SushiRuntime::span<const BufferView> views)
+                                                 SushiRuntime::span<const TaskBuffer> buffers)
             {
                 std::vector<BufferRegion> regions;
-                regions.reserve(views.size());
-                for (const BufferView& view : views)
+                regions.reserve(buffers.size());
+                for (const TaskBuffer& buffer : buffers)
                 {
+                    if (!buffer.handle.is_null())
+                    {
+                        regions.emplace_back(buffer.handle);
+                        continue;
+                    }
+                    const BufferView& view = buffer.view;
                     Result<BufferRegion> region = recorder.borrowed_region(view.data, view.size_bytes);
                     SR_VERIFY(static_cast<bool>(region),
                               ("record_registered_task: a buffer view cannot be named as a region: " +
@@ -71,6 +77,17 @@ namespace SushiRuntime
                 }
                 return regions;
             }
+
+            /** @brief Returns the views of buffers, in order. */
+            std::vector<BufferView> views_of(SushiRuntime::span<const TaskBuffer> buffers)
+            {
+                std::vector<BufferView> views;
+                views.reserve(buffers.size());
+                for (const TaskBuffer& buffer : buffers)
+                    views.push_back(buffer.view);
+                return views;
+            }
+
 
             /**
              * @brief Keeps what a registered kernel is handed, with nothing borrowed from the
@@ -106,8 +123,8 @@ namespace SushiRuntime
 
         std::size_t record_registered_task(Recorder& recorder, const KernelRegistry& kernels,
                                            const NodeOptions& options,
-                                           SushiRuntime::span<const BufferView> inputs,
-                                           SushiRuntime::span<const BufferView> outputs)
+                                           SushiRuntime::span<const TaskBuffer> inputs,
+                                           SushiRuntime::span<const TaskBuffer> outputs)
         {
             const KernelRegistry::Kernel* kernel = kernels.find(options.operation);
             SR_VERIFY(kernel != nullptr,
@@ -123,12 +140,11 @@ namespace SushiRuntime
             call.operation = options.operation;
             call.width = options.width;
             call.parameters.assign(options.parameters.begin(), options.parameters.end());
-            call.inputs.assign(inputs.begin(), inputs.end());
-            call.outputs.assign(outputs.begin(), outputs.end());
+            call.inputs = views_of(inputs);
+            call.outputs = views_of(outputs);
 
             return recorder.task(Access(regions_of(recorder, inputs), regions_of(recorder, outputs)), std::move(call),
                                  options);
         }
-
     } // namespace Distributed
 } // namespace SushiRuntime

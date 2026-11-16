@@ -49,6 +49,7 @@
 #include "run_recorder.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
+#include "support/shared_memory_devices.hpp"
 #include "support/tolerance.hpp"
 
 using namespace SushiRuntime;
@@ -1112,12 +1113,18 @@ namespace CrossContextGuardTests
     class Medium_CrossContextGuard : public TestSupport::RuntimeTest
     {
     protected:
-        /** @brief Skips the test below two device contexts. */
+        /** @brief Takes the first two devices that share memory with the host, or skips with fewer. */
         void SetUp() override
         {
-            if (runtime().advanced().device_count() < 2)
-                GTEST_SKIP() << "needs at least two device contexts to straddle a boundary";
+            const std::vector<DeviceIndex> shared = TestSupport::shared_memory_devices(runtime());
+            if (shared.size() < 2)
+                GTEST_SKIP() << "needs two devices that take shared memory to straddle a boundary";
+            first_ = shared[0];
+            second_ = shared[1];
         }
+
+        DeviceIndex first_{0};  /**< First device that takes shared memory. */
+        DeviceIndex second_{0}; /**< Second device that takes shared memory. */
     };
 
     /** @brief Tests that a node that reads one device context and writes another fails the run with InvalidGraph. */
@@ -1126,8 +1133,8 @@ namespace CrossContextGuardTests
         constexpr std::size_t N = 256;
 
         // Two buffers pinned to different device queues (and thus contexts).
-        auto a = runtime().buffer<int>(N, DeviceIndex{0}).value();
-        auto b = runtime().buffer<int>(N, DeviceIndex{1}).value();
+        auto a = runtime().buffer<int>(N, first_).value();
+        auto b = runtime().buffer<int>(N, second_).value();
         int* pb = b.data();
         const int* pa = a.data();
 
@@ -1146,8 +1153,8 @@ namespace CrossContextGuardTests
     {
         constexpr std::size_t N = 256;
 
-        auto a = runtime().buffer<int>(N, DeviceIndex{0}).value();
-        auto b = runtime().buffer<int>(N, DeviceIndex{1}).value();
+        auto a = runtime().buffer<int>(N, first_).value();
+        auto b = runtime().buffer<int>(N, second_).value();
         int* pb = b.data();
         const int* pa = a.data();
 

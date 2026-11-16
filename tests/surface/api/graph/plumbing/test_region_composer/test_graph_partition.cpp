@@ -62,6 +62,14 @@ namespace GraphPartitionTests
         /** @brief Steps run; two horizons of the coherence history, so at least one fold happens. */
         constexpr std::size_t K_STEPS = 128;
 
+        /**
+         * @brief Throughput factor that makes every device model far slower than it computes.
+         *
+         * The cost model has no launch latency, so a measured profile models these small kernels faster than
+         * they run and the first horizon would replan; a slow model keeps the plan in force.
+         */
+        constexpr double K_SLOW_MODEL = 1.0e-6;
+
         /** @brief The kind the nodes state, so the folded throughput has a line of its own. */
         constexpr const char K_KIND_NAME[] = "graph_partition_test";
 
@@ -117,12 +125,10 @@ namespace GraphPartitionTests
         }
 
         /**
-         * @brief Multiplies every throughput and memory bandwidth of the profile file at path by factor.
-         *
-         * A large factor makes every device model far faster than it runs, so the first horizon that
-         * measures a device replans.
+         * @brief Multiplies every throughput of the profile file at path by factor, and its memory bandwidth too
+         *        when with_bandwidth is set.
          */
-        void scale_rates(const std::filesystem::path& path, double factor)
+        void scale_lines(const std::filesystem::path& path, double factor, bool with_bandwidth)
         {
             std::istringstream lines(read_text(path));
             std::ostringstream rewritten;
@@ -135,7 +141,7 @@ namespace GraphPartitionTests
                 words.imbue(std::locale::classic());
                 std::string key;
                 words >> key;
-                if (key == "base_throughput" || key == "memory_bandwidth")
+                if (key == "base_throughput" || (with_bandwidth && key == "memory_bandwidth"))
                 {
                     double value = 0.0;
                     words >> value;
@@ -154,6 +160,28 @@ namespace GraphPartitionTests
                 }
             }
             std::ofstream(path, std::ios::binary | std::ios::trunc) << rewritten.str();
+        }
+
+        /**
+         * @brief Multiplies every throughput and memory bandwidth of the profile file at path by factor.
+         *
+         * A large factor makes every device model far faster than it runs, so the first horizon that
+         * measures a device replans.
+         */
+        void scale_rates(const std::filesystem::path& path, double factor)
+        {
+            scale_lines(path, factor, true);
+        }
+
+        /**
+         * @brief Multiplies every throughput of the profile file at path by factor and keeps its memory bandwidth.
+         *
+         * A small factor makes every device model far slower than it computes, so no horizon replans, while a
+         * fold still reads each measured dispatch as compute time past its bytes.
+         */
+        void slow_compute(const std::filesystem::path& path, double factor)
+        {
+            scale_lines(path, factor, false);
         }
 
         /** @brief Returns the lines of the placement journal at path that name a decision: entry, problem and answer. */
@@ -177,6 +205,30 @@ namespace GraphPartitionTests
                 if (line.rfind("entry ", 0) == 0 && line.find(" " + reason + " ") != std::string::npos)
                     ++count;
             return count;
+        }
+
+        /**
+         * @brief Returns whether a horizon of the placement journal at path put a new plan in force over a measured
+         *        step: an entry after the first records a measured step longer than zero.
+         */
+        bool journal_measured_a_replaced_plan(const std::filesystem::path& path)
+        {
+            std::istringstream lines(read_text(path));
+            std::string line;
+            std::size_t entries = 0;
+            while (std::getline(lines, line))
+            {
+                std::istringstream words(line);
+                words.imbue(std::locale::classic());
+                std::string key;
+                words >> key;
+                if (key == "entry")
+                    ++entries;
+                double seconds = 0.0;
+                if (entries > 1 && key == "measured_step" && (words >> seconds) && seconds > 0.0)
+                    return true;
+            }
+            return false;
         }
 
         /** @brief Returns the index of the first device of kind CPU, or nothing. */
@@ -297,9 +349,14 @@ namespace GraphPartitionTests
      */
     TEST_F(Medium_GraphPartition, ARuntimeWithAProfileFilePartitionsRunsReportsAndFoldsTheWholeGraph)
     {
+        {
+            const Runtime measuring = create_runtime();
+            if (const std::optional<std::string> reason = missing(measuring, false))
+                GTEST_SKIP() << *reason;
+        }
+        // A model far slower than the devices keeps every horizon on the plan whose measurement is read.
+        slow_compute(profile_, K_SLOW_MODEL);
         const Runtime rt = create_runtime();
-        if (const std::optional<std::string> reason = missing(rt, false))
-            GTEST_SKIP() << *reason;
         const std::string measured_at_create = read_text(profile_);
         ASSERT_FALSE(measured_at_create.empty());
 
@@ -509,9 +566,14 @@ namespace GraphPartitionTests
      */
     TEST_F(Medium_GraphPartition, TwoGraphsOnOneRuntimeKeepTheirOwnPlansReportsAndJournals)
     {
+        {
+            const Runtime measuring = create_runtime();
+            if (const std::optional<std::string> reason = missing(measuring, false))
+                GTEST_SKIP() << *reason;
+        }
+        // A model far slower than the devices keeps every horizon on the plan whose measurement is read.
+        slow_compute(profile_, K_SLOW_MODEL);
         const Runtime rt = create_runtime();
-        if (const std::optional<std::string> reason = missing(rt, false))
-            GTEST_SKIP() << *reason;
 
         auto input = rt.buffer<std::uint32_t>(K_INPUT, Residency::Planned).value();
         auto middle = rt.buffer<std::uint32_t>(K_OUTPUT, Residency::Planned).value();
@@ -549,14 +611,20 @@ namespace GraphPartitionTests
         ASSERT_FALSE(graph_report.refused) << graph_report.refusal;
         EXPECT_EQ(nodes_of(world_report), 2u);
         EXPECT_EQ(nodes_of(graph_report), 1u);
-        EXPECT_GT(world_report.measured_step_seconds, 0.0);
-        EXPECT_GT(graph_report.measured_step_seconds, 0.0);
         // The static graph partitioned last, at its build.
         EXPECT_EQ(rt.partition_report().to_text(), graph_report.to_text());
         const std::vector<std::filesystem::path> journals = journals_of(profile_);
         ASSERT_EQ(journals.size(), 2u);
         for (const std::filesystem::path& journal : journals)
             EXPECT_EQ(count_reason(journal_decisions(journal), "first"), 1u) << read_text(journal);
+        // A replanning horizon clears a graph's report, so each unmeasured report needs a journal that measured.
+        std::size_t unmeasured_reports = 0;
+        unmeasured_reports += world_report.measured_step_seconds > 0.0 ? 0u : 1u;
+        unmeasured_reports += graph_report.measured_step_seconds > 0.0 ? 0u : 1u;
+        std::size_t replaced_and_measured = 0;
+        for (const std::filesystem::path& journal : journals)
+            replaced_and_measured += journal_measured_a_replaced_plan(journal) ? 1u : 0u;
+        EXPECT_LE(unmeasured_reports, replaced_and_measured) << world_report.to_text() << graph_report.to_text();
         EXPECT_EQ(output.read_range({0, K_OUTPUT}).value(), host_reference());
     }
 } // namespace GraphPartitionTests

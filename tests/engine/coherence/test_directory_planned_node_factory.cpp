@@ -74,7 +74,7 @@ namespace
 
             [[nodiscard]] std::optional<Internal::Memory::USMKind> kind_of(MemorySpaceID) const noexcept override
             {
-                return std::nullopt;
+                return Internal::Memory::USMKind::Device;
             }
 
             int held = 0; /**< Allocations not yet released. */

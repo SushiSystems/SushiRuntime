@@ -44,6 +44,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/runtime_environment.hpp"
+#include "support/shared_memory_devices.hpp"
 
 #include "profiled_pipelines.hpp"
 
@@ -144,11 +145,18 @@ namespace
     class Large_RuntimeSessionOnTwoDevices : public TestSupport::RuntimeTest
     {
         protected:
+            /** @brief Takes the first two devices that share memory with the host, or skips with fewer. */
             void SetUp() override
             {
-                if (runtime().advanced().device_count() < 2)
-                    GTEST_SKIP() << "a second device is not available";
+                const std::vector<DeviceIndex> shared = TestSupport::shared_memory_devices(runtime());
+                if (shared.size() < 2)
+                    GTEST_SKIP() << "fewer than two devices take shared memory";
+                first_ = shared[0];
+                second_ = shared[1];
             }
+
+            DeviceIndex first_{0};  /**< First device that takes shared memory. */
+            DeviceIndex second_{0}; /**< Second device that takes shared memory. */
     };
 } // namespace
 
@@ -176,8 +184,8 @@ TEST_F(Large_RuntimeSessionOnAGpu, SpansOnTheGpuHaveAPairingUncertaintyBelowThei
 TEST_F(Large_RuntimeSessionOnTwoDevices, TwoDevicesGetOneTrackAndOnePairingEach)
 {
     constexpr std::size_t K_ELEMENTS = 1024;
-    auto first = runtime().buffer<float>(K_ELEMENTS, DeviceIndex{0}).value();
-    auto second = runtime().buffer<float>(K_ELEMENTS, DeviceIndex{1}).value();
+    auto first = runtime().buffer<float>(K_ELEMENTS, first_).value();
+    auto second = runtime().buffer<float>(K_ELEMENTS, second_).value();
     float* a = first.data();
     float* b = second.data();
     auto graph = runtime().graph();
@@ -195,7 +203,8 @@ TEST_F(Large_RuntimeSessionOnTwoDevices, TwoDevicesGetOneTrackAndOnePairingEach)
                                             });
 
     ASSERT_EQ(record.periods.size(), 3u);
-    const std::set<std::string> expected{device_track_name(runtime(), 0), device_track_name(runtime(), 1)};
+    const std::set<std::string> expected{device_track_name(runtime(), first_.value()),
+                                         device_track_name(runtime(), second_.value())};
     ASSERT_EQ(record.periods[0].spans.size(), 2u);
     EXPECT_EQ(tracks_of(record, record.periods[0]), expected);
     ASSERT_EQ(record.periods[1].spans.size(), 2u);

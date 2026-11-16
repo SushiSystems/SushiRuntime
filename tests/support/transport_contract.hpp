@@ -567,6 +567,11 @@ namespace TestSupport
         const std::uint64_t frame_bytes =
             SushiRuntime::Distributed::Wire::K_FRAME_HEADER_BYTES + sizeof(std::uint32_t);
 
+        // A frame can arrive before the sender adds its bytes, so the sender's count is read once it settles.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (this->worker_->statistics().bytes_sent < K_ORDERED_FRAMES * frame_bytes &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
         EXPECT_GE(this->worker_->statistics().bytes_sent, K_ORDERED_FRAMES * frame_bytes);
         EXPECT_GE(this->master_->statistics().bytes_received, K_ORDERED_FRAMES * frame_bytes);
     }

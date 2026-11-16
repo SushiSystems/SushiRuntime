@@ -43,6 +43,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "recorder_fixtures.hpp"
+#include "support/shared_memory_devices.hpp"
 
 /** @brief The untracked verbs a Fail rule refuses, as the rows of one test. */
 enum class Verb
@@ -364,13 +365,15 @@ namespace PlacementScopeDeviceRecordingTests
         EXPECT_EQ(recorder.refusal(), nullptr) << "the cleared set leaves nothing to refuse";
     }
 
-    /** @brief Tests that a scope's buffer lands on device 1 and the tracked node that writes it runs there. */
-    TEST_F(Medium_RecorderPlacementScopeDevice, AScopeBufferAndItsTrackedNodesLandOnDeviceOne)
+    /** @brief Tests that a scope's buffer lands on the rule's device and the tracked node that writes it runs there. */
+    TEST_F(Medium_RecorderPlacementScopeDevice, AScopeBufferAndItsTrackedNodesLandOnTheRulesDevice)
     {
         const Runtime& rt = runtime();
-        if (rt.advanced().device_count() < 2)
-            GTEST_SKIP() << "needs a second device for the rule's target";
-        ASSERT_TRUE(rt.set_placement_rules(send_to(1, AbsentAction::Fail)));
+        const std::vector<DeviceIndex> shared = TestSupport::shared_memory_devices(rt);
+        if (shared.size() < 2 || shared[0] != DeviceIndex{0})
+            GTEST_SKIP() << "needs device 0 and a second device with shared memory";
+        const DeviceIndex target = shared[1];
+        ASSERT_TRUE(rt.set_placement_rules(send_to(target.value(), AbsentAction::Fail)));
         const PlacementScope scope = rt.placement_scope(K_CLASS);
         auto data = scope.buffer<std::uint32_t>(K_COUNT).value();
         std::uint32_t* words = data.data();
@@ -386,7 +389,7 @@ namespace PlacementScopeDeviceRecordingTests
                 in_scope.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
             });
 
-        EXPECT_EQ(data.device_index(), DeviceIndex{1});
+        EXPECT_EQ(data.device_index(), target);
         EXPECT_EQ(graph.recorder().refusal(), nullptr);
         ASSERT_TRUE(graph.run());
         for (std::size_t i = 0; i < K_COUNT; ++i)

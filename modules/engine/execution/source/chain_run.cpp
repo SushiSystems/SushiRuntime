@@ -203,6 +203,8 @@ namespace SushiRuntime
             const std::uint32_t device = static_cast<std::uint32_t>(graph_.chain.queue_index);
             for (const Internal::Graph::PendingEvent& pe : graph_.chain.pending_events)
             {
+                if (!pe.node->has_timing_row())
+                    continue;
                 const std::uint32_t index = pe.node->registration_index;
                 Internal::Observability::EventTimestamps times;
                 if (!Internal::Observability::read_dispatch_timestamps(pe.event, pe.handed_over, times))

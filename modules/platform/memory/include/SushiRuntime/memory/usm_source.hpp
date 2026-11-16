@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -92,6 +93,16 @@ namespace SushiRuntime
                  * @pre index is below device_count().
                  */
                 [[nodiscard]] virtual std::string device_name(std::size_t index) const = 0;
+
+                /**
+                 * @brief Returns the kind of USM an address is on a device, as the memory behind the source knows it.
+                 * @param address Any address; one inside no allocation of the source is answered with nothing.
+                 * @param device_index The device whose context is asked.
+                 * @return The kind, or nothing for memory the source does not know.
+                 * @pre device_index is below device_count().
+                 */
+                [[nodiscard]] virtual std::optional<USMKind> kind_of(const void* address,
+                                                                     std::size_t device_index) const = 0;
 
             protected:
                 USMSource() = default;

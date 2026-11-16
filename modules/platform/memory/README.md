@@ -270,10 +270,12 @@ The destructor is protected and not virtual because the directory never owns its
 ### USMSource
 
 The port `USMAllocator` takes its memory from. A source makes, frees and copies bytes and
-answers three questions about its devices: how many there are, whether two of them share one
-memory context, and a device's name for a log line. `copy()` moves bytes on a device's memory
-engine and returns when they have arrived. A source keeps nothing about its allocations; the
-allocator keeps the records. Both adapters
+answers four questions: how many devices there are, whether two of them share one memory
+context, a device's name for a log line, and `kind_of()`, the kind of USM an address is on a
+device, or nothing for memory the source does not know. `copy()` moves bytes on a device's memory
+engine and returns when they have arrived. The SYCL source answers `kind_of()` with
+`sycl::get_pointer_type` in the device's context; the host source keeps the range and kind of each
+live allocation to answer it, and a zero-byte allocation answers for its own address only. `USMAllocator::kind_of()` forwards the question. Both adapters
 pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and
 `Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
 its factory and holds it as a `USMSource`.

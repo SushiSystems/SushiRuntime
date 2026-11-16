@@ -59,6 +59,21 @@ namespace SushiRuntime
                 return std::nullopt;
             }
 
+            /** @brief Returns the device of the first region of @p node that lies in another SYCL context than @p device. */
+            std::optional<std::size_t> context_elsewhere(const Node& node, const PlacementMemory& memory,
+                                                         std::size_t device)
+            {
+                for (const std::vector<BufferRegion>* regions : {&node.io_writes_, &node.io_reads_})
+                    for (const BufferRegion& region : *regions)
+                    {
+                        const std::optional<std::size_t> holder = memory.owning_device(region.base);
+                        if (holder && *holder != device && *holder < memory.device_count() &&
+                            !memory.shares_context(device, *holder))
+                            return holder;
+                    }
+                return std::nullopt;
+            }
+
             /** @brief Returns the refusal of a node fixed to its home, stated on @p stated while its memory lies on @p holder. */
             Error fixed_refusal(std::size_t stated, std::size_t holder, const char* where)
             {
@@ -68,6 +83,19 @@ namespace SushiRuntime
                     "to device " + std::to_string(holder) + " " + where + ", and its kernel captured "
                     "raw addresses that cannot be rebound to another device's instance; place it on "
                     "device " + std::to_string(holder) + " or record it as a capture launch."};
+            }
+
+            /**
+             * @brief Refuses a fixed kernel on @p device when one of its regions lies in another context or
+             *        is device USM of another device, since its raw addresses hold only where they were made.
+             */
+            Result<std::size_t> fixed_on(const Node& node, const PlacementMemory& memory, std::size_t device)
+            {
+                if (const std::optional<std::size_t> holder = context_elsewhere(node, memory, device))
+                    return make_error(fixed_refusal(device, *holder, "in another SYCL context"));
+                if (const std::optional<std::size_t> holder = device_only_elsewhere(node, memory, device))
+                    return make_error(fixed_refusal(device, *holder, "as device USM"));
+                return device;
             }
         } // namespace
 
@@ -106,7 +134,8 @@ namespace SushiRuntime
             if (!owner)
                 return stated.value_or(K_DEFAULT_PLACEMENT);
             if (!stated || *stated == *owner)
-                return *owner;
+                return node.kernel_addressing == KernelAddressing::Rebindable ? Result<std::size_t>(*owner)
+                                                                               : fixed_on(node, memory, *owner);
 
             // An index past the allocator's devices is refused by the dispatch, which knows why.
             if (*stated >= memory.device_count())
@@ -116,14 +145,8 @@ namespace SushiRuntime
             if (node.kernel_addressing == KernelAddressing::Rebindable)
                 return *stated;
 
-            // A fixed kernel's raw addresses hold only in the owner's context.
-            if (!memory.shares_context(*stated, *owner))
-                return make_error(fixed_refusal(*stated, *owner, "in another SYCL context"));
-
-            // Inside it, device USM of a sibling device is not addressable from the stated one.
-            if (const std::optional<std::size_t> holder = device_only_elsewhere(node, memory, *stated))
-                return make_error(fixed_refusal(*stated, *holder, "as device USM"));
-            return *stated;
+            // A fixed kernel's raw addresses hold only in the context they were made in, and not as device USM of a sibling.
+            return fixed_on(node, memory, *stated);
         }
 
     } // namespace Graph

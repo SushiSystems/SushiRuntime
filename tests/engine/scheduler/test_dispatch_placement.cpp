@@ -113,11 +113,12 @@ TEST_F(Small_DispatchPlacement, RefusesAPlacementPastTheDeviceCount)
     EXPECT_FALSE(node_->locality_checked_);
 }
 
-/** @brief Tests that a node whose regions sit on two devices runs on the device of its anchor, the written region. */
-TEST_F(Small_DispatchPlacement, PlacesANodeWhoseRegionsSpanTwoDevicesOnItsAnchor)
+/** @brief Tests that a rebindable node whose regions sit on two devices runs on the device of its anchor, the written region. */
+TEST_F(Small_DispatchPlacement, PlacesARebindableNodeWhoseRegionsSpanTwoDevicesOnItsAnchor)
 {
     int written = 0;
     int read = 0;
+    node_->kernel_addressing = SushiRuntime::Internal::Graph::KernelAddressing::Rebindable;
     node_->io_writes_.emplace_back(handles_.place(&written, 0));
     node_->io_reads_.emplace_back(handles_.place(&read, 1));
 

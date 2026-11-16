@@ -173,14 +173,14 @@ the table takes no lock. The scope's pointer is a `thread_local` defined once in
    region, a device owns: the stated device when the node is `KernelAddressing::Rebindable`, whose
    table rebinds each captured buffer to the instance on the stated device while the coherence
    planner copies the regions there. A node `FixedToHome` runs where its raw addresses are valid:
-   on the stated device when it shares the owner's SYCL context and no region's home is device
+   on the stated device when no region lies in another SYCL context and no region's home is device
    USM of another device. Otherwise it gets an `ErrorCode::InvalidGraph` error naming the device
    that holds the memory, "in another SYCL context" or "as device USM", and the raw addresses.
    A region's home counts as device USM when `PlacementMemory::host_visible()` says no; that port
    answers through `home_is_host_visible()`, the one rule of host visibility. The node is never
    moved silently. A stated index past the devices is returned as stated, for the dispatch to
    refuse.
-2. No stated device: the owner.
+2. No stated device: the owner, with the same check as rule 1 for a node `FixedToHome`.
 3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`. A node whose buffers are all
    `Residency::Planned` and hold no instance on any device has no owner, and so has one whose only
    instance is the host's after a `write_range()`, so it runs on the default device until a

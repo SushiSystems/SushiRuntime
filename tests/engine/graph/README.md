@@ -104,6 +104,7 @@ The file tests ChainPlan and PendingEvent: an empty plan that does not chain unt
 | Test | What it proves |
 | --- | --- |
 | `Small_CompiledGraph.CapturesOneTableRowPerRegistrationIndex` | The plan builds one row per registration index, with the node's name and operation. |
+| `Small_CompiledGraph.APlannedStepHasNoRowAndLeavesNodeZerosMultiplicity` | A planned step keeps index zero yet adds no row and does not count toward node 0, since `has_timing_row()` is false for it. |
 | `Small_CompiledGraph.ASharedIndexKeepsItsMultiplicity` | Several nodes sharing one index make one row that counts them. |
 | `Small_CompiledGraph.CarriesTheCostOfTheFirstNode` | The first node of an index names the row and states its cost. |
 | `Small_CompiledGraph.AnIndexNoNodeRegisteredUnderHasNoRow` | An index no node registered under has no row. |

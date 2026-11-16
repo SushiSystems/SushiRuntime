@@ -37,6 +37,8 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
+#include "support/sycl_platform_environment.hpp"
+
 namespace TestSupport
 {
 /**

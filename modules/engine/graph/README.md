@@ -104,6 +104,15 @@ must run even after a task exception flips the scheduler into drain-without-exec
 it would leave the completion promise unset and hang execute(). SchedulerExecutionEngine sets the flag when
 it wires the sentinel.
 
+### is_planned_step
+
+`engine/coherence` sets `is_planned_step` on every node `splice_plan()` adds: the allocate, copy and
+free steps, a copy's record node and the hold, write and leave effects. No add() call registered such
+a node, so its `registration_index` names no rule. `CompiledGraph::capture_profiling_state()` leaves it
+out of the node table, and neither the scheduler, the chain nor the host engine writes a timing row for
+it: each asks `Node::has_timing_row()`, false for the sentinel and for a planned step; the transfer tally counts its copies instead. Without the flag a step reads as node 0 and its
+copy time is charged to that node's cost.
+
 ### runs_on_abort
 
 A node with `runs_on_abort` set also runs once the run aborts, like the sentinel. Its predecessors

@@ -27,6 +27,9 @@
  * @author Mustafa Garip
  */
 
+#include <cstdint>
+#include <memory>
+
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/partitioning/partition_model.hpp>
@@ -51,6 +54,37 @@ namespace
         EXPECT_EQ(model.value().pool_count(), 1U);
         EXPECT_EQ(model.value().usable_bytes(0), 900U);
         EXPECT_DOUBLE_EQ(model.value().edge_time(0, 0, 1), 0.0);
+    }
+
+    /** @brief Returns a model of two devices of one speed whose capacities are first and second, ordinals one and two. */
+    std::shared_ptr<const CostModel> capacities_model(std::uint64_t first, std::uint64_t second)
+    {
+        DeviceProfileSet profiles;
+        DeviceProfile one = round_profile(1.0);
+        one.capacity_bytes = first;
+        DeviceProfile two = round_profile(1.0);
+        two.capacity_bytes = second;
+        profiles.set(host_key(1), one);
+        profiles.set(host_key(2), two);
+        return std::make_shared<const CostModel>(profiles);
+    }
+
+    TEST(Small_PartitionModel, ASharedPoolHoldsWhatItsWidestMemberReportsInEitherKeyOrder)
+    {
+        PartitionProblem problem = chain(2, 100, 2);
+        for (PartitionDevice& device : problem.devices)
+            device.pool = 7;
+
+        for (const bool wide_first : {true, false})
+        {
+            const auto costs = wide_first ? capacities_model(5000, 1000) : capacities_model(1000, 5000);
+            Result<PartitionModel, PartitionRefusal> model = PartitionModel::build(problem, *costs);
+
+            ASSERT_TRUE(model.has_value());
+            ASSERT_EQ(model.value().pool_count(), 1U);
+            EXPECT_EQ(model.value().usable_bytes(0), 5000U - round_profile(1.0).reserve_bytes)
+                << (wide_first ? "wide device first" : "wide device second");
+        }
     }
 
     TEST(Small_PartitionModel, AStepAddsTheCopyOfAnEdgeThatCrossesTwoPools)
