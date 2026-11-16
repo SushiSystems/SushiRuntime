@@ -71,6 +71,6 @@ working directory, streams it window by window onto the GPU, checks the first an
 window, and checks that pinned memory stays within the ring, under the ring plus 512 MB. It skips
 with no CUDA GPU or too little disk, and deletes the file.
 
-## compile_copy_submitter.cpp, compile_peer_access.cpp, compile_space_queues.cpp, compile_transfer_log_category.cpp, compile_transfer_observer.cpp and compile_transfer_path.cpp
+## compile_copy_submitter.cpp, compile_peer_access.cpp, compile_space_queues.cpp, compile_transfer_log_category.cpp and compile_transfer_path.cpp
 
 Each file includes one header alone.

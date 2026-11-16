@@ -513,7 +513,7 @@ namespace SushiRuntime
             return *impl_->coherence->partitioning;
         }
 
-        void RuntimeContext::install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer)
+        void RuntimeContext::install_transfer_observer(std::shared_ptr<SushiRuntime::TransferObserver> observer)
         {
             impl_->coherence->path_tally->set_next(std::move(observer));
         }

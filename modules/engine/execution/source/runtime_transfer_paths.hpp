@@ -37,7 +37,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/transfer/file_path.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
 #include <SushiRuntime/transfer/transfer_path_list.hpp>
 
@@ -75,6 +75,6 @@ namespace SushiRuntime
          * @param observer Hears each copy; null for none; must outlive the result.
          */
         [[nodiscard]] RuntimeTransferPaths build_transfer_paths(Device::DeviceQueueSet& devices,
-                                                                Coherence::TransferObserver* observer = nullptr);
+                                                                SushiRuntime::TransferObserver* observer = nullptr);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

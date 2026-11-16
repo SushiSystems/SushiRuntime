@@ -25,7 +25,6 @@ It depends on `handle`, `log` and `memory`.
 | `pinned_host_memory.hpp` | `PinnedHostMemory`, the port that makes and frees pinned host memory |
 | `space_queues.hpp` | `SpaceQueues`, the port that names the queue a space copies on |
 | `peer_access.hpp` | `PeerAccess`, the port that grants one device the memory of another |
-| `transfer_observer.hpp` | `TransferObserver` and `TransferRecord`, the report of which path each copy took |
 | `transfer_observer_slot.hpp` | `TransferObserverSlot`, the observer the runtime's paths hold, which forwards to one a caller installs |
 | `transfer_path_list.hpp` | `admit_path()` and `PathListStatus`, which add a path to a list unless its `TransferPathID` is taken |
 | `transfer_log_category.hpp` | `K_TRANSFER_LOG_CATEGORY`, the log category of the module |

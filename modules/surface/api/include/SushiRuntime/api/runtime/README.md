@@ -108,7 +108,7 @@ refused while a run is in flight; the caller makes sure none is.
 
 ### install_transfer_observer
 
-`install_transfer_observer()` hands the runtime an `Internal::Coherence::TransferObserver` that every
+`install_transfer_observer()` hands the runtime an `SushiRuntime::TransferObserver` that every
 transfer path tells of each copy it starts: the path's name, the two spaces and the byte count. Null
 removes it, and a runtime starts with none. A test installs one to see which path each planned copy
 took. The observer is called from the worker that runs the copy, so it must be safe to call from

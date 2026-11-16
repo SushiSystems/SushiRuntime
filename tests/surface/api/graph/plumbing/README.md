@@ -356,5 +356,5 @@ Large, on the first machine: a CUDA GPU and a HIP GPU in one runtime. Each test 
 
 | Test | What it proves |
 | --- | --- |
-| `ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice` | A node on the CUDA GPU writes a 64 MiB buffer, a node on the HIP GPU reads it and writes a second buffer, and the second buffer equals the host reference. An observer installed through `AdvancedControls::install_transfer_observer()` hears every copy; each copy between the two GPUs took `host_staged`, and at least one went from the CUDA GPU to the HIP GPU. The test prints, and does not assert, the time of the run through the pinned staging ring and of a copy through pageable host memory. |
+| `ABufferWrittenOnTheCUDADeviceReadsEqualOnTheHIPDevice` | A node on the CUDA GPU writes a 64 MiB buffer of its device memory (the integrated HIP GPU offers no shared USM), a node on the HIP GPU reads it and writes a second buffer, and the second buffer, read through `read_range()`, equals the host reference. An observer installed through `AdvancedControls::install_transfer_observer()` hears every copy; each copy between the two GPUs took `host_staged`, and at least one went from the CUDA GPU to the HIP GPU. The test prints, and does not assert, the time of the run through the pinned staging ring and of a copy through pageable host memory. |
 

@@ -33,7 +33,7 @@
 #include <memory>
 
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
 namespace SushiRuntime
 {

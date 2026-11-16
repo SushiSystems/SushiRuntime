@@ -21,5 +21,6 @@ sushiruntime_add_module(
         handle
         log
         memory
+        report
     PRIVATE_DEPENDS
         sycl)

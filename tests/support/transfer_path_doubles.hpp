@@ -42,7 +42,7 @@
 #include <SushiRuntime/transfer/peer_access.hpp>
 #include <SushiRuntime/transfer/pinned_host_memory.hpp>
 #include <SushiRuntime/transfer/space_queues.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
 namespace SushiRuntime
 {

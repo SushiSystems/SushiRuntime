@@ -44,9 +44,8 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
-#include "support/buffer_contents.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -96,7 +95,7 @@ namespace CrossVendorCopyTests
         }
 
         /** @brief Keeps every copy the runtime's paths report; safe from several workers. */
-        class RecordingObserver final : public Internal::Coherence::TransferObserver
+        class RecordingObserver final : public SushiRuntime::TransferObserver
         {
             public:
                 /** @brief Holds one copy: the path name and the two spaces. */
@@ -107,7 +106,7 @@ namespace CrossVendorCopyTests
                     MemorySpaceID destination; /**< Space written to. */
                 };
 
-                void copied(const Internal::Coherence::TransferRecord& record) override
+                void copied(const SushiRuntime::TransferRecord& record) override
                 {
                     const std::lock_guard<std::mutex> hold(lock_);
                     copies_.push_back(Copy{std::string(record.path), record.source, record.destination});
@@ -198,8 +197,9 @@ namespace CrossVendorCopyTests
         const Runtime& rt = runtime();
         const auto observer = std::make_shared<RecordingObserver>();
         rt.advanced().install_transfer_observer(observer);
-        auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{cuda_}).value();
-        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{hip_}).value();
+        // The integrated HIP GPU offers no shared USM, so each buffer is device memory of its own GPU.
+        auto written = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{cuda_}, Residency::Device).value();
+        auto result = rt.buffer<std::uint32_t>(K_COUNT, DeviceIndex{hip_}, Residency::Device).value();
         auto world = rt.dynamic_graph();
         Recorder& recorder = world.region(0).recorder();
         recorder.captured_kernel(K_COUNT, Access(Reads(), Writes(written)), std::make_tuple(written.data()),
@@ -216,7 +216,7 @@ namespace CrossVendorCopyTests
 
         rt.advanced().install_transfer_observer(nullptr);
 
-        EXPECT_EQ(TestSupport::contents(result), reference_result());
+        EXPECT_EQ(result.read_range({0, K_COUNT}).value(), reference_result());
         const MemorySpaceID cuda_space = Internal::Graph::device_memory_space(cuda_);
         const MemorySpaceID hip_space = Internal::Graph::device_memory_space(hip_);
         std::size_t cuda_to_hip = 0;

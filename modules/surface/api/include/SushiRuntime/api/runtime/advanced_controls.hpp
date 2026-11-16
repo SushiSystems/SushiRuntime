@@ -46,6 +46,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/machine/worker_pool.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
 namespace SushiRuntime
 {
@@ -56,12 +57,6 @@ namespace SushiRuntime
         /// @brief Names the port that may run graph nodes elsewhere, in task/offload_coordinator.hpp.
         class OffloadCoordinator;
     } // namespace Internal::Graph
-
-    namespace Internal::Coherence
-    {
-        /// @brief Names the port that hears which path each copy took, in coherence/transfer_observer.hpp.
-        class TransferObserver;
-    } // namespace Internal::Coherence
 
     /**
      * @brief Answers questions about a runtime's devices, workers and counters, and hands
@@ -139,7 +134,7 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             SUSHIRUNTIME_API void
-            install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer) const;
+            install_transfer_observer(std::shared_ptr<SushiRuntime::TransferObserver> observer) const;
 
             /**
              * @brief Makes the graph whose first problem opens the placement journal at journal_file place from it;

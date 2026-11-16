@@ -186,7 +186,7 @@ namespace SushiRuntime
         RuntimeTransferPaths::~RuntimeTransferPaths() = default;
 
         RuntimeTransferPaths build_transfer_paths(Device::DeviceQueueSet& devices,
-                                                  Coherence::TransferObserver* observer)
+                                                  SushiRuntime::TransferObserver* observer)
         {
             RuntimeTransferPaths paths;
             paths.support = std::make_unique<RuntimeTransferPaths::Support>(devices);

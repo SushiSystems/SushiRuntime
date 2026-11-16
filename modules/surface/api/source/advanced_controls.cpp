@@ -52,7 +52,7 @@
 #include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/placement_journal.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
 namespace SushiRuntime
 {
@@ -102,7 +102,7 @@ namespace SushiRuntime
     }
 
     void AdvancedControls::install_transfer_observer(
-        std::shared_ptr<Internal::Coherence::TransferObserver> observer) const
+        std::shared_ptr<SushiRuntime::TransferObserver> observer) const
     {
         Internal::ContextAccess::context(context_).install_transfer_observer(std::move(observer));
     }

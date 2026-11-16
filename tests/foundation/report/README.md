@@ -31,6 +31,10 @@ suite is `Small_PartitionReport`.
 
 Includes `dispatch_width.hpp` alone, so the build fails if the header misses an include. It holds no test.
 
+## compile_transfer_observer.cpp
+
+Includes `transfer_observer.hpp` alone, so the build fails if the header misses an include. It holds no test.
+
 ## test_node_table.cpp
 
 NodeTable, the names, operations and costs of a plan's nodes by registration index. The graph label,

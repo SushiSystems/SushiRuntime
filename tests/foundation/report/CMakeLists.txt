@@ -8,6 +8,7 @@ sushiruntime_add_module_tests(
     SOURCES
         compile_clock_pairing.cpp
         compile_dispatch_width.cpp
+        compile_transfer_observer.cpp
         test_drop_counts.cpp
         test_node_event_record.cpp
         test_node_table.cpp

@@ -26,7 +26,6 @@ sushiruntime_add_module(
         memory
         report
         task
-        transfer
         device_profile
         partitioning
     PRIVATE_DEPENDS

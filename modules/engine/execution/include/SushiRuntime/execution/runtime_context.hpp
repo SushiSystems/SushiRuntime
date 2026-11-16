@@ -60,7 +60,7 @@
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/transfer/transfer_cost.hpp>
-#include <SushiRuntime/transfer/transfer_observer.hpp>
+#include <SushiRuntime/report/transfer_observer.hpp>
 
 namespace SushiRuntime
 {
@@ -204,7 +204,7 @@ namespace SushiRuntime
                  * @param observer Co-owned while installed; a context starts with none.
                  * @pre No run is in flight.
                  */
-                void install_transfer_observer(std::shared_ptr<Internal::Coherence::TransferObserver> observer);
+                void install_transfer_observer(std::shared_ptr<SushiRuntime::TransferObserver> observer);
 
                 /**
                  * @brief Adds the read-only memory space of a file range, under the lowest id a

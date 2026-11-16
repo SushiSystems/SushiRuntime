@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-16 — report: Moved the transfer observer and its record into the installed report module as public types, so a consumer can implement one (`transfer_observer.hpp`).
 - 2026-11-16 — distributed: Removed the `BufferView` overload of `record_registered_task()`; a caller wraps a view as `TaskBuffer{view, GlobalHandle::null()}` to borrow it (`registered_task.hpp`).
 - 2026-11-16 — memory: Added the pure virtual `USMSource::kind_of()`, which every source must answer; interop reads a borrowed address's residency through it (`usm_source.hpp`).
 - 2026-11-16 — coherence: Marked spliced nodes with `Node::is_planned_step`, so the timing record leaves them out, and ran planned copies on the profiling queue (`plan_splice.cpp`).

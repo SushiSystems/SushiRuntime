@@ -11,7 +11,6 @@ sushiruntime_add_module_tests(
         compile_pinned_host_memory.cpp
         compile_space_queues.cpp
         compile_transfer_log_category.cpp
-        compile_transfer_observer.cpp
         compile_transfer_path.cpp
         test_file_path.cpp
         test_host_staged_path.cpp

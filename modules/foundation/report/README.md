@@ -14,6 +14,7 @@ It depends on the C++ standard library, on `core`, for `OperationID` and `NodeCo
 | `clock_pairing.hpp` | `ClockPairing` and `DeviceClock`, which place a device's event clock on the steady clock |
 | `node_table.hpp` | `NodeTable` and `NodeTableRow`, the names, operations and costs of a plan's nodes by registration index |
 | `drop_counts.hpp` | `DropCause` and `DropCounts`, how many dispatches a run left out of its timing |
+| `transfer_observer.hpp` | `TransferObserver`, the interface that hears which path each copy took, and `TransferRecord`, what it hears; `AdvancedControls::install_transfer_observer()` takes one, so both are public |
 | `run_observer.hpp` | `RunObserver`, the interface that receives a run's timing, `RunObservation`, what it receives, and `RunObserverHandle`, which removes an observer |
 | `partition_report.hpp` | `PartitionReport` and `PartitionDeviceRow`, what a partition gave each device |
 | `dispatch_width.hpp` | `K_WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
