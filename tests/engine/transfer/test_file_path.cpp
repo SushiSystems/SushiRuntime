@@ -72,6 +72,9 @@ namespace
     constexpr std::size_t K_SLOT_COUNT = 2;
     constexpr std::uint64_t K_RANGE_OFFSET = 13;
 
+    /** @brief The period of byte_at in bytes: its low byte reads the low 16 bits of the position alone. */
+    constexpr std::size_t K_BYTE_PERIOD = std::size_t{1} << 16;
+
     /** @brief Returns the byte the test files hold at position. */
     std::uint8_t byte_at(std::uint64_t position) noexcept
     {
@@ -339,14 +342,16 @@ namespace
             GTEST_SKIP() << "Not enough disk for a " << file_bytes << "-byte file.";
         const std::string path = (folder / "sushiruntime_file_path_large.bin").string();
         {
-            std::ofstream out(path, std::ios::binary);
+            // Every block starts on a period of byte_at, so one fill serves all of them.
+            static_assert(K_WINDOW_BYTES % K_BYTE_PERIOD == 0, "a block starts on a period of byte_at");
             std::vector<char> block(K_WINDOW_BYTES);
+            for (std::size_t index = 0; index < block.size(); ++index)
+                block[index] = static_cast<char>(byte_at(index));
+            std::ofstream out(path, std::ios::binary);
             for (std::uint64_t written = 0; written < file_bytes; written += block.size())
             {
                 const std::size_t bytes = static_cast<std::size_t>(std::min<std::uint64_t>(block.size(),
                                                                                          file_bytes - written));
-                for (std::size_t index = 0; index < bytes; ++index)
-                    block[index] = static_cast<char>(byte_at(written + index));
                 out.write(block.data(), static_cast<std::streamsize>(bytes));
             }
             ASSERT_TRUE(out.good());
