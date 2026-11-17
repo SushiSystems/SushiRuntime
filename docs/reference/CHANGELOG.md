@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-17 — api_quality_control: Made each test program build its SYCL contexts once, before the first test (RW-161, `1f2b2a76`).
 - 2026-11-16 — api: Refused a node whose region names a released or foreign buffer when it is recorded, so the run returns the refusal (`recorder.cpp`).
 - 2026-11-16 — report: Moved the transfer observer and its record into the installed report module as public types, so a consumer can implement one (`transfer_observer.hpp`).
 - 2026-11-16 — distributed: Removed the `BufferView` overload of `record_registered_task()`; a caller wraps a view as `TaskBuffer{view, GlobalHandle::null()}` to borrow it (`registered_task.hpp`).
