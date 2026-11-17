@@ -22,6 +22,7 @@ from sushicore.build_env import (
     snapshot_windows,
     write_cache,
 )
+from sushicore.errors import ProjectRootNotFoundError
 
 from . import console
 from .config import Config, find_project_root
@@ -146,7 +147,7 @@ def _inject_sanitizer_options(env: dict[str, str]) -> None:
         return  # a caller who set it explicitly outranks us
     try:
         suppressions = find_project_root() / ".config" / "sanitizers" / "lsan_suppressions.txt"
-    except SystemExit:
+    except ProjectRootNotFoundError:
         return  # not inside a checkout; nothing to point at
     if suppressions.is_file():
         env["LSAN_OPTIONS"] = f"suppressions={suppressions.as_posix()}"

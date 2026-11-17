@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import pytest
+from sushicore.errors import ProjectRootNotFoundError
 
 from sushiruntime import config
 from sushiruntime.config import Config
@@ -14,8 +15,8 @@ from sushiruntime.config import Config
 
 @pytest.mark.medium
 def test_find_project_root_raises_outside_checkout(tmp_path):
-    """No sushi-module.toml anywhere above -> a clear SystemExit, not a crash."""
-    with pytest.raises(SystemExit):
+    """No sushi-module.toml anywhere above -> ProjectRootNotFoundError, not a crash."""
+    with pytest.raises(ProjectRootNotFoundError):
         config.find_project_root(tmp_path)
 
 
@@ -45,7 +46,7 @@ def test_find_project_root_passes_a_nested_cmake_project(tmp_path):
 def test_a_cmake_project_without_the_module_manifest_is_not_a_checkout(tmp_path):
     """CMakeLists.txt alone does not mark a SushiRuntime checkout."""
     (tmp_path / "CMakeLists.txt").write_text("project(x)\n")
-    with pytest.raises(SystemExit):
+    with pytest.raises(ProjectRootNotFoundError):
         config.find_project_root(tmp_path)
 
 
