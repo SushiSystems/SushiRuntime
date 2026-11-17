@@ -522,3 +522,26 @@ TEST_F(Medium_InteropBorrowHostUSM, ARegionOfAReleasedBorrowIsRefusedWhenRecorde
     EXPECT_EQ(ran.error().code, ErrorCode::InvalidAccess);
     EXPECT_NE(ran.error().message.find("holds no live handle"), std::string::npos) << ran.error().message;
 }
+
+/** @brief Tests that a run whose late count's borrowed buffer died after the recording is refused as dangling, the owner still alive. */
+TEST_F(Medium_InteropBorrowHostUSM, ARunAfterTheBorrowedCountDiedIsRefusedAsDangling)
+{
+    constexpr std::size_t CAPACITY = 4;
+    auto count = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    count.host()[0] = 2u;
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY, DeviceIndex{0}, Residency::Shared).value();
+    std::uint32_t* out = marks.data();
+    const LivenessToken owner = make_liveness();
+    auto graph = runtime().graph();
+    {
+        const Buffer<std::uint32_t> words = runtime().interop().borrow(
+            count.data(), 1, DeviceIndex{0}, Residency::Host, owner).value();
+        graph.recorder().dynamic_kernel(sized_from_device(words), CAPACITY, Access(Reads(), Writes(marks)),
+                                        [out](std::size_t i) { out[i] = 1u; });
+    }
+
+    const Result<RunReport> ran = graph.run();
+
+    ASSERT_FALSE(ran) << "a node ran on a released borrow";
+    EXPECT_EQ(ran.error().code, ErrorCode::DanglingResource);
+}

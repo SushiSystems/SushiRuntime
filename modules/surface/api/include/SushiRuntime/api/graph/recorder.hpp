@@ -734,6 +734,7 @@ namespace SushiRuntime
                 labels_.clear();
                 scratch_.clear();
                 observers_.clear();
+                watched_handles_.clear();
                 steps_ = Detail::StepMachinery();
                 refusal_.reset();
                 ++generation_;
@@ -761,14 +762,20 @@ namespace SushiRuntime
              */
             [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
 
-            /** @brief Returns whether a recorded handle names a freed allocation. */
+            /**
+             * @brief Returns whether a recorded handle names a freed allocation, or a pointer a
+             *        node resolves at bind names a buffer or borrow this runtime has since released.
+             */
             [[nodiscard]] bool has_dangling_resource() const noexcept
             {
                 for (const auto& observer : observers_)
                     if (observer.expired())
                         return true;
-                return false;
+                return has_released_handle();
             }
+
+            /** @brief Returns whether a handle a recorded node's pointer names is no longer live in this runtime. */
+            [[nodiscard]] SUSHIRUNTIME_API bool has_released_handle() const noexcept;
 
             /** @brief Returns how many distinct allocations has_dangling_resource() checks. */
             [[nodiscard]] std::size_t watched_allocation_count() const noexcept
@@ -1035,11 +1042,20 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns the refusal of a node whose read or write region names a handle this
-             *        runtime holds no live entry for, or nothing.
+             * @brief Returns the refusal of a node whose read or write region, or pointer, names a
+             *        handle this runtime holds no live entry for, or nothing.
              */
             [[nodiscard]] SUSHIRUNTIME_API std::optional<Error> dead_region_refusal(
                 const Detail::NodeDescription& description) const;
+
+            /**
+             * @brief Adds each handle a pointer of @p description names to the handles a run checks.
+             *
+             * A region's handle is left out: the owner token keeps a borrowed region's memory, so
+             * the run reads it after its handle is dropped. A pointer is resolved through its
+             * handle at bind, which needs the handle live.
+             */
+            SUSHIRUNTIME_API void watch_handles(const Detail::NodeDescription& description);
 
             /**
              * @brief Keeps a refusal when it is the first, and tells whether there was none.
@@ -1093,6 +1109,7 @@ namespace SushiRuntime
                 labels_ = std::exchange(other.labels_, {});
                 scratch_ = std::exchange(other.scratch_, {});
                 observers_ = std::exchange(other.observers_, {});
+                watched_handles_ = std::exchange(other.watched_handles_, {});
                 steps_ = std::exchange(other.steps_, Detail::StepMachinery());
                 refusal_ = std::exchange(other.refusal_, std::nullopt);
                 placement_scope_ = std::exchange(other.placement_scope_, std::nullopt);
@@ -1148,6 +1165,9 @@ namespace SushiRuntime
 
             /** @brief One liveness observer per allocation the nodes name, sorted by owner. */
             std::vector<LivenessObserver> observers_;
+
+            /** @brief Each distinct handle the recorded nodes' pointers name, sorted; a run checks each is still live. */
+            std::vector<GlobalHandle> watched_handles_;
 
             /** @brief The per-step hooks of the recorded nodes. */
             Detail::StepMachinery steps_;

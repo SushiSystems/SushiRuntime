@@ -62,6 +62,7 @@ a device cannot be made to drop its UUID.
 | `ALateCountTaskWritesABorrowedRegionFilledOnTheHost` | A late count borrowed as `Residency::Host` sizes a device kernel that writes a region `borrowed_region()` took over shared memory the host filled; both borrows record their USM kind, so the bind reads them in place. |
 | `ALateCountBorrowedBesideItsOwningBufferRunsAfterRawHostWrites` | A count borrowed as `Residency::Host` from a Host buffer that stays alive beside the borrow, both written through raw pointers, sizes a device kernel writing a region of a shared buffer, and the kernel runs the count written there. |
 | `ARegionOfAReleasedBorrowIsRefusedWhenRecorded` | A dynamic kernel writing a region of a borrow already released is refused when recorded; the run returns InvalidAccess naming the dead handle, and nothing runs. |
+| `ARunAfterTheBorrowedCountDiedIsRefusedAsDangling` | A late count borrowed and recorded, whose borrowed buffer then dies while its owner token lives, makes the run return DanglingResource instead of stopping the process at bind. |
 | `ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord` | A `Residency::Host` buffer the runtime allocated, borrowed as `Residency::Shared`, is refused with `InvalidArgument` from the kind the allocator recorded. |
 | `ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted` | Borrowed as `Residency::Host` it is accepted. |
 

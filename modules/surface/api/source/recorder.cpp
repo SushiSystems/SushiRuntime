@@ -30,6 +30,7 @@
 
 #include <SushiRuntime/api/graph/recorder.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -91,6 +92,7 @@ namespace SushiRuntime
             return rule_count();
         if (!admit(dead_region_refusal(description)))
             return rule_count();
+        watch_handles(description);
         Detail::NodeSpec spec(std::move(description));
         spec.stamp = Detail::NodeStamp(options, label_of(options.name), label_of(options.origin));
         if (placement_scope_ && !options.placement_class.is_named())
@@ -133,7 +135,42 @@ namespace SushiRuntime
         std::optional<Error> refused = refusal(description.reads, "read");
         if (!refused)
             refused = refusal(description.writes, "write");
+        for (std::size_t index = 0; !refused && index < description.pointer_handles.size(); ++index)
+        {
+            const GlobalHandle handle = description.pointer_handles[index];
+            if (!handle.is_null() && ports.residency_reader.inspect(handle).status != HandleStatus::Ok)
+                refused = Error{ErrorCode::InvalidAccess,
+                                "rule " + std::to_string(next_rule()) + ": pointer " + std::to_string(index) +
+                                " names handle slot " + std::to_string(handle.slot()) + " generation " +
+                                std::to_string(handle.generation()) +
+                                ", and this runtime holds no live handle for it: its buffer or borrow was "
+                                "released, or another runtime made it. Name a buffer this runtime holds."};
+        }
         return refused;
+    }
+
+    void Recorder::watch_handles(const Detail::NodeDescription& description)
+    {
+        for (const GlobalHandle handle : description.pointer_handles)
+        {
+            if (handle.is_null())
+                continue;
+            const auto at = std::lower_bound(watched_handles_.begin(), watched_handles_.end(), handle);
+            if (at == watched_handles_.end() || *at != handle)
+                watched_handles_.insert(at, handle);
+        }
+    }
+
+    bool Recorder::has_released_handle() const noexcept
+    {
+        if (watched_handles_.empty() || !context_)
+            return false;
+        const Internal::Memory::HandlePorts ports =
+            Internal::ContextAccess::context(context_).handle_ports();
+        for (const GlobalHandle handle : watched_handles_)
+            if (ports.residency_reader.inspect(handle).status != HandleStatus::Ok)
+                return true;
+        return false;
     }
 
     bool Recorder::admit(std::optional<Error> refused)
