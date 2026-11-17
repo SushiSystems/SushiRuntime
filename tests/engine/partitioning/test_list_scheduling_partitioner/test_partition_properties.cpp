@@ -76,7 +76,12 @@ namespace
     {
     };
 
-    TEST_P(Small_PartitionProperties, StepTimeIsWithinTenPercentOfTheExhaustiveBest)
+    /** @brief Runs the comparison with an exhaustive search, whose cost grows with each seed's case. */
+    class Medium_PartitionProperties : public ::testing::TestWithParam<std::uint64_t>
+    {
+    };
+
+    TEST_P(Medium_PartitionProperties, StepTimeIsWithinTenPercentOfTheExhaustiveBest)
     {
         const std::uint64_t seed = GetParam();
         SCOPED_TRACE("seed " + std::to_string(seed));
@@ -130,4 +135,5 @@ namespace
     }
 
     INSTANTIATE_TEST_SUITE_P(Seeds, Small_PartitionProperties, ::testing::Range<std::uint64_t>(1, 65), seed_name);
+    INSTANTIATE_TEST_SUITE_P(Seeds, Medium_PartitionProperties, ::testing::Range<std::uint64_t>(1, 65), seed_name);
 } // namespace

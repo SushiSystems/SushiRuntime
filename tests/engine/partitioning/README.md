@@ -133,7 +133,8 @@ two or three devices whose buffers fit one pool, and checks three properties; a 
 seed. The partitioner's modelled step time, in the order its schedule runs the nodes, is within
 10% of the best that an exhaustive search over every fitting placement, in recording order, finds. No plan is modelled slower than its floor. With a device a thousand
 times slower added, that device gets no node. The search counts `devices ^ nodes` placements, at most
-6561 here, and prices each with `PartitionModel`.
+6561 here, and prices each with `PartitionModel`; that comparison runs in `Medium_PartitionProperties`,
+since the largest seeds take about 0.2 s in a debug build, and the other two in `Small_PartitionProperties`.
 
 ### test_splitting.cpp
 

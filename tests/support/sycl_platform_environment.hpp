@@ -23,7 +23,7 @@
 
 /**
  * @file sycl_platform_environment.hpp
- * @brief Declares SYCLPlatformEnvironment, which loads the SYCL adapters once before a test program's first case.
+ * @brief Declares SYCLPlatformEnvironment, which loads the SYCL adapters and the CPU device once before a test program's first case.
  * @see tests/README.md
  * @author Mustafa Garip
  */
@@ -38,14 +38,15 @@
 namespace TestSupport
 {
 /**
- * @brief Loads the SYCL adapters once, so the first case that reaches a device is not charged for them.
+ * @brief Loads the SYCL adapters and brings up the CPU device once, so the first case that reaches
+ *        a device, or a host context's CPU queue, is not charged for them.
  *
  * A death test's child skips the load: it runs one statement, and the adapters cost each child about 1 GB.
  */
 class SYCLPlatformEnvironment final : public ::testing::Environment
 {
     public:
-        /** @brief Discovers the platforms unless the process is a death test's child. */
+        /** @brief Discovers the platforms and builds one CPU queue unless the process is a death test's child. */
         void SetUp() override
         {
             if (!GTEST_FLAG_GET(internal_run_death_test).empty())
@@ -57,6 +58,16 @@ class SYCLPlatformEnvironment final : public ::testing::Environment
             catch (const sycl::exception& error)
             {
                 std::fprintf(stderr, "SYCL platform discovery failed before the tests: %s\n", error.what());
+                return;
+            }
+            try
+            {
+                // A host context's queues are CPU queues; the first one in a process costs about 170 ms.
+                static_cast<void>(sycl::queue(sycl::cpu_selector_v));
+            }
+            catch (const sycl::exception&)
+            {
+                // A machine without a CPU device leaves its tests to skip on their own.
             }
         }
 };

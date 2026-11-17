@@ -81,7 +81,7 @@ namespace
     };
 
     /** @brief Tests that each part receives its device's queue and the pointers bound on that device, then the combine sees the parts in order. */
-    TEST(Small_SplitDispatch, EachPartRunsOnItsDeviceWithThePointersBoundThere)
+    TEST(Medium_SplitDispatch, EachPartRunsOnItsDeviceWithThePointersBoundThere)
     {
         std::optional<sycl::queue> first = cpu_queue();
         std::optional<sycl::queue> second = cpu_queue();
@@ -127,7 +127,7 @@ namespace
     }
 
     /** @brief Tests that a node with no pointers gives each slice an empty table. */
-    TEST(Small_SplitDispatch, ANodeWithNoPointersGivesAnEmptyTable)
+    TEST(Medium_SplitDispatch, ANodeWithNoPointersGivesAnEmptyTable)
     {
         std::optional<sycl::queue> queue = cpu_queue();
         if (!queue)
