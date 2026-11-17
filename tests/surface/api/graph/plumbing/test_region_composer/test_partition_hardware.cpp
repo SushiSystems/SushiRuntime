@@ -47,6 +47,7 @@
 
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/clock.hpp>
+#include <SushiRuntime/memory/system_memory_probe.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
@@ -77,8 +78,11 @@ namespace PartitionHardwareTests
         /** @brief Elements of the small buffer that links one chain node to the next. */
         constexpr std::size_t K_LINK_ELEMENTS = 1024;
 
-        /** @brief The share of the CUDA GPU's memory the chain's carried buffers hold in all, in tenths. */
-        constexpr std::size_t K_CHAIN_TENTHS_OF_CAPACITY = 16;
+        /** @brief The most the chain's carried buffers hold beyond the CUDA GPU's memory, in tenths of that memory. */
+        constexpr std::size_t K_CHAIN_SPILL_TENTHS_OF_CAPACITY = 6;
+
+        /** @brief The share of the host memory free when the chain is sized that its spill may take: one in this many bytes. */
+        constexpr std::size_t K_CHAIN_SPILL_HOST_SHARE = 4;
 
         /** @brief Granule the chain's per-node buffer is rounded down to, in elements. */
         constexpr std::size_t K_CHAIN_GRANULE = std::size_t{1} << 16;
@@ -457,10 +461,17 @@ namespace PartitionHardwareTests
         class ChainWorkload final : public Workload
         {
             public:
-                /** @brief Returns the elements of a big buffer, so all of them hold more than the CUDA GPU's memory. */
-                static std::size_t big_elements(std::uint64_t cuda_memory_bytes) noexcept
+                /**
+                 * @brief Returns the elements of a big buffer, so all of them hold more than the CUDA GPU's memory,
+                 *        and what they hold beyond it fits in a share of the host memory free now.
+                 */
+                static std::size_t big_elements(std::uint64_t cuda_memory_bytes)
                 {
-                    const std::uint64_t total = cuda_memory_bytes / 10 * K_CHAIN_TENTHS_OF_CAPACITY;
+                    const Internal::Memory::ProbedMemory host = Internal::Memory::SystemMemoryProbe().probe();
+                    const std::uint64_t spill = std::min<std::uint64_t>(
+                        cuda_memory_bytes / 10 * K_CHAIN_SPILL_TENTHS_OF_CAPACITY,
+                        host.free_bytes / K_CHAIN_SPILL_HOST_SHARE);
+                    const std::uint64_t total = cuda_memory_bytes + spill;
                     const std::size_t each = static_cast<std::size_t>(total / K_CHAIN_NODES / sizeof(std::uint32_t));
                     return each / K_CHAIN_GRANULE * K_CHAIN_GRANULE;
                 }

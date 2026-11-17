@@ -197,7 +197,7 @@ its first nodes stated on the CUDA GPU and the rest on the one other device the 
 | --- | --- |
 | `IndependentEqualNodesWithEveryDeviceStepNoLongerThanOnTheCUDAGPUAlone` | 64 equal nodes: the planned step with every device is at most 1.05 times the step on the CUDA GPU alone, and at most that step when the CPU holds a node. |
 | `ALayeredGraphThatFitsWithEveryDeviceStepNoLongerThanOnTheCUDAGPUAlone` | Four layers of 16 nodes that fit on the CUDA GPU: the same two bounds. |
-| `AChainLargerThanTheCUDAGPUStepsNoLongerThanItsBestForcedCut` | 24 nodes whose carried buffers hold 1.6 times the CUDA GPU's memory: the planned step is at most 1.05 times the best of the cuts forced 1, 2 and 4 nodes to either side of the planned cut. A forced cut that does not fit its devices is printed with `fits 0` and left out; at least one must run. |
+| `AChainLargerThanTheCUDAGPUStepsNoLongerThanItsBestForcedCut` | 24 nodes whose carried buffers hold the CUDA GPU's memory plus a spill of 0.6 times it or half the host memory free when the chain is sized, whichever is less, so the chain is larger than the CUDA GPU and its spill fits the host: the planned step is at most 1.05 times the best of the cuts forced 1, 2 and 4 nodes to either side of the planned cut. A forced cut that does not fit its devices is printed with `fits 0` and left out; at least one must run. |
 
 ## test_step_driver/test_step_driver.cpp
 
