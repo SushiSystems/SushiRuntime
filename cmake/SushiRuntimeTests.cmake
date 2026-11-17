@@ -23,6 +23,11 @@
 # in docs/backlog/.
 set(SR_QUARANTINED_TESTS
     Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd
+    # KI-41: a 4-byte Shared USM allocation was refused once in a death test's child.
+    Medium_DataHandleWindowDeathTest.StopsOnAWindowThatDoesNotFit/*
+    Medium_LateBindingsDeathTest.ASlotTheHostCannotReadStopsTheCallThatNamesIt/*
+    # KI-40: failed once under an 8-job medium run.
+    Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
 )
 # The tests AdaptiveCpp's CPU backend fails, KI-18 to KI-22 in docs/backlog/CORRECTNESS.md.
 if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
