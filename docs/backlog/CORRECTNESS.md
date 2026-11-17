@@ -13,6 +13,7 @@
 | RW-85 | P2 | open | Size test_before_step_hooks right and build its descriptor test on Windows | test_before_step_hooks.cpp holds no Medium_ test without a device, and AFileDescriptorAboveIntIsRefusedWithItsValue compiles on Windows or is replaced |  | `tests/surface/api/detail/test_before_step_hooks.cpp` | 2026-11-06 |
 | RW-155 | P1 | open | Plan a buffer another run holds against that run's end state | Two graphs on one buffer, planned and run from two threads at once, leave every interval with a valid space |  | `modules/engine/coherence/README.md` | 2026-11-16 |
 | RW-160 | P1 | open | Find why a 4-byte Shared USM allocation is refused during a full test run | the cause is measured and fixed, and ten full sr test runs at 8 jobs pass the two death tests |  | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
+| RW-163 | P1 | open | Make the submit-zone enclosure test hold under an 8-job medium run | the cause is measured and ten sr test --label medium --jobs 8 runs pass Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone |  | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
 
 ## Known issues
 
