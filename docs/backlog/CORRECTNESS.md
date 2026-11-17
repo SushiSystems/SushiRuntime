@@ -12,6 +12,7 @@
 | RW-84 | P2 | open | Free four tests from the machine's core and device count | LogsAWorkerWhoseCoreHasNoNumaNode, FlatTopologyKeepsAllVictims and EachDeviceIsProbedOnce run and pass on a one-device, any-core machine |  | `tests/engine/scheduler/test_task_scheduler.cpp` | 2026-11-06 |
 | RW-85 | P2 | open | Size test_before_step_hooks right and build its descriptor test on Windows | test_before_step_hooks.cpp holds no Medium_ test without a device, and AFileDescriptorAboveIntIsRefusedWithItsValue compiles on Windows or is replaced |  | `tests/surface/api/detail/test_before_step_hooks.cpp` | 2026-11-06 |
 | RW-155 | P1 | open | Plan a buffer another run holds against that run's end state | Two graphs on one buffer, planned and run from two threads at once, leave every interval with a valid space |  | `modules/engine/coherence/README.md` | 2026-11-16 |
+| RW-160 | P1 | open | Find why a 4-byte Shared USM allocation is refused during a full test run | the cause is measured and fixed, and ten full sr test runs at 8 jobs pass the two death tests |  | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
 
 ## Known issues
 
