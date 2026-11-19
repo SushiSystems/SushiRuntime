@@ -38,8 +38,8 @@ not allocate the Buffer's liveness token; the block is released in the second ca
 ### import_device
 
 import_device maps memory another API exported and returns it as a Device Buffer: a kernel may use
-it, the host may not index it. The runtime records the mapped address in its USM registry, so a task
-that touches the Buffer is routed to the importing device like any other.
+it, the host may not index it. The buffer's handle records the instance in the residency directory as
+`USMKind::Device`, so a task that touches the Buffer is routed to the importing device like any other.
 
 The call returns `Result<Buffer<T>>`. The error is `AllocationFailed` when the host cannot
 allocate the Buffer's liveness token, `Unsupported` when the device cannot import (see
@@ -57,7 +57,7 @@ SushiRuntime never closes or duplicates ExternalMemoryDescriptor::handle; the ca
 ownership of it. `modules/surface/interop/README.md` lists each point of the call and what is not
 established about the SYCL backend.
 
-Destroying the Buffer removes the address from the registry, unmaps the region and releases the
+Destroying the Buffer retires its handle's directory entry, unmaps the region and releases the
 SYCL import handle, in that order. A step that fails is logged at ERROR and the later steps still
 run. It makes no other call, so freeing the allocation stays with the API that exported it.
 
@@ -82,7 +82,7 @@ residency unchecked.
 A null token, a null address for a count above 0 and a device index the runtime does not drive
 are rules the caller broke, and stop the process through `SR_VERIFY`. The memory must be reachable
 by every node that names the buffer: host memory for host tasks, USM of the stated residency in the
-context of the stated device for device kernels. The runtime does not record the address, so a
+context of the stated device for device kernels. The runtime's allocator does not record it, so a
 task over it runs where its placement says, through `Recorder::task(access, body, placement)` or
 an untracked verb's `On`.
 

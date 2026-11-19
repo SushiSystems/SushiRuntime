@@ -29,7 +29,7 @@ for the `sycl::queue` a slice receives; the other headers include no SYCL header
 Every name is declared in `SushiRuntime`. `topology` reads the filter, `device` fills the
 descriptions, `scheduler` reads the policy and fills the pool, and `api` passes all of them to and
 from the caller, so the module sits in the foundation tier, below the four. `api` fills `NodeFacts`
-and returns it from `Runtime::topology()`; `wire` and `cluster_load` will read it.
+and returns it from `Runtime::topology()`; `cluster_load` and `offload_coordination` read it.
 
 The module has no source: its headers define plain records and the constexpr functions of
 `device_filter.hpp`. Its tests are in `tests/foundation/machine/`.

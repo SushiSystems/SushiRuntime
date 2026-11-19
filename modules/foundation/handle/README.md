@@ -81,7 +81,7 @@ map back to an id once, when the file is read.
 
 `HandleSpace` mints a handle of a kind with flags and retires it. `HandleResolver` turns a handle
 into the address of its instance on one memory space and says whether a handle is stale. Both are
-interfaces with no data. The runtime's residency directory will implement both.
+interfaces with no data. The runtime's residency directory implements both.
 
 They return `MintOutcome` and `ResolveOutcome`, a value with a `HandleStatus`, and not the
 repository's `Result`. `Result` lives in `foundation/core`, and this module takes no dependency on

@@ -153,7 +153,7 @@ README has the section "PlannedHostAccess".
 A Buffer is the fluent API's unit of data: a typed USM allocation that the runtime tracks by owning
 queue, so a task touching it is dispatched to the device that holds it. Passing a Buffer to
 Graph::add() is what lets the runtime register the task's reads and writes automatically, because
-the handle's address is the identity the dependency tracker keys on.
+the handle's `GlobalHandle` is the identity the dependency tracker keys on.
 
 The host may index a Shared or Host buffer directly, to seed or read back data. It may not index a
 Device buffer, which goes through read_range() and write_range(). A device kernel may capture data()
@@ -170,7 +170,7 @@ and Interop::borrow() reaches the borrowing constructor, through friendship. All
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
 cross-context access. `context` is the handle of the runtime that owns the allocation, and `residency` is one
-of the three kinds the Residency section describes. Only Interop::borrow() builds a Buffer over
+of the four kinds the Residency section describes. Only Interop::borrow() builds a Buffer over
 memory the runtime did not allocate; the next section says what that Buffer holds.
 
 ### Borrowed Buffer

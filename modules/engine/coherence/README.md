@@ -145,8 +145,7 @@ of a node that never ran is not recorded.
 
 Each effect node takes the buffer's coherence lock once. These are host nodes, not kernel dispatches,
 and the lock is uncontended unless host access or a horizon hits the same buffer at that moment. A
-copy's record node does the same. The cost will be measured in the closing build and test run of the
-GLOBAL_HANDLE plan.
+copy's record node does the same.
 
 ## splice_plan
 

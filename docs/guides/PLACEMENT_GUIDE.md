@@ -92,8 +92,9 @@ the target absent here. When the target is absent, `Local` gives device 0, `Fail
 bound, since a local device never appears during a run.
 
 A node may state its own device; it wins over the device that owns its memory when the two share a
-SYCL context, and the node is refused when they do not. The runtime never copies data between
-devices on its own: a copy is a node the program records.
+SYCL context. When they do not, a `FixedToHome` node is refused, and a `Rebindable` node (a
+capture launch, or `Recorder::task` with handles) is placed there and its regions are copied. The
+runtime plans the copies a node's reads need on its device; a program records no copy node.
 
 ## 5. Across machines
 

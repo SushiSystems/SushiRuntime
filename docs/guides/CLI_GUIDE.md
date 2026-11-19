@@ -59,7 +59,7 @@ both files use the same `[tool.<platform>]` sections.
 | Command | Does |
 | --- | --- |
 | `sr toolchain` | Chooses the SYCL toolchain: `intel-llvm`, `adaptivecpp` or `oneapi` |
-| `sr build`, `test`, `run`, `clean`, `docs` | Build, test, run and document the C++ project |
+| `sr build`, `test`, `run`, `bench`, `clean`, `docs` | Build, test, run and document the C++ project |
 | `sr package` | Installs the built tree to a prefix and archives it with CPack |
 | `sr container` | Builds and runs the development container |
 | `sr config` | Prints the resolved configuration |
@@ -166,7 +166,7 @@ Runs tests through CTest. `--label` (`-l`) picks one label:
 ```bash
 sr test                          # small, medium and large (the default)
 sr test --label small            # one size: small, medium or large
-sr test --label quarantined      # the intermittent tests KNOWN_ISSUES.md names
+sr test --label quarantined      # the intermittent tests the backlog names
 sr test --label package          # install to a prefix, then build and run a consumer
 ```
 

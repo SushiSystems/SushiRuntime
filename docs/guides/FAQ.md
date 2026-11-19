@@ -20,7 +20,7 @@ compiles on its first run and the compiled plan is replayed for every later step
 
 ## What do I need to build it?
 
-The [README](../../README.md) lists the requirements:
+[`INSTALL.md`](../getting_started/INSTALL.md) lists the requirements:
 
 - a SYCL 2020 compiler, one of the three toolchains named below
 - CMake 3.20 or newer
@@ -153,7 +153,8 @@ manual states today:
   types.
 - The distributed layer authenticates master and worker at the handshake and encrypts nothing.
   It is meant for a trusted LAN.
-- A distributed worker runs one kernel at a time, on the device its dispatch names.
+- A distributed worker runs the tasks of a batch at the same time, on the devices their
+  dispatches name; tasks that share a buffer run in recording order.
 
 [Known issues](../backlog/README.md) lists the recorded defects that are not yet fixed,
 and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's limits.

@@ -304,7 +304,7 @@ The in-memory adapter: every kind of USM comes from the host heap, aligned by ov
 with the heap block's address stored in the word below the one returned, and a copy is a
 `std::memcpy`. It makes no device and starts no thread, so the host runtime and the small tests of
 the allocator run on it. Every device shares one context, and an alignment that is not a power of
-two is refused with null. It keeps no record of its allocations.
+two is refused with null. It records the range and kind of each live allocation, so `kind_of()` answers.
 
 ## usm_allocator.hpp
 

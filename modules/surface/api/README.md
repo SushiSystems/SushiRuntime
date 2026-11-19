@@ -19,10 +19,11 @@ boundary" says what crosses into it.
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 
-The module depends on `core`, `report`, `region`, `log`, `machine`, `interop` and `context`, the
-other public modules, through its headers. Its sources depend on `sycl`, `memory`, `device`,
-`observability`, `profile`, `task`, `graph`, `execution`, `profile`, `memory_exchange`, `context_access`, and the internal
-modules `engine_handles`, `region_boundary` and `topology`, whose `host_identity.hpp` names the
+The module depends on `core`, `handle`, `report`, `log`, `region`, `machine`, `placement`,
+`interop` and `context`, the other public modules, through its headers. Its sources depend on
+`sycl`, `memory`, `device`, `observability`, `task`, `graph`, `execution`, `memory_exchange`,
+`context_access`, `transfer`, `device_profile`, `partitioning`, `coherence`, `partition_session`,
+`profile`, and the internal modules `engine_handles`, `region_boundary` and `topology`, whose `host_identity.hpp` names the
 machine.
 
 ## The compiled boundary
@@ -32,8 +33,6 @@ type of the engine is compiled into the library, from `source/`.
 
 | Source | Holds |
 | --- | --- |
-| `plan_access.hpp` | The conversion between `Detail::Plan` and the engine's compiled graph |
-| `late_controls_access.hpp` | The conversion between `Detail::LateControls` and the engine's late bindings |
 | `runtime.cpp` | `Runtime`: building the context, the rebalancer switch, the wait and `add_run_observer()` |
 | `advanced_controls.cpp` | `AdvancedControls`: every answer it reads from the context |
 | `buffer.cpp` | The allocation of a `Buffer` and its window copies |

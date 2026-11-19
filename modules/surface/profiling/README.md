@@ -84,9 +84,9 @@ and these attributes, whose keys are `SushiProfiler::DeviceSpanKeys`: `node` (th
 index), `invocation`, `operation` (the operation's hash, when the node states one),
 `launched_width` and `live_width` (each omitted when unknown), `layer` (a name, `scheduler` or
 `chain`), `graph` (a name: the label of the graph that owns the plan, when it set one), `origin` (a name:
-the caller's own operation the node belongs to, when it stated one), and, when the node's row states a cost, `flops`, `bytes` and `dtype` (a name, omitted
-when the dtype is unstated). A stated zero cost is written as zeros and an absent cost writes none
-of the three.
+the caller's own operation the node belongs to, when it stated one), and, when the node's row states a cost, `flops`, `bytes`, `read_bytes`, `written_bytes`,
+`operation_kind` and `dtype` (a name, omitted when the dtype is unstated). A stated zero cost is
+written as zeros and an absent cost writes none of the six.
 
 ### Which period a span belongs to
 

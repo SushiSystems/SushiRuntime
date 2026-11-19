@@ -35,6 +35,9 @@ A module is public or internal.
   `SushiRuntime::Internal::<Module>`. The names of internal types on this page are for readers
   of the source.
 
+The table lists the modules a reader meets first; `modules/` holds all 58, each with its own
+README.
+
 | Tier | Module | Kind | Owns |
 | --- | --- | --- | --- |
 | foundation | [core](../../modules/foundation/core/README.md) | public | Assertions, `Error`, `Result`, `OperationID`, `span`, the intrusive pointer, the version |
@@ -47,7 +50,7 @@ A module is public or internal.
 | foundation | [placement](../../modules/foundation/placement/README.md) | public | `PlacementRule` and `PlacementRules`: the placement rules a caller writes, their checks and their resolution |
 | foundation | [sycl](../../modules/foundation/sycl/README.md) | internal | The differences between SYCL toolchains, and the translation of a SYCL exception to an `Error` |
 | platform | [topology](../../modules/platform/topology/README.md) | internal | Hardware discovery, NUMA mapping, thread affinity |
-| platform | [memory](../../modules/platform/memory/README.md) | internal | The USM allocator and registry, epoch-based reclamation |
+| platform | [memory](../../modules/platform/memory/README.md) | internal | The USM allocator, the residency directory and its coherence map, the memory spaces, epoch-based reclamation |
 | platform | [device](../../modules/platform/device/README.md) | internal | The device inventory and the SYCL queues of each device |
 | platform | [observability](../../modules/platform/observability/README.md) | internal | The ledger of dispatch records, event timestamps, transfer counters |
 | engine | [task](../../modules/engine/task/README.md) | internal | The unit of work the scheduler dispatches, the graph node, the offload seam |
@@ -60,7 +63,7 @@ A module is public or internal.
 | surface | [context_access](../../modules/surface/context_access/README.md) | internal | The way from a `ContextHandle` to the engine's context |
 | surface | [api](../../modules/surface/api/README.md) | public | `Runtime`, `Buffer`, `State`, `Graph`, `DynamicGraph`, `Recorder`, the vocabulary, the umbrella header |
 | surface | [profiling](../../modules/surface/profiling/README.md) | public, optional | The device source, the environment facts and `register_profiler_parts()`; built when `SR_ENABLE_PROFILER` is on |
-| extension | [distributed](../../modules/extension/distributed/README.md) | public, optional | The master and worker layer; built when `SR_ENABLE_DISTRIBUTED` is on |
+| extension | [distributed](../../modules/extension/distributed/README.md) | public, optional | The master and worker layer; built when `SR_ENABLE_DISTRIBUTED` is on. `cluster_load`, `in_process_transport`, `transport` and `worker_types` are public extensions as well |
 
 `tools/layering/check_layering.py` checks the same rules outside the build, and
 `sushiruntime_add_module` refuses an internal module among the public dependencies of a module
@@ -186,14 +189,15 @@ has the costs of a commit.
 
 ### Memory
 
-A `Buffer` or a `State` allocates USM through the runtime's allocator, which records the device
-of each allocation. A node runs on the queue of the device that owns its regions.
+A `Buffer` or a `State` allocates USM through the runtime's allocator; the residency directory
+records each instance, its device and its kind. A node runs on the queue of the device that owns its regions.
 
 | Residency | Memory | Host access |
 | --- | --- | --- |
 | `Residency::Shared` (default) | Shared USM | Direct |
 | `Residency::Device` | Device USM | Through `read_range()` and `write_range()` |
 | `Residency::Host` | Pinned host USM in the device's context | Direct, also while kernels run; the residency a device-written count or start requires |
+| `Residency::Planned` | Placed by the runtime; no address | Only through `read_range()` and `write_range()` |
 
 [The data README](../../modules/surface/api/include/SushiRuntime/api/data/README.md) and
 [the memory README](../../modules/platform/memory/README.md) hold the detail.
@@ -289,7 +293,8 @@ result.
 1. **Declarations are truthful.** The tracker knows what a rule declared. A write that was not
    declared is a race the runtime cannot see.
 2. **Memory a graph touches comes from the runtime.** A node runs on the queue of the device
-   that owns its regions, and the allocator is what records the owner.
+   that owns its regions, and the residency directory records the owner; borrowed memory is named with
+   `Interop::borrow()` or `Recorder::borrowed_region()`.
 3. **A handle outlives the graphs that name it.** A run after a recorded handle was freed
    returns `DanglingResource`.
 4. **One run per runtime at a time.** A run entry during another run returns `InvalidState`.
