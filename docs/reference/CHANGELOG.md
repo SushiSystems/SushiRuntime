@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-19 — runtime: Give a buffer a byte view that keeps its handle, so libraries order against its owner (RW-165, `79814e98`).
 - 2026-11-17 — api_quality_control: Made each test program build its SYCL contexts once, before the first test (RW-161, `1f2b2a76`).
 - 2026-11-16 — api: Refused a node whose region names a released or foreign buffer when it is recorded, so the run returns the refusal (`recorder.cpp`).
 - 2026-11-16 — report: Moved the transfer observer and its record into the installed report module as public types, so a consumer can implement one (`transfer_observer.hpp`).
