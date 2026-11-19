@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         data/test_planned_storage.cpp
         data/test_request_checks.cpp
         data/test_residency.cpp
+        data/test_alias_storage.cpp
         data/test_stated_storage.cpp
         data/test_state.cpp
         detail/compile_late_controls.cpp

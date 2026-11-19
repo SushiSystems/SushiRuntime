@@ -306,6 +306,33 @@ namespace DataHandlesTests
         EXPECT_EQ(buffer[K_SIZE - 6], 0);
     }
 
+    /** @brief Tests that a byte view of a buffer names the buffer's own handle and bytes. */
+    TEST_F(Small_DataHandles, AByteViewCarriesTheHandleAndBytesOfItsBuffer)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
+
+        const Buffer<std::byte> view = buffer.as_bytes().value();
+
+        EXPECT_EQ(view.handle(), buffer.handle());
+        EXPECT_EQ(static_cast<const void*>(view.data()), static_cast<const void*>(buffer.data()));
+        EXPECT_EQ(view.size(), K_SIZE * sizeof(int));
+    }
+
+    /** @brief Tests that dropping a byte view leaves its buffer's memory and handle live. */
+    TEST_F(Small_DataHandles, DroppingAByteViewLeavesItsBufferLive)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
+        TestSupport::fill_with(buffer, 7);
+        const GlobalHandle handle = buffer.handle();
+
+        {
+            const Buffer<std::byte> view = buffer.as_bytes().value();
+        }
+
+        EXPECT_EQ(buffer.handle(), handle);
+        EXPECT_EQ(buffer.read_range({0, 1}).value(), std::vector<int>{7});
+    }
+
     /** @brief Tests that write_range stops on a null source for a non-empty window of a Buffer. */
     TEST_F(Medium_DataHandlesDeathTest, ANullSourceWithACountStopsABuffer)
     {

@@ -43,6 +43,16 @@ run small and with no runtime. It holds the queries every strategy answers.
 | `TheHostRefusalReadsAsTheOpeningOfAMessage` | `host_refusal()` ends in a semicolon and a space, so a caller can append the next sentence. |
 | `AStorageThatBorrowsNothingHasNoOwnerToObserve` | `owner_life()` of an owning storage is expired. |
 
+## test_alias_storage.cpp
+
+The queries of `Detail::AliasStorage` over a made-up address, run small. That `release()` leaves the
+viewed buffer live needs a runtime; `test_buffer.cpp` keeps it through `as_bytes()`.
+
+| Test | What it proves |
+| --- | --- |
+| `ViewsTheAddressDeviceAndResidencyItWasGiven` | The view states the source's address, device and residency. |
+| `ObservesTheViewedBufferUntilItExpires` | `owner_life()` follows the viewed buffer's liveness. |
+
 ## test_stated_storage.cpp
 
 The queries of `Detail::StatedStorage` over a block at a made-up address, run small. The copy calls
@@ -101,6 +111,11 @@ span with a null pointer, and `region` returns a zero-length region at the end.
 
 The last five elements are written and read back, and the element before the window keeps its
 value.
+
+### `AByteViewCarriesTheHandleAndBytesOfItsBuffer`, `DroppingAByteViewLeavesItsBufferLive`
+
+`as_bytes()` returns a view with the buffer's handle, address and byte size, and dropping the view
+leaves the buffer's handle and contents as they were.
 
 ### `ANullSourceWithACountStopsABuffer`, `ANullSourceWithACountStopsAState`, `AShortSourceStops`
 

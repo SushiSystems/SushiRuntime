@@ -52,14 +52,15 @@ none.
 A Buffer keeps its memory behind one `Detail::BufferStorage` (`buffer_storage.hpp`) and holds no flag
 for which kind it is. The interface answers `address()`, `device_index()`, `residency()`,
 `host_addressable()`, `host_refusal()`, `owner_life()`, `read()`, `write()` and `release()`, and a
-Buffer calls nothing else on its memory. Two strategies implement it, one header each:
+Buffer calls nothing else on its memory. Three strategies implement it, one header each:
 
 | Strategy | Header | Keeps | `device_index()` |
 | --- | --- | --- | --- |
 | `Detail::StatedStorage` | `stated_storage.hpp` | One `Detail::MemoryBlock` on one stated device, owned or borrowed; copies on that device's queue | The stated device |
 | `Detail::PlannedStorage` | `planned_storage.hpp` | No memory; the residency directory holds the instances and the host reaches the bytes through it | Empty |
+| `Detail::AliasStorage` | `alias_storage.hpp` | A view over another live buffer's memory, through a `Detail::StatedStorage` that owns no release; `release()` does nothing | The viewed buffer's device |
 
-A third kind of storage adds one header and one source file and edits neither strategy nor Buffer.
+A fourth kind of storage adds one header and one source file and edits neither strategy nor Buffer.
 `device_index()` of a Buffer and of a State is a `std::optional<DeviceIndex>`: empty for a planned
 one, which states no device, and for an empty one. A caller that needs a device takes `value()` of a
 handle it knows states one.
@@ -264,6 +265,18 @@ disjoint slices (an array's halves, a grid's interior versus its halo) run in pa
 result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in elements; the buffer
 keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the byte window
 of one buffer named by its `GlobalHandle`, and follows the Range calls rule.
+
+### as_bytes
+
+`as_bytes()` returns a `Buffer<std::byte>` over the same memory that carries the same
+`GlobalHandle`. A graph orders work recorded on the view and on the buffer as work on one resource.
+A library that takes byte buffers, such as SushiBLAS, therefore takes the view and still orders
+against the caller's own work. `Interop::borrow()` over the same memory would mint a second handle,
+and nothing would order across the two. The view sits on a `Detail::AliasStorage` and owns
+nothing. Dropping it releases neither the memory nor the handle, and its liveness is the
+buffer's: a graph that recorded the view refuses its next run with `DanglingResource` once the
+buffer is gone. A `Residency::Planned` buffer has no address to view, so its `as_bytes()` returns
+`InvalidArgument`. An empty buffer gives an empty view.
 
 ### handle
 

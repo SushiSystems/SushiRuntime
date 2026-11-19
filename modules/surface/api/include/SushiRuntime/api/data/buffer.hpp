@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/data/alias_storage.hpp>
 #include <SushiRuntime/api/data/buffer_storage.hpp>
 #include <SushiRuntime/api/data/planned_storage.hpp>
 #include <SushiRuntime/api/data/request_checks.hpp>
@@ -487,7 +488,19 @@ namespace SushiRuntime
                 return region_of("Buffer::region", range);
             }
 
+            /**
+             * @brief Views this buffer's memory as bytes, under this buffer's handle, owning
+             *        nothing; a graph orders the view and this buffer as one resource.
+             * @return The view; an empty one for an empty buffer; InvalidArgument for a
+             *         Residency::Planned buffer, which has no address.
+             * @warning A graph that recorded the view refuses its next run with DanglingResource
+             *          once this buffer is gone.
+             */
+            [[nodiscard]] Result<Buffer<std::byte>> as_bytes() const;
+
         private:
+            template <typename>
+            friend class Buffer;
             friend class Runtime;
             friend class Interop;
             friend class PlacementScope;
@@ -708,6 +721,21 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Views memory another live buffer keeps under that buffer's handle;
+             *        as_bytes() is its one caller.
+             * @param storage Releases nothing, so the handle stays with the viewed buffer.
+             */
+            Buffer(ContextHandle context, std::unique_ptr<Detail::AliasStorage> storage,
+                   std::size_t count, GlobalHandle handle) noexcept
+                : context_(std::move(context)),
+                  storage_(std::move(storage)),
+                  size_(count),
+                  handle_(handle)
+            {
+
+            }
+
+            /**
              * @brief Returns the observer a graph keeps for this handle.
              * @return The owned token's observer, the owner's for borrowed memory, or an
              *         empty one for an empty handle.
@@ -825,4 +853,25 @@ namespace SushiRuntime
             /** @brief Identity of the buffer; null for an empty buffer. */
             GlobalHandle handle_;
     };
+
+    template <typename T>
+    Result<Buffer<std::byte>> Buffer<T>::as_bytes() const
+    {
+        if (empty())
+            return Buffer<std::byte>();
+        if (residency() == Residency::Planned)
+            return make_error(Error{
+                ErrorCode::InvalidArgument,
+                "Buffer::as_bytes: a Residency::Planned buffer has no address to view, because "
+                "the runtime places its instances; view a buffer of a stated device."});
+        std::unique_ptr<Detail::AliasStorage> storage;
+        Result<void> built = Detail::translate_exceptions([&]()
+        {
+            storage = std::make_unique<Detail::AliasStorage>(
+                storage_address(), size_ * sizeof(T), *device_index(), residency(), observer());
+        });
+        if (!built)
+            return make_error(std::move(built.error()));
+        return Buffer<std::byte>(context_, std::move(storage), size_ * sizeof(T), handle_);
+    }
 } // namespace SushiRuntime

@@ -20,6 +20,7 @@
 | RW-157 | P1 | open | Report the CPU's reachable host memory as its profile capacity | The CPU profile on the 7600X box gives about 16 GB, and the H9 chain test plans without a pool 0 refusal |  | `modules/engine/device_profile/source/profile_measurement.cpp` | 2026-11-16 |
 | RW-158 | P2 | open | Drop device seconds of devices that hold no nodes from the partition ledger | A test shows a device with no nodes in the plan in force reports zero measured seconds |  | `modules/engine/partition_session/source/partition_ledger.cpp` | 2026-11-16 |
 | RW-159 | P2 | open | Let a device with one node per step fold its throughput | A fold test with one sample per step per device moves the profile after enough steps |  | `modules/engine/device_profile/source/profile_fold.cpp` | 2026-11-16 |
+| RW-165 | P1 | open | Give a buffer a byte view that keeps its handle, so libraries order against its owner | Buffer::as_bytes returns a Buffer<std::byte> with the source handle, releasing nothing; a small test shows both |  | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` | 2026-11-19 |
 
 ## Known issues
 

@@ -67,7 +67,7 @@ namespace SushiRuntime
          * @brief Keeps the memory of one Buffer and moves its bytes to and from the host.
          *
          * StatedStorage keeps memory on one stated device. PlannedStorage keeps none: the
-         * runtime places the instances. Every storage answers every query below.
+         * runtime places the instances. AliasStorage views another live buffer's memory. Every storage answers every query below.
          * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
         class SUSHIRUNTIME_API BufferStorage
