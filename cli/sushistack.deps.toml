@@ -72,11 +72,11 @@ cli = "sr"
 # SushiLog, the one logger of the process. sushicore builds its package, or reuses a built one,
 # at this tag and the CLI hands the package to CMake as SushiLog_DIR.
 [sushisystems.sushilog]
-version = "v0.4.1"
-commit  = "851f049c10e9dc58477111aff9a5e9cb4597a8e3"
+version = "v0.5.0"
+commit  = "af61821a0986c169feb0f9cbac5188d62ef8a74a"
 
 # SushiProfiler, the stack's profiler. sushicore resolves it the same way and the CLI hands the
 # package to CMake as SushiProfiler_DIR.
 [sushisystems.sushiprofiler]
-version = "v0.4.1"
-commit  = "332311d22894e6579209e1b186797719345af0b9"
+version = "v0.5.0"
+commit  = "c5afed01ad276370216a937e9a66ba89da929063"
