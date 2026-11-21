@@ -79,11 +79,12 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
 
     install = [ws.driver.cmake(cfg), "--install", str(built), "--prefix", str(stage)]
     console.command(" ".join(install))
-    result = ws.capture(install, root, env)
-    if result.code != 0:
-        console.error(f"cmake --install exited {result.code}:\n{result.output.rstrip()}")
-        return result.code
-    console.info(install_summary(result.output, stage))
+    code, out, err = ws.runner.capture(install, root, env)
+    output = out + err
+    if code != 0:
+        console.error(f"cmake --install exited {code}:\n{output.rstrip()}")
+        return code
+    console.info(install_summary(output, stage))
 
     if archive:
         cpack_config = built / "CPackConfig.cmake"

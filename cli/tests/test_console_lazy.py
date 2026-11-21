@@ -13,13 +13,14 @@ from pathlib import Path
 
 import pytest
 from sushicore.cli_console import LazyConsole
+from sushicore.errors import ProjectRootNotFoundError
 
 from sushiruntime import config
 
 
 def _outside_a_checkout() -> Path:
     """Fails the way config_dir() fails when the working folder sits in no checkout."""
-    raise SystemExit(1)
+    raise ProjectRootNotFoundError("Not inside a SushiRuntime project")
 
 
 @pytest.mark.small

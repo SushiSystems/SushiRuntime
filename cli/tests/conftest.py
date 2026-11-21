@@ -70,7 +70,6 @@ from typing import Callable  # noqa: E402
 
 from sushicore.console_memory import RecordingConsole  # noqa: E402
 from sushicore.proc_memory import RecordingRunner  # noqa: E402
-from sushicore.provision.package_install import CapturedRun  # noqa: E402
 
 from sushiruntime.config import Config  # noqa: E402
 from sushiruntime.services.surroundings import Surroundings  # noqa: E402
@@ -122,7 +121,11 @@ class Rig:
     runner: RecordingRunner
     surroundings: Surroundings
     packages: PackageDesk
-    captured: list[list[str]] = field(default_factory=list)
+
+    @property
+    def captured(self) -> list[list[str]]:
+        """Returns the words of each command run with its output held back, in order."""
+        return [list(command.argv) for command in self.runner.commands if command.captured]
 
     def argv(self, index: int = 0) -> list[str]:
         """Returns the words of the command run at *index*."""
@@ -146,19 +149,15 @@ def rig(tmp_path, monkeypatch) -> Callable[..., Rig]:
         runner = RecordingRunner(console)
         root = tmp_path / "checkout"
         root.mkdir(exist_ok=True)
-        captured: list[list[str]] = []
         packages = PackageDesk()
-
-        def capture(command, cwd, env=None) -> CapturedRun:
-            """Keeps the command and answers with the scripted code and output."""
-            captured.append(list(command))
-            return CapturedRun(capture_code, capture_output)
 
         surroundings = Surroundings(
             console=console, runner=runner, root=root,
             cfg=cfg or Config(platform="linux", generator="Ninja", cxx="clang++"),
-            provision_packages=packages, capture=capture)
-        return Rig(root, console, runner, surroundings, packages, captured)
+            provision_packages=packages)
+        if capture_code or capture_output:
+            runner.script(capture_code, (capture_output,))
+        return Rig(root, console, runner, surroundings, packages)
 
     return build
 

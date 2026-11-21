@@ -21,9 +21,8 @@ pytestmark = pytest.mark.medium
 
 
 def _words(rig) -> list[str]:
-    """Returns every word of every command the rig recorded and captured, in order."""
-    recorded = [word for command in rig.runner.commands for word in command.argv]
-    return recorded + [word for command in rig.captured for word in command]
+    """Returns every word of every command the rig recorded, in order."""
+    return [word for command in rig.runner.commands for word in command.argv]
 
 
 def _executable(folder: Path, name: str) -> None:

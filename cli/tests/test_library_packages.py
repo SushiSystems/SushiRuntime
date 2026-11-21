@@ -134,7 +134,7 @@ def test_the_package_command_takes_the_tree_and_no_archive(rig, tmp_path):
                   "--no-archive", "--force"], obj=built.surroundings)
     assert result.exit_code == 0, result.output
     assert built.captured[0][1:] == ["--install", str(tree), "--prefix", str(prefix)]
-    assert built.runner.commands == []
+    assert [command.captured for command in built.runner.commands] == [True]
 
 
 def test_load_config_reads_the_stack_compiler_from_the_environment(monkeypatch):
