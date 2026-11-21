@@ -26,7 +26,8 @@ while the replay executes. A step without such a window replays back to back.
 `ChainPlan::recorded` is set replays; one whose `ChainPlan::not_replayable` is set does not; any
 other is checked and recorded. `replay_refusal()` walks the chain's order and refuses a task body, a
 node whose `SubmitForm` is `StepBound` or `DeviceSized`, and a `LateWindow` with a device count or
-base slot. `replays_on()` admits the CUDA and OpenCL backends. A refusal is kept in
+base slot. `replays_on()` admits the CUDA and OpenCL backends, and none where the SYCL implementation has no
+`sycl/ext/oneapi/experimental/graph.hpp`, as AdaptiveCpp has none. A refusal is kept in
 `not_replayable` and logged at `DEBUG` under `sushiruntime.execution`, as classify_chain() logs its
 own.
 

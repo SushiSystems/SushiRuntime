@@ -39,7 +39,12 @@
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
+#if __has_include(<sycl/ext/oneapi/experimental/graph.hpp>)
 #include <sycl/ext/oneapi/experimental/graph.hpp>
+#define SR_HAS_SYCL_GRAPH 1
+#else
+#define SR_HAS_SYCL_GRAPH 0
+#endif
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
@@ -60,12 +65,15 @@ namespace SushiRuntime
     {
         namespace
         {
+#if SR_HAS_SYCL_GRAPH
             namespace GraphExtension = sycl::ext::oneapi::experimental;
+#endif
 
             using Internal::Graph::LateBindings;
             using Internal::Graph::Node;
             using Internal::Graph::SubmitForm;
 
+#if SR_HAS_SYCL_GRAPH
             /** @brief Names the reason a plan stays on layer 1 after its recording threw. */
             constexpr const char* K_RECORDING_FAILED = "recording or finalizing the command graph threw";
 
@@ -239,6 +247,8 @@ namespace SushiRuntime
                         executable_;                                 /**< The finalized step. */
             };
 
+#endif // SR_HAS_SYCL_GRAPH
+
             /** @brief Returns why one chained node cannot be recorded, or null when it can. */
             const char* node_refusal(const Node& node) noexcept
             {
@@ -277,10 +287,17 @@ namespace SushiRuntime
 
         /**
          * @brief Returns whether layer 2 runs on a backend: CUDA and OpenCL, which the spike replayed on.
+         *
+         * A SYCL implementation without the oneAPI graph extension replays on none.
          */
         bool replays_on(sycl::backend backend) noexcept
         {
+#if SR_HAS_SYCL_GRAPH
             return backend == sycl::backend::ext_oneapi_cuda || backend == sycl::backend::opencl;
+#else
+            static_cast<void>(backend);
+            return false;
+#endif
         }
 
         /**
@@ -305,6 +322,7 @@ namespace SushiRuntime
                 return false;
             }
 
+#if SR_HAS_SYCL_GRAPH
             SR_ZONE(context.profile_collector(), "chain.record");
             const Result<void> recorded = SYCL::translate_exceptions([&chain, &queue]()
             {
@@ -320,6 +338,9 @@ namespace SushiRuntime
                 return false;
             }
             return true;
+#else
+            return false;
+#endif
         }
 
         /**

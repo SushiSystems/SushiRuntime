@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-22 — execution: Built the AdaptiveCpp toolchain again by compiling chain replay only where the SYCL implementation has the oneAPI graph extension; a plan there runs as a chain (KI-44).
 - 2026-11-21 — cli: Breaking change: `sr build` no longer removes the tree it configures; it refuses a tree of another generator or source folder and names `sr clean`, and configures any other difference in place (RW-171).
 - 2026-11-21 — cli: Breaking change: Removed `sr build --clean`, and made `sr clean` the shared command, which says what it would remove and removes it only with `--yes`, selecting trees by `--type` (RW-170, `8470fc9a`).
 - 2026-11-21 — cli: Renamed `sr run --sort` to `sr run --pick`, and kept `--sort` as a hidden alias that names `--pick` until 2027-03-25 (RW-169, `3b5e3c02`).
