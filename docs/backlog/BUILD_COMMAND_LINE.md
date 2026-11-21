@@ -12,3 +12,4 @@
 | ID | Origin | Symptom | Workaround | Fix | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- |
 | KI-13 | own | Configuring leaves empty `CXX-DetectStdlib-*.h` files in the root | delete them | RW-56 |  | 2026-10-19 |
+| KI-44 | own | The AdaptiveCpp build stops: chain_replay.cpp includes the oneAPI graph extension | Build with the oneapi or intel-llvm toolchain | none, the owner decides whether AdaptiveCpp stays supported | `modules/engine/execution/source/chain_replay.cpp` | 2026-11-22 |
