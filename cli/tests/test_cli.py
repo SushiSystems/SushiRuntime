@@ -132,7 +132,9 @@ def _demo_tree(built) -> None:
     """Makes the Debug tree of the rig checkout and an executable called demo in it."""
     tree = built.root / "build" / "default-debug"
     tree.mkdir(parents=True)
-    (tree / ("demo.exe" if os.name == "nt" else "demo")).write_text("", encoding="utf-8")
+    program = tree / ("demo.exe" if os.name == "nt" else "demo")
+    program.write_text("", encoding="utf-8")
+    program.chmod(0o755)
 
 
 def test_run_forwards_a_known_role(rig):
