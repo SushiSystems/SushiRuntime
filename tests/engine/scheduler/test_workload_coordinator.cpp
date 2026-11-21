@@ -48,6 +48,23 @@ using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {
+    /** @brief Strategy that counts its evaluations into a counter the test owns, which outlives the strategy. */
+    class CountingStrategy final : public RebalanceStrategy
+    {
+        public:
+            explicit CountingStrategy(std::size_t& evaluations) : evaluations_(evaluations)
+            {
+            }
+
+            void evaluate_and_rebalance(const TelemetryProvider&, TaskMigrator&) override
+            {
+                ++evaluations_;
+            }
+
+        private:
+            std::size_t& evaluations_;
+    };
+
     /** @brief Strategy that asks the migrator to move one task off worker 0 on every evaluation. */
     class MigratingStrategy final : public RebalanceStrategy
     {
@@ -96,18 +113,17 @@ TEST(Small_WorkloadCoordinator, SetStrategyHandsTheNextBeatToTheNewStrategy)
 {
     const InMemoryTelemetry telemetry = one_idle_worker();
     RecordingTaskMigrator migrator;
-    auto first = std::make_unique<RecordingRebalanceStrategy>();
-    const RecordingRebalanceStrategy& first_evaluations = *first;
-    auto second = std::make_unique<RecordingRebalanceStrategy>();
-    const RecordingRebalanceStrategy& second_evaluations = *second;
-    WorkloadCoordinator coordinator(telemetry, migrator, std::move(first));
+    std::size_t first_evaluations = 0U;
+    std::size_t second_evaluations = 0U;
+    WorkloadCoordinator coordinator(telemetry, migrator,
+                                    std::make_unique<CountingStrategy>(first_evaluations));
     coordinator.beat();
 
-    coordinator.set_strategy(std::move(second));
+    coordinator.set_strategy(std::make_unique<CountingStrategy>(second_evaluations));
     coordinator.beat();
 
-    EXPECT_EQ(first_evaluations.evaluations(), 1u);
-    EXPECT_EQ(second_evaluations.evaluations(), 1u);
+    EXPECT_EQ(first_evaluations, 1U);
+    EXPECT_EQ(second_evaluations, 1U);
 }
 
 /** @brief Tests that a beat with no strategy set does nothing. */
