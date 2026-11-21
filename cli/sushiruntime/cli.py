@@ -15,6 +15,7 @@ from typing import Callable, NamedTuple, Optional, Sequence
 
 import typer
 from sushicore import entry
+from sushicore.clean_command import register_clean_command
 from sushicore.diag_commands import register_diagnostic_commands
 from sushicore.backlog import register_backlog_commands
 from sushicore.design import register_design_commands
@@ -31,7 +32,9 @@ from .services import docker as docker_svc
 from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
-from .services.project import K_BENCH_TYPE, K_DEFAULT_TYPE, BuildType, DistributedRole, Label
+from .services.project import (
+    K_BENCH_TYPE, K_DEFAULT_TREE, K_DEFAULT_TYPE, K_SANITIZER_TREE, K_THREAD_SANITIZER_TREE,
+    BuildType, DistributedRole, Label)
 from .services.surroundings import Surroundings
 
 K_DISTRIBUTION = "sushiruntime-cli"
@@ -111,7 +114,6 @@ def toolchain(
     rich_help_panel=K_PROJECT,
     epilog="sr build\n"
            "sr build --type release  # The Release tree, build/default-release\n"
-           "sr build --clean  # Rebuild the Debug tree from empty\n"
            "sr build --no-cuda  # Portable CPU/OpenCL path\n"
            "sr build --jobs 8  # Compile with eight parallel jobs\n"
            "sr build --report  # Time and memory per kind of build edge\n"
@@ -135,8 +137,6 @@ def build(
         help="On Windows, also offload to the AMD GPU through the ROCm route under the "
              "SushiSystems home. Off by default: the package does not yet carry the route to "
              "a consumer."),
-    clean: bool = typer.Option(
-        False, "--clean", help="Delete the build tree before configuring."),
     force: bool = typer.Option(
         False, "--force",
         help="If the selected toolchain's compiler is missing, fall back to "
@@ -160,7 +160,7 @@ def build(
              "free memory. Writes build_report.json into the tree."),
 ):
     """Configure and build the project."""
-    raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
+    raise typer.Exit(project_svc.build(type, distributed, no_cuda, force,
                                        tests=not no_test, jobs=jobs, lean=lean,
                                        build_dir=build_dir, report=report, rocm=rocm,
                                        surroundings=_surroundings(ctx)))
@@ -301,14 +301,10 @@ def package(
                               surroundings=_surroundings(ctx)))
 
 
-@app.command(
-    "clean",
-    rich_help_panel=K_PROJECT,
-    epilog="sr clean",
-)
-def clean(ctx: typer.Context):
-    """Remove the build tree of every build type, the sanitizer tree included."""
-    raise typer.Exit(project_svc.clean(_surroundings(ctx)))
+register_clean_command(
+    app, lambda ctx: _surroundings(ctx) or Surroundings(), program="sr", panel=K_PROJECT,
+    names={None: K_DEFAULT_TREE, "asan": K_SANITIZER_TREE, "tsan": K_THREAD_SANITIZER_TREE},
+    build_types=[BuildType.debug.value, BuildType.release.value, BuildType.relwithdebinfo.value])
 
 
 def _api_source(root: Path | None = None) -> ApiSource:

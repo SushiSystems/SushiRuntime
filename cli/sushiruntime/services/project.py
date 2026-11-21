@@ -485,7 +485,7 @@ def _print_report(console, tree: Path, offset: int) -> None:
 
 
 def build(build_type: BuildType, distributed: bool = False,
-          no_cuda: bool = False, clean: bool = False, force: bool = False,
+          no_cuda: bool = False, force: bool = False,
           tests: bool = True, jobs: int | None = None, lean: bool = False,
           build_dir: str | None = None, report: bool = False, rocm: bool = False,
           surroundings: Surroundings | None = None) -> int:
@@ -509,9 +509,6 @@ def build(build_type: BuildType, distributed: bool = False,
     cmake_build_type = _CMAKE_BUILD_TYPE[build_type]
     tree = build_tree(root, build_type, build_dir)
     tests = tests and not lean
-
-    if clean:
-        driver.clean_tree(tree)
 
     try:
         refuse_another_build_type(tree, cmake_build_type)
@@ -728,20 +725,6 @@ def run(target: str | None = None, sort: bool = False,
     console.info(f"Executing: {exe.name}")
     console.console.print(f"[muted]{exe}[/muted]")
     return ws.runner.run([str(exe), *forwarded], root, env)
-
-
-def clean_tree(root: Path, build_type: BuildType = K_DEFAULT_TYPE,
-               surroundings: Surroundings | None = None) -> None:
-    (surroundings or Surroundings()).driver.clean_tree(build_tree(root, build_type))
-
-
-def clean(surroundings: Surroundings | None = None) -> int:
-    ws = surroundings or Surroundings()
-    ws.console.header("Project Clean")
-    root = ws.root
-    for build_type in BuildType:
-        clean_tree(root, build_type, ws)
-    return 0
 
 
 def docs(surroundings: Surroundings | None = None) -> int:

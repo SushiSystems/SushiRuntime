@@ -156,3 +156,67 @@ def test_no_report_is_written_without_the_flag(rig):
     built = rig()
     assert project.build(BuildType.debug, surroundings=built.surroundings) == 0
     assert not (built.root / "build" / "default-debug" / "build_report.json").exists()
+
+
+def _three_trees(built) -> dict[str, Path]:
+    """Makes the Debug, Release and ASan trees of the rig checkout, by folder name."""
+    return {name: _configured_tree(built, name)
+            for name in ("default-debug", "default-release", "asan-release")}
+
+
+def _clean(built, *arguments: str):
+    """Runs `sr clean` with *arguments* on the rig checkout."""
+    return CliRunner().invoke(cli.app, ["clean", *arguments], obj=built.surroundings)
+
+
+def test_clean_without_sure_lists_the_trees_and_removes_none(rig):
+    """`sr clean` alone exits 2 and every tree stays, so no tree goes by a stray command."""
+    built = rig()
+    trees = _three_trees(built)
+
+    assert _clean(built).exit_code == 2
+
+    assert all(tree.is_dir() for tree in trees.values())
+
+
+def test_clean_with_a_type_and_sure_removes_that_tree_only(rig):
+    """`sr clean --type debug --sure` removes the Debug tree and leaves the Release and ASan ones."""
+    built = rig()
+    trees = _three_trees(built)
+
+    assert _clean(built, "--type", "debug", "--sure").exit_code == 0
+
+    assert [name for name, tree in trees.items() if tree.exists()] == [
+        "default-release", "asan-release"]
+
+
+def test_clean_with_a_sanitizer_and_sure_removes_the_sanitizer_tree_only(rig):
+    """`sr clean --sanitize asan --sure` removes the ASan tree and no plain tree."""
+    built = rig()
+    trees = _three_trees(built)
+
+    assert _clean(built, "--sanitize", "asan", "--sure").exit_code == 0
+
+    assert [name for name, tree in trees.items() if tree.exists()] == [
+        "default-debug", "default-release"]
+
+
+def test_clean_with_sure_alone_removes_every_tree(rig):
+    """`sr clean --sure` removes every build tree, the sanitizer one included."""
+    built = rig()
+    trees = _three_trees(built)
+
+    assert _clean(built, "--sure").exit_code == 0
+
+    assert not any(tree.exists() for tree in trees.values())
+
+
+def test_build_no_longer_deletes_a_tree(rig):
+    """`sr build --clean` is gone: a build never removes the tree it configures."""
+    built = rig()
+    tree = _configured_tree(built, "default-debug")
+
+    result = CliRunner().invoke(cli.app, ["build", "--clean"], obj=built.surroundings)
+
+    assert result.exit_code == 2
+    assert tree.is_dir()
