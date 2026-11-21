@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from checking.ignored_paths import drop_ignored, ignored_folders, walk_files  # noqa: E402
+from checking.ignored_paths import drop_ignored, folders_of, ignored_folders, walk_files  # noqa: E402
 from documentation.check_source_comments import collect  # noqa: E402
 
 
@@ -92,6 +92,10 @@ class IgnoredPathsTest(unittest.TestCase):
         self._make_repository()
         names = [source.path.name for source in collect([self.root])]
         self.assertEqual(names, ["owned.py"])
+
+    def test_the_folders_of_files_are_every_folder_between_them_and_the_root(self) -> None:
+        files = [self.root / "a" / "b" / "c.txt", self.root / "d.txt"]
+        self.assertEqual(folders_of(files, self.root), {self.root / "a", self.root / "a" / "b"})
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
 K_EXIT_SOME_IGNORED = 0
@@ -59,6 +60,14 @@ def walk_files(root: Path) -> list[Path]:
         names[:] = [name for name in names if not ignored or (Path(folder) / name).resolve() not in ignored]
         found.extend(Path(folder) / name for name in files)
     return sorted(found)
+
+
+def folders_of(files: Iterable[Path], root: Path) -> set[Path]:
+    """Returns every folder strictly below root that holds one of the files, directly or deeper."""
+    folders: set[Path] = set()
+    for path in files:
+        folders.update(root / parent for parent in path.relative_to(root).parents if parent != Path("."))
+    return folders
 
 
 def ignored_folders(root: Path) -> frozenset[Path]:
