@@ -92,7 +92,7 @@ sr toolchain adaptivecpp      # AdaptiveCpp (acpp)
 sr toolchain oneapi           # Intel oneAPI (icpx, icx-cl)
 ```
 
-After a switch, run `sr clean --sure` so CMake configures with the new toolchain. The
+After a switch, run `sr clean --yes` so CMake configures with the new toolchain. The
 environment variable `SR_SYCL_TOOLCHAIN` overrides the recorded choice for one command.
 
 ## `sr build`
@@ -248,9 +248,9 @@ from, Debug by default, and `--asan` runs programs from `build/asan-release/`.
 
 ```bash
 sr clean                         # list every build tree and remove none
-sr clean --sure                  # remove every tree, the sanitizer ones included
-sr clean --type debug --sure     # remove build/default-debug only
-sr clean --sanitize asan --sure  # remove the ASan tree only
+sr clean --yes                   # remove every tree, the sanitizer ones included
+sr clean --type debug --yes      # remove build/default-debug only
+sr clean --type asan --yes       # remove build/asan-release only; --type tsan the TSan tree
 sr docs        # build the API reference into build/docs/api-site/html
 sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.sushisystems.io
 ```

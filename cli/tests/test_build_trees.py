@@ -169,7 +169,7 @@ def _clean(built, *arguments: str):
     return CliRunner().invoke(cli.app, ["clean", *arguments], obj=built.surroundings)
 
 
-def test_clean_without_sure_lists_the_trees_and_removes_none(rig):
+def test_clean_without_yes_lists_the_trees_and_removes_none(rig):
     """`sr clean` alone exits 2 and every tree stays, so no tree goes by a stray command."""
     built = rig()
     trees = _three_trees(built)
@@ -179,34 +179,34 @@ def test_clean_without_sure_lists_the_trees_and_removes_none(rig):
     assert all(tree.is_dir() for tree in trees.values())
 
 
-def test_clean_with_a_type_and_sure_removes_that_tree_only(rig):
-    """`sr clean --type debug --sure` removes the Debug tree and leaves the Release and ASan ones."""
+def test_clean_with_a_type_and_yes_removes_that_tree_only(rig):
+    """`sr clean --type debug --yes` removes the Debug tree and leaves the Release and ASan ones."""
     built = rig()
     trees = _three_trees(built)
 
-    assert _clean(built, "--type", "debug", "--sure").exit_code == 0
+    assert _clean(built, "--type", "debug", "--yes").exit_code == 0
 
     assert [name for name, tree in trees.items() if tree.exists()] == [
         "default-release", "asan-release"]
 
 
-def test_clean_with_a_sanitizer_and_sure_removes_the_sanitizer_tree_only(rig):
-    """`sr clean --sanitize asan --sure` removes the ASan tree and no plain tree."""
+def test_clean_with_type_asan_and_yes_removes_the_asan_tree_only(rig):
+    """`sr clean --type asan --yes` removes the ASan tree and no plain tree."""
     built = rig()
     trees = _three_trees(built)
 
-    assert _clean(built, "--sanitize", "asan", "--sure").exit_code == 0
+    assert _clean(built, "--type", "asan", "--yes").exit_code == 0
 
     assert [name for name, tree in trees.items() if tree.exists()] == [
         "default-debug", "default-release"]
 
 
-def test_clean_with_sure_alone_removes_every_tree(rig):
-    """`sr clean --sure` removes every build tree, the sanitizer one included."""
+def test_clean_with_yes_alone_removes_every_tree(rig):
+    """`sr clean --yes` removes every build tree, the sanitizer one included."""
     built = rig()
     trees = _three_trees(built)
 
-    assert _clean(built, "--sure").exit_code == 0
+    assert _clean(built, "--yes").exit_code == 0
 
     assert not any(tree.exists() for tree in trees.values())
 

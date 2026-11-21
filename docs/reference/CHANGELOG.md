@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 2026-11-21 — cli: Breaking change: Removed `sr build --clean`, and made `sr clean` the shared command, which removes trees only with `--sure` and selects them by `--type` and `--sanitize` (RW-170).
+- 2026-11-21 — cli: Breaking change: Removed `sr build --clean`, and made `sr clean` the shared command, which says what it would remove and removes it only with `--yes`, selecting trees by `--type` (RW-170).
 - 2026-11-21 — cli: Renamed `sr run --sort` to `sr run --pick`, and kept `--sort` as a hidden alias that names `--pick` until 2027-03-25 (RW-169, `3b5e3c02`).
 - 2026-11-21 — cli: Changed `sr run --sort` to list the built examples, each with the `@brief` of its source, in the order the build registers them; `sr run --sort --all` lists every program as before (RW-168, `cf375631`).
 - 2026-11-21 — tests: Gave each test shard 5 seconds for its start-up on top of its case limits, so a shard of one small case is no longer killed under a loaded run (RW-166, RW-167, KI-42, KI-43, `e73921a6`).

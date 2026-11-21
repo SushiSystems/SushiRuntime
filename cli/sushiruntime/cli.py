@@ -33,8 +33,7 @@ from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
 from .services.project import (
-    K_BENCH_TYPE, K_DEFAULT_TREE, K_DEFAULT_TYPE, K_SANITIZER_TREE, K_THREAD_SANITIZER_TREE,
-    BuildType, DistributedRole, Label)
+    K_BENCH_TYPE, K_DEFAULT_TREE, K_DEFAULT_TYPE, BuildType, DistributedRole, Label, build_tree)
 from .services.surroundings import Surroundings
 
 K_DISTRIBUTION = "sushiruntime-cli"
@@ -303,8 +302,10 @@ def package(
 
 register_clean_command(
     app, lambda ctx: _surroundings(ctx) or Surroundings(), program="sr", panel=K_PROJECT,
-    names={None: K_DEFAULT_TREE, "asan": K_SANITIZER_TREE, "tsan": K_THREAD_SANITIZER_TREE},
-    build_types=[BuildType.debug.value, BuildType.release.value, BuildType.relwithdebinfo.value])
+    names={None: K_DEFAULT_TREE},
+    build_types=[BuildType.debug.value, BuildType.release.value, BuildType.relwithdebinfo.value],
+    type_trees={build_type.value: build_tree(Path(), build_type).name
+                for build_type in (BuildType.asan, BuildType.tsan)})
 
 
 def _api_source(root: Path | None = None) -> ApiSource:
