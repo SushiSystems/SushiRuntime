@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 2026-11-21 — cli: Changed `sr run --sort` to list the built examples, each with the `@brief` of its source, in the order the build registers them; `sr run --sort --all` lists every program as before (RW-168).
+- 2026-11-21 — cli: Changed `sr run --sort` to list the built examples, each with the `@brief` of its source, in the order the build registers them; `sr run --sort --all` lists every program as before (RW-168, `cf375631`).
 - 2026-11-21 — tests: Gave each test shard 5 seconds for its start-up on top of its case limits, so a shard of one small case is no longer killed under a loaded run (RW-166, RW-167, KI-42, KI-43, `e73921a6`).
 
 ## v0.6.0 — 2026-11-19
