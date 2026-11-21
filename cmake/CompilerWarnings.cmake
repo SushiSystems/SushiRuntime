@@ -32,4 +32,11 @@ else()
         -Werror
         -pedantic
     )
+    # The profiling macros name their locals with __COUNTER__. Clang 23 and the oneAPI compiler built on
+    # it report it under -pedantic as an extension of C2y; the compilers that predate the group do not.
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag(-Wno-c2y-extensions SUSHIRUNTIME_HAS_NO_C2Y_EXTENSIONS)
+    if(SUSHIRUNTIME_HAS_NO_C2Y_EXTENSIONS)
+        target_compile_options(sushiruntime_warnings INTERFACE -Wno-c2y-extensions)
+    endif()
 endif()
