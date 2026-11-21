@@ -109,6 +109,33 @@ def test_a_tree_of_another_build_type_is_refused(rig):
     assert "Debug tree" in built.console.texts("error")[0]
 
 
+def test_a_tree_of_another_generator_is_refused_and_kept(rig):
+    """A build never removes a tree: another generator stops it, the tree stays, `sr clean` is named."""
+    built = rig()
+    tree = built.root / "build" / "default-debug"
+    tree.mkdir(parents=True)
+    (tree / "CMakeCache.txt").write_text("CMAKE_GENERATOR:INTERNAL=Another Generator\n",
+                                         encoding="utf-8")
+    (tree / "object.o").write_text("", encoding="utf-8")
+
+    assert project.build(BuildType.debug, surroundings=built.surroundings) == 1
+
+    assert "`sr clean`" in built.console.texts("error")[0]
+    assert built.runner.commands == []
+    assert (tree / "object.o").is_file()
+
+
+def test_a_configure_keeps_the_files_of_the_tree_it_configures_again(rig):
+    """A tree with no stamp is configured in place: the objects it holds stay."""
+    built = rig()
+    tree = _configured_tree(built, "default-debug")
+    (tree / "object.o").write_text("", encoding="utf-8")
+
+    assert project.build(BuildType.debug, surroundings=built.surroundings) == 0
+
+    assert (tree / "object.o").is_file()
+
+
 def test_a_stopped_gate_refuses_the_build(rig):
     """While the gate stop file exists, no configure and no compile starts."""
     built = rig()

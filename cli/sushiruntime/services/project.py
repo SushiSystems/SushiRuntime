@@ -28,6 +28,7 @@ from sushicore.provision.sushi_packages import PackageError, configure_arguments
 from sushicore.testing import ModuleTests, TestLabel, run_tests, select_labels
 from sushicore.testing.labels import K_EVERY_SIZE
 from sushicore.testing.program_runner import ProgramRunner
+from sushicore.tree_reuse import refuse_unreusable_tree
 
 from ..config import PROFILE, Config
 from ..env import load_build_env
@@ -513,6 +514,7 @@ def build(build_type: BuildType, distributed: bool = False,
     try:
         refuse_another_build_type(tree, cmake_build_type)
         build_admission.refuse_a_stopped_gate(tree)
+        refuse_unreusable_tree(driver, tree, generator=cfg.generator, root=root, program="sr")
     except SushiCoreError as error:
         console.error(str(error))
         return 1
@@ -568,8 +570,6 @@ def build(build_type: BuildType, distributed: bool = False,
     if driver.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
-        if tree.is_dir():
-            shutil.rmtree(tree, ignore_errors=True)
         if cfg.is_windows:
             if asan and (rc := _check_sanitizer_runtime(console, cfg)) != 0:
                 return rc

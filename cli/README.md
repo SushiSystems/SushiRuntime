@@ -248,6 +248,10 @@ label does not survive `gtest_discover_tests` on current CMake (see `tests/CMake
 A build tree with no stamp, from before the stamp existed or from a hand-run cmake, is
 reconfigured once so that the tree is known to match the requested configuration.
 
+A build never removes a tree. A tree configured with another generator, or for another source
+folder, is refused with a message that names `sr clean`, because CMake cannot change either in place;
+any other difference is configured in place.
+
 GPU backend selection is delegated to CMake, `cmake/gpu/DetectGpu.cmake`, on every platform. It
 resolves the vendor: nvidia to cuda, amd to rocm, intel, or cpu. "auto" detects which vendors
 have both a toolkit and hardware and targets them. Where nothing answers it builds the
