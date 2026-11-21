@@ -32,7 +32,7 @@ def _windows_args(gpu_backend: str) -> list[str]:
 
 @pytest.mark.parametrize("resolved", ["auto", "cpu"])
 def test_the_windows_configure_carries_the_resolved_backend(resolved):
-    """The configure states the backend it was given: "auto", or "cpu" from --no-cuda and ASan.
+    """The configure states the backend it was given: "auto", or "cpu" from ASan.
 
     The defect: this argument was the literal string "cpu", whatever had been resolved.
     """

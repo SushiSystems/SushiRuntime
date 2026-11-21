@@ -82,8 +82,8 @@ jobs:
           path: .ccache
           key: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-linux-icpx-release-
-      - name: sr build --distributed --no-cuda
-        run: sr build --distributed --no-cuda
+      - name: sr build --distributed
+        run: sr build --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
@@ -110,8 +110,8 @@ jobs:
           path: .ccache
           key: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-linux-intel-llvm-release-
-      - name: sr build --distributed --no-cuda
-        run: sr build --distributed --no-cuda
+      - name: sr build --distributed
+        run: sr build --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
@@ -139,8 +139,8 @@ jobs:
           path: .ccache
           key: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-linux-adaptivecpp-release-
-      - name: sr build --distributed --no-cuda
-        run: sr build --distributed --no-cuda
+      - name: sr build --distributed
+        run: sr build --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
@@ -180,8 +180,8 @@ jobs:
         with:
           path: ~/.sushisystems
           key: sushisystems-windows-${{ hashFiles('cli/sushistack.deps.toml', 'cli/pyproject.toml') }}
-      - name: sr build --distributed --no-cuda
-        run: sr build --distributed --no-cuda
+      - name: sr build --distributed
+        run: sr build --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()

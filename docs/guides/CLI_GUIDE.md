@@ -104,7 +104,6 @@ sr build                  # Debug build (the default), in build/default-debug
 sr build --type release   # Release build, in build/default-release
 sr build --type asan      # AddressSanitizer, in the separate build/asan-release tree, CUDA off
 sr build --distributed    # also compile the distributed module
-sr build --no-cuda        # build the CPU/OpenCL path instead of detecting accelerators
 sr build --no-test        # skip the test programs (SR_BUILD_TESTS=OFF)
 sr build --jobs 8         # compile with eight parallel jobs
 sr build --report         # print the time and peak memory of each kind of build edge
@@ -123,7 +122,7 @@ On Windows `sr build --rocm` also offloads to an AMD GPU when the ROCm route is 
 `rocm/devlibs-*` and the HIP adapter in `ur/hip-*`. With any of the three missing the build is
 the one it was without them. `SR_AMD_ARCH` states the GPU architecture; without it the build
 asks the toolkit's `hipInfo`. The route is for one GPU architecture, so a machine with two
-different AMD GPUs states which one. `sr build --no-cuda` and `--type asan` leave it out, and
+different AMD GPUs states which one. `sr build --type asan` leaves it out, and
 `sr test` and `sr run` on a tree that offloads to it load the HIP adapter and put the toolkit
 on `PATH`.
 

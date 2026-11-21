@@ -96,7 +96,7 @@ def _inject_rocm_runtime(cfg: Config, build_dir: Path, env: dict[str, str]) -> N
     The Unified Runtime loader does not discover the HIP adapter on Windows, so it is named in
     ``UR_ADAPTERS_FORCE_LOAD`` beside the CUDA and OpenCL adapters, and the toolkit's ``bin``
     goes on ``PATH`` for ``amdhip64``. Only a tree whose configure resolved ROCm gets this, so
-    a ``--no-cuda`` or ASan tree and a machine without the route run exactly as before.
+    an ASan tree and a machine without the route run exactly as before.
     """
     if not cfg.is_windows or K_FORCE_LOAD in env or not tree_offloads_to_rocm(build_dir):
         return

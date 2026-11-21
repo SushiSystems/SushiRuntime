@@ -113,7 +113,6 @@ def toolchain(
     rich_help_panel=K_PROJECT,
     epilog="sr build\n"
            "sr build --type release  # The Release tree, build/default-release\n"
-           "sr build --no-cuda  # Portable CPU/OpenCL path\n"
            "sr build --jobs 8  # Compile with eight parallel jobs\n"
            "sr build --report  # Time and memory per kind of build edge\n"
            "sr build --distributed --no-test\n"
@@ -128,9 +127,6 @@ def build(
              "ThreadSanitizer into build/tsan-relwithdebinfo."),
     distributed: bool = typer.Option(
         False, "--distributed", help="Enable the master-worker distributed layer."),
-    no_cuda: bool = typer.Option(
-        False, "--no-cuda",
-        help="Build the portable CPU/OpenCL path instead of detecting accelerators."),
     rocm: bool = typer.Option(
         False, "--rocm",
         help="On Windows, also offload to the AMD GPU through the ROCm route under the "
@@ -159,7 +155,7 @@ def build(
              "free memory. Writes build_report.json into the tree."),
 ):
     """Configure and build the project."""
-    raise typer.Exit(project_svc.build(type, distributed, no_cuda, force,
+    raise typer.Exit(project_svc.build(type, distributed, force,
                                        tests=not no_test, jobs=jobs, lean=lean,
                                        build_dir=build_dir, report=report, rocm=rocm,
                                        surroundings=_surroundings(ctx)))

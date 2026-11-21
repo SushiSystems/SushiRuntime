@@ -68,8 +68,7 @@ Three SYCL toolchains, selected with `sr toolchain` or the CMake option `SR_SYCL
 
 The GPU backend comes from `-DSR_GPU_BACKEND`, which takes `auto`, `cuda`, `rocm`, `intel`,
 `cpu` or `none`. The default `auto` detects the installed GPU toolkit and otherwise builds the
-portable CPU/OpenCL path. `sr build --no-cuda` builds that CPU/OpenCL path
-directly. The build-time options are in §7 of
+portable CPU/OpenCL path. The build-time options are in §7 of
 [the architecture](../architecture/ARCHITECTURE.md).
 
 ## How do I use SushiRuntime from my own project?

@@ -485,8 +485,7 @@ def _print_report(console, tree: Path, offset: int) -> None:
     console.info(f"Report: {report.write(tree)}")
 
 
-def build(build_type: BuildType, distributed: bool = False,
-          no_cuda: bool = False, force: bool = False,
+def build(build_type: BuildType, distributed: bool = False, force: bool = False,
           tests: bool = True, jobs: int | None = None, lean: bool = False,
           build_dir: str | None = None, report: bool = False, rocm: bool = False,
           surroundings: Surroundings | None = None) -> int:
@@ -528,10 +527,7 @@ def build(build_type: BuildType, distributed: bool = False,
         console.info("Lean: no tests, examples or benchmarks")
 
     # cmake/gpu/DetectGpu selects the GPU backend on every platform; see cli/README.md.
-    if no_cuda or asan:
-        gpu_backend = "cpu"
-    else:
-        gpu_backend = "auto"
+    gpu_backend = "cpu" if asan else "auto"
 
     if build_type == BuildType.tsan and not thread_sanitizer_applies(cfg.is_windows, build_type):
         console.error("--type tsan: ThreadSanitizer is not built on Windows.")

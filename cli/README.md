@@ -89,7 +89,7 @@ ship on `PATH` and need no setvars, so returning `None` keeps their environment 
 
 On Windows a tree whose `CMakeCache.txt` resolved `rocm` also gets the toolkit's `bin` on `PATH`
 and `UR_ADAPTERS_FORCE_LOAD` set (see `rocm_route.py`). The tree decides, not the machine, so a
-`--no-cuda` tree runs as it did. A `UR_ADAPTERS_FORCE_LOAD` the caller already set is kept. On
+tree that did not resolve `rocm` runs as it did. A `UR_ADAPTERS_FORCE_LOAD` the caller already set is kept. On
 the first build the tree has no cache yet, so the build itself runs without them; no build step
 needs them.
 
@@ -256,15 +256,14 @@ GPU backend selection is delegated to CMake, `cmake/gpu/DetectGpu.cmake`, on eve
 resolves the vendor: nvidia to cuda, amd to rocm, intel, or cpu. "auto" detects which vendors
 have both a toolkit and hardware and targets them. Where nothing answers it builds the
 portable CPU/OpenCL path, so a missing CUDA toolkit does not hard-fail with "cannot find
-libdevice". "cpu" forces that path, and ASan and `--no-cuda` select it. DetectGpu is the single
+libdevice". "cpu" forces that path, and ASan selects it. DetectGpu is the single
 source of truth; the CLI does not probe nvcc itself.
 
 Windows is not pinned to "cpu". The host compiles `-fsycl-targets=spir64,nvidia_gpu_sm_89`
 with the bundled intel/llvm and the installed CUDA toolkit, and `hub install` offers that
 toolkit as a component. A pin would provision a toolkit the build could never use, and would
 make the two CLIs of a workspace disagree about one machine, since SushiEngine passes no
-backend and gets "auto". Detection is one question with one answer, asked in one place, and
-`--no-cuda` has an effect on Windows as elsewhere.
+backend and gets "auto". Detection is one question with one answer, asked in one place.
 
 On Windows the compiler is toolchain-specific: intel-llvm uses clang++, oneapi uses icx-cl,
 adaptivecpp uses acpp. `-DSR_SYCL_TOOLCHAIN` is passed explicitly so that `CMakeLists.txt`
