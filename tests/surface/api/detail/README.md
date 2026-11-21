@@ -107,11 +107,12 @@ The file covers `Detail::record_device_fault()` for values past a uint32. Two `s
 
 The file covers `Detail::compiled_for_device_v`.
 
-### `IsFalseInAUnitBuiltWithoutFsycl`
+### `MatchesWhetherTheBuildCompilesTheUnitWithFsycl`
 
-The expected value is `K_UNIT_COMPILED_WITH_FSYCL`, which the test states from the build: the units
-in `DEVICE_SOURCES` of `tests/surface/api/CMakeLists.txt` get `-fsycl`, and this file is not one of
-them. Adding it to that list makes the test fail until the constant changes.
+The expected value is `K_UNIT_COMPILED_WITH_FSYCL`, which the build states through
+`SR_TEST_UNIT_COMPILED_WITH_FSYCL` in `tests/surface/api/CMakeLists.txt`. On a toolchain that works per
+source the units in `DEVICE_SOURCES` get `-fsycl` and this file is not one of them, so the value is `0`;
+on any other the whole target takes the device pass and it is `1`.
 
 ## test_dropped_outcome.cpp
 

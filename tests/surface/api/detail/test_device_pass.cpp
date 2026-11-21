@@ -34,19 +34,24 @@
 
 using namespace SushiRuntime;
 
+#if !defined(SR_TEST_UNIT_COMPILED_WITH_FSYCL)
+#error "tests/surface/api/CMakeLists.txt defines SR_TEST_UNIT_COMPILED_WITH_FSYCL for this unit"
+#endif
+
 namespace
 {
     /**
      * @brief Says whether the build compiles this unit with -fsycl.
      *
-     * The build gives -fsycl to the units in DEVICE_SOURCES of tests/surface/api/CMakeLists.txt,
-     * and test_device_pass.cpp is not one of them.
+     * The build states it: a toolchain that works per source gives -fsycl only to the units in
+     * DEVICE_SOURCES of tests/surface/api/CMakeLists.txt, and this file is not one of them; any other
+     * toolchain gives the whole target the device pass.
      */
-    constexpr bool K_UNIT_COMPILED_WITH_FSYCL = false;
+    constexpr bool K_UNIT_COMPILED_WITH_FSYCL = SR_TEST_UNIT_COMPILED_WITH_FSYCL != 0;
 } // namespace
 
-/** @brief Tests that the answer is false in a unit the build compiles without -fsycl. */
-TEST(Small_DevicePass, IsFalseInAUnitBuiltWithoutFsycl)
+/** @brief Tests that the answer is true exactly when the build compiles the unit with -fsycl. */
+TEST(Small_DevicePass, MatchesWhetherTheBuildCompilesTheUnitWithFsycl)
 {
     EXPECT_EQ(Detail::compiled_for_device_v<int>, K_UNIT_COMPILED_WITH_FSYCL);
 }

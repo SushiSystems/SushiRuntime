@@ -151,6 +151,18 @@ sushiruntime_add_module_tests(
         vocabulary/test_dynamic.cpp
         vocabulary/test_late_count.cpp)
 
+# test_device_pass.cpp states whether the build gives its unit -fsycl. A toolchain that works per
+# source (intel-llvm, with its headers found) leaves the unit out of DEVICE_SOURCES without it; any
+# other gives the whole target the device pass.
+if(SR_SYCL_PER_SOURCE)
+    set(sr_unit_compiled_with_fsycl 0)
+else()
+    set(sr_unit_compiled_with_fsycl 1)
+endif()
+set_source_files_properties(
+    detail/test_device_pass.cpp
+    PROPERTIES COMPILE_DEFINITIONS SR_TEST_UNIT_COMPILED_WITH_FSYCL=${sr_unit_compiled_with_fsycl})
+
 # Its own program: the test replaces the global operator new to count allocations, and a
 # replacement is program-wide. Linked into another program it would count that program's
 # allocations too and displace a sanitizer's own operator new.
