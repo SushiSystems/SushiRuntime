@@ -141,8 +141,8 @@ def rig(tmp_path, monkeypatch) -> Callable[..., Rig]:
     monkeypatch.setenv("PATH", os.pathsep.join([str(compilers), os.environ.get("PATH", "")]))
 
     def build(*, cfg: Config | None = None, capture_code: int = 0,
-              capture_output: str = "") -> Rig:
-        console = RecordingConsole()
+              capture_output: str = "", answer: str | None = None) -> Rig:
+        console = RecordingConsole(answer=answer)
         runner = RecordingRunner(console)
         root = tmp_path / "checkout"
         root.mkdir(exist_ok=True)

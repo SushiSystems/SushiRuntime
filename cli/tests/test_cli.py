@@ -155,6 +155,37 @@ def test_run_rejects_an_unknown_role(rig):
     assert built.runner.commands == []
 
 
+def _examples_tree(built) -> None:
+    """Registers the demo as the checkout's one example, beside a second program in the tree."""
+    examples = built.root / "applications" / "examples"
+    examples.mkdir(parents=True)
+    (examples / "CMakeLists.txt").write_text("add_executable(demo demo.cpp)\n", encoding="utf-8")
+    _demo_tree(built)
+    tree = built.root / "build" / "default-debug"
+    (tree / ("zeta_tests.exe" if os.name == "nt" else "zeta_tests")).write_text("", encoding="utf-8")
+    for program in tree.iterdir():
+        program.chmod(0o755)
+
+
+def test_run_sort_offers_only_the_registered_examples(rig):
+    """`sr run --sort` lists the example alone, so the second program has no number."""
+    built = rig(answer="2")
+    _examples_tree(built)
+    result = CliRunner().invoke(app, ["run", "--sort"], obj=built.surroundings)
+    assert result.exit_code == 1
+    assert built.runner.commands == []
+    assert built.console.texts("error") == ["'2' is not a number from 1 to 1."]
+
+
+def test_run_sort_all_offers_every_program(rig):
+    """`sr run --sort --all` numbers the second program too, and runs the one picked."""
+    built = rig(answer="2")
+    _examples_tree(built)
+    result = CliRunner().invoke(app, ["run", "--sort", "--all"], obj=built.surroundings)
+    assert result.exit_code == 0, result.output
+    assert Path(built.argv()[0]).stem == "zeta_tests"
+
+
 def _published_checkout(root: Path) -> None:
     """Writes the CLI's root marker, a one-page docs/ tree and a git commit that holds them."""
     guides = root / "docs" / "guides"

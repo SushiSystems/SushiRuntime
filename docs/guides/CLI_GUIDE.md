@@ -214,10 +214,16 @@ Runs a built executable. With no target it runs the default of the configuration
 ```bash
 sr run                              # run the default target
 sr run sr_surface_tests                 # run a program by name
-sr run --sort                       # pick from the list of executables
+sr run --sort                       # pick one of the built examples
+sr run --sort --all                 # pick from every program, tests and benchmarks included
 ```
 
 The name is matched exactly first, then as a substring.
+
+`--sort` prints a table of the examples the build registered in
+`applications/examples/CMakeLists.txt`, in that order, each with the `@brief` of its source.
+An example the build did not produce, such as the distributed demo in a build without
+`--distributed`, is left out. `--all` lists every executable of the tree instead.
 
 Everything after `--` goes to the program:
 

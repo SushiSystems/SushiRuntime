@@ -22,6 +22,7 @@ from pathlib import Path
 from sushicore import build_admission, build_report, cmake_cache
 from sushicore.build_tree import K_DEFAULT_BUILD_TYPE, refuse_another_build_type, tree_dir
 from sushicore.errors import SushiCoreError
+from sushicore.example_catalog import ExampleCatalog
 from sushicore.proc import CommandRunner
 from sushicore.provision.sushi_packages import PackageError, configure_arguments
 from sushicore.testing import ModuleTests, TestLabel, run_tests, select_labels
@@ -694,7 +695,7 @@ def bench(distributed: bool = False, filter: str | None = None,
 
 def run(target: str | None = None, sort: bool = False,
         distributed_role: str | None = None, build_type: BuildType = K_DEFAULT_TYPE,
-        app_args: list[str] | None = None,
+        app_args: list[str] | None = None, list_all: bool = False,
         surroundings: Surroundings | None = None) -> int:
     ws = surroundings or Surroundings()
     console = ws.console
@@ -715,7 +716,8 @@ def run(target: str | None = None, sort: bool = False,
         env.setdefault("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")
         console.info(f"ASan run: device={env['ONEAPI_DEVICE_SELECTOR']}")
 
-    exe = discovery.resolve(build_dir, console, target=target, sort=sort, default=cfg.target_bin)
+    exe = discovery.resolve(build_dir, console, examples=ExampleCatalog.in_project(root),
+                            target=target, sort=sort, default=cfg.target_bin, list_all=list_all)
     if exe is None:
         return 1
 
