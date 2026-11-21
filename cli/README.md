@@ -124,8 +124,8 @@ contributes only which directories to prune, and it does not spell them out eith
 the sibling checkouts `PROFILE` already names, because a module that builds a dependency
 in-tree must not offer that dependency's executables as its own.
 
-`sr run --sort` offers the built examples, each with its description, and `--all` offers every
-program. `project.run` passes `ExampleCatalog.in_project(root)` to the shared
+`sr run --pick` offers the built examples, each with its description, and `--all` offers every
+program; `--sort` is its hidden alias, announced through `ALIASES.flag_announcer`. `project.run` passes `ExampleCatalog.in_project(root)` to the shared
 `resolve`, which does the choosing; this module adds nothing to it.
 
 ## sushiruntime/services/packaging.py

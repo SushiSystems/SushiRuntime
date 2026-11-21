@@ -18,6 +18,7 @@ K_OLD_TO_NEW = {
     "sr doxygen": "sr docs",
     "sr docker build": "sr container build",
     "sr docker run": "sr container run",
+    "sr run --sort": "sr run --pick",
 }
 
 

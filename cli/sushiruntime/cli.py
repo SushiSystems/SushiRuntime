@@ -231,8 +231,8 @@ def bench(
     "run",
     rich_help_panel=K_PROJECT,
     epilog="sr run sr_api_benchmarks  # Exact name, then substring match\n"
-           "sr run --sort  # Pick an example interactively\n"
-           "sr run --sort --all  # Pick from every program, tests and benchmarks included\n"
+           "sr run --pick  # Pick an example interactively\n"
+           "sr run --pick --all  # Pick from every program, tests and benchmarks included\n"
            "sr run sr_api_benchmarks -- --gtest_filter='Performance_*'  # Arguments after -- go to it",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
@@ -240,11 +240,14 @@ def run(
     ctx: typer.Context,
     target: Optional[str] = typer.Argument(
         None, help="Executable name to run (exact, then substring match)."),
+    pick: bool = typer.Option(
+        False, "--pick", help="Interactively pick an example."),
     sort: bool = typer.Option(
-        False, "--sort", help="Interactively pick an example."),
+        False, "--sort", hidden=True, callback=ALIASES.flag_announcer("sr run --sort"),
+        help="The old spelling of --pick."),
     list_all: bool = typer.Option(
         False, "--all",
-        help="With --sort, also list the test and benchmark programs."),
+        help="With --pick, also list the test and benchmark programs."),
     distributed: Optional[DistributedRole] = typer.Option(
         None, "--distributed", metavar="ROLE", case_sensitive=False,
         help="Forward a role (master|worker) to the application."),
@@ -256,7 +259,7 @@ def run(
     """Run a built executable. Args after `--` are forwarded to it."""
     role = distributed.value if distributed else None
     raise typer.Exit(
-        project_svc.run(target=target, sort=sort, distributed_role=role,
+        project_svc.run(target=target, sort=pick or sort, distributed_role=role,
                         build_type=_tree_type(type, asan), app_args=list(ctx.args),
                         list_all=list_all, surroundings=_surroundings(ctx))
     )

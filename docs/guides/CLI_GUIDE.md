@@ -73,8 +73,9 @@ Every command takes `--help`. `sr container` with no subcommand prints the help 
 `sr --version` prints the CLI's distribution name and version. `sr --describe` prints every
 command and its options as JSON, for a tool that drives the CLI.
 
-`sr doxygen` and `sr docker` are hidden aliases of `sr docs` and `sr container` until
-2027-03-25. Neither `--help` nor `--describe` lists them.
+`sr doxygen` and `sr docker` are hidden aliases of `sr docs` and `sr container`, and
+`sr run --sort` is a hidden alias of `sr run --pick`, until 2027-03-25. Neither `--help` nor
+`--describe` lists them.
 
 `sr --help` groups the commands under Toolchain, Project, Diagnostics and Container, and each
 command's help ends with examples.
@@ -214,13 +215,13 @@ Runs a built executable. With no target it runs the default of the configuration
 ```bash
 sr run                              # run the default target
 sr run sr_surface_tests                 # run a program by name
-sr run --sort                       # pick one of the built examples
-sr run --sort --all                 # pick from every program, tests and benchmarks included
+sr run --pick                       # pick one of the built examples
+sr run --pick --all                 # pick from every program, tests and benchmarks included
 ```
 
 The name is matched exactly first, then as a substring.
 
-`--sort` prints a table of the examples the build registered in
+`--pick` prints a table of the examples the build registered in
 `applications/examples/CMakeLists.txt`, in that order, each with the `@brief` of its source.
 An example the build did not produce, such as the distributed demo in a build without
 `--distributed`, is left out. `--all` lists every executable of the tree instead.

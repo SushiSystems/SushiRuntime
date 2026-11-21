@@ -167,18 +167,27 @@ def _examples_tree(built) -> None:
         program.chmod(0o755)
 
 
-def test_run_sort_offers_only_the_registered_examples(rig):
-    """`sr run --sort` lists the example alone, so the second program has no number."""
+def test_run_pick_offers_only_the_registered_examples(rig):
+    """`sr run --pick` lists the example alone, so the second program has no number."""
     built = rig(answer="2")
     _examples_tree(built)
-    result = CliRunner().invoke(app, ["run", "--sort"], obj=built.surroundings)
+    result = CliRunner().invoke(app, ["run", "--pick"], obj=built.surroundings)
     assert result.exit_code == 1
     assert built.runner.commands == []
     assert built.console.texts("error") == ["'2' is not a number from 1 to 1."]
 
 
-def test_run_sort_all_offers_every_program(rig):
-    """`sr run --sort --all` numbers the second program too, and runs the one picked."""
+def test_run_pick_all_offers_every_program(rig):
+    """`sr run --pick --all` numbers the second program too, and runs the one picked."""
+    built = rig(answer="2")
+    _examples_tree(built)
+    result = CliRunner().invoke(app, ["run", "--pick", "--all"], obj=built.surroundings)
+    assert result.exit_code == 0, result.output
+    assert Path(built.argv()[0]).stem == "zeta_tests"
+
+
+def test_run_sort_still_picks_as_the_old_spelling_of_pick(rig):
+    """`sr run --sort --all` still numbers the second program and runs the one picked."""
     built = rig(answer="2")
     _examples_tree(built)
     result = CliRunner().invoke(app, ["run", "--sort", "--all"], obj=built.surroundings)

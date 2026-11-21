@@ -16,6 +16,7 @@ K_ROWS: tuple[Alias, ...] = (
     Alias("sr doxygen", "sr docs", K_REMOVED_AFTER),
     Alias("sr docker build", "sr container build", K_REMOVED_AFTER),
     Alias("sr docker run", "sr container run", K_REMOVED_AFTER),
+    Alias("sr run --sort", "sr run --pick", K_REMOVED_AFTER),
 )
 
 ALIASES = AliasTable("sr", K_ROWS)
