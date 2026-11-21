@@ -74,6 +74,12 @@ set(SR_SHARD_CASES_SMALL 300)
 set(SR_SHARD_CASES_MEDIUM 25)
 set(SR_SHARD_CASES_LARGE 1)
 
+# The seconds a shard may spend before its first case: loading the libraries and starting the
+# runtime. A shard's timeout is its cases' limits plus this, so a shard of one case is not killed
+# by its own start-up under a loaded run. The per-case limits are unchanged: the time reader
+# judges each case from its XML.
+set(SR_SHARD_STARTUP_SECONDS 5)
+
 # Where each shard writes its per-case GoogleTest XML; the time reader reads the folder, so the
 # per-case limits of the testing skill still apply to a case run inside a shard.
 set(SR_GTEST_RESULTS_DIR "${PROJECT_BINARY_DIR}/test_results/gtest")
@@ -220,9 +226,10 @@ function(sushiruntime_add_shard_test program name filter labels timeout index sh
         COMMAND ${program} --gtest_filter=${filter}
             --gtest_output=xml:${SR_GTEST_RESULTS_DIR}/${name}.xml
         WORKING_DIRECTORY "${PROJECT_BINARY_DIR}/tests")
+    math(EXPR shard_timeout "${timeout} + ${SR_SHARD_STARTUP_SECONDS}")
     set_tests_properties(${name} PROPERTIES
         LABELS "${labels}"
-        TIMEOUT ${timeout}
+        TIMEOUT ${shard_timeout}
         ENVIRONMENT "GTEST_TOTAL_SHARDS=${shards};GTEST_SHARD_INDEX=${index}")
     # A large shard runs on the real accelerator, of which the resource file CTest gets holds one
     # slot each, so two large shards never share one.

@@ -15,6 +15,7 @@
 | RW-160 | P1 | open | Find why a 4-byte Shared USM allocation is refused during a full test run | the cause is measured and fixed, and ten full sr test runs at 8 jobs pass the two death tests |  | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
 | RW-163 | P1 | open | Make the submit-zone enclosure test hold under an 8-job medium run | the cause is measured and ten sr test --label medium --jobs 8 runs pass Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone |  | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
 | RW-166 | P2 | open | Keep the runtime_assembly small shard inside its time limit at 8 parallel jobs | sr test -j 8 runs sr_engine_tests.runtime_assembly.small_shard_0of1 inside its timeout three runs in a row |  | `tests/engine` | 2026-11-19 |
+| RW-167 | P2 | open | Find why thread_barrier and context small shards fail in a loaded run | sr test -l small at the default job count passes thread_barrier and context in-run three runs in a row |  | `tests` | 2026-11-20 |
 
 ## Known issues
 
@@ -31,3 +32,4 @@
 | KI-40 | own | The submit-zone enclosure test is quarantined: it failed once under an 8-job medium run | sr test --label quarantined runs it apart; it passed 200 repeats alone | RW-163 | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
 | KI-41 | own | Two data-handle death tests are quarantined: a 4-byte Shared USM alloc was refused once | sr test --label quarantined runs them apart; they pass when run alone | RW-160 | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
 | KI-42 | own | runtime_assembly small shard times out under sr test -j 8 and passes rerun alone | The test command reruns a failed shard alone; read the rerun line | RW-166 | `tests/engine` | 2026-11-19 |
+| KI-43 | own | thread_barrier and context small shards fail in a loaded sr test run and pass rerun alone | The test command reruns a failed shard alone; read the rerun line | RW-167 | `tests` | 2026-11-20 |

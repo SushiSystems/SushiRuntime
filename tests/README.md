@@ -107,7 +107,7 @@ case count of the size divided by the cases one shard holds, rounded up: `SR_SHA
 (300), `_MEDIUM` (25) and `_LARGE` (1). The count comes from the `TEST`, `TEST_F`, `TEST_P`,
 `TYPED_TEST` and `TYPED_TEST_P` declarations and the typed instantiations in the module's sources,
 so a parametrised suite counts once and N is a floor. A shard's timeout is the size's time limit
-times the cases it holds.
+times the cases it holds, plus `SR_SHARD_STARTUP_SECONDS` (5) for the process to start.
 
 The filter also selects the instantiated names, `<prefix>/<suite>.<case>/<index>` and
 `<prefix>/<suite>/<index>.<case>`. A suite name is declared once per program, and a parametrised
