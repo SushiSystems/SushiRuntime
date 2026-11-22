@@ -9,4 +9,5 @@ sushiruntime_add_module_tests(
         compile_graph_log_category.cpp
         test_chain_plan.cpp
         test_compiled_graph.cpp
+        test_recorded_steps.cpp
         test_task_graph.cpp)

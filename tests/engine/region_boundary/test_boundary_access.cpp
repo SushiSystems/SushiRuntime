@@ -67,7 +67,7 @@ namespace BoundaryAccessTests
     } // namespace
 
     /** @brief Tests that a read reaching past its predecessor's write keeps an entry pin. */
-    TEST(Small_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
+    TEST(Small_BoundaryAccessPins, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     {
         const GlobalHandle base = TestSupport::made_up_handle(1);
 
@@ -88,7 +88,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a read inside its predecessor's write has no entry pin. */
-    TEST(Small_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
+    TEST(Small_BoundaryAccessPins, AReadInsideItsPredecessorsWriteHasNoEntryPin)
     {
         const GlobalHandle base = TestSupport::made_up_handle(1);
 
@@ -106,7 +106,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a write behind a predecessor that only reads keeps its write pin. */
-    TEST(Small_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
+    TEST(Small_BoundaryAccessPins, AWriteBehindAReadingPredecessorKeepsItsWritePin)
     {
         const GlobalHandle base = TestSupport::made_up_handle(1);
 
@@ -125,7 +125,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that only a successor's write that contains an access shadows it on exit. */
-    TEST(Small_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
+    TEST(Small_BoundaryAccessPins, OnlyAContainingSuccessorWriteShadowsAnExit)
     {
         const GlobalHandle base = TestSupport::made_up_handle(1);
 

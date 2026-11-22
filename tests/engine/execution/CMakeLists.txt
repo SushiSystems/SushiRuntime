@@ -10,7 +10,9 @@ sushiruntime_add_module_tests(
         compile_host_reachable_memory.cpp
         compile_offload_host.cpp
         test_chain_plan.cpp
+        test_chain_replay.cpp
         test_chain_run.cpp
+        test_chained_run_mark.cpp
         test_dropped_dispatches.cpp
         test_execution_engine.cpp
         test_host_step_plan.cpp
@@ -28,6 +30,7 @@ sushiruntime_add_module_tests(
         benchmark_runtime_context.cpp
         benchmark_scheduler_execution_engine.cpp
         test_chain_plan.cpp
+        test_chain_replay.cpp
         test_chain_run.cpp
         test_execution_engine.cpp
         test_runtime_context.cpp

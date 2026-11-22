@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the four enumerators hold four distinct values. */
-TEST(Small_Determinism, EnumeratorsHoldDistinctValues)
+TEST(Small_DeterminismValues, EnumeratorsHoldDistinctValues)
 {
     const std::uint8_t unstated = static_cast<std::uint8_t>(Determinism::Unstated);
     const std::uint8_t bitwise = static_cast<std::uint8_t>(Determinism::Bitwise);
@@ -53,14 +53,14 @@ TEST(Small_Determinism, EnumeratorsHoldDistinctValues)
 }
 
 /** @brief Tests that Unstated is the value 0, so a value-initialised field states nothing. */
-TEST(Small_Determinism, UnstatedIsTheZeroValue)
+TEST(Small_DeterminismValues, UnstatedIsTheZeroValue)
 {
     EXPECT_EQ(static_cast<std::uint8_t>(Determinism::Unstated), 0u);
     EXPECT_EQ(Determinism{}, Determinism::Unstated);
 }
 
 /** @brief Tests that the type is one byte and an unsigned 8-bit integer underneath. */
-TEST(Small_Determinism, IsOneUnsignedByte)
+TEST(Small_DeterminismValues, IsOneUnsignedByte)
 {
     static_assert(sizeof(Determinism) == 1, "Determinism is one byte");
     static_assert(std::is_same<std::underlying_type_t<Determinism>, std::uint8_t>::value,

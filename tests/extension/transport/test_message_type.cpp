@@ -44,8 +44,8 @@ namespace
     /** @brief Holds a byte and whether it names a message type. */
     struct ByteRow
     {
-        int byte;       /**< The byte offered to is_message_type(). */
-        bool is_a_type; /**< Whether it names a type. */
+        std::uint8_t byte; /**< The byte offered to is_message_type(). */
+        bool is_a_type;    /**< Whether it names a type. */
     };
 
     /** @brief Names a row by its byte in a test report. */

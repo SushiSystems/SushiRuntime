@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-22 — runtime: Give the four GRAPH_REPLAY units of RW-141 their mirrored tests (RW-146).
+- 2026-11-22 — tests: Gave the TEST suites that shared a name with a fixture suite their own names, `Small_BoundaryAccessPins` and `Small_DeterminismValues` (RW-136).
 - 2026-11-22 — cli: Ran `sr test` on an asan or tsan tree without the time limits, which a sanitizer breaks, and required SushiCore 0.16 (`project.py`, `cli/pyproject.toml`).
 - 2026-11-22 — ci: Installed Intel's CPU OpenCL runtime on the Windows runner, which had no CPU device for the medium tests (`setup-opencl-cpu-windows`).
 - 2026-11-22 — tools: Synced the shared tools of SushiCore v0.16.0, whose pre-commit hook checks the repository in place and writes no copy (`tools/hooks/pre_commit.py`).
