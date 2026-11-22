@@ -191,7 +191,11 @@ namespace
         info.index = stale_index;
         info.name = name;
         info.kind = kind;
+#if defined(SYCL_IMPLEMENTATION_ACPP)
+        info.backend = sycl::backend::ocl;
+#else
         info.backend = sycl::backend::opencl;
+#endif
         info.numa_node = 0;
         info.memory_bytes = std::uint64_t{8} << 30;
         info.compute_units = 12;

@@ -122,12 +122,21 @@ namespace ReplayTests
                                 [a, o](std::size_t i) { o[i] = o[i] * 7u + a[i]; });
         }
 
-        /** @brief Returns the layer an opted-in plan runs on here: a replay on the backends the topic lists. */
+        /**
+         * @brief Returns the layer an opted-in plan runs on here: a replay on the backends the topic lists.
+         *
+         * Without the oneAPI graph extension every plan runs as a chain.
+         */
         ExecutionLayer replay_layer(Runtime& rt)
         {
+#if __has_include(<sycl/ext/oneapi/experimental/graph.hpp>)
             const sycl::backend backend = rt.advanced().queue(DeviceIndex{0}).get_backend();
             const bool replays = backend == sycl::backend::ext_oneapi_cuda || backend == sycl::backend::opencl;
             return replays ? ExecutionLayer::Replay : ExecutionLayer::Chain;
+#else
+            static_cast<void>(rt);
+            return ExecutionLayer::Chain;
+#endif
         }
 
         /** @brief Returns how many records of a capture hold @p text in their message. */
