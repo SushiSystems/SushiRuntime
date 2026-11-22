@@ -98,7 +98,7 @@ def test_lean_turns_off_the_tests_the_examples_and_the_benchmarks(rig):
     """--lean configures with no tests, no examples and no benchmarks."""
     built = rig()
     assert project.build(BuildType.release, lean=True, surroundings=built.surroundings) == 0
-    arguments = built.argv(0)
+    arguments = built.shown[0]
     assert "-DSR_BUILD_TESTS=OFF" in arguments
     assert "-DSR_BUILD_EXAMPLES=OFF" in arguments and "-DSR_BUILD_BENCHMARKS=OFF" in arguments
 
@@ -109,7 +109,7 @@ def test_the_build_dir_names_the_tree_of_the_configure_and_the_compile(rig):
     assert project.build(BuildType.release, build_dir="build/pkg-x",
                          surroundings=built.surroundings) == 0
     tree = str(built.root / "build" / "pkg-x")
-    assert tree in built.argv(0) and tree in built.argv(1)
+    assert tree in built.shown[0] and tree in built.shown[1]
 
 
 def test_the_build_command_forwards_build_dir_and_lean(rig):
@@ -118,8 +118,8 @@ def test_the_build_command_forwards_build_dir_and_lean(rig):
     result = CliRunner().invoke(cli.app, ["build", "--build-dir", "build/pkg-x", "--lean"],
                                 obj=built.surroundings)
     assert result.exit_code == 0, result.output
-    assert str(built.root / "build" / "pkg-x") in built.argv(0)
-    assert "-DSR_BUILD_TESTS=OFF" in built.argv(0)
+    assert str(built.root / "build" / "pkg-x") in built.shown[0]
+    assert "-DSR_BUILD_TESTS=OFF" in built.shown[0]
 
 
 def test_the_package_command_takes_the_tree_and_no_archive(rig, tmp_path):

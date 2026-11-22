@@ -49,8 +49,8 @@ def test_the_build_command_defaults_to_debug(command, folder, rig):
     """`sr build` configures and compiles the Debug tree unless another type is named."""
     built = rig()
     assert CliRunner().invoke(cli.app, command, obj=built.surroundings).exit_code == 0
-    assert str(built.root / "build" / folder) in built.argv(0)
-    assert str(built.root / "build" / folder) in built.argv(1)
+    assert str(built.root / "build" / folder) in built.shown[0]
+    assert str(built.root / "build" / folder) in built.shown[1]
 
 
 @pytest.mark.parametrize("command, folder", [
@@ -83,8 +83,8 @@ def test_a_build_configures_and_compiles_in_the_tree_of_its_type(rig):
     built = rig()
     assert project.build(BuildType.release, surroundings=built.surroundings) == 0
     tree = str(built.root / "build" / "default-release")
-    assert tree in built.argv(0)
-    assert built.argv(1)[1:3] == ["--build", tree]
+    assert tree in built.shown[0]
+    assert built.shown[1][1:3] == ["--build", tree]
 
 
 def test_the_packages_get_the_compiler_the_build_path_finds(rig):
@@ -150,7 +150,7 @@ def test_the_configure_carries_both_launcher_entries(rig):
     """The compile and the link launcher reach the cache through the gate script."""
     built = rig()
     assert project.build(BuildType.debug, surroundings=built.surroundings) == 0
-    arguments = built.argv(0)
+    arguments = built.shown[0]
     compile_entries = [a for a in arguments if a.startswith("-DCMAKE_CXX_COMPILER_LAUNCHER=")]
     link_entries = [a for a in arguments if a.startswith("-DCMAKE_CXX_LINKER_LAUNCHER=")]
     assert len(compile_entries) == 1 and len(link_entries) == 1
@@ -162,10 +162,10 @@ def test_the_tsan_type_asks_for_thread_sanitizer_in_its_own_tree(rig):
     """`--type tsan` configures RelWithDebInfo with the option, in build/tsan-relwithdebinfo."""
     built = rig()
     assert project.build(BuildType.tsan, surroundings=built.surroundings) == 0
-    arguments = built.argv(0)
+    arguments = built.shown[0]
     assert project.K_THREAD_SANITIZER_OPTION in arguments
     assert "-DCMAKE_BUILD_TYPE=RelWithDebInfo" in arguments
-    assert str(built.root / "build" / "tsan-relwithdebinfo") in built.argv(1)
+    assert str(built.root / "build" / "tsan-relwithdebinfo") in built.shown[1]
 
 
 def test_the_report_is_written_after_the_compile(rig):

@@ -127,6 +127,11 @@ class Rig:
         """Returns the words of each command run with its output held back, in order."""
         return [list(command.argv) for command in self.runner.commands if command.captured]
 
+    @property
+    def shown(self) -> list[list[str]]:
+        """Returns the words of each command run with its output shown, in order."""
+        return [list(command.argv) for command in self.runner.commands if not command.captured]
+
     def argv(self, index: int = 0) -> list[str]:
         """Returns the words of the command run at *index*."""
         return list(self.runner.commands[index].argv)
