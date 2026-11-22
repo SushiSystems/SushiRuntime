@@ -4,4 +4,4 @@
 # Licensed under the Apache License 2.0. See LICENSE.
 """SushiRuntime developer CLI package."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
