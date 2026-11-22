@@ -56,6 +56,24 @@ namespace
         return std::vector<std::uint8_t>(count, value);
     }
 
+    /** @brief Returns @p unit written @p count times, built by doubling the copies it holds. */
+    std::string repeated_text(const std::string& unit, std::size_t count)
+    {
+        std::string text;
+        if (count == 0)
+            return text;
+        text = unit;
+        text.reserve(unit.size() * count);
+        std::size_t copies = 1;
+        while (copies * 2 <= count)
+        {
+            text.append(text.data(), text.size());
+            copies *= 2;
+        }
+        text.append(text.data(), (count - copies) * unit.size());
+        return text;
+    }
+
     /** @brief Returns the digest of a message fed to one Sha256 in pieces of the given size. */
     Sha256Digest hash_in_pieces(const std::vector<std::uint8_t>& message, std::size_t piece)
     {
@@ -116,9 +134,7 @@ class Small_Sha256Test : public ::testing::TestWithParam<DigestRow>
 TEST_P(Small_Sha256Test, Sha256Fips180Vectors)
 {
     const DigestRow& row = GetParam();
-    std::string message;
-    for (std::size_t index = 0; index < row.repeat; ++index)
-        message += row.unit;
+    const std::string message = repeated_text(row.unit, row.repeat);
 
     EXPECT_EQ(to_hex(sha256(bytes_of(message))), row.digest);
 }
