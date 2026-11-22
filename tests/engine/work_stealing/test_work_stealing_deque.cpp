@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -67,13 +68,20 @@ namespace
             deque.push(tag(id));
     }
 
-    /** @brief Pops @p deque empty on the calling thread and returns the ids it held, each once. */
-    std::set<std::uintptr_t> pop_all(Deque& deque)
+    /**
+     * @brief Pops @p deque empty on the calling thread and counts the pops of each id.
+     *
+     * Entry @p id holds the pops of the ids 1 to @p total; entry 0 holds the pops of any other id.
+     */
+    std::vector<std::uintptr_t> pop_counts(Deque& deque, std::uintptr_t total)
     {
-        std::set<std::uintptr_t> seen;
+        std::vector<std::uintptr_t> counts(total + 1, 0);
         while (Task* task = deque.pop())
-            seen.insert(untag(task));
-        return seen;
+        {
+            const std::uintptr_t id = untag(task);
+            ++counts[id >= 1 && id <= total ? id : 0];
+        }
+        return counts;
     }
 
     /** @brief What a pool of consumers took from a deque. */
@@ -144,13 +152,13 @@ TEST(Small_WorkStealingDeque, PopDrainsOverflowExactlyOnce)
     const std::uintptr_t total = total_past_capacity();
     push_tags(dq, total);
 
-    const std::set<std::uintptr_t> seen = pop_all(dq);
+    const std::vector<std::uintptr_t> counts = pop_counts(dq, total);
 
     EXPECT_EQ(dq.size(), 0u);
     EXPECT_EQ(dq.overflow_size(), 0u);
-    ASSERT_EQ(seen.size(), total);
-    EXPECT_EQ(*seen.begin(), 1u);
-    EXPECT_EQ(*seen.rbegin(), total);
+    EXPECT_EQ(counts[0], 0u) << "a pop returned an id that was never pushed";
+    const auto once = [](std::uintptr_t popped) { return popped == 1u; };
+    EXPECT_TRUE(std::all_of(counts.begin() + 1, counts.end(), once)) << "an id was popped other than once";
 }
 
 /**
