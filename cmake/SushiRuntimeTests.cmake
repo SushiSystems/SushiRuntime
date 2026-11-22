@@ -28,6 +28,8 @@ set(SR_QUARANTINED_TESTS
     Medium_LateBindingsDeathTest.ASlotTheHostCannotReadStopsTheCallThatNamesIt/*
     # KI-40: failed once under an 8-job medium run.
     Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
+    # KI-49: missed its Hello for 60 s once on Windows.
+    Medium_DispatchExecutorTest.DisconnectEndsAnOpenInputPull
 )
 # The tests AdaptiveCpp's CPU backend fails, KI-18 to KI-22 in docs/backlog/CORRECTNESS.md.
 if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
@@ -37,7 +39,7 @@ if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         Medium_PlacementScopeDevice.AKindOrMemoryNoDeviceHasIsAbsent
         Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
         Medium_InteropBorrow.ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate
-        # KI-45, KI-46 and KI-47 in docs/backlog/CORRECTNESS.md, fixed by RW-173.
+        # KI-45 to KI-48 in docs/backlog/CORRECTNESS.md, fixed by RW-173.
         Medium_SYCLUSMSource/USMSourceContract/0.AnAllocationReportsItsKindAndForeignMemoryNone
         Medium_MemoryExchangeImport.AnImportWithNoKindIsRefused
         Medium_DistributedTcpFaultsTest.MasterKilledWorkerSurvivesAndReconnects
@@ -52,6 +54,8 @@ if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         Medium_NestedRunProbe.WorkerKernelRunsAGraphOfASecondRuntime
         Medium_DispatchExecutorTest.KernelSeesBufferSizes
         Medium_DispatchExecutorTest.DispatchesOverDisjointBuffersAreInFlightTogether
+        # KI-48.
+        Medium_SplitDispatch.TheJoinDoesNotWaitOnUnrelatedWorkOnThePartsQueue
     )
 endif()
 

@@ -16,6 +16,7 @@
 | RW-163 | P1 | open | Make the submit-zone enclosure test hold under an 8-job medium run | the cause is measured and ten sr test --label medium --jobs 8 runs pass Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone |  | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
 | RW-172 | P2 | open | Bring the epoch slot-limit death test under the medium time limit | Medium_EpochReclamationDeathTest.AThreadPastTheSlotLimitStopsNamingTheLimit runs within 5 s alone in CI and leaves tests/budget_exemptions.toml |  | `tests/platform/memory/test_epoch_reclamation.cpp` | 2026-11-22 |
 | RW-173 | P2 | open | Make the medium tests AdaptiveCpp failed in November pass on its CPU backend | the AdaptiveCpp-only names added to SR_QUARANTINED_TESTS on 2026-11-22 leave it and pass in the adaptivecpp CI job |  | `cmake/SushiRuntimeTests.cmake` | 2026-11-22 |
+| RW-174 | P2 | open | Find why a worker-agent pull test missed its Hello on Windows | DisconnectEndsAnOpenInputPull leaves SR_QUARANTINED_TESTS and passes 200 repeats in the windows CI job |  | `tests/extension/distributed/test_worker_agent/test_worker_agent.cpp` | 2026-11-22 |
 
 ## Known issues
 
@@ -34,3 +35,5 @@
 | KI-45 | own | AdaptiveCpp reports a Shared USM allocation as host memory and foreign memory as USM | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/support/usm_source_contract.hpp` | 2026-11-22 |
 | KI-46 | own | AdaptiveCpp refuses an import with no kind for its missing bindless extension | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/surface/memory_exchange/test_memory_exchange.cpp` | 2026-11-22 |
 | KI-47 | own | Under AdaptiveCpp a distributed worker runs no offloaded task; the master runs them all | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/extension/distributed/test_distributed.cpp` | 2026-11-22 |
+| KI-48 | own | Under AdaptiveCpp a split join waits on an unrelated held step on the part queue and hangs | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/engine/task/test_split_dispatch.cpp` | 2026-11-22 |
+| KI-49 | own | The worker-agent disconnect-pull test missed its Hello for 60 s once on Windows | sr test --label quarantined runs it apart | RW-174 | `tests/extension/distributed/test_worker_agent/test_worker_agent.cpp` | 2026-11-22 |

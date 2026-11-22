@@ -94,10 +94,6 @@ jobs:
         run: sr test --label small
       - name: sr test --label medium
         run: sr test --label medium
-      # One-off for SushiCore RW-165: prints how CTest names the memory shard's program.
-      - name: CTest add_test lines of the memory shards
-        if: always()
-        run: grep -rn "sr_platform_tests.memory" build/*/ --include=CTestTestfile.cmake
 
   linux-intel-llvm:
     name: Linux intel-llvm (small, medium)
@@ -126,10 +122,6 @@ jobs:
         run: sr test --label small
       - name: sr test --label medium
         run: sr test --label medium
-      # One-off for SushiCore RW-165: prints how CTest names the memory shard's program.
-      - name: CTest add_test lines of the memory shards
-        if: always()
-        run: grep -rn "sr_platform_tests.memory" build/*/ --include=CTestTestfile.cmake
 
   linux-adaptivecpp:
     name: Linux adaptivecpp (small, medium)
@@ -138,9 +130,6 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SR_SYCL_TOOLCHAIN: adaptivecpp
-      # A death test's child forked after AdaptiveCpp starts its threads hangs; the threadsafe
-      # style runs the child as a new process instead of a fork.
-      GTEST_DEATH_TEST_STYLE: threadsafe
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-adaptivecpp
