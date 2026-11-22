@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -67,6 +68,18 @@ TEST(Small_HostUSMSource, RefusesAnAlignmentThatIsNotAPowerOfTwo)
     request.kind = USMKind::Device;
     request.bytes = 16;
     request.alignment = 48;
+
+    EXPECT_EQ(source->allocate(request), nullptr);
+}
+
+/** @brief Tests that a request larger than any object can be is refused with null. */
+TEST(Small_HostUSMSource, RefusesARequestOverTheLargestObjectSize)
+{
+    const std::unique_ptr<USMSource> source = make_host_usm_source();
+    USMRequest request;
+    request.kind = USMKind::Host;
+    request.bytes = static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max());
+    request.alignment = 16;
 
     EXPECT_EQ(source->allocate(request), nullptr);
 }

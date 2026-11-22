@@ -133,6 +133,7 @@ queue.
 | `ACopyPutsTheBytesInTheDestination` | `copy()` on a device puts the source bytes in a shared allocation. |
 | `ASourceOfOneDeviceCountsOne` | A source of one device reports one. |
 | `RefusesAnAlignmentThatIsNotAPowerOfTwo` | The host source refuses an alignment that is not a power of two with null. |
+| `RefusesARequestOverTheLargestObjectSize` | The host source refuses a request over `PTRDIFF_MAX` bytes with its overhead with null, and never asks the heap. |
 | `TwoDevicesShareOneContext` | Every pair of host devices shares one context. |
 | `CountsTheDevicesItWasMadeWith` | A host source counts the devices it was made with. |
 

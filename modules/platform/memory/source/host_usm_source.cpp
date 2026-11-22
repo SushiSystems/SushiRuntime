@@ -125,7 +125,9 @@ namespace SushiRuntime
             if (!is_power_of_two(alignment))
                 return nullptr;
             const std::size_t overhead = alignment + sizeof(void*);
-            if (request.bytes > std::numeric_limits<std::size_t>::max() - overhead)
+            // A block over PTRDIFF_MAX bytes, larger than any object can be, is refused before the heap is asked.
+            const auto largest = static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max());
+            if (overhead > largest || request.bytes > largest - overhead)
                 return nullptr;
 
             void* const raw = std::malloc(request.bytes + overhead);

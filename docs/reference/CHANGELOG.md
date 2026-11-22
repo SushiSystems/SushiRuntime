@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-22 — memory: Refused a host USM request whose block would be over `PTRDIFF_MAX` bytes before the heap is asked, so a sanitized build returns AllocationFailed instead of aborting (`host_usm_source.cpp`).
 - 2026-11-22 — execution: Built chain replay and the peer-access grant under AdaptiveCpp, whose queue has no `get_backend()`, without the oneAPI graph extension (`chain_replay.cpp`, `runtime_transfer_paths.cpp`).
 - 2026-11-22 — execution: Built the AdaptiveCpp toolchain again by compiling chain replay only where the SYCL implementation has the oneAPI graph extension; a plan there runs as a chain (KI-44).
 - 2026-11-21 — cli: Breaking change: `sr build` no longer removes the tree it configures; it refuses a tree of another generator or source folder and names `sr clean`, and configures any other difference in place (RW-171).
