@@ -114,6 +114,7 @@ namespace SushiRuntime
                             return false;
                         }
 #else
+                        static_cast<void>(devices_);
                         static_cast<void>(reader);
                         static_cast<void>(owner);
                         return false;

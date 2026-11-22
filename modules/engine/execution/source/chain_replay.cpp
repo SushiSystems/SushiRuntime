@@ -270,6 +270,22 @@ namespace SushiRuntime
                 }
                 return "a node reads host state at submit that may change between steps, such as a State's fields";
             }
+
+            /**
+             * @brief Returns whether layer 2 runs on the backend of @p queue.
+             *
+             * Without the oneAPI graph extension it returns false and does not ask @p queue for its
+             * backend.
+             */
+            bool queue_replays(const sycl::queue& queue) noexcept
+            {
+#if SR_HAS_SYCL_GRAPH
+                return replays_on(queue.get_backend());
+#else
+                static_cast<void>(queue);
+                return false;
+#endif
+            }
         } // namespace
 
         /**
@@ -313,7 +329,7 @@ namespace SushiRuntime
 
             sycl::queue& queue = context.devices().queue(chain.queue_index, Internal::Device::QueueFlavour{true, false});
             const char* refusal = replay_refusal(graph);
-            if (refusal == nullptr && !replays_on(queue.get_backend()))
+            if (refusal == nullptr && !queue_replays(queue))
                 refusal = "the device's backend has not replayed a recorded graph in the spike or CI";
             if (refusal != nullptr)
             {

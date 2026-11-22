@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-22 — execution: Built chain replay and the peer-access grant under AdaptiveCpp, whose queue has no `get_backend()`, without the oneAPI graph extension (`chain_replay.cpp`, `runtime_transfer_paths.cpp`).
 - 2026-11-22 — execution: Built the AdaptiveCpp toolchain again by compiling chain replay only where the SYCL implementation has the oneAPI graph extension; a plan there runs as a chain (KI-44).
 - 2026-11-21 — cli: Breaking change: `sr build` no longer removes the tree it configures; it refuses a tree of another generator or source folder and names `sr clean`, and configures any other difference in place (RW-171).
 - 2026-11-21 — cli: Breaking change: Removed `sr build --clean`, and made `sr clean` the shared command, which says what it would remove and removes it only with `--yes`, selecting trees by `--type` (RW-170, `8470fc9a`).
