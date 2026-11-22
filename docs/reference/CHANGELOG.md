@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-22 — deps: Pinned SushiLog and SushiProfiler v0.5.1, which take SushiCore 0.16, so CI no longer installs an older SushiCore over the CLI's (`cli/sushistack.deps.toml`).
 - 2026-11-22 — repository_hygiene: Give every test a name and suite that check_test_odr accepts (RW-136).
 - 2026-11-22 — general: Clear the known findings of the shared checkers (RW-80).
 - 2026-11-22 — tools: Synced the shared tools of SushiCore v0.16.1, whose check_test_odr reads only the rows an instantiation passes and the type of a parameter's member, and removed `tools/known_findings.toml`, which held no finding.
