@@ -178,11 +178,16 @@ namespace
                 return fabric_.master_events().losses().size();
             }
 
-            /** @brief Returns the HELLO frames sent so far, decoded. */
+            /**
+             * @brief Returns the HELLO frames sent so far, decoded.
+             *
+             * The decoded messages view the bytes of their frames, which the rig keeps until it is destroyed.
+             */
             std::vector<Wire::HelloMessage> hellos()
             {
+                kept_hello_frames_.push_back(sent(MessageType::Hello));
                 std::vector<Wire::HelloMessage> hellos;
-                for (const RecordedFrame& frame : sent(MessageType::Hello))
+                for (const RecordedFrame& frame : kept_hello_frames_.back())
                     hellos.push_back(decode<Wire::HelloMessage>(frame));
                 return hellos;
             }
@@ -200,6 +205,7 @@ namespace
             TestSupport::ExecutorFabric fabric_;         /**< Carries what the link sends to a master end that records. */
             std::uint8_t drawn_ = 0;                     /**< Counts the nonces drawn. */
             MasterLink link_;                            /**< The link under test. */
+            std::vector<std::vector<RecordedFrame>> kept_hello_frames_; /**< The frames each hellos() decoded. */
     };
 
     /** @brief Builds a link on a clock the test moves. */
