@@ -43,6 +43,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/sycl/sycl_compat.hpp>
 
 #include "refusing_fill.hpp"
 #include "run_recorder.hpp"
@@ -775,7 +776,7 @@ namespace
             return queue.submit([&events](sycl::handler& handler)
             {
                 handler.depends_on(events);
-                handler.host_task([]() { throw std::runtime_error(K_TASK_FAILURE); });
+                SushiRuntime::Detail::enqueue_host_task(handler, []() { throw std::runtime_error(K_TASK_FAILURE); });
             });
         });
         return g;

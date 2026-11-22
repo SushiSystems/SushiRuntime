@@ -63,6 +63,7 @@
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
+#include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/in_memory_offload_coordinator.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -841,7 +842,7 @@ namespace
         sushi_ptr<Node> node = make_sushi<Node>();
         node->work = [&runs](sycl::handler& handler)
         {
-            handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+            SushiRuntime::Detail::enqueue_host_task(handler, [&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
         };
         return node;
     }
@@ -892,7 +893,7 @@ namespace
         node->work = [&runs, &threads](sycl::handler& handler)
         {
             threads.note();
-            handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+            SushiRuntime::Detail::enqueue_host_task(handler, [&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
         };
         return node;
     }
@@ -912,7 +913,8 @@ namespace
             return queue.submit([&](sycl::handler& handler)
             {
                 handler.depends_on(dependencies);
-                handler.host_task([&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
+                SushiRuntime::Detail::enqueue_host_task(handler,
+                                                        [&runs] { runs.fetch_add(1, std::memory_order_relaxed); });
             });
         };
         return node;
