@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-22 — repository_hygiene: Give every test a name and suite that check_test_odr accepts (RW-136).
+- 2026-11-22 — general: Clear the known findings of the shared checkers (RW-80).
+- 2026-11-22 — tools: Synced the shared tools of SushiCore v0.16.1, whose check_test_odr reads only the rows an instantiation passes and the type of a parameter's member, and removed `tools/known_findings.toml`, which held no finding.
 - 2026-11-22 — runtime: Give the four GRAPH_REPLAY units of RW-141 their mirrored tests (RW-146).
 - 2026-11-22 — tests: Gave the TEST suites that shared a name with a fixture suite their own names, `Small_BoundaryAccessPins` and `Small_DeterminismValues` (RW-136).
 - 2026-11-22 — cli: Ran `sr test` on an asan or tsan tree without the time limits, which a sanitizer breaks, and required SushiCore 0.16 (`project.py`, `cli/pyproject.toml`).
