@@ -50,6 +50,8 @@ if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         Medium_NestedRunProbe.WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused
         Medium_NestedRunProbe.TheWorkerRuntimeIsUsableAfterTheRefusal
         Medium_NestedRunProbe.WorkerKernelRunsAGraphOfASecondRuntime
+        Medium_DispatchExecutorTest.KernelSeesBufferSizes
+        Medium_DispatchExecutorTest.DispatchesOverDisjointBuffersAreInFlightTogether
     )
 endif()
 
@@ -293,7 +295,7 @@ function(sushiruntime_register_size_shards program stem module size_group declar
     set(quarantined "")
     set(quarantined_cases 0)
     foreach(name IN LISTS SR_QUARANTINED_TESTS)
-        string(REGEX REPLACE "[.].*$" "" suite "${name}")
+        string(REGEX REPLACE "[./].*$" "" suite "${name}")
         if(name MATCHES "^${prefix}" AND suite IN_LIST declared)
             list(APPEND quarantined "${name}" "*/${name}")
             math(EXPR quarantined_cases "${quarantined_cases} + 1")
