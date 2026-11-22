@@ -40,6 +40,10 @@
 
 #include <gtest/gtest.h>
 
+#if defined(__linux__)
+#    include <sys/prctl.h>
+#endif
+
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
@@ -277,9 +281,18 @@ namespace
 
 namespace
 {
+    /** @brief Turns off the core dump of the calling process on Linux. */
+    void skip_core_dump()
+    {
+#if defined(__linux__)
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
+    }
+
     /** @brief Parks one thread more than there are slots, each holding a guard's slot. */
     void hold_one_slot_too_many()
     {
+        skip_core_dump();
         constexpr std::size_t THREADS = K_EPOCH_SLOTS + 1;
         EpochManager manager;
         ThreadPark park;

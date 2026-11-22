@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-23 — tests: Turned off the core dump of the epoch slot-limit death test's child on Linux, where it took 13 to 18 s, and dropped its time-limit exemption (RW-172, `test_epoch_reclamation.cpp`).
 - 2026-11-23 — tests: Took the Windows worker-agent pull test out of quarantine, since SushiCore 0.16.2 reruns a failed shard alone again; its cause stays open as RW-174 (KI-49).
 - 2026-11-23 — cli: Required SushiCore 0.16.2 and synced its shared tools (`pyproject.toml`, `shared_tools.lock`).
 - 2026-11-22 — execution: Replayed a chained plan only on a device whose driver reports `aspect::ext_oneapi_limited_graph`, since an OpenCL driver without command buffers refused every recording (`chain_replay.cpp`).
