@@ -273,14 +273,20 @@ namespace
             GTEST_SKIP() << "SYCL offers no queue for host_work to take.";
         const Result<sushi_ptr<Node>> allocate = factory_.make(step(PlannedStepKind::Allocate));
         const Result<sushi_ptr<Node>> copy = factory_.make(step(PlannedStepKind::Copy));
-        ASSERT_TRUE(allocate && copy);
+        const Result<sushi_ptr<Node>> free = factory_.make(step(PlannedStepKind::Free));
+        ASSERT_TRUE(allocate && copy && free);
         ASSERT_TRUE(allocate.value()->execute_host_checked(*queue, {}));
         path_.fail_with(Error{ErrorCode::InvalidState, "file path: ends early"});
 
         const Result<sycl::event> ran = copy.value()->execute_host_checked(*queue, {});
 
-        ASSERT_FALSE(ran);
-        EXPECT_EQ(ran.error().code, ErrorCode::InvalidState);
-        EXPECT_EQ(ran.error().message, "file path: ends early");
+        EXPECT_FALSE(ran);
+        if (!ran)
+        {
+            EXPECT_EQ(ran.error().code, ErrorCode::InvalidState);
+            EXPECT_EQ(ran.error().message, "file path: ends early");
+        }
+        ASSERT_TRUE(free.value()->execute_host_checked(*queue, {}));
+        EXPECT_EQ(allocator_->held, 0);
     }
 } // namespace
