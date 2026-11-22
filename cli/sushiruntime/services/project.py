@@ -650,8 +650,10 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
         build_tree=lambda: build_dir, run=ws.runner.run, run_ctest=run_ctest,
         run_program=ProgramRunner(build_dir, ws.runner.run, env) if named is None else None,
         rebuilt=lambda directory: ws.driver.tree_is_current(cfg, directory, env))
+    # A sanitizer slows every test several times over, so its tree is not judged by the time limits.
     return run_tests(tests, selection, name_filter=filter, repeat=repeat, jobs=jobs,
-                     every_size=every_size or label is Label.large)
+                     every_size=every_size or label is Label.large,
+                     time_limits=build_type not in (BuildType.asan, BuildType.tsan))
 
 
 def bench(distributed: bool = False, filter: str | None = None,

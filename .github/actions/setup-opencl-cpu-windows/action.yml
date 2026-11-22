@@ -1,0 +1,35 @@
+name: Set up the Intel CPU OpenCL runtime on Windows
+description: >-
+  Installs Intel's CPU Runtime for OpenCL Applications and registers its ICD, so SYCL finds a CPU
+  device on a Windows runner, as intel-oneapi-runtime-opencl does on Linux (setup-intel-llvm).
+
+runs:
+  using: composite
+  steps:
+    - name: Install the Intel CPU OpenCL runtime
+      shell: pwsh
+      env:
+        # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-cpu-runtime-for-opencl-applications-with-sycl-support.html
+        SR_OPENCL_CPU_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/b6dccdb7-b503-41ea-bd4b-a78e9c2d8dd6/w_opencl_runtime_p_2025.1.0.972.exe
+      run: |
+        $work = Join-Path $env:RUNNER_TEMP "opencl-cpu"
+        New-Item -ItemType Directory -Force $work | Out-Null
+        $installer = Join-Path $work "installer.exe"
+        Invoke-WebRequest -Uri $env:SR_OPENCL_CPU_URL -OutFile $installer
+        # The installer is self-extracting; -s -x -f unpacks its MSI without a window.
+        Start-Process $installer "-s -x -f `"$work\extracted`"" -NoNewWindow -Wait
+        $msi = Get-ChildItem "$work\extracted" -Filter *.msi -Recurse | Select-Object -First 1
+        if (-not $msi) { Write-Error "The OpenCL CPU installer held no MSI."; exit 1 }
+        $log = Join-Path $work "install.log"
+        $install = Start-Process msiexec "/i `"$($msi.FullName)`" /qn /l*! `"$log`"" -NoNewWindow -Wait -PassThru
+        if ($install.ExitCode -ne 0) { Get-Content $log; exit $install.ExitCode }
+        Remove-Item -Recurse -Force $work
+    - name: Register the Intel CPU OpenCL ICD
+      shell: pwsh
+      run: |
+        $bin = Join-Path ${env:CommonProgramFiles(x86)} "Intel\Shared Libraries\bin"
+        $icd = Get-ChildItem $bin -Filter "intelocl64*.dll" | Select-Object -First 1
+        if (-not $icd) { Write-Error "No intelocl64 ICD under $bin."; exit 1 }
+        reg add "HKLM\SOFTWARE\Khronos\OpenCL\Vendors" /v $icd.FullName /t REG_DWORD /d 0 /f | Out-Null
+        Add-Content $env:GITHUB_PATH $bin
+        Write-Output "Registered $($icd.FullName)"

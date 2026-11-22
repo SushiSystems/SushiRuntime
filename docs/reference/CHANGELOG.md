@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-22 — cli: Ran `sr test` on an asan or tsan tree without the time limits, which a sanitizer breaks, and required SushiCore 0.16 (`project.py`, `cli/pyproject.toml`).
+- 2026-11-22 — ci: Installed Intel's CPU OpenCL runtime on the Windows runner, which had no CPU device for the medium tests (`setup-opencl-cpu-windows`).
+- 2026-11-22 — tools: Synced the shared tools of SushiCore v0.16.0, whose pre-commit hook checks the repository in place and writes no copy (`tools/hooks/pre_commit.py`).
 - 2026-11-22 — memory: Refused a host USM request whose block would be over `PTRDIFF_MAX` bytes before the heap is asked, so a sanitized build returns AllocationFailed instead of aborting (`host_usm_source.cpp`).
 - 2026-11-22 — execution: Built chain replay and the peer-access grant under AdaptiveCpp, whose queue has no `get_backend()`, without the oneAPI graph extension (`chain_replay.cpp`, `runtime_transfer_paths.cpp`).
 - 2026-11-22 — execution: Built the AdaptiveCpp toolchain again by compiling chain replay only where the SYCL implementation has the oneAPI graph extension; a plan there runs as a chain (KI-44).
