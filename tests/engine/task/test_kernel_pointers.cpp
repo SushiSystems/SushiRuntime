@@ -188,7 +188,7 @@ namespace
         EXPECT_DEATH(pointers.bind(1),
                      "handle slot " + std::to_string(handle.slot()) + " generation " +
                          std::to_string(handle.generation()) + " has no instance on device 1.*"
-                         "Home when the slot was made: space \\d+, not resident, memory unknown, owned, "
+                         "Home when the slot was made: space [0-9]+, not resident, memory unknown, owned, "
                          "home device 0");
     }
 

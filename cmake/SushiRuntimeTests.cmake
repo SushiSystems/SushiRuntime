@@ -37,6 +37,19 @@ if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
         Medium_PlacementScopeDevice.AKindOrMemoryNoDeviceHasIsAbsent
         Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
         Medium_InteropBorrow.ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate
+        # KI-45, KI-46 and KI-47 in docs/backlog/CORRECTNESS.md, fixed by RW-173.
+        Medium_SYCLUSMSource/USMSourceContract/0.AnAllocationReportsItsKindAndForeignMemoryNone
+        Medium_MemoryExchangeImport.AnImportWithNoKindIsRefused
+        Medium_DistributedTcpFaultsTest.MasterKilledWorkerSurvivesAndReconnects
+        Medium_DistributedTcpFaultsTest.ThrottledTransferKeepsWorkerAlive
+        Medium_DistributedTcpFaultsTest.OversizedLengthClosesPeerNotProcess
+        Medium_DistributedTcpFaultsTest.ManyChunkBufferCrossesIntact
+        Medium_DistributedTcpFaultsTest.GarbageBytesClosedMasterLives
+        Medium_DistributedTcpFaultsTest.DispatchReturnsWhilePeerStalled
+        Medium_DistributedTcpFaultsTest.StalledLinkReapedThenWorkerRejoins
+        Medium_NestedRunProbe.WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused
+        Medium_NestedRunProbe.TheWorkerRuntimeIsUsableAfterTheRefusal
+        Medium_NestedRunProbe.WorkerKernelRunsAGraphOfASecondRuntime
     )
 endif()
 

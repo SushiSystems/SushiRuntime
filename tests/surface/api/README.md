@@ -146,8 +146,8 @@ Two more claims set the chain against bare SYCL's own submission of the same ker
 queue of device 0, not the in-order queue the chain submits to, so the two share the kernel and the
 device and not the flavour. The fixture skips only on AdaptiveCpp, so the claims run on Windows too:
 
-4. Bare SYCL allocates on every submission this thread makes, and the chain allocates at least as
-   much, so the counter sees the run path's own submission.
+4. Bare SYCL and the chain each allocate on every submission this thread makes, so the counter
+   sees the run path's own submission.
 5. The count of the chain for four times the ticks, less its count for one, does not exceed bare
    SYCL's difference for the same two lengths.
 
@@ -214,7 +214,7 @@ one.
 | `ASchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, for the plain run. |
 | `AProfiledSchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, with a run observer added: the event ledger of a profiled run allocates only for a new shape, never on a later run that replays it. |
 | `AnAsyncWaitIntoAReusedReportIsAmortised` | Claim 3. |
-| `BareSYCLAllocatesPerSubmissionAndTheChainNoLess` | Claim 4. |
+| `BareSYCLAndTheChainEachAllocatePerSubmission` | Claim 4. |
 | `TheChainsGrowthDoesNotExceedBareSYCLs` | Claim 5. |
 
 The reuse and baseline tests skip on AdaptiveCpp, whose submission allocates a different number of times per call,

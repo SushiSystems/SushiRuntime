@@ -55,10 +55,11 @@ namespace SushiRuntime
         replay_refusal(const Internal::Graph::CompiledGraph& graph) noexcept;
 
         /**
-         * @brief Returns whether layer 2 runs on a backend: one the spike or CI has replayed on.
+         * @brief Returns whether layer 2 runs on a device: one whose backend the spike or CI has
+         *        replayed on and whose driver reports the oneAPI graph extension.
          * @see docs/design/GRAPH_REPLAY/README.md
          */
-        [[nodiscard]] SUSHIRUNTIME_API bool replays_on(sycl::backend backend) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API bool replays_on(const sycl::device& device) noexcept;
 
         /**
          * @brief Settles once per plan whether a chained plan replays, recording its step the

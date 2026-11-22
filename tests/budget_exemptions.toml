@@ -1,0 +1,6 @@
+# The tests left out of the time limits, each with the open backlog entry that brings it back.
+# The test command reads this file; an entry whose test falls well within its limit must go.
+
+[exempt]
+# 289 real threads take every epoch slot in the death test's child: 12 to 19 s alone in CI.
+"Medium_EpochReclamationDeathTest.AThreadPastTheSlotLimitStopsNamingTheLimit" = "RW-172"

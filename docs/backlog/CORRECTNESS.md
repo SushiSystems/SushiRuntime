@@ -14,6 +14,8 @@
 | RW-155 | P1 | open | Plan a buffer another run holds against that run's end state | Two graphs on one buffer, planned and run from two threads at once, leave every interval with a valid space |  | `modules/engine/coherence/README.md` | 2026-11-16 |
 | RW-160 | P1 | open | Find why a 4-byte Shared USM allocation is refused during a full test run | the cause is measured and fixed, and ten full sr test runs at 8 jobs pass the two death tests |  | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
 | RW-163 | P1 | open | Make the submit-zone enclosure test hold under an 8-job medium run | the cause is measured and ten sr test --label medium --jobs 8 runs pass Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone |  | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
+| RW-172 | P2 | open | Bring the epoch slot-limit death test under the medium time limit | Medium_EpochReclamationDeathTest.AThreadPastTheSlotLimitStopsNamingTheLimit runs within 5 s alone in CI and leaves tests/budget_exemptions.toml |  | `tests/platform/memory/test_epoch_reclamation.cpp` | 2026-11-22 |
+| RW-173 | P2 | open | Make the medium tests AdaptiveCpp failed in November pass on its CPU backend | the AdaptiveCpp-only names added to SR_QUARANTINED_TESTS on 2026-11-22 leave it and pass in the adaptivecpp CI job |  | `cmake/SushiRuntimeTests.cmake` | 2026-11-22 |
 
 ## Known issues
 
@@ -29,3 +31,6 @@
 | KI-37 | own | A plan made while another run holds its buffer can leave an interval with no valid space | Commit graphs that share a buffer from one thread | RW-155 | `modules/engine/coherence/README.md` | 2026-11-16 |
 | KI-40 | own | The submit-zone enclosure test is quarantined: it failed once under an 8-job medium run | sr test --label quarantined runs it apart; it passed 200 repeats alone | RW-163 | `tests/surface/profiling/test_register_profiler_parts/test_runtime_session.cpp` | 2026-11-17 |
 | KI-41 | own | Two data-handle death tests are quarantined: a 4-byte Shared USM alloc was refused once | sr test --label quarantined runs them apart; they pass when run alone | RW-160 | `tests/surface/api/data/test_buffer.cpp` | 2026-11-17 |
+| KI-45 | own | AdaptiveCpp reports a Shared USM allocation as host memory and foreign memory as USM | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/support/usm_source_contract.hpp` | 2026-11-22 |
+| KI-46 | own | AdaptiveCpp refuses an import with no kind for its missing bindless extension | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/surface/memory_exchange/test_memory_exchange.cpp` | 2026-11-22 |
+| KI-47 | own | Under AdaptiveCpp a distributed worker runs no offloaded task; the master runs them all | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/extension/distributed/test_distributed.cpp` | 2026-11-22 |

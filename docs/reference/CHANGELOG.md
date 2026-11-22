@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 2026-11-22 — execution: Replayed a chained plan only on a device whose driver reports `aspect::ext_oneapi_limited_graph`, since an OpenCL driver without command buffers refused every recording (`chain_replay.cpp`).
+- 2026-11-22 — task: Guarded the lists of `InMemoryOffloadCoordinator` with a mutex, since pool workers call it at once; its accessors return copies (`in_memory_offload_coordinator.hpp`).
+- 2026-11-22 — tests: Matched a death test's message with `[0-9]`, which POSIX regex reads, not `\d`, and set Claim 4 of the steady-state tests to a per-tick allocation on both paths (`test_kernel_pointers.cpp`, `test_sushiruntime.cpp`).
+- 2026-11-22 — ci: Ran the death tests of the ThreadSanitizer job in the threadsafe style, since TSan stops a forked child that starts a thread (`ci.yml`).
+- 2026-11-22 — tests: Exempted the epoch slot-limit death test from the medium limit until RW-172, and quarantined twelve tests under AdaptiveCpp for KI-45 to KI-47 (`budget_exemptions.toml`, `SushiRuntimeTests.cmake`).
 - 2026-11-22 — deps: Pinned SushiLog and SushiProfiler v0.5.1, which take SushiCore 0.16, so CI no longer installs an older SushiCore over the CLI's (`cli/sushistack.deps.toml`).
 - 2026-11-22 — repository_hygiene: Give every test a name and suite that check_test_odr accepts (RW-136).
 - 2026-11-22 — general: Clear the known findings of the shared checkers (RW-80).

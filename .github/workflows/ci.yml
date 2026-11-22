@@ -248,6 +248,10 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || inputs.post_merge
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    env:
+      # TSan stops a forked child that starts a thread, and a death test's child starts the
+      # runtime's; the threadsafe style runs the child as a new process instead of a fork.
+      GTEST_DEATH_TEST_STYLE: threadsafe
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-oneapi

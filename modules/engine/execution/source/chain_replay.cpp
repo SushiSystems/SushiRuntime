@@ -280,7 +280,7 @@ namespace SushiRuntime
             bool queue_replays(const sycl::queue& queue) noexcept
             {
 #if SR_HAS_SYCL_GRAPH
-                return replays_on(queue.get_backend());
+                return replays_on(queue.get_device());
 #else
                 static_cast<void>(queue);
                 return false;
@@ -302,16 +302,28 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Returns whether layer 2 runs on a backend: CUDA and OpenCL, which the spike replayed on.
+         * @brief Returns whether layer 2 runs on a device: a CUDA or OpenCL one, which the spike
+         *        replayed on, whose driver reports the oneAPI graph extension.
          *
-         * A SYCL implementation without the oneAPI graph extension replays on none.
+         * An OpenCL driver without command buffers refuses every recording, so the backend alone
+         * does not settle it. A SYCL implementation without the extension replays on none.
          */
-        bool replays_on(sycl::backend backend) noexcept
+        bool replays_on(const sycl::device& device) noexcept
         {
 #if SR_HAS_SYCL_GRAPH
-            return backend == sycl::backend::ext_oneapi_cuda || backend == sycl::backend::opencl;
+            try
+            {
+                const sycl::backend backend = device.get_backend();
+                if (backend != sycl::backend::ext_oneapi_cuda && backend != sycl::backend::opencl)
+                    return false;
+                return device.has(sycl::aspect::ext_oneapi_limited_graph);
+            }
+            catch (const sycl::exception&)
+            {
+                return false;
+            }
 #else
-            static_cast<void>(backend);
+            static_cast<void>(device);
             return false;
 #endif
         }

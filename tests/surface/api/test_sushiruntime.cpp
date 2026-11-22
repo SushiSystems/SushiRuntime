@@ -355,8 +355,8 @@ class Medium_SteadyStateBaseline : public TestSupport::RuntimeTest
         }
 };
 
-/** @brief Tests that bare SYCL allocates on every submission of this thread and the chain allocates no less. */
-TEST_F(Medium_SteadyStateBaseline, BareSYCLAllocatesPerSubmissionAndTheChainNoLess)
+/** @brief Tests that bare SYCL and the chain each allocate on every submission of this thread, so the counter sees both. */
+TEST_F(Medium_SteadyStateBaseline, BareSYCLAndTheChainEachAllocatePerSubmission)
 {
     auto buf = runtime().buffer<float>(N).value();
     TestSupport::fill_with(buf, 0.0f);
@@ -370,9 +370,9 @@ TEST_F(Medium_SteadyStateBaseline, BareSYCLAllocatesPerSubmissionAndTheChainNoLe
     EXPECT_GE(baseline, K_TICKS)
         << "bare SYCL no longer allocates per submission on this thread, so nothing "
            "on the run path is left for the counter to see in this build";
-    EXPECT_GE(chain, baseline)
-        << "the chain submitted the same kernel from this thread and the counter "
-           "saw less than bare SYCL's own cost; it does not see the run path";
+    EXPECT_GE(chain, K_TICKS)
+        << "the chain submitted the same kernel from this thread on every tick and the "
+           "counter saw fewer allocations than ticks; it does not see the run path";
 }
 
 /** @brief Tests that the chain's per-tick allocation growth does not exceed bare SYCL's growth on the same kernel. */

@@ -30,8 +30,10 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include <SushiRuntime/core/span.hpp>
@@ -53,7 +55,7 @@ namespace SushiRuntime
          *
          * try_offload() answers with set_accepting(), which refuses until it is set. The lists
          * grow on every call, so this adapter is the test double of the port, not a runtime
-         * implementation.
+         * implementation. Pool workers call it at once, so one mutex guards the lists.
          * @see modules/engine/task/README.md
          */
         class InMemoryOffloadCoordinator final : public OffloadCoordinator
@@ -90,8 +92,9 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool try_offload(Node& node) override
                 {
+                    const std::lock_guard<std::mutex> lock(mutex_);
                     offered_.push_back(&node);
-                    if (!accepting_)
+                    if (!accepting_.load(std::memory_order_acquire))
                         return false;
 
                     accepted_.push_back(&node);
@@ -104,6 +107,7 @@ namespace SushiRuntime
                  */
                 void on_local_completion(Node& node) noexcept override
                 {
+                    const std::lock_guard<std::mutex> lock(mutex_);
                     local_completions_.push_back(&node);
                 }
 
@@ -119,7 +123,7 @@ namespace SushiRuntime
                  */
                 void set_accepting(bool accepting) noexcept
                 {
-                    accepting_ = accepting;
+                    accepting_.store(accepting, std::memory_order_release);
                 }
 
                 /** @brief Returns the sink bind() was given, null before the call. */
@@ -140,21 +144,24 @@ namespace SushiRuntime
                     return last_rules_;
                 }
 
-                /** @brief Returns every node try_offload() was given, in call order. */
-                [[nodiscard]] const std::vector<Node*>& offered() const noexcept
+                /** @brief Returns a copy of every node try_offload() was given, in call order. */
+                [[nodiscard]] std::vector<Node*> offered() const
                 {
+                    const std::lock_guard<std::mutex> lock(mutex_);
                     return offered_;
                 }
 
-                /** @brief Returns every node try_offload() accepted, in call order. */
-                [[nodiscard]] const std::vector<Node*>& accepted() const noexcept
+                /** @brief Returns a copy of every node try_offload() accepted, in call order. */
+                [[nodiscard]] std::vector<Node*> accepted() const
                 {
+                    const std::lock_guard<std::mutex> lock(mutex_);
                     return accepted_;
                 }
 
-                /** @brief Returns every node on_local_completion() was given, in call order. */
-                [[nodiscard]] const std::vector<Node*>& local_completions() const noexcept
+                /** @brief Returns a copy of every node on_local_completion() was given, in call order. */
+                [[nodiscard]] std::vector<Node*> local_completions() const
                 {
+                    const std::lock_guard<std::mutex> lock(mutex_);
                     return local_completions_;
                 }
 
@@ -183,8 +190,11 @@ namespace SushiRuntime
                 /** @brief Every node reported to on_local_completion(), in call order. */
                 std::vector<Node*> local_completions_;
 
+                /** @brief Guards the three lists, which pool workers append to at once. */
+                mutable std::mutex mutex_;
+
                 /** @brief The answer try_offload() gives. */
-                bool accepting_ = false;
+                std::atomic<bool> accepting_{false};
 
                 /** @brief Whether stop() ran. */
                 bool stopped_ = false;
