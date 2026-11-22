@@ -36,4 +36,3 @@
 | KI-46 | own | AdaptiveCpp refuses an import with no kind for its missing bindless extension | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/surface/memory_exchange/test_memory_exchange.cpp` | 2026-11-22 |
 | KI-47 | own | Under AdaptiveCpp a distributed worker runs no offloaded task; the master runs them all | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/extension/distributed/test_distributed.cpp` | 2026-11-22 |
 | KI-48 | own | Under AdaptiveCpp a split join waits on an unrelated held step on the part queue and hangs | the test is quarantined under AdaptiveCpp; other toolchains run it | RW-173 | `tests/engine/task/test_split_dispatch.cpp` | 2026-11-22 |
-| KI-49 | own | The worker-agent disconnect-pull test missed its Hello for 60 s once on Windows | sr test --label quarantined runs it apart | RW-174 | `tests/extension/distributed/test_worker_agent/test_worker_agent.cpp` | 2026-11-22 |

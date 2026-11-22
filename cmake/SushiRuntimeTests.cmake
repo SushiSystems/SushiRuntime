@@ -28,8 +28,6 @@ set(SR_QUARANTINED_TESTS
     Medium_LateBindingsDeathTest.ASlotTheHostCannotReadStopsTheCallThatNamesIt/*
     # KI-40: failed once under an 8-job medium run.
     Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
-    # KI-49: missed its Hello for 60 s once on Windows.
-    Medium_DispatchExecutorTest.DisconnectEndsAnOpenInputPull
 )
 # The tests AdaptiveCpp's CPU backend fails, KI-18 to KI-22 in docs/backlog/CORRECTNESS.md.
 if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
