@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-23 — tests: The worker-agent rig waits for the HELLO of the new connection, which a worker that reconnects on its own can send before the rig counts; the pull test leaves quarantine (RW-174, KI-50, `test_worker_agent.cpp`).
 
 ## v0.7.1 — 2026-11-23
 

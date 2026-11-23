@@ -318,18 +318,6 @@ namespace
                        SendStatus::Stopped;
             }
 
-            /** @brief Returns the HELLO the agent sent last. */
-            Wire::HelloMessage last_hello() const
-            {
-                const std::vector<RecordedFrame> hellos = master.frames_of(MessageType::Hello);
-                if (hellos.empty())
-                {
-                    ADD_FAILURE() << "no HELLO was sent";
-                    return Wire::HelloMessage{};
-                }
-                return decode<Wire::HelloMessage>(hellos.back());
-            }
-
             /**
              * @brief Runs a whole handshake on a new connection.
              * @param peer The master's name for the connection.
@@ -338,13 +326,20 @@ namespace
                                  std::uint32_t liveness_timeout_ms = 0,
                                  std::uint32_t chunk_bytes = 4096)
             {
-                const std::size_t hellos = master.count(MessageType::Hello);
-                const std::size_t proofs = master.count(MessageType::Proof);
                 master.connect(peer);
-                ASSERT_TRUE(master.wait_for(MessageType::Hello, hellos + 1));
+                // A worker reconnects on its own, so its HELLO may come before this call.
+                ASSERT_TRUE(eventually([&]
+                                       {
+                                           return !frames_on(peer, MessageType::Hello).empty();
+                                       }));
+                const Wire::HelloMessage hello =
+                    decode<Wire::HelloMessage>(frames_on(peer, MessageType::Hello).back());
                 master.deliver(peer, challenge_of(secret_of(K_SECRET_BYTE), session_id,
-                                                  nonce_in(last_hello())));
-                ASSERT_TRUE(master.wait_for(MessageType::Proof, proofs + 1));
+                                                  nonce_in(hello)));
+                ASSERT_TRUE(eventually([&]
+                                       {
+                                           return !frames_on(peer, MessageType::Proof).empty();
+                                       }));
                 const std::uint64_t registrations = agent_->statistics().registrations;
                 master.deliver(peer, welcome_of(peer, liveness_timeout_ms, chunk_bytes));
                 ASSERT_TRUE(eventually([&]
@@ -352,6 +347,19 @@ namespace
                                            return agent_->statistics().registrations >
                                                   registrations;
                                        }));
+            }
+
+            /** @brief Returns the frames of a type that arrived on the connection @p peer. */
+            [[nodiscard]] std::vector<RecordedFrame> frames_on(PeerID peer, MessageType type) const
+            {
+                std::vector<RecordedFrame> frames = master.frames_of(type);
+                frames.erase(std::remove_if(frames.begin(), frames.end(),
+                                            [peer](const RecordedFrame& frame)
+                                            {
+                                                return frame.peer != peer;
+                                            }),
+                             frames.end());
+                return frames;
             }
 
             /** @brief Returns the n-th TASK_RESULT sent, counted from 0. */
