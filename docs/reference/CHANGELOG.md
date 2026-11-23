@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-23 — tests: Quarantined the Windows worker-agent pull test again, which missed its reconnect Hello for 60 s in the v0.7.0 nightly; RW-174 finds why (KI-50, `SushiRuntimeTests.cmake`).
 
 ## v0.7.0 — 2026-11-23
 
