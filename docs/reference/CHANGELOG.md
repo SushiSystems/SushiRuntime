@@ -2,10 +2,10 @@
 
 ## Unreleased
 
+
+## v0.7.1 — 2026-11-23
+
 - 2026-11-23 — tests: Quarantined the Windows worker-agent pull test again, which missed its reconnect Hello for 60 s in the v0.7.0 nightly; RW-174 finds why (KI-50, `SushiRuntimeTests.cmake`).
-
-## v0.7.0 — 2026-11-23
-
 - 2026-11-23 — tests: Turned off the core dump of the epoch slot-limit death test's child on Linux, where it took 13 to 18 s, and dropped its time-limit exemption (RW-172, `test_epoch_reclamation.cpp`).
 - 2026-11-23 — tests: Took the Windows worker-agent pull test out of quarantine, since SushiCore 0.16.2 reruns a failed shard alone again; its cause stays open as RW-174 (KI-49).
 - 2026-11-23 — cli: Required SushiCore 0.16.2 and synced its shared tools (`pyproject.toml`, `shared_tools.lock`).

@@ -40,10 +40,10 @@
 /** @brief Expands to the minor version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_MINOR 7
 /** @brief Expands to the patch version of the headers being compiled against. */
-#define SUSHIRUNTIME_VERSION_PATCH 0
+#define SUSHIRUNTIME_VERSION_PATCH 1
 
 /** @brief Expands to the dotted version of the headers being compiled against, as a literal. */
-#define SUSHIRUNTIME_VERSION_STRING "0.7.0"
+#define SUSHIRUNTIME_VERSION_STRING "0.7.1"
 
 /**
  * @brief Encodes a major, minor and patch version as one integer.
