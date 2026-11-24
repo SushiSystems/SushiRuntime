@@ -23,8 +23,8 @@ from typing import Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from checking.checker import Checker, Issue, run  # noqa: E402
-from settings import K_MODULE_FUNCTION  # noqa: E402
+from sushicore.tools.checking.checker import Checker, Issue, run  # noqa: E402
+from sushicore.tools.repo_settings import K_MODULE_FUNCTION  # noqa: E402
 
 # Declaring functions, each with the folder its source paths are relative to, below its build file.
 K_DECLARING_CALLS = {

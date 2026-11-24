@@ -4,7 +4,7 @@
 `modules/<tier>/<module>/include/SushiRuntime/<module>/<name>.hpp` are in
 `tests/<tier>/<module>/test_<name>.cpp`, and its benchmark is `benchmark_<name>.cpp` beside it. A
 test that crosses modules belongs to the highest-tier module it uses, in the file of the unit whose
-behaviour it checks. `tools/testing/check_test_mirror.py` checks the mirror.
+behaviour it checks. `sushicore.tools.testing.check_test_mirror` checks the mirror.
 
 Each `tests/<tier>/<module>/` folder has a `CMakeLists.txt` that builds `sr_<module>_tests` and,
 under `SR_BUILD_BENCHMARKS`, `sr_<module>_benchmarks`, and a `README.md` that records what its tests
@@ -114,7 +114,7 @@ The filter also selects the instantiated names, `<prefix>/<suite>.<case>/<index>
 case name has no `-`: GoogleTest aborts on both.
 
 Each shard writes its cases to `test_results/gtest/<shard>.xml` in the build tree.
-`tools/testing/test_budget.py --cases <folder>` reads those files, so the per-case limits apply to
+`python -m sushicore.tools.testing.test_budget --cases <folder>` reads those files, so the per-case limits apply to
 a case in a shard. `GTEST_SHUFFLE` and `GTEST_RANDOM_SEED` of the calling environment reach every
 shard.
 

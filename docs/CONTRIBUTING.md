@@ -30,7 +30,7 @@ toolchain paths of one machine are kept (`cli/config.local.toml`).
 - One logical change per commit. A refactor and a change of behaviour are two commits.
 - Keep the module boundaries. A module includes lower tiers and the same-tier modules that
   `cmake/SushiRuntimeTiers.cmake` lists; the build refuses another include, and
-  `python tools/layering/check_layering.py .` reports it without a build.
+  `python -m sushicore.tools.layering.check_layering .` reports it without a build.
 - A header of a public module includes no header of an internal one. What names an engine type
   is compiled into the library, from `source/`.
 - A change to a public name, signature, header path or layout is a breaking change. Its commit
@@ -62,7 +62,7 @@ A change is ready when:
    `tests/<tier>/<module>/test_<name>.cpp`, and its benchmark `benchmark_<name>.cpp` beside it.
    A test that crosses modules belongs to the highest-tier module it uses. A fixed defect gets a
    `Regression_` test in the file of the unit the defect lives in. The kind of a test is the
-   prefix of its suite name, never a folder; `tools/testing/check_test_mirror.py` checks the
+   prefix of its suite name, never a folder; `sushicore.tools.testing.check_test_mirror` checks the
    mirror.
 4. A change to the distributed module passes `sr build --distributed` and
    `sr test --distributed`, which run the protocol over the in-process fabric and TCP loopback.
@@ -99,7 +99,7 @@ A comment says what a thing does, in Doxygen form. The reason for a design goes 
 `README.md` or in a design document, and the comment cites the path.
 
 - Every source file opens with the license block and a `@file` block.
-  `tools/licensing/write_license_block.py` writes the license block; do not type it.
+  `sushicore.tools.licensing.write_license_block` writes the license block; do not type it.
 - Every symbol carries a block of at most eight lines. `@brief` is one sentence that starts with
   its verb. `@param`, `@return` and `@pre` appear only when they state a rule the caller keeps
   or a meaning the brief does not give.
@@ -120,7 +120,7 @@ A comment says what a thing does, in Doxygen form. The reason for a design goes 
 
 Source: `modules/surface/api/include/SushiRuntime/api/graph/plumbing/step_driver.hpp`
 
-`python tools/documentation/check_source_comments.py modules` checks these rules.
+`python -m sushicore.tools.documentation.check_source_comments modules` checks these rules.
 
 ## 5. Documentation is part of the change
 
@@ -149,8 +149,8 @@ A change that makes a sentence of the manual false corrects that sentence in the
 - **A change to the distributed module** updates
   [`DISTRIBUTED_GUIDE.md`](guides/DISTRIBUTED_GUIDE.md).
 - **The checkers pass before a commit that touches `docs/`.** Run
-  `python tools/documentation/check_docs_layout.py .` and
-  `python tools/documentation/check_changelog.py .`. Both print nothing when the tree is in
+  `python -m sushicore.tools.documentation.check_docs_layout .` and
+  `python -m sushicore.tools.documentation.check_changelog .`. Both print nothing when the tree is in
   shape. [`KNOWN_ISSUES.md`](backlog/README.md) lists the defects that stay open.
 
 ## 6. Commits and branches

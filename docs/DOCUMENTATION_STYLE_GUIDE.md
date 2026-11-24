@@ -41,6 +41,6 @@ defines it or adds its own row.
 
 ## Checking
 
-`python tools/documentation/check_docs_layout.py .` checks the tree, names, status lines, links
-and reachability from [`README.md`](README.md). `python tools/documentation/check_changelog.py .`
+`python -m sushicore.tools.documentation.check_docs_layout .` checks the tree, names, status lines, links
+and reachability from [`README.md`](README.md). `python -m sushicore.tools.documentation.check_changelog .`
 checks the changelog's shape. Both print nothing when the tree is in shape.

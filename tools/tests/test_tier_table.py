@@ -12,14 +12,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from layering.check_layering import (  # noqa: E402
+from sushicore.tools.layering.check_layering import (  # noqa: E402
     K_CHECKER,
     rule_declared_dependencies,
     rule_public_headers,
     rule_same_tier_includes,
 )
 from layering.tier_table import parse_tier_list, parse_tier_list_text  # noqa: E402
-from settings import K_TIER_ORDER  # noqa: E402
+from sushicore.tools.repo_settings import K_TIER_ORDER  # noqa: E402
 
 K_TEST_SIZE = "small"
 K_ROOT = Path(__file__).resolve().parents[2]

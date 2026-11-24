@@ -65,7 +65,7 @@ README.
 | surface | [profiling](../../modules/surface/profiling/README.md) | public, optional | The device source, the environment facts and `register_profiler_parts()`; built when `SR_ENABLE_PROFILER` is on |
 | extension | [distributed](../../modules/extension/distributed/README.md) | public, optional | The master and worker layer; built when `SR_ENABLE_DISTRIBUTED` is on. `cluster_load`, `in_process_transport`, `transport` and `worker_types` are public extensions as well |
 
-`tools/layering/check_layering.py` checks the same rules outside the build, and
+`sushicore.tools.layering.check_layering` checks the same rules outside the build, and
 `sushiruntime_add_module` refuses an internal module among the public dependencies of a module
 that is installed.
 
@@ -299,7 +299,7 @@ result.
    returns `DanglingResource`.
 4. **One run per runtime at a time.** A run entry during another run returns `InvalidState`.
 5. **No public header includes an internal one.** `rule_public_headers` of
-   `tools/layering/check_layering.py` reports a breach.
+   `sushicore.tools.layering.check_layering` reports a breach.
 6. **The distributed module costs nothing when it is off.** No header of another module names
    it.
 7. **A replay on the same binary and device is byte-equal.** The schedule does not decide which

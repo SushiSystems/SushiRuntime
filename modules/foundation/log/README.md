@@ -43,7 +43,7 @@ Each module that logs declares one category, named after its folder, in
 `<module>_log_category.hpp`: `K_DISTRIBUTED_LOG_CATEGORY` is
 `SushiLog::make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "distributed")`. A call names it first:
 `SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} lost", id)`. A module logs only under its own
-category, and `tools/logs/check_logging.py` reports a call without one.
+category, and `sushicore.tools.logs.check_logging` reports a call without one.
 
 ## Level
 
