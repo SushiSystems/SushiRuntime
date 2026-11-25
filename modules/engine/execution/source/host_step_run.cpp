@@ -46,6 +46,8 @@
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
+#include "host_form_window.hpp"
+
 namespace SushiRuntime
 {
     namespace Internal::Execution
@@ -54,6 +56,7 @@ namespace SushiRuntime
             : graph_(graph),
               collector_(context.profile_collector()),
               clock_(context.execution_engine().clock()),
+              gate_(context.device_access_gate()),
               run_mark_(context.execution_engine())
         {
             ready_.reserve(graph.all_nodes.size());
@@ -103,12 +106,12 @@ namespace SushiRuntime
         Result<void> HostStepRun::run_node(Internal::Graph::Node& node, std::uint32_t step)
         {
             if (!graph_.profiling || !node.has_timing_row())
-                return node.run_on_host();
+                return run_inside_window(node, gate_);
 
             const Internal::Graph::NodeWidths widths = node.submits_device_work()
                 ? Internal::Graph::snapshot_widths(node) : Internal::Graph::NodeWidths{};
             const std::uint64_t start = clock_.now_ns();
-            Result<void> ran = node.run_on_host();
+            Result<void> ran = run_inside_window(node, gate_);
             const std::uint64_t end = clock_.now_ns();
             if (!ran)
                 return ran;

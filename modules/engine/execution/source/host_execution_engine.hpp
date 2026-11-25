@@ -43,6 +43,7 @@
 #include <SushiRuntime/core/executor.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 
 namespace SushiRuntime
 {
@@ -66,10 +67,12 @@ namespace SushiRuntime
                  * @param executor Shared with the caller, who may step it between submit() and complete().
                  * @param clock Shared with the caller, who may advance it inside a node.
                  * @param devices The device count a profiling ledger is sized for; at least 1.
+                 * @param gate Opened around each kernel's host form; null for none; outlives the engine.
                  * @param notify Told the observation of a run submit_observed() started, at its end.
                  */
                 HostExecutionEngine(std::shared_ptr<Executor> executor,
                                     std::shared_ptr<const Clock> clock, std::size_t devices,
+                                    Internal::Memory::DeviceAccessGate* gate,
                                     std::function<void(const RunObservation&)> notify);
 
                 HostExecutionEngine(const HostExecutionEngine&) = delete;
@@ -158,6 +161,9 @@ namespace SushiRuntime
 
                 /** @brief The device count a profiling ledger is sized for. */
                 std::size_t devices_;
+
+                /** @brief The gate each kernel's host form runs inside; null when the guard is off. */
+                Internal::Memory::DeviceAccessGate* gate_;
 
                 /** @brief Tells the context's observers about a run submit_observed() started. */
                 std::function<void(const RunObservation&)> notify_;

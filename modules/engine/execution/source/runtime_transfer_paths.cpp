@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/task/handle_location.hpp>
+#include <SushiRuntime/transfer/guarded_transfer_path.hpp>
 #include <SushiRuntime/transfer/host_staged_path.hpp>
 #include <SushiRuntime/transfer/peer_access.hpp>
 #include <SushiRuntime/transfer/peer_path.hpp>
@@ -187,7 +188,8 @@ namespace SushiRuntime
         RuntimeTransferPaths::~RuntimeTransferPaths() = default;
 
         RuntimeTransferPaths build_transfer_paths(Device::DeviceQueueSet& devices,
-                                                  SushiRuntime::TransferObserver* observer)
+                                                  SushiRuntime::TransferObserver* observer,
+                                                  Memory::DeviceAccessGate* gate)
         {
             RuntimeTransferPaths paths;
             paths.support = std::make_unique<RuntimeTransferPaths::Support>(devices);
@@ -206,6 +208,9 @@ namespace SushiRuntime
             std::vector<Coherence::TransferPath*> candidates;
             for (std::unique_ptr<Coherence::TransferPath>& path : built)
             {
+                // A guarded path keeps the file path it wraps, so paths.file still names it.
+                if (gate != nullptr)
+                    path = Coherence::make_guarded_transfer_path(std::move(path), *gate);
                 candidates.push_back(path.get());
                 paths.owned.push_back(std::move(path));
             }

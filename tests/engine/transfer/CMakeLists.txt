@@ -13,6 +13,7 @@ sushiruntime_add_module_tests(
         compile_transfer_log_category.cpp
         compile_transfer_path.cpp
         test_file_path.cpp
+        test_guarded_transfer_path.cpp
         test_host_staged_path.cpp
         test_peer_path.cpp
         test_queue_copy_submitter.cpp

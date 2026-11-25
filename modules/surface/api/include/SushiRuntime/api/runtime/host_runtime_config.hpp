@@ -70,6 +70,9 @@ namespace SushiRuntime
         /** @brief Labels the machine reports in NodeFacts, in order. */
         std::vector<NodeLabel> labels;
 
+        /** @brief Makes a host access to Device memory outside the runtime's kernels and copies fault. */
+        bool guard_device_memory = false;
+
         /**
          * @brief Takes the runtime's zones, values and counters; null keeps the process-wide collector.
          *

@@ -159,6 +159,7 @@ child process, so its suite is `Medium_GuardedUSMSourceDeathTest`.
 | `Small_GuardedDevicePages.ANestedCloseLeavesThePagesOpen` | After two opens and one close, the host reads and writes an allocation. |
 | `Medium_GuardedDevicePagesDeathTest.AnAllocationMadeInsideAWindowClosesWithIt` | An allocation made while the gate is open faults once the gate closes. |
 | `Small_GuardedDevicePages.RefusesAnAlignmentAboveThePageSize` | A request aligned to 1 GiB returns null. |
+| `Medium_GuardedDevicePagesOnCPUDevice.AKernelAndACopyReachThePagesWhileTheGateIsOpen` | With the gate open, a kernel on a SYCL CPU device writes a guarded allocation and the queue's `memcpy` copies it to the host. A machine with no CPU device skips. The file is a device source of the module's tests for this kernel. |
 
 ## test_device_access_scope.cpp
 

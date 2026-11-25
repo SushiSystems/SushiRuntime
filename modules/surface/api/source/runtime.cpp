@@ -54,6 +54,7 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
@@ -75,6 +76,7 @@ namespace SushiRuntime
             settings.force_scheduler = config.force_scheduler;
             settings.force_chain = config.force_chain;
             settings.submit_funnel = config.submit_funnel;
+            settings.guard_device_memory = config.guard_device_memory;
             settings.device_profile_file = config.device_profile_file;
             return settings;
         }
@@ -211,7 +213,8 @@ namespace SushiRuntime
 #endif
         Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
             Internal::Execution::RuntimeContext::create_host(config.device_count, config.executor,
-                                                             config.clock, nullptr, nullptr, collector);
+                                                             config.clock, nullptr, nullptr, collector,
+                                                             DeviceKind::CPU, config.guard_device_memory);
         if (!context)
             return make_error(std::move(context.error()));
         return Internal::ContextAccess::handle(std::move(*context));

@@ -8,6 +8,7 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         file_path.cpp
+        guarded_transfer_path.cpp
         host_staged_path.cpp
         peer_path.cpp
         queue_copy_submitter.cpp

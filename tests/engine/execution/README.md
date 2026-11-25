@@ -146,6 +146,14 @@ module's `source/`. The cases check a diamond's order, one seed's replay of unor
 successor, `Unsupported` for a command group with no host form, the host form run in its place, and a
 cancel that skips the nodes not yet run.
 
+### `HostEngineDeviceWindowTests`
+
+The engine of a host context made with `guard_device_memory`, over one int of the context's Device
+USM. `Small_HostEngineDeviceWindow.AKernelHostFormWritesGuardedDeviceMemory` runs a kernel node whose
+host form stores 7 in the int; the run succeeds and the int reads 7 inside a `DeviceAccessScope`.
+`Medium_HostEngineDeviceWindowDeathTest.ANativeHostNodeThatReadsGuardedDeviceMemoryFaults` runs a
+native host node that reads the int, and the run faults.
+
 ### `Medium_ChainedRunInProgress`
 
 The fixture compiles one kernel over shared USM that the context allocated on device 0 and classifies
@@ -183,7 +191,8 @@ Small. `HostStepRun` on a host context from `TestSupport::make_host_context()`, 
 nodes append a digit to one cell, so the cell spells the order they ran in. Three dependent nodes
 give 123; a second step after a re-arm runs again; a disabled late-bound node runs nothing and
 frees its successor; a node whose host form throws ends the step with an error that carries the
-message, and its successor never runs.
+message, and its successor never runs. On a context made with `guard_device_memory`, a kernel's
+host form writes a digit into an int of Device USM during the step.
 
 ## test_runtime_context.cpp
 
@@ -191,6 +200,11 @@ message, and its successor never runs.
 none reports the process-wide one, and a host context built over a `SushiProfiler::Collector` on a
 `ManualTickSource` shows the `wait.queues` zone of its device set in that collector, stamped by the manual
 clock. The zone is a level 2 zone, so the case skips when the build compiles fewer levels.
+
+`Small_RuntimeContextDeviceGuard` checks that a host context has a `device_access_gate()` when it is
+made with `guard_device_memory` and none when it is not. `Medium_RuntimeContextDeviceGuard` hands
+`create()` a provider that lists one GPU node with the guard on; the create is refused with
+`Unsupported` and a message that names `guard_device_memory`.
 
 `Medium_RuntimeContextTransferCost` covers `transfer_cost()`: with no profile file, or a path where no
 file is, a copy costs its bytes; with a profile file it costs the path's latency plus its bytes over

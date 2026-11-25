@@ -36,6 +36,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
@@ -95,6 +96,7 @@ namespace SushiRuntime
                 Internal::Graph::CompiledGraph& graph_;       /**< The plan this run walks. */
                 Profile::Collector& collector_;              /**< The collector this run's zones record into. */
                 const Clock& clock_;                         /**< The engine's clock, which stamps timed dispatches. */
+                Internal::Memory::DeviceAccessGate* gate_;   /**< Opened around each kernel's host form; null for none. */
                 Internal::Scheduler::ReadySink ready_;    /**< Nodes freed and not yet run; keeps its capacity. */
                 Internal::Scheduler::ReadySink freed_;    /**< Successors one node's completion frees. */
                 ChainedRunMark run_mark_;                    /**< The run's mark on the engine. */

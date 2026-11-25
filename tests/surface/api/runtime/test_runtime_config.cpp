@@ -23,7 +23,7 @@
 
 /**
  * @file test_runtime_config.cpp
- * @brief Tests the worker, core and device choices a RuntimeConfig makes.
+ * @brief Tests the worker, core and device choices a RuntimeConfig makes, and its device memory guard.
  * @see tests/surface/api/runtime/README.md
  * @author Mustafa Garip
  */
@@ -33,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -289,3 +290,90 @@ TEST(Medium_DeviceFilterEmpty, AnEmptyFilterFailsWithUnsupported)
     ASSERT_FALSE(refused.has_value()) << "a filter admitting no device class must not produce a runtime";
     EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
 }
+
+namespace
+{
+    /** @brief Returns the config of a guarded runtime that drives only the CPU devices. */
+    RuntimeConfig guarded_cpu_config(bool force_scheduler)
+    {
+        RuntimeConfig config;
+        config.devices.include_cpu = true;
+        config.devices.include_gpu = false;
+        config.devices.include_accelerator = false;
+        config.force_scheduler = force_scheduler;
+        config.guard_device_memory = true;
+        return config;
+    }
+} // namespace
+
+/**
+ * @brief Holds a guarded runtime over the CPU devices, on the chain or forced onto the scheduler;
+ *        skips on a machine with no SYCL CPU device.
+ */
+class Medium_GuardedCPURuntime : public ::testing::TestWithParam<bool>
+{
+    protected:
+        /** @brief Builds the runtime of the row. */
+        void SetUp() override
+        {
+            Result<Runtime> made = Runtime::create(guarded_cpu_config(GetParam()));
+            if (!made && made.error().code == ErrorCode::Unsupported)
+                GTEST_SKIP() << "no SYCL CPU device: " << made.error().message;
+            ASSERT_TRUE(made.has_value()) << made.error().message;
+            runtime_.emplace(std::move(made.value()));
+        }
+
+        /** @brief Returns the runtime. */
+        Runtime& runtime() { return *runtime_; }
+
+    private:
+        std::optional<Runtime> runtime_; /**< The guarded runtime of the row. */
+};
+
+/** @brief Death tests on the guarded CPU runtime; a death test starts a child process. */
+using Medium_GuardedCPURuntimeDeathTest = Medium_GuardedCPURuntime;
+
+/** @brief Tests that with the guard on a kernel writes a Device buffer that read_range returns. */
+TEST_P(Medium_GuardedCPURuntime, AKernelWritesADeviceBufferThatReadRangeReturns)
+{
+    auto buffer = runtime().buffer<int>(64, DeviceIndex{0}, Residency::Device).value();
+    int* const cells = buffer.data();
+    auto graph = runtime().graph();
+    graph.add(64, Reads{}, Writes(buffer), [cells](std::size_t i) { cells[i] = static_cast<int>(i) + 5; });
+
+    ASSERT_TRUE(graph.run().has_value());
+
+    EXPECT_EQ(buffer.read_range({0, 64}).value(), TestSupport::ramp<int>(64, 5));
+}
+
+/** @brief Tests that with the guard on write_range then read_range carries the elements through a Device buffer. */
+TEST_P(Medium_GuardedCPURuntime, WriteRangeThenReadRangeRoundTripsADeviceBuffer)
+{
+    auto buffer = runtime().buffer<int>(8, DeviceIndex{0}, Residency::Device).value();
+    const std::vector<int> written{2, 7, 1, 8, 2, 8, 1, 8};
+
+    ASSERT_TRUE(buffer.write_range({0, 8}, span<const int>(written.data(), written.size())).has_value());
+
+    EXPECT_EQ(buffer.read_range({0, 8}).value(), written);
+}
+
+/** @brief Tests that with the guard on a host read of a Device buffer faults. */
+TEST_P(Medium_GuardedCPURuntimeDeathTest, AHostReadOfADeviceBufferFaults)
+{
+    auto buffer = runtime().buffer<int>(16, DeviceIndex{0}, Residency::Device).value();
+    const volatile int* const cells = buffer.data();
+
+    EXPECT_DEATH(static_cast<void>(cells[0]), "");
+}
+
+INSTANTIATE_TEST_SUITE_P(Layers, Medium_GuardedCPURuntime, ::testing::Values(false, true),
+                         [](const ::testing::TestParamInfo<bool>& info)
+                         {
+                             return std::string(info.param ? "Scheduler" : "Chain");
+                         });
+
+INSTANTIATE_TEST_SUITE_P(Layers, Medium_GuardedCPURuntimeDeathTest, ::testing::Values(false, true),
+                         [](const ::testing::TestParamInfo<bool>& info)
+                         {
+                             return std::string(info.param ? "Scheduler" : "Chain");
+                         });

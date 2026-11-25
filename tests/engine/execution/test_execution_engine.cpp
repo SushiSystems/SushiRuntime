@@ -23,7 +23,7 @@
 
 /**
  * @file test_execution_engine.cpp
- * @brief Tests when an execution engine reports a run in progress.
+ * @brief Tests when an execution engine reports a run in progress, and the window the host engine opens over Device memory.
  * @see tests/engine/execution/README.md
  * @author Mustafa Garip
  */
@@ -43,9 +43,11 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/seeded_executor.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/memory/device_access_scope.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -497,3 +499,76 @@ namespace HostEngineTests
     EXPECT_TRUE(order.empty());
     }
 } // namespace HostEngineTests
+
+/** @brief Tests the window the host engine opens over guarded Device memory for a kernel's host form only. */
+namespace HostEngineDeviceWindowTests
+{
+    using SushiRuntime::DeviceKind;
+    using SushiRuntime::Internal::Execution::RuntimeContext;
+    using SushiRuntime::Internal::Graph::CompiledGraph;
+    using SushiRuntime::Internal::Graph::Node;
+    using SushiRuntime::Internal::Graph::TaskGraph;
+    using SushiRuntime::Internal::Graph::TaskWork;
+    using SushiRuntime::Internal::Memory::DeviceAccessScope;
+    using SushiRuntime::Internal::Memory::USMKind;
+
+    /** @brief Holds a guarded host context and one int of its Device USM. */
+    struct GuardedCell
+    {
+        /** @brief Makes the context and allocates the cell. */
+        GuardedCell()
+            : context(TestSupport::make_host_context(nullptr, nullptr, 1, DeviceKind::CPU, true)),
+              cell(static_cast<int*>(context->memory().allocate({USMKind::Device, sizeof(int), alignof(int), 0})))
+        {
+        }
+
+        /** @brief Releases the cell. */
+        ~GuardedCell()
+        {
+            if (cell != nullptr)
+                context->memory().release(cell, 0);
+        }
+
+        GuardedCell(const GuardedCell&) = delete;
+        GuardedCell& operator=(const GuardedCell&) = delete;
+        GuardedCell(GuardedCell&&) = delete;
+        GuardedCell& operator=(GuardedCell&&) = delete;
+
+        std::shared_ptr<RuntimeContext> context; /**< Owns the engine and the guarded pages. */
+        int* cell;                               /**< The Device int; null when the allocation failed. */
+    };
+
+    /** @brief Compiles a graph of one kernel node over @p cell whose host form stores @p value in it. */
+    CompiledGraph compile_kernel_storing(int* cell, int value)
+    {
+        TaskGraph graph;
+        const std::vector<SushiRuntime::BufferRegion> region{TestSupport::region_at(cell)};
+        Node& node = graph.add_node(TaskWork(), region, region);
+        node.host_form = [cell, value]() { *cell = value; };
+        return graph.compile().value();
+    }
+
+    /** @brief Tests that a kernel's host form writes guarded Device memory during a run of the host engine. */
+    TEST(Small_HostEngineDeviceWindow, AKernelHostFormWritesGuardedDeviceMemory)
+    {
+        GuardedCell guarded;
+        ASSERT_NE(guarded.cell, nullptr);
+        CompiledGraph plan = compile_kernel_storing(guarded.cell, 7);
+
+        ASSERT_TRUE(guarded.context->execution_engine().execute(plan).has_value());
+
+        const DeviceAccessScope window(guarded.context->device_access_gate());
+        EXPECT_EQ(*guarded.cell, 7);
+    }
+
+    /** @brief Tests that a native host node that reads guarded Device memory faults. A death test starts a child process. */
+    TEST(Medium_HostEngineDeviceWindowDeathTest, ANativeHostNodeThatReadsGuardedDeviceMemoryFaults)
+    {
+        GuardedCell guarded;
+        ASSERT_NE(guarded.cell, nullptr);
+        const volatile int* const cell = guarded.cell;
+        CompiledGraph plan = compile_native_task([cell]() { static_cast<void>(*cell); });
+
+        EXPECT_DEATH(static_cast<void>(guarded.context->execution_engine().execute(plan)), "");
+    }
+} // namespace HostEngineDeviceWindowTests

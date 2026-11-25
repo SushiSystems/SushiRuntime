@@ -48,12 +48,14 @@ namespace TestSupport
      * @param executor Null makes a SeededExecutor of K_HOST_RUNTIME_SEED.
      * @param clock Null makes a ManualClock at 0.
      * @param device_kind The kind every host device reports; a GPU makes a context that answers as one.
+     * @param guard_device_memory Puts the context's Device USM on guarded pages.
      */
     [[nodiscard]] inline std::shared_ptr<SushiRuntime::Internal::Execution::RuntimeContext>
     make_host_context(std::shared_ptr<SushiRuntime::Executor> executor = nullptr,
                       std::shared_ptr<const SushiRuntime::Clock> clock = nullptr,
                       std::size_t device_count = 1,
-                      SushiRuntime::DeviceKind device_kind = SushiRuntime::DeviceKind::CPU)
+                      SushiRuntime::DeviceKind device_kind = SushiRuntime::DeviceKind::CPU,
+                      bool guard_device_memory = false)
     {
         if (executor == nullptr)
             executor = std::make_shared<SushiRuntime::SeededExecutor>(K_HOST_RUNTIME_SEED);
@@ -61,7 +63,7 @@ namespace TestSupport
             clock = std::make_shared<SushiRuntime::ManualClock>();
         return SushiRuntime::Internal::Execution::RuntimeContext::create_host(
                    device_count, std::move(executor), std::move(clock), nullptr, nullptr,
-                   SushiRuntime::Internal::Profile::process_collector(), device_kind)
+                   SushiRuntime::Internal::Profile::process_collector(), device_kind, guard_device_memory)
             .value();
     }
 } // namespace TestSupport

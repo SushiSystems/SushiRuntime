@@ -378,6 +378,7 @@ namespace SushiRuntime
             : recorded_(*graph.chain.recorded),
               collector_(context.profile_collector()),
               queue_(context.devices().queue(graph.chain.queue_index, Internal::Device::QueueFlavour{true, false})),
+              window_(context.device_access_gate()),
               run_mark_(context.execution_engine())
         {
 

@@ -34,6 +34,14 @@ reads; a file that cannot be read refuses the create. A runtime inside a game sh
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
 owner.
 
+`guard_device_memory`, off by default, puts every `Residency::Device` allocation on host pages that
+fault when the host reads or writes them outside the runtime's kernels and copies. On a CPU device
+the host can address device memory, so a host dereference that would fault on CUDA passes there
+silently; with the guard on it stops the process at the access. Kernels, `read_range()`,
+`write_range()` and the runtime's own copies still reach the memory. Every device must be a CPU
+device: `create()` refuses the guard with `Unsupported` over any other. The windows it opens are in
+`modules/engine/execution/README.md`.
+
 The struct belongs to the api module. The engine keeps its own type,
 `Internal::Execution::RuntimeSettings`, and may not depend on this one;
 `Runtime::settings_of()` is the single place that maps one to the other. A field added to
@@ -54,6 +62,8 @@ the same types, so a value passes to it without a conversion.
 The settings `create_host()` reads: the device count, the executor, the clock, the machine's name,
 its labels and the collector the runtime's zones, values and counters record into (`profile_collector`, null for the
 process-wide one; a forward-declared `SushiProfiler::Collector`, so the header includes no profiler header).
+`guard_device_memory` is the guard `RuntimeConfig` names, and a host runtime takes it with no
+condition on its devices.
 
 ## advanced_controls.hpp
 
@@ -197,7 +207,9 @@ report's layer is `Scheduler`. Host nodes and launches over a count or an `Exten
 `config.executor`, on the thread that waits for the run; an `NdRange`, a raw command group, a
 queue body, a device-sized launch and a late-count launch have no host form and fail their run
 with `Unsupported`. `advanced().queue()` stops the process, since there is no queue. Copies to and
-from a buffer are `memcpy`.
+from a buffer are `memcpy`. With `config.guard_device_memory` on, a `Residency::Device` buffer sits
+on guarded pages: a launch's host form and a copy reach it, and a host node's body or any other host
+read of it faults.
 
 The executor and the clock are the caller's to keep: a test holds the `SeededExecutor` to replay
 an order from its seed or to step an asynchronous run, and advances a `ManualClock` to time a

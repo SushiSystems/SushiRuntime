@@ -56,6 +56,12 @@ namespace SushiRuntime
         bool force_chain = false;           /**< Runs a chained plan on layer 1 even when its graph allows a replay. */
         bool submit_funnel = false;         /**< Submits the scheduler's device work from one thread per device. */
 
+        /**
+         * @brief Makes a host access to Device memory outside the runtime's kernels and copies fault.
+         *        Every device must be a CPU device, or create() refuses with Unsupported.
+         */
+        bool guard_device_memory = false;
+
         /** @brief The machine's name in NodeFacts; empty is the host name. */
         std::string node_name;
 

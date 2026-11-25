@@ -36,6 +36,7 @@
 #include <SushiRuntime/coherence/logical_time_eviction.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device_profile/cost_model.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 #include <SushiRuntime/partition_session/partition_sessions.hpp>
 #include <SushiRuntime/partition_session/transfer_path_tally.hpp>
 #include <SushiRuntime/transfer/transfer_cost.hpp>
@@ -58,8 +59,11 @@ namespace SushiRuntime
          */
         struct RuntimeCoherenceParts
         {
-            /** @brief Builds the spaces and the paths over devices, which must outlive this object. */
-            explicit RuntimeCoherenceParts(Device::DeviceQueueSet& devices);
+            /**
+             * @brief Builds the spaces and the paths over devices, which must outlive this object.
+             * @param gate Opened around each copy of every path; null for none; must outlive this object.
+             */
+            RuntimeCoherenceParts(Device::DeviceQueueSet& devices, Memory::DeviceAccessGate* gate);
 
             RuntimeCoherenceParts(const RuntimeCoherenceParts&) = delete;
             RuntimeCoherenceParts& operator=(const RuntimeCoherenceParts&) = delete;
@@ -84,7 +88,11 @@ namespace SushiRuntime
             std::unique_ptr<Coherence::PartitionSessions> partitioning; /**< Opens each graph's partition session; holds the shared profiles. */
         };
 
-        /** @brief Builds the coherence parts of a runtime over devices, which must outlive them. */
-        [[nodiscard]] std::unique_ptr<RuntimeCoherenceParts> make_coherence_parts(Device::DeviceQueueSet& devices);
+        /**
+         * @brief Builds the coherence parts of a runtime over devices, which must outlive them.
+         * @param gate Opened around each copy of every path; null for none; must outlive the parts.
+         */
+        [[nodiscard]] std::unique_ptr<RuntimeCoherenceParts> make_coherence_parts(Device::DeviceQueueSet& devices,
+                                                                                  Memory::DeviceAccessGate* gate);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

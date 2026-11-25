@@ -18,6 +18,7 @@ It depends on `handle`, `log` and `memory`.
 | `peer_path.hpp` | `PeerPath`, one peer copy between two contexts of one backend |
 | `host_staged_path.hpp` | `HostStagedPath`, the copy through pinned host staging buffers |
 | `file_path.hpp` | `FilePath`, the read of a file space into a host or device space through the staging ring |
+| `guarded_transfer_path.hpp` | `make_guarded_transfer_path()`, a path whose copies run with the device gate open |
 | `staging_ring.hpp` | `StagingRing`, `StagingRingShape` and `StagingSlot`, the fixed ring of pinned slots |
 | `staging_rings.hpp` | `StagingRings`, one staging ring per SYCL context, pinned in that context |
 | `copy_submitter.hpp` | `CopySubmitter`, the port that submits one copy on a queue and returns its event |
@@ -70,6 +71,15 @@ a context with no staging ring returns `InvalidArgument`.
 What a SYCL call throws is caught inside the path and returned as the error of
 `Internal::SYCL::translate_exceptions()`. A path that fails after it took a ring slot retires the
 slot before it returns.
+
+## make_guarded_transfer_path
+
+`make_guarded_transfer_path(inner, gate)` wraps a path for a runtime whose Device USM sits on
+guarded pages. Each `copy()` opens the gate, starts the wrapped copy, waits for its event and
+closes the gate, so the copy ends before the pages shut again. The returned event has already
+completed. A refused copy returns the wrapped path's error, and a failed wait returns the
+translated error; the gate is closed either way. `name()`, `id()` and `connects()` are the
+wrapped path's.
 
 ## HostStagedPath and StagingRing
 

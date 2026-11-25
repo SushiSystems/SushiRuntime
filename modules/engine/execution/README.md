@@ -405,7 +405,7 @@ the targets of the rules against them. A graph holds no facts of its own.
 RuntimeSettings is separate from the hardware filter: it shapes the runtime itself (threads, placement,
 background work, the submit funnel), not which devices are selected. Every field defaults to the behaviour a
 deterministic simulation wants, because that is the primary workload. A batch consumer opts out of
-the parts it does not need.
+the parts it does not need. `guard_device_memory` has [a page of its own](source/device_guard.md).
 
 The type lives in the Execution layer and not in API because RuntimeContext and TaskScheduler
 consume it, and a lower layer may not depend on a higher one. RuntimeConfig is the public

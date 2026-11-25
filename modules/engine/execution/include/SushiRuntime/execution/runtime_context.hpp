@@ -49,6 +49,7 @@
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/memory/borrowed_index.hpp>
 #include <SushiRuntime/memory/coherence_horizon.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 #include <SushiRuntime/memory/file_memory_space.hpp>
 #include <SushiRuntime/memory/handle_ports.hpp>
 #include <SushiRuntime/memory/memory_space.hpp>
@@ -114,8 +115,8 @@ namespace SushiRuntime
                  * @param device_count Host devices the context stands for; at least 1.
                  * @param executor,clock The executor that runs every node and the clock that times it; not null.
                  * @param provider,distance_model Topology and NUMA distances; null keeps the host's own.
-                 * @param collector,device_kind The collector takes the zones, values and counters, and outlives
-                 *        the context; device_kind is what every host device reports.
+                 * @param collector,device_kind Takes the zones, values and counters, outliving the context; the kind of every device.
+                 * @param guard_device_memory Maps Device USM on guarded pages, as RuntimeSettings names it.
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
                 create_host(std::size_t device_count, std::shared_ptr<Executor> executor,
@@ -123,7 +124,7 @@ namespace SushiRuntime
                             std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
                             std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model = nullptr,
                             Profile::Collector& collector = Profile::process_collector(),
-                            DeviceKind device_kind = DeviceKind::CPU);
+                            DeviceKind device_kind = DeviceKind::CPU, bool guard_device_memory = false);
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
@@ -159,6 +160,13 @@ namespace SushiRuntime
                  *        this context.
                  */
                 [[nodiscard]] const std::shared_ptr<Internal::Memory::USMAllocator>& shared_memory() const noexcept;
+
+                /**
+                 * @brief Returns the gate that opens this context's Device USM to the host, or null
+                 *        when the guard is off.
+                 * @see modules/engine/execution/README.md
+                 */
+                [[nodiscard]] Internal::Memory::DeviceAccessGate* device_access_gate() const noexcept;
 
                 /**
                  * @brief Returns the ports of this context's handle table, one per role.

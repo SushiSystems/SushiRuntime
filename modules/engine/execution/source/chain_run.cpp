@@ -62,6 +62,7 @@ namespace SushiRuntime
               queue_(context.devices().queue(graph.chain.queue_index,
                                          Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
+              window_(context.device_access_gate()),
               run_mark_(context.execution_engine())
         {
             // An abandoned run leaves its events on the plan; clear() keeps the capacity.

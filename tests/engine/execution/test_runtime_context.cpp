@@ -23,7 +23,7 @@
 
 /**
  * @file test_runtime_context.cpp
- * @brief Tests the RuntimeContext: its profiling queues, its topology and its shutdown order.
+ * @brief Tests the RuntimeContext: its profiling queues, its topology, its shutdown order and its device guard.
  * @see tests/engine/execution/README.md
  * @author Mustafa Garip
  */
@@ -614,6 +614,42 @@ namespace TopologyAbstractionTests
                   std::string::npos) << message;
     }
 } // namespace TopologyAbstractionTests
+
+/** @brief Tests that a context builds its device gate only when the guard is on, and only over CPU devices. */
+namespace DeviceGuardTests
+{
+    using namespace SushiRuntime::Internal::Execution;
+    using namespace SushiRuntime::Internal::Topology;
+
+    /** @brief Tests that a host context has a device gate when its guard is on and none when it is off. */
+    TEST(Small_RuntimeContextDeviceGuard, AHostContextHasAGateOnlyWhenItsGuardIsOn)
+    {
+        const auto guarded = TestSupport::make_host_context(nullptr, nullptr, 1, SushiRuntime::DeviceKind::CPU, true);
+        const auto plain = TestSupport::make_host_context();
+
+        EXPECT_NE(guarded->device_access_gate(), nullptr);
+        EXPECT_EQ(plain->device_access_gate(), nullptr);
+    }
+
+    /** @brief Tests that create() refuses the guard with Unsupported over a device that is not a CPU. */
+    TEST(Medium_RuntimeContextDeviceGuard, AGuardOverAGPUIsRefusedWithUnsupported)
+    {
+        HardwareNode gpu;
+        gpu.name = "synthetic GPU";
+        gpu.is_gpu = true;
+        gpu.device_id = 0;
+        auto provider = std::make_shared<InMemoryTopologyProvider>(std::vector<HardwareNode>{gpu},
+                                                                   std::vector<int>{0});
+        RuntimeSettings settings;
+        settings.guard_device_memory = true;
+
+        const auto refused = RuntimeContext::create({}, provider, nullptr, settings);
+
+        ASSERT_FALSE(refused.has_value());
+        EXPECT_EQ(refused.error().code, SushiRuntime::ErrorCode::Unsupported);
+        EXPECT_NE(refused.error().message.find("guard_device_memory"), std::string::npos) << refused.error().message;
+    }
+} // namespace DeviceGuardTests
 
 /** @brief Tests that RuntimeContext::shutdown() stops the offload coordinator before the pool. */
 namespace OffloadSeamShutdownTests

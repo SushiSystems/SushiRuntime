@@ -40,9 +40,10 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        RuntimeCoherenceParts::RuntimeCoherenceParts(Device::DeviceQueueSet& devices)
+        RuntimeCoherenceParts::RuntimeCoherenceParts(Device::DeviceQueueSet& devices,
+                                                     Memory::DeviceAccessGate* gate)
             : spaces(build_memory_spaces(devices, Memory::SystemMemoryProbe{})),
-              paths(build_transfer_paths(devices, &transfer_observer)),
+              paths(build_transfer_paths(devices, &transfer_observer, gate)),
               transfer_cost(Coherence::uniform_transfer_cost()),
               path_tally(std::make_shared<Coherence::TransferPathTally>())
         {
@@ -61,9 +62,10 @@ namespace SushiRuntime
             partitioning = std::make_unique<Coherence::PartitionSessions>(std::move(parts));
         }
 
-        std::unique_ptr<RuntimeCoherenceParts> make_coherence_parts(Device::DeviceQueueSet& devices)
+        std::unique_ptr<RuntimeCoherenceParts> make_coherence_parts(Device::DeviceQueueSet& devices,
+                                                                    Memory::DeviceAccessGate* gate)
         {
-            return std::make_unique<RuntimeCoherenceParts>(devices);
+            return std::make_unique<RuntimeCoherenceParts>(devices, gate);
         }
     } // namespace Internal::Execution
 } // namespace SushiRuntime

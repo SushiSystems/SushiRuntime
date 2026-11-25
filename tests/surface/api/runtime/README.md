@@ -139,6 +139,17 @@ sets a flag after the `Runtime` is gone and the test asserts the flag; under Add
 use-after-free is also a failure, and without it the defect still crashes often enough to fail the
 test. The test builds its own `Runtime` since it destroys it.
 
+## test_host_runtime_config.cpp: the device memory guard
+
+A host runtime made with `HostRuntimeConfig::guard_device_memory` puts its Device buffers on guarded
+pages.
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_GuardedHostRuntimeDeathTest.AHostReadOfADeviceBufferFaults` | A host read through `data()` of a Device buffer faults. |
+| `Small_GuardedHostRuntime.ALaunchWritesADeviceBufferThatReadRangeReturns` | A launch over a count writes a Device buffer and `read_range()` returns what it wrote. |
+| `Small_GuardedHostRuntime.WriteRangeThenReadRangeRoundTripsADeviceBuffer` | `write_range()` then `read_range()` carry eight elements through a Device buffer. |
+
 ## test_runtime_config.cpp
 
 The file covers the co-tenancy contract: the runtime is a tenant of the machine, not its owner.
@@ -159,6 +170,18 @@ The pool shape is decided on the core count and the config by `size_worker_pool(
 small in `tests/engine/scheduler/test_worker_pool_sizing.cpp`: the Float pool is not clamped and a
 core range past the last core starts at 0. The tests here keep the wiring: the default config and a
 reserved range reach the pool the runtime reports.
+
+### The device memory guard
+
+`Medium_GuardedCPURuntime` makes a runtime of its own over the CPU devices with
+`guard_device_memory`, once per layer: the chain and the scheduler. A machine with no SYCL CPU
+device skips.
+
+| Test | What it proves |
+| --- | --- |
+| `AKernelWritesADeviceBufferThatReadRangeReturns` | A kernel writes a `Residency::Device` buffer and `read_range()` returns what it wrote. |
+| `WriteRangeThenReadRangeRoundTripsADeviceBuffer` | `write_range()` then `read_range()` carry eight elements through a Device buffer. |
+| `Medium_GuardedCPURuntimeDeathTest.AHostReadOfADeviceBufferFaults` | A host read through `data()` of a Device buffer faults. |
 
 ### The device filter
 

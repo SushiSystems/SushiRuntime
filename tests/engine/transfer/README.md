@@ -54,6 +54,13 @@ stops the forwarding.
 of the first, is refused with `DuplicateID` and not listed. `admit_paths()` returns `InvalidState` for
 the duplicate and `Ok` for distinct paths.
 
+## test_guarded_transfer_path.cpp
+
+Small. `make_guarded_transfer_path()` over a `FakeTransferPath`, with a `GuardedDevicePages` as the
+gate. A copy from a guarded allocation the caller left closed reaches the host, and the gate is
+closed after it. A copy the wrapped path refuses returns the path's `KernelFailed`, and the gate is
+closed after it too.
+
 ## test_transfer_cost.cpp
 
 The uniform cost prices every path by its bytes.

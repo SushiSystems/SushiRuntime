@@ -9,7 +9,6 @@
 | RW-5 | P2 | decision | Choose the install path for `sr` under WSL | a WSL shell has a documented way to install and run `sr` |  |  | 2026-10-19 |
 | RW-6 | P2 | decision | Rule on the public-surface reshapes of the API review | the owner has ruled on each reshape, each a breaking change of its own |  |  | 2026-10-19 |
 | RW-57 | P2 | decision | Decide what goes of the leftovers in git and on disk | the two stash entries of 2026-06-20, `.superpowers/` and the unmerged branch `pre-clean-main` are each kept or deleted by the owner |  |  | 2026-10-19 |
-| RW-175 | P2 | open | Fault a host dereference of Device memory on the host backend | with guard_device_memory set, a host read of a Device buffer faults on the host backend while kernels and read_range/write_range on it work |  | `docs/agent/2026_11_25_HOST_DEVICE_ISOLATION/PLAN.md` | 2026-11-25 |
 
 ## Known issues
 

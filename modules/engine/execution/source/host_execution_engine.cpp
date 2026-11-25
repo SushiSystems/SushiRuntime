@@ -51,6 +51,7 @@
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 
+#include "host_form_window.hpp"
 #include "run_observation_fill.hpp"
 
 namespace SushiRuntime
@@ -60,10 +61,12 @@ namespace SushiRuntime
         HostExecutionEngine::HostExecutionEngine(std::shared_ptr<Executor> executor,
                                                  std::shared_ptr<const Clock> clock,
                                                  std::size_t devices,
+                                                 Internal::Memory::DeviceAccessGate* gate,
                                                  std::function<void(const RunObservation&)> notify)
             : executor_(std::move(executor)),
               clock_(std::move(clock)),
               devices_(devices),
+              gate_(gate),
               notify_(std::move(notify))
         {
             SR_VERIFY(executor_ != nullptr, "HostExecutionEngine: pass an executor, not null.");
@@ -209,7 +212,7 @@ namespace SushiRuntime
                 const Internal::Graph::NodeWidths widths = node.submits_device_work()
                     ? Internal::Graph::snapshot_widths(node) : Internal::Graph::NodeWidths{};
                 const std::uint64_t start = clock_->now_ns();
-                const Result<void> ran = node.run_on_host();
+                const Result<void> ran = run_inside_window(node, gate_);
                 const std::uint64_t end = clock_->now_ns();
                 record(node, ran, widths.launched, widths.live, start, end);
             }

@@ -37,6 +37,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/recorded_steps.hpp>
 #include <SushiRuntime/execution/chained_run_mark.hpp>
+#include <SushiRuntime/memory/device_access_scope.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 
 namespace SushiRuntime
@@ -121,6 +122,7 @@ namespace SushiRuntime
                 sycl::queue& queue_;              /**< Untimed in-order queue on the plan's device. */
                 std::optional<sycl::event> last_; /**< The replay in flight, kept only when replays read host words. */
                 bool finished_ = false;           /**< Whether finish() drained the queue. */
+                Internal::Memory::DeviceAccessScope window_; /**< Keeps the device gate open while the run lives. */
                 ChainedRunMark run_mark_;         /**< The run's mark; last, so it outlasts the drain. */
         };
 

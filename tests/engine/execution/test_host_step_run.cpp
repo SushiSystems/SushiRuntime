@@ -23,7 +23,7 @@
 
 /**
  * @file test_host_step_run.cpp
- * @brief Tests HostStepRun: the order it runs nodes in, a disabled node, and a failing node.
+ * @brief Tests HostStepRun: the order it runs nodes in, a disabled node, a failing node and the device window.
  * @see tests/engine/execution/README.md
  * @author Mustafa Garip
  */
@@ -38,6 +38,9 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/memory/device_access_scope.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -146,4 +149,28 @@ TEST(Small_HostStepRun, AFailingNodeEndsTheStepBeforeItsSuccessor)
     ASSERT_FALSE(stepped.has_value());
     EXPECT_NE(stepped.error().message.find("host form failed"), std::string::npos);
     EXPECT_EQ(cell, 0);
+}
+
+/** @brief Tests that a kernel's host form writes guarded Device memory during a hosted step. */
+TEST(Small_HostStepRun, AKernelHostFormWritesGuardedDeviceMemory)
+{
+    const auto context = TestSupport::make_host_context(nullptr, nullptr, 1, DeviceKind::CPU, true);
+    auto* const cell = static_cast<int*>(context->memory().allocate(
+        {Internal::Memory::USMKind::Device, sizeof(int), alignof(int), 0}));
+    ASSERT_NE(cell, nullptr);
+    {
+        const Internal::Memory::DeviceAccessScope window(context->device_access_gate());
+        *cell = 0;
+    }
+    TaskGraph graph;
+    add_digit(graph, cell, 8);
+    CompiledGraph plan = armed(graph);
+    HostStepRun run(*context, plan);
+
+    ASSERT_TRUE(run.submit_step(0).has_value());
+    ASSERT_TRUE(run.finish().has_value());
+
+    const Internal::Memory::DeviceAccessScope window(context->device_access_gate());
+    EXPECT_EQ(*cell, 8);
+    context->memory().release(cell, 0);
 }

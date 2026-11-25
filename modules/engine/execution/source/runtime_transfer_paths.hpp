@@ -36,6 +36,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 #include <SushiRuntime/transfer/file_path.hpp>
 #include <SushiRuntime/report/transfer_observer.hpp>
 #include <SushiRuntime/transfer/transfer_path.hpp>
@@ -73,8 +74,10 @@ namespace SushiRuntime
          * @brief Builds the paths that copy between the devices of devices.
          * @param devices Names the queue of each device; must outlive the result.
          * @param observer Hears each copy; null for none; must outlive the result.
+         * @param gate Opened around each copy of every path; null for none; must outlive the result.
          */
         [[nodiscard]] RuntimeTransferPaths build_transfer_paths(Device::DeviceQueueSet& devices,
-                                                                SushiRuntime::TransferObserver* observer = nullptr);
+                                                                SushiRuntime::TransferObserver* observer = nullptr,
+                                                                Memory::DeviceAccessGate* gate = nullptr);
     } // namespace Internal::Execution
 } // namespace SushiRuntime

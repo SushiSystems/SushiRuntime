@@ -44,6 +44,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/memory/device_access_gate.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/execution/dropped_dispatches.hpp>
@@ -175,6 +176,9 @@ namespace SushiRuntime
             /** @brief The context whose observers a completed run is reported to. */
             RuntimeContext& context;
 
+            /** @brief Open from submit() to the end of complete(); null when the guard is off. */
+            Internal::Memory::DeviceAccessGate* const device_gate;
+
             /** @brief Set by submit_observed(); the run's sentinel hands the observation over and clears it. */
             std::atomic<bool> observe_on_completion{false};
 
@@ -206,7 +210,8 @@ namespace SushiRuntime
                             context.devices(), context.memory(), context.handle_ports().residency_reader,
                             context.profile_collector()),
                   devices(context.devices()),
-                  context(context)
+                  context(context),
+                  device_gate(context.device_access_gate())
             {
                 scheduler.start();
 
@@ -524,6 +529,10 @@ namespace SushiRuntime
             // The step counter advances here, not in arm_for_execution() (modules/engine/execution/README.md).
             impl_->scheduler.advance_dispatch_step();
 
+            // The first node may run once submitted, so the gate opens first; complete() closes it.
+            if (impl_->device_gate != nullptr)
+                impl_->device_gate->open();
+
             // One batched injector pass submits every root (modules/engine/execution/README.md).
             impl_->scheduler.submit_batch(graph.roots);
 
@@ -556,6 +565,19 @@ namespace SushiRuntime
             SR_ZONE(impl_->context.profile_collector(), "run.wait");
 
             const ScheduledRunRelease release_guard(impl_->run_marker);
+
+            /** @brief Closes the gate submit() opened once the run's queues are drained. */
+            struct GateClose
+            {
+                Internal::Memory::DeviceAccessGate* gate; /**< The gate to close; null for none. */
+
+                /** @brief Closes the gate. */
+                ~GateClose()
+                {
+                    if (gate != nullptr)
+                        gate->close();
+                }
+            } const close_gate{impl_->device_gate};
 
             {
                 SR_ZONE_FINE(impl_->context.profile_collector(), "run.wait.latch");

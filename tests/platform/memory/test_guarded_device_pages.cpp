@@ -23,17 +23,22 @@
 
 /**
  * @file test_guarded_device_pages.cpp
- * @brief Tests the window GuardedDevicePages opens and closes over its allocations.
+ * @brief Tests the window GuardedDevicePages opens and closes over its allocations, and a CPU device's kernel on them.
  * @see tests/platform/memory/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
+#include <optional>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
+#include <SushiRuntime/memory/device_access_scope.hpp>
 #include <SushiRuntime/memory/guarded_device_pages.hpp>
 
+using SushiRuntime::Internal::Memory::DeviceAccessScope;
 using SushiRuntime::Internal::Memory::GuardedDevicePages;
 
 namespace
@@ -54,6 +59,22 @@ namespace
     void write_byte(void* address, unsigned char value)
     {
         *static_cast<volatile unsigned char*>(address) = value;
+    }
+
+    /** @brief The elements the CPU device's kernel writes. */
+    constexpr std::size_t K_ELEMENTS = 1024;
+
+    /** @brief Returns a queue on a CPU device, or none when the machine has no CPU device. */
+    std::optional<sycl::queue> cpu_queue()
+    {
+        try
+        {
+            return sycl::queue(sycl::cpu_selector_v);
+        }
+        catch (const sycl::exception&)
+        {
+            return std::nullopt;
+        }
     }
 } // namespace
 
@@ -96,4 +117,32 @@ TEST(Small_GuardedDevicePages, RefusesAnAlignmentAboveThePageSize)
     GuardedDevicePages pages;
 
     EXPECT_EQ(pages.allocate(K_BYTES, K_ABOVE_ANY_PAGE), nullptr);
+}
+
+/** @brief Tests that a CPU device's kernel writes guarded pages and its queue copies them while the gate is open. */
+TEST(Medium_GuardedDevicePagesOnCPUDevice, AKernelAndACopyReachThePagesWhileTheGateIsOpen)
+{
+    std::optional<sycl::queue> queue = cpu_queue();
+    if (!queue)
+        GTEST_SKIP() << "the machine has no SYCL CPU device";
+    GuardedDevicePages pages;
+    auto* const cells = static_cast<int*>(pages.allocate(K_ELEMENTS * sizeof(int), alignof(int)));
+    ASSERT_NE(cells, nullptr);
+    std::vector<int> copied(K_ELEMENTS, -1);
+
+    {
+        const DeviceAccessScope window(&pages);
+        queue->submit([cells](sycl::handler& handler)
+        {
+            handler.parallel_for(sycl::range<1>(K_ELEMENTS), [cells](sycl::id<1> index)
+            {
+                cells[index[0]] = static_cast<int>(index[0]) * 3;
+            });
+        }).wait_and_throw();
+        queue->memcpy(copied.data(), cells, K_ELEMENTS * sizeof(int)).wait_and_throw();
+    }
+
+    for (std::size_t index = 0; index < K_ELEMENTS; ++index)
+        ASSERT_EQ(copied[index], static_cast<int>(index) * 3) << "at element " << index;
+    pages.release(cells);
 }

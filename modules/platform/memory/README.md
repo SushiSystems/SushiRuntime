@@ -1,6 +1,6 @@
 # memory
 
-The USM allocator and its allocation owner, the guarded device memory a test runtime uses (`GuardedDevicePages`, `make_guarded_usm_source()`), the residency directory with its retire observer and
+The USM allocator and its allocation owner, the guarded device memory a guarded runtime uses (`GuardedDevicePages`, `make_guarded_usm_source()`), the residency directory with its retire observer and
 coherence interval map, the horizon that retires coherence history (`CoherenceHorizon`), the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`, `FileMemorySpace`)
 and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
@@ -321,9 +321,9 @@ it `Buffer::read_range()` and `write_range()`, reaches a guarded allocation whil
 Neither the host source nor the SYCL source is edited to be guarded.
 
 The guard catches a host dereference of device memory on a backend whose device memory the host can
-address, where CUDA would fault. A runtime does not build it yet; the plan in
-`docs/agent/2026_11_25_HOST_DEVICE_ISOLATION/PLAN.md` holds the selector and the windows around
-kernels that come next.
+address, where CUDA would fault. A runtime builds it when `RuntimeSettings::guard_device_memory`
+is on and keeps the pages as its `DeviceAccessGate`; `modules/engine/execution/README.md` names the
+windows its engines open.
 
 ## guarded_device_pages.hpp
 

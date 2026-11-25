@@ -111,7 +111,9 @@ struct of plain members, such as two floats, satisfies it; `std::string` and `st
 Shared USM is host-addressable, so the host may seed and read it directly, but at large element
 counts the driver may migrate it between host and device. Device USM stays resident on its device,
 which is the right choice for a world kept on the GPU across frames. It is not host-addressable, so
-the host touches it only through read_range() and write_range(). Host USM is pinned host memory that
+the host touches it only through read_range() and write_range(). A CPU device's Device USM is host
+memory, so a host read through data() passes there and faults on CUDA; a runtime made with
+`guard_device_memory` puts it on pages that fault on that read too (`../runtime/README.md`). Host USM is pinned host memory that
 device kernels on the owning context write and the host reads at any moment, including while kernels
 run. Kernels reach host USM across the bus and it is page-locked RAM, so it suits small values the
 host reads mid-run, not bulk kernel data. The handle API is otherwise identical; residency is chosen

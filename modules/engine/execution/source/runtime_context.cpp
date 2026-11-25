@@ -56,10 +56,13 @@
 #include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
+#include <SushiRuntime/memory/guarded_device_pages.hpp>
+#include <SushiRuntime/memory/guarded_usm_source.hpp>
 #include <SushiRuntime/memory/host_usm_source.hpp>
 #include <SushiRuntime/memory/sycl_queues.hpp>
 #include <SushiRuntime/memory/sycl_usm_source.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_source.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/partition_session/transfer_path_tally.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
@@ -165,6 +168,41 @@ namespace SushiRuntime
                 return descriptors;
             }
 
+            /**
+             * @brief Returns the error of a guard asked for over a device that is not a CPU, or none.
+             * @see modules/engine/execution/README.md
+             */
+            std::optional<Error> guard_refusal(const RuntimeSettings& settings,
+                                               const std::vector<Internal::Device::DeviceDescriptor>& descriptors)
+            {
+                if (!settings.guard_device_memory)
+                    return std::nullopt;
+                for (const Internal::Device::DeviceDescriptor& descriptor : descriptors)
+                    if (descriptor.info.kind != DeviceKind::CPU)
+                        return Error{ErrorCode::Unsupported,
+                                     "guard_device_memory needs every device to be a CPU device, and " +
+                                         descriptor.info.name + " is not one."};
+                return std::nullopt;
+            }
+
+            /** @brief Returns the guarded pages the settings ask for, or null when the guard is off. */
+            std::shared_ptr<Internal::Memory::GuardedDevicePages> device_pages_for(const RuntimeSettings& settings)
+            {
+                if (!settings.guard_device_memory)
+                    return nullptr;
+                return std::make_shared<Internal::Memory::GuardedDevicePages>();
+            }
+
+            /** @brief Wraps a source so its Device requests come from pages, or returns it when pages is null. */
+            std::unique_ptr<Internal::Memory::USMSource>
+            guarded_by(std::unique_ptr<Internal::Memory::USMSource> source,
+                       const std::shared_ptr<Internal::Memory::GuardedDevicePages>& pages)
+            {
+                if (!pages)
+                    return source;
+                return Internal::Memory::make_guarded_usm_source(std::move(source), pages);
+            }
+
             /** @brief Logs why no context could be built and returns the reason as an error. */
             ErrorWrapper<Error> initialization_failure(Error reason)
             {
@@ -198,9 +236,12 @@ namespace SushiRuntime
                   settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(std::move(descriptors), false, profile),
+                  device_pages(device_pages_for(runtime_settings)),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      Internal::Memory::make_sycl_usm_source(
-                          Internal::Memory::make_sycl_queues(devices.plain_queues())), profile))
+                      guarded_by(Internal::Memory::make_sycl_usm_source(
+                                     Internal::Memory::make_sycl_queues(devices.plain_queues())),
+                                 device_pages),
+                      profile))
             {
                 start_partitioning(nullptr);
             }
@@ -224,8 +265,9 @@ namespace SushiRuntime
                   devices(host_devices,
                           std::make_unique<Internal::Device::InMemoryQueueFactory>(host_devices.size()),
                           false, profile),
+                  device_pages(device_pages_for(runtime_settings)),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(
-                      Internal::Memory::make_host_usm_source(devices.count()), profile))
+                      guarded_by(Internal::Memory::make_host_usm_source(devices.count()), device_pages), profile))
             {
                 start_partitioning(nullptr);
             }
@@ -290,6 +332,9 @@ namespace SushiRuntime
             /** @brief Device inventory and every SYCL queue. */
             Internal::Device::DeviceQueueSet devices;
 
+            /** @brief The pages Device USM comes from when the guard is on, and its gate; null when it is off. */
+            std::shared_ptr<Internal::Memory::GuardedDevicePages> device_pages;
+
             /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
             std::shared_ptr<Internal::Memory::USMAllocator> memory;
 
@@ -297,7 +342,7 @@ namespace SushiRuntime
             RuntimeHandleParts handle_parts{K_LOCAL_UNIVERSE};
 
             /** @brief The spaces, paths, copy cost, eviction policy and partitioner; destroyed before devices drains. */
-            std::unique_ptr<RuntimeCoherenceParts> coherence{make_coherence_parts(devices)};
+            std::unique_ptr<RuntimeCoherenceParts> coherence{make_coherence_parts(devices, device_pages.get())};
 
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
             Internal::Observability::TransferCounters transfers;
@@ -376,6 +421,9 @@ namespace SushiRuntime
                     refused = std::move(descriptors.error());
                     return;
                 }
+                refused = guard_refusal(settings, *descriptors);
+                if (refused)
+                    return;
 
                 context = std::shared_ptr<RuntimeContext>(new RuntimeContext(make_sushi<Impl>(
                     settings, *provider, std::move(distance_model), std::move(*descriptors), collector)));
@@ -415,7 +463,8 @@ namespace SushiRuntime
                                     std::shared_ptr<const Clock> clock,
                                     std::shared_ptr<Internal::Topology::TopologyProvider> provider,
                                     std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
-                                    Profile::Collector& collector, DeviceKind device_kind)
+                                    Profile::Collector& collector, DeviceKind device_kind,
+                                    bool guard_device_memory)
         {
             SR_VERIFY(device_count > 0,
                       "RuntimeContext::create_host: pass a device count of at least 1.");
@@ -426,6 +475,7 @@ namespace SushiRuntime
             settings.pinning = PinPolicy::Float;
             // Every run goes to the engine, since the chain submits to a device queue.
             settings.force_scheduler = true;
+            settings.guard_device_memory = guard_device_memory;
 
             Internal::Topology::HostTopology machine =
                 Internal::Topology::make_host_topology(device_count, device_kind);
@@ -437,7 +487,7 @@ namespace SushiRuntime
                 settings, *provider, std::move(distance_model), std::move(machine.devices), collector)));
             const std::weak_ptr<RuntimeContext> observed = context;
             context->impl_->engine = std::make_unique<HostExecutionEngine>(
-                std::move(executor), std::move(clock), device_count,
+                std::move(executor), std::move(clock), device_count, context->device_access_gate(),
                 [observed](const RunObservation& observation)
                 {
                     if (const std::shared_ptr<RuntimeContext> held = observed.lock())
@@ -481,6 +531,11 @@ namespace SushiRuntime
         const std::shared_ptr<Internal::Memory::USMAllocator>& RuntimeContext::shared_memory() const noexcept
         {
             return impl_->memory;
+        }
+
+        Internal::Memory::DeviceAccessGate* RuntimeContext::device_access_gate() const noexcept
+        {
+            return impl_->device_pages.get();
         }
 
         Internal::Memory::HandlePorts RuntimeContext::handle_ports() noexcept

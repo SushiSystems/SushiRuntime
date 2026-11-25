@@ -133,3 +133,47 @@ TEST(Small_HostRuntime, ALaunchOverAnExtentRunsEachIndexOnceFromItsOrigin)
     EXPECT_EQ(buffer[5], 1);
     EXPECT_EQ(buffer[0], 0);
 }
+
+/** @brief Tests that with the guard on a host read of a Device buffer faults. A death test starts a child process. */
+TEST(Medium_GuardedHostRuntimeDeathTest, AHostReadOfADeviceBufferFaults)
+{
+    HostRuntimeConfig config;
+    config.guard_device_memory = true;
+    Runtime runtime = Runtime::create_host(config).value();
+    auto buffer = runtime.buffer<int>(16, DeviceIndex{0}, Residency::Device).value();
+    const volatile int* const cells = buffer.data();
+
+    EXPECT_DEATH(static_cast<void>(cells[0]), "");
+}
+
+/** @brief Tests that with the guard on a launch writes a Device buffer and read_range returns what it wrote. */
+TEST(Small_GuardedHostRuntime, ALaunchWritesADeviceBufferThatReadRangeReturns)
+{
+    HostRuntimeConfig config;
+    config.guard_device_memory = true;
+    Runtime runtime = Runtime::create_host(config).value();
+    auto buffer = runtime.buffer<int>(16, DeviceIndex{0}, Residency::Device).value();
+    int* const cells = buffer.data();
+    auto graph = runtime.graph();
+    graph.add(16, Reads{}, Writes(buffer), [cells](std::size_t i) { cells[i] = static_cast<int>(i) * 2; });
+
+    ASSERT_TRUE(graph.run().has_value());
+
+    const std::vector<int> read = buffer.read_range({0, 16}).value();
+    for (std::size_t i = 0; i < 16; ++i)
+        EXPECT_EQ(read[i], static_cast<int>(i) * 2) << "at element " << i;
+}
+
+/** @brief Tests that with the guard on write_range then read_range carries the elements through a Device buffer. */
+TEST(Small_GuardedHostRuntime, WriteRangeThenReadRangeRoundTripsADeviceBuffer)
+{
+    HostRuntimeConfig config;
+    config.guard_device_memory = true;
+    Runtime runtime = Runtime::create_host(config).value();
+    auto buffer = runtime.buffer<int>(8, DeviceIndex{0}, Residency::Device).value();
+    const std::vector<int> written{3, 1, 4, 1, 5, 9, 2, 6};
+
+    ASSERT_TRUE(buffer.write_range({0, 8}, span<const int>(written.data(), written.size())).has_value());
+
+    EXPECT_EQ(buffer.read_range({0, 8}).value(), written);
+}

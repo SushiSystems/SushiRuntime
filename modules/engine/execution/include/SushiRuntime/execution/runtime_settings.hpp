@@ -94,6 +94,15 @@ namespace SushiRuntime
             bool submit_funnel = false;
 
             /**
+             * @brief Maps Device USM on guarded host pages that fault outside the runtime's kernels
+             *        and copies; off by default.
+             *
+             * Every device must be a CPU device; create() refuses any other.
+             * @see modules/engine/execution/README.md
+             */
+            bool guard_device_memory = false;
+
+            /**
              * @brief Names the device profile file read once at create; empty for none.
              *
              * A file that is there prices every planned copy through CostModel. With no file at the

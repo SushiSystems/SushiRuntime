@@ -38,6 +38,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/execution/chained_run_mark.hpp>
+#include <SushiRuntime/memory/device_access_scope.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 
@@ -130,6 +131,7 @@ namespace SushiRuntime
                 sycl::queue& queue_;            /**< In-order queue on the plan's device. */
                 bool profiling_;                /**< Whether the plan requested profiling. */
                 bool finished_ = false;         /**< Whether finish() drained the queue. */
+                Internal::Memory::DeviceAccessScope window_; /**< Keeps the device gate open while the run lives. */
                 ChainedRunMark run_mark_;       /**< The run's mark; last, so it outlasts the drain. */
         };
 
