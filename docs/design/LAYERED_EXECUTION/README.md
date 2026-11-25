@@ -294,6 +294,27 @@ README change in the same commit.
 
 The opt-in submit funnel of the scheduler is designed on [a page of GRAPH_REPLAY](../GRAPH_REPLAY/SUBMIT_FUNNEL.md).
 
+### Release at submit
+
+On the scheduler path, a worker that submits a kernel node claims each successor whose only
+outstanding predecessor is that node, with a compare-and-swap of `in_degree` from 1 to 0. The
+successor takes the node's event, goes to the worker's own deque, and its submit adds `depends_on`
+on that event. The device orders the edge, so the host launches the next kernel without first
+reacting to the completion. `Node::on_complete()` takes the claimed successor to -1 and does not
+report it again. The owner approved this on 2026-11-25. The mechanism is on
+[a page of the scheduler](../../../modules/engine/scheduler/source/submit_release.md); the plan and
+the SushiAI RW-102 trace that motivate it are in `docs/agent/2026_11_25_DISPATCH_IDLE/PLAN.md`.
+
+| Id | Ruling | Reason |
+| --- | --- | --- |
+| D1 | Release at submit as above, for each successor with one outstanding predecessor | The launch overlaps the predecessor; the chain layer already submits ahead of completion on the same plans |
+| D2 | `submit_task()` takes a trailing `const sycl::event* after = nullptr` | A defaulted parameter leaves `chain_run.cpp` and `chain_replay.cpp` unchanged; a pointer keeps a heap vector off the hot path |
+| D3 | Only whole kernel nodes on one device, the successor neither sentinel nor offloadable | A host body could read data its predecessor has not written; a split node submits several command groups; an offloadable node may move to a queue outside the event's context |
+| D4 | A worker with 16 events in flight releases nothing | Each poll round queries every event the worker holds; 16 is a first choice, not a measured optimum |
+| D5 | A failed kernel's released successor may already be on the device; the run still records the failure and aborts | RW-27 asked for a failed event to be recorded before its successors run; release at submit gives that up for the released edges, as the chain path already does |
+
+A dispatch handed to a submit funnel releases its successors at completion, not at submit.
+
 ### Run placement
 
 A caller's policy that sends a whole run of a graph to the device or to the calling thread is

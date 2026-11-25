@@ -47,36 +47,40 @@ namespace SushiRuntime
         namespace
         {
             /**
-             * @brief Copies @p dependencies into the vector execute_host() takes.
+             * @brief Copies @p dependencies, then @p after, into the vector execute_host() takes.
              * @param dependencies The events, or null for none.
+             * @param after One more event, or null for none.
              * @return The events in order.
              */
-            std::vector<sycl::event> host_dependencies(const SmallEventVector* dependencies)
+            std::vector<sycl::event> host_dependencies(const SmallEventVector* dependencies,
+                                                       const sycl::event* after = nullptr)
             {
                 std::vector<sycl::event> copied;
-                if (dependencies == nullptr)
-                    return copied;
-                copied.reserve(dependencies->size());
-                for (const sycl::event& event : *dependencies)
-                    copied.push_back(event);
+                copied.reserve((dependencies != nullptr ? dependencies->size() : 0) + (after != nullptr ? 1 : 0));
+                if (dependencies != nullptr)
+                    for (const sycl::event& event : *dependencies)
+                        copied.push_back(event);
+                if (after != nullptr)
+                    copied.push_back(*after);
                 return copied;
             }
 
             /**
-             * @brief Builds the command group that runs @p task after @p dependencies.
+             * @brief Builds the command group that runs @p task after @p dependencies and @p after.
              *
              * One depends_on() per event builds no heap vector.
-             * @param task The kernel task.
-             * @param dependencies The events, or null for none.
-             * @return The command group.
+             * @param dependencies,after The events, or null for none.
              */
-            auto kernel_group(Scheduler::Task& task, const SmallEventVector* dependencies)
+            auto kernel_group(Scheduler::Task& task, const SmallEventVector* dependencies,
+                              const sycl::event* after = nullptr)
             {
-                return [&task, dependencies](sycl::handler& h)
+                return [&task, dependencies, after](sycl::handler& h)
                 {
                     if (dependencies != nullptr)
                         for (const sycl::event& event : *dependencies)
                             h.depends_on(event);
+                    if (after != nullptr)
+                        h.depends_on(*after);
                     task.execute(h);
                 };
             }
@@ -87,12 +91,12 @@ namespace SushiRuntime
          */
         Result<sycl::event> submit_task(sycl::queue& queue, Scheduler::Task& task,
                                         const SmallEventVector* dependencies,
-                                        std::vector<sycl::event>* handed_over)
+                                        std::vector<sycl::event>* handed_over, const sycl::event* after)
         {
             if (task.execution_mode() != Scheduler::Task::ExecutionMode::Host)
-                return queue.submit(kernel_group(task, dependencies));
+                return queue.submit(kernel_group(task, dependencies, after));
 
-            const std::vector<sycl::event> copied = host_dependencies(dependencies);
+            const std::vector<sycl::event> copied = host_dependencies(dependencies, after);
             if (handed_over == nullptr)
                 return task.execute_host_checked(queue, copied);
             // A body that submits several kernels hands each event over (task/dispatch_events.hpp).

@@ -144,6 +144,21 @@ TEST(Small_DispatchRecord, ASkippedTaskIsReadyAndNotExecuted)
     EXPECT_EQ(pe.task, &node);
 }
 
+/** @brief Tests that a skipped node released at a submit is reaped only after the event it was released after. */
+TEST(Small_DispatchRecord, ASkippedNodeReleasedAtSubmitWaitsForItsPredecessorsEvent)
+{
+    Internal::Graph::Node node;
+    node.region.intra_in_degree = 1;
+    node.arm_in_degree();
+    ASSERT_TRUE(node.release_at_submit(sycl::event{}));
+
+    const EventPolling::PolledEvent pe = skipped_dispatch_event(&node);
+
+    EXPECT_FALSE(pe.ready) << "the node's successors would run before its predecessor ends";
+    EXPECT_TRUE(pe.has_event);
+    EXPECT_FALSE(pe.executed);
+}
+
 /** @brief Tests that a submission that reached no device is pushed ready and holds no event. */
 TEST(Small_DispatchRecord, ASubmissionThatReachedNoDeviceIsReady)
 {

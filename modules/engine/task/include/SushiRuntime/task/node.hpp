@@ -142,6 +142,9 @@ namespace SushiRuntime
             /** @brief SYCL events this node depends on (heap-free for small amounts). */
             SmallEventVector sycl_deps;
 
+            /** @brief The event of the predecessor that released this node at its submit; empty otherwise. */
+            std::optional<sycl::event> released_after_;
+
             /**
              * @brief Marks the graph's completion sentinel, which must run even after a task
              *        exception.
@@ -388,17 +391,43 @@ namespace SushiRuntime
             bool is_graph_node() const noexcept override        { return true; }
 
             /**
-             * @brief Satisfies one dependency on every successor and reports the freed ones.
-             * @param sink Collects each successor this completion made runnable.
+             * @brief Satisfies one dependency on every successor, reports the freed ones and drops the
+             *        event release_at_submit() left on this node.
+             * @param sink Collects each successor this completion made runnable; a successor released at
+             *        this node's submit is already at zero and is not reported again.
              * @see modules/engine/graph/README.md
              */
             void on_complete(SushiRuntime::Internal::Scheduler::ReadySink& sink) override
             {
+                released_after_.reset();
                 for_each_successor([&sink](Node* succ)
                 {
                     if (succ->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                         sink.push_back(succ);
                 });
+            }
+
+            /**
+             * @brief Makes this node runnable at the submit of its last outstanding predecessor, to wait
+             *        for that predecessor's event on the device.
+             * @pre The caller submitted a predecessor whose completion is not yet reported; @p last is its event.
+             * @return True when that predecessor was the only one outstanding; the caller then releases this node.
+             * @see modules/engine/scheduler/README.md
+             */
+            [[nodiscard]] bool release_at_submit(const sycl::event& last)
+            {
+                std::int32_t outstanding = 1;
+                if (!in_degree.compare_exchange_strong(outstanding, 0, std::memory_order_acq_rel,
+                                                       std::memory_order_relaxed))
+                    return false;
+                released_after_ = last;
+                return true;
+            }
+
+            /** @brief Returns the event release_at_submit() made this node wait for, or null when none. */
+            [[nodiscard]] const sycl::event* released_after() const noexcept
+            {
+                return released_after_ ? &*released_after_ : nullptr;
             }
 
             /**

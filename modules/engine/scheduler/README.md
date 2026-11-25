@@ -57,8 +57,7 @@ workers polling, so the flag is an atomic with release/acquire ordering and not 
 ### set_inflight_tracker
 
 The poller is the single chokepoint where a task's scheduling life ends (release on completion) and
-where new ready successors are born (trigger_successors). It therefore owns the increment and
-decrement of the in-flight counter the scheduler blocks on in TaskScheduler::wait_quiescent() to
+where new ready successors are born (trigger_successors), except a kernel node released at its predecessor's submit, which the worker counts itself ([its page](source/submit_release.md)). It therefore owns the decrement of the in-flight counter the scheduler blocks on in TaskScheduler::wait_quiescent() to
 know a run has fully drained. A null tracker, one never wired, makes every hook do nothing.
 
 ### drop_inflight
@@ -108,7 +107,7 @@ the terminal sentinel is reaped.
 
 get_info and wait() can throw. An entry whose query or wait throws is turned, in that pass, into
 what skipped_dispatch_event() of dispatch_record.hpp builds for a task whose work threw: ready, with no event,
-not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
+not executed (a node released at its predecessor's submit keeps that predecessor's event instead). It then takes the four steps above like any other entry. Profiling writes nothing for
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
 with its task's name. The first failure of the pass is kept as a `KernelFailed` `Error` and returned
@@ -124,7 +123,7 @@ The translated call covers the status query and the wait of one entry. A pass in
 throws allocates nothing and takes no lock.
 
 A successor released by a failed entry is in the worker's deque before run_round() records the
-failure, so a thief can dispatch it in that interval.
+failure, so a thief can dispatch it in that interval. A successor released at the failed node's submit may already be on the device; the run still aborts.
 
 ### accumulate_profiling
 
@@ -146,8 +145,7 @@ it. The task answers the first question because only it knows how its dependents
 second half stays in the scheduler because only the scheduler knows the queue. Neither has to name
 the other's type.
 
-The buffer is thread-local and reused, so a steady-state step does no allocation, and pushing stays
-inlined through the concrete queue. A virtual call per freed successor measured 4.6x slower on the
+A node released at its predecessor's submit is not freed here: on_complete() takes its `in_degree` from 0 to -1 and does not report it. The buffer is thread-local and reused, so a steady-state step does no allocation, and pushing stays inlined through the concrete queue. A virtual call per freed successor measured 4.6x slower on the
 wide fan-out benchmark.
 
 ## ready_sink.hpp
@@ -193,7 +191,7 @@ submission reached a device: a host body that hands none over and returns a comp
 `== sycl::event{}`, never true in DPC++) did not; under profiling a complete event whose timestamps
 read is still work, so a fast kernel keeps its span. dispatched_event() takes that answer, builds the
 polled event and under profiling snapshots widths and thread and keeps the steady reading taken before
-the submit call. skipped_dispatch_event() builds the ready, not executed event of a skipped or failed task.
+the submit call, and hands `released_after()` to submit_task() as its `after` event. skipped_dispatch_event() builds the not executed event of a skipped or failed task: ready, unless the node was released at its predecessor's submit, when it polls that predecessor's event so the node is reaped only after the predecessor ends.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
 work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device. A node with a `placed_split` runs through `run_split_node()` (`source/split_node_run.cpp`) instead of `submit_dispatch()`: it calls `dispatch_split()`, which submits every part on its device's queue, each depending on the node's dependency events, before anything is waited on; `join_split()` then waits on the parts' own events, never on a whole queue, and runs the combine. That wait, on the worker thread, is the node's only one and also drives AdaptiveCpp's lazy events; the worker then pushes a ready event. The in-order chain refuses a plan with a cut node, so the scheduler runs it.
@@ -237,8 +235,8 @@ whole multi-step run, so only reset_cancellation() clears it, at the start of a 
 ### on_complete
 
 The poller calls on_complete() once when the task is reaped, on the reaping worker's thread. A task
-that nothing depends on does nothing; a graph node walks its successors, satisfies one dependency on
-each, and hands the sink the ones that have no dependencies left. The scheduler never has to know
+that nothing depends on does nothing; a graph node drops the event release_at_submit() left on it, walks its successors, satisfies one dependency on
+each, and hands the sink the ones that have no dependencies left (one released at this node's submit goes from 0 to -1, unreported). The scheduler never has to know
 which kind it reaped.
 
 ### submits_device_work
@@ -740,10 +738,9 @@ sees a fully written `Error`.
 
 `submit()` counts the task into the run before it becomes reachable to workers, so the
 quiescence counter can never miss it. The count is balanced by the poller's release on
-completion, or by the offload decrement when a coordinator accepts the node. The poller
-owns the counter's
-increment and decrement, because it is where tasks are born as successors and reaped on
-completion.
+completion, or by the offload decrement when a coordinator accepts the node. The poller owns the
+counter's decrement, and the increment of a successor it frees, because it is where those tasks are
+born and reaped; a node released at submit is counted by `release_successors_at_submit()`.
 
 `submit_batch()` mirrors `submit()` per node, with the same `add_ref`, priority split and
 quiescence count, and spreads the fixed cost over the whole root set: one `PendingWork::mutex_`

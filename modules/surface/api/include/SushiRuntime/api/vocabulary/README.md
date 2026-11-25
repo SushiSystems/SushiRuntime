@@ -139,9 +139,12 @@ kernel of the same step writes. A broadphase writes its pair count and the narro
 exactly that many. That number does not exist yet when the step boundary runs, so a host-side
 provider cannot supply it without a mid-step readback or a second run.
 
-The count is instead read when the node is dispatched, which is after every predecessor's event has
-completed, so a value a predecessor kernel wrote is visible. The task that consumes the count is
-ordered after whoever writes `counter`, because add() registers `counter` as one of its reads.
+The count is instead read from the device slot inside the node's kernel (`late_window.hpp`), not at
+dispatch: the dispatch reads only the slot's address. A node the scheduler released at its
+predecessor's submit can therefore be dispatched before the predecessors' events complete; its
+command group waits for the last one's event on the device, so the kernel still sees what the
+predecessor wrote. The task that consumes the count is ordered after whoever writes `counter`,
+because add() registers `counter` as one of its reads.
 
 Two constraints are enforced in code. `counter` must be Residency::Host, and sized_from_device()
 checks it. The live count must not exceed the capacity the node was compiled for; dispatch checks

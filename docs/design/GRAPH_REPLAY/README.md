@@ -32,6 +32,9 @@ What `Graph::run` does:
 - GPU and CPU queues are out of order; `in_order` is added only for other device types
   (`modules/engine/execution/source/runtime_context.cpp:332-339`). Order comes from explicit events, `depends_on`,
   plus a host-side atomic `in_degree` DAG that decides readiness (`graph/node.hpp:316, 556-590`).
+  A kernel node whose last outstanding predecessor was just submitted is released at that submit
+  and waits for the predecessor's event on the device; every other node is released when its
+  predecessor's event completes ([release at submit](../LAYERED_EXECUTION/README.md#release-at-submit)).
 - Completion is discovered by worker threads polling
   `event.get_info<command_execution_status>()` in a spin and backoff loop, then `wait()`
   (`scheduler/event_polling.hpp:296-404`).

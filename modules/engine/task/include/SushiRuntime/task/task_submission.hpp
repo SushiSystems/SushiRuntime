@@ -47,15 +47,15 @@ namespace SushiRuntime
 
         /**
          * @brief Submits @p task to @p queue after @p dependencies and returns its event.
-         * @param queue The queue the task submits to.
-         * @param task The task to run.
          * @param dependencies The events the task waits on, or null for none.
          * @param handed_over Sink for the events a host body hands over, or null for no scope.
+         * @param after One more event the task waits on, or null for none.
          * @return The task's event, or the error a host body returned.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<sycl::event> submit_task(sycl::queue& queue, Scheduler::Task& task,
                                                  const SmallEventVector* dependencies,
-                                                 std::vector<sycl::event>* handed_over);
+                                                 std::vector<sycl::event>* handed_over,
+                                                 const sycl::event* after = nullptr);
 
         /**
          * @brief Submits @p task to @p queue after @p dependencies and keeps no event for it.

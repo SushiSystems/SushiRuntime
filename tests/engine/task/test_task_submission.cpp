@@ -23,12 +23,13 @@
 
 /**
  * @file test_task_submission.cpp
- * @brief Tests submit_task() and submit_task_discarding() on host and kernel tasks.
+ * @brief Tests submit_task() and submit_task_discarding() on host and kernel tasks, with and without a released-after event.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
+#include <future>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -217,4 +218,38 @@ TEST_F(Medium_TaskSubmission, ACheckedHostBodyThatFailsReturnsItsError)
     EXPECT_EQ(submitted.error().code, ErrorCode::AllocationFailed);
     ASSERT_FALSE(discarded);
     EXPECT_EQ(discarded.error().code, ErrorCode::AllocationFailed);
+}
+
+/** @brief Tests that a host task gets the event it was released after as one more dependency. */
+TEST_F(Medium_TaskSubmission, AHostTaskGetsTheEventItWasReleasedAfter)
+{
+    const SmallEventVector dependencies = completed_events(queue(), 3);
+    const sycl::event after = queue().submit([](sycl::handler& h) { h.single_task([]() {}); });
+    BodyLog log;
+    const sushi_ptr<Node> task = host_node(log);
+
+    Internal::Graph::submit_task(queue(), *task, &dependencies, nullptr, &after).value().wait();
+
+    EXPECT_EQ(log.seen_dependencies, 4u) << "the released-after event was not passed to the body";
+}
+
+/** @brief Tests that a kernel task does not start before the event it was released after completes. */
+TEST_F(Medium_TaskSubmission, AKernelTaskWaitsForTheEventItWasReleasedAfter)
+{
+    std::promise<void> open_gate;
+    std::shared_future<void> gate_opened = open_gate.get_future().share();
+    const sycl::event gate = queue().submit([gate_opened](sycl::handler& h)
+    {
+        h.host_task([gate_opened]() { gate_opened.wait(); });
+    });
+    BodyLog log;
+    const sushi_ptr<Node> task = kernel_node(log);
+
+    sycl::event submitted = Internal::Graph::submit_task(queue(), *task, nullptr, nullptr, &gate).value();
+    const sycl::info::event_command_status before_gate =
+        submitted.get_info<sycl::info::event::command_execution_status>();
+    open_gate.set_value();
+    submitted.wait();
+
+    EXPECT_NE(before_gate, sycl::info::event_command_status::complete) << "the kernel ran before its predecessor";
 }

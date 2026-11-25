@@ -23,7 +23,7 @@
 
 /**
  * @file test_node.cpp
- * @brief Tests Node: successors inline and spilled, readiness on completion, placement and offload state.
+ * @brief Tests Node: successors inline and spilled, readiness on completion and at a submit, placement and offload state.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
@@ -35,6 +35,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -151,4 +152,64 @@ TEST(Small_Node, SetLiveIoStoresTheListsOfTheNextDispatch)
 
     EXPECT_EQ(node.offload_state()->live_reads, reads);
     EXPECT_EQ(node.offload_state()->live_writes, nullptr);
+}
+
+/** @brief Tests that a node whose only outstanding predecessor is submitted is released to wait for its event. */
+TEST(Small_Node, ReleaseAtSubmitTakesTheLastOutstandingPredecessorsEvent)
+{
+    Node node;
+    node.region.intra_in_degree = 1;
+    node.arm_in_degree();
+    const sycl::event last;
+
+    const bool released = node.release_at_submit(last);
+
+    EXPECT_TRUE(released);
+    EXPECT_EQ(node.in_degree.load(), 0);
+    ASSERT_NE(node.released_after(), nullptr);
+    EXPECT_EQ(*node.released_after(), last);
+}
+
+/** @brief Tests that a node with a second outstanding predecessor is not released at a submit. */
+TEST(Small_Node, ReleaseAtSubmitRefusesANodeWithAnotherOutstandingPredecessor)
+{
+    Node node;
+    node.region.intra_in_degree = 2;
+    node.arm_in_degree();
+
+    const bool released = node.release_at_submit(sycl::event{});
+
+    EXPECT_FALSE(released);
+    EXPECT_EQ(node.in_degree.load(), 2);
+    EXPECT_EQ(node.released_after(), nullptr);
+}
+
+/** @brief Tests that a successor released at its predecessor's submit is not reported again at its completion. */
+TEST(Small_Node, ASuccessorReleasedAtSubmitIsNotReadyAgainAtCompletion)
+{
+    const sushi_ptr<Node> first = make_sushi<Node>();
+    const sushi_ptr<Node> second = make_sushi<Node>();
+    first->add_successor(second.get());
+    second->region.intra_in_degree = 1;
+    second->arm_in_degree();
+    ASSERT_TRUE(second->release_at_submit(sycl::event{}));
+
+    Internal::Scheduler::ReadySink ready;
+    first->on_complete(ready);
+
+    EXPECT_TRUE(ready.empty()) << "the successor would run twice";
+}
+
+/** @brief Tests that a node drops the event it was released after when it completes. */
+TEST(Small_Node, CompletionDropsTheEventANodeWasReleasedAfter)
+{
+    Node node;
+    node.region.intra_in_degree = 1;
+    node.arm_in_degree();
+    ASSERT_TRUE(node.release_at_submit(sycl::event{}));
+
+    Internal::Scheduler::ReadySink ready;
+    node.on_complete(ready);
+
+    EXPECT_EQ(node.released_after(), nullptr);
 }

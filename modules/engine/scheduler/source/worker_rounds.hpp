@@ -166,6 +166,14 @@ namespace SushiRuntime
                 void execute_task(Task* task, int worker_id, EventPolling::ActiveEventList& events);
 
                 /**
+                 * @brief Releases into the deque of @p worker_id the successors of @p node that may wait for
+                 *        its dispatched event on the device.
+                 * @pre @p dispatched is not yet in @p events, the list of worker @p worker_id.
+                 */
+                void release_at_submit(Internal::Graph::Node* node, const EventPolling::PolledEvent& dispatched,
+                                       int worker_id, const EventPolling::ActiveEventList& events);
+
+                /**
                  * @brief Hands the dispatch of @p task to the submit funnel of its device, when the device has one.
                  * @return False when the funnel is off or the device has no funnel; the caller then submits.
                  */

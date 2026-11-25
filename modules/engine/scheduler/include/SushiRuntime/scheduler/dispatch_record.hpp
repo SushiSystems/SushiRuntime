@@ -65,7 +65,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds the ready event of a task whose work did not run to its end.
-         * @return An event the poller reaps at once and reports to no offload coordinator.
+         * @return An event reported to no offload coordinator; the poller reaps it at once, or for a node
+         *         released at submit once the event it was released after completes.
          */
         [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent skipped_dispatch_event(Task* task);
 
@@ -86,7 +87,7 @@ namespace SushiRuntime
          * @brief Submits @p task to @p queue, or runs its host body there, and builds its polled event.
          *
          * The one submit sequence of the scheduler: a worker and a submit funnel both call it.
-         * @param node The task as a graph node, or nullptr; its sycl_deps are the dependencies.
+         * @param node The task as a graph node, or nullptr; its sycl_deps and released_after() are the dependencies.
          * @param collector Takes the dispatch.submit zone of the calling thread.
          * @return What dispatched_event() builds, or the error a host body returned.
          */

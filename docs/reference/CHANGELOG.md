@@ -4,6 +4,7 @@
 
 - 2026-11-25 — general: Fault a host dereference of Device memory on the host backend (RW-175).
 - 2026-11-25 — api: Added RuntimeConfig::guard_device_memory and HostRuntimeConfig::guard_device_memory, off by default; Runtime::create() refuses it over a non-CPU device (RW-175, `runtime_config.hpp`).
+- 2026-11-25 — scheduler: Released a kernel whose last outstanding predecessor was just submitted on the same device at that submit, to wait for it on the device (RW-176, `submit_release.hpp`).
 
 ## v0.7.2 — 2026-11-24
 

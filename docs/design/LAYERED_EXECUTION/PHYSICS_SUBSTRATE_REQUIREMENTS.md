@@ -74,7 +74,7 @@ Worth stating, because it bounds the ask:
 
 | # | Gap | Outcome |
 |---|---|---|
-| **R1** | Device-driven iteration count | **Built.** `API::sized_from_device(counter, index)`. The count is resolved at *dispatch* rather than at the step boundary, which the request document did not realise was possible: a node's command group is built on a worker only after `EventPolling` waited on every predecessor's event, so a value a predecessor kernel wrote is already visible. That makes both proposed designs unnecessary: no second `run()`, no readback stall, no host node in a device chain, and no launch at worst-case width. The counter is registered as a read of the consuming task, so the producer edge is structural, not a convention. |
+| **R1** | Device-driven iteration count | **Built.** `API::sized_from_device(counter, index)`. The count is resolved at *dispatch* rather than at the step boundary, which the request document did not realise was possible: the kernel reads the device slot itself, so a value a predecessor kernel wrote is visible whenever the device orders the kernel after that predecessor, whether the worker dispatched it after the predecessor's event or at its submit with `depends_on` on that event. That makes both proposed designs unnecessary: no second `run()`, no readback stall, no host node in a device chain, and no launch at worst-case width. The counter is registered as a read of the consuming task, so the producer edge is structural, not a convention. |
 | **R2** | Fixed-order deterministic reductions | **Built.** `Graph::add_reduce` and `Graph::add_segmented_reduce`, plus `Sum`/`Minimum`/`Maximum`. A fixed 256-element tile fold repeated over the partials; the combination order is a function of the element layout alone. |
 | **R3** | Sub-range ordering at the region boundary | **Built.** The boundary pins carry their byte intervals and every hazard test is an interval overlap, so two regions writing disjoint element ranges of one allocation gain no edge. One region per simulation island is now viable. |
 | **R5** | Dependency tracking on every overload | **Built, as Option A.** Every launch shape has a tracked overload (three were missing), and the five dependency-blind ones are spelled `add_untracked`. Inference was never possible for a callable that captures its USM pointers, so "always offer a tracked form, and make the untracked one name itself" is the honest reading of Option A. |
@@ -140,9 +140,10 @@ That leaves three shapes:
 The engine plan takes (2) so it is not blocked on this repo, and its `RuntimeGraphBuilder` seam is
 written so switching to (3) is one file.
 
-> **Outcome.** None of the three was needed. This analysis missed *when* a node's command group is
-> built: on a worker at dispatch, after `EventPolling::poll_events` has waited on every predecessor's
-> event. The count can therefore simply be read there. See the Delivery table above and
+> **Outcome.** None of the three was needed. This analysis missed *where* the count is read: inside
+> the node's own kernel, from the device slot, after the device has ordered the kernel behind every
+> predecessor's event. A worker dispatches the node either after those events (`EventPolling`) or,
+> for a kernel node released at its predecessor's submit, with `depends_on` on the last one. See the Delivery table above and
 > the physics substrate implementation document in the version history §0; the two designs below were not built.
 
 #### Two possible designs

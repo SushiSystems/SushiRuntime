@@ -96,6 +96,16 @@ namespace SushiRuntime
             skipped.task = task;
             skipped.ready = true;
             skipped.executed = false;
+            // A node released at its predecessor's submit frees its successors only once that predecessor ends.
+            const sycl::event* after =
+                (task != nullptr && task->is_graph_node())
+                    ? static_cast<const Internal::Graph::Node*>(task)->released_after() : nullptr;
+            if (after != nullptr)
+            {
+                skipped.event = *after;
+                skipped.ready = false;
+                skipped.has_event = true;
+            }
             return skipped;
         }
 
@@ -146,7 +156,8 @@ namespace SushiRuntime
             {
                 SR_ZONE_FINE(collector, "dispatch.submit");
                 submission = Internal::Graph::submit_task(queue, task, node ? &node->sycl_deps : nullptr,
-                                                          (profiling && host) ? &handed_over : nullptr);
+                                                          (profiling && host) ? &handed_over : nullptr,
+                                                          node ? node->released_after() : nullptr);
             }
             if (!submission)
                 return make_error(std::move(submission.error()));

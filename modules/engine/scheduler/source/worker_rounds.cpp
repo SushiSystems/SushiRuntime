@@ -56,6 +56,7 @@
 #include "submit_funnel.hpp"
 #include "submit_funnels.hpp"
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
+#include <SushiRuntime/scheduler/submit_release.hpp>
 #include <SushiRuntime/work_stealing/work_stealing_deque.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
@@ -496,10 +497,24 @@ namespace SushiRuntime
                     abort_run(name_failure(*task, dispatched.error()));
                     return;
                 }
+                release_at_submit(node, dispatched.value(), worker_id, events);
                 events.push(std::move(dispatched.value()));
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));
+        }
+
+        void WorkerRounds::release_at_submit(Internal::Graph::Node* node, const EventPolling::PolledEvent& dispatched,
+                                             int worker_id, const EventPolling::ActiveEventList& events)
+        {
+            // Only the owner pushes to a deque and reaps its events, so the release cannot race the reap.
+            if (node == nullptr || !dispatched.has_event || worker_id < 0 ||
+                static_cast<std::size_t>(worker_id) >= num_workers_ || run_.outcome.is_aborting())
+                return;
+
+            SR_ZONE_FINE(run_.collector, "dispatch.release_at_submit");
+            static_cast<void>(release_successors_at_submit(*node, dispatched.event, events.size(), run_.quiescence,
+                                                           *queues_[worker_id]));
         }
 
         bool WorkerRounds::hand_to_funnel(Task& task, Internal::Graph::Node* node, sycl::queue& queue, bool profiling,

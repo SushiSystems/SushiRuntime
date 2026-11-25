@@ -52,7 +52,7 @@ from release to the last completion, in us. The graph row's `submit` is per repl
 | Strategy | Threads | Off: submit | Off: run | On: submit | On: run |
 | --- | --- | --- | --- | --- | --- |
 | Shared out-of-order queue, eager release | 1 / 4 / 12 | 5.0 / 34.6 / 114.5 | 1085 / 875 / 929 | 20.0 / 62.6 / 226.4 | 1273 / 1598 / 1744 |
-| Shared queue, release on completion (today's scheduler) | 1 / 4 / 12 | 5.2 / 65.9 / 208.3 | 1419 / 1287 / 1208 | 13.6 / 115.7 / 347.6 | 1733 / 1931 / 1839 |
+| Shared queue, release on completion | 1 / 4 / 12 | 5.2 / 65.9 / 208.3 | 1419 / 1287 / 1208 | 13.6 / 115.7 / 347.6 | 1733 / 1931 / 1839 |
 | (a) One out-of-order queue per worker | 1 / 4 / 12 | 5.1 / 51.2 / 199.3 | 1088 / 1079 / 1186 | 19.1 / 74.0 / 324.5 | 1294 / 1710 / 1920 |
 | (a) Same, a distinct kernel per worker | 1 / 4 / 12 | 5.2 / 39.5 / 205.1 | 1089 / 862 / 1163 | 19.2 / 84.5 / 498.7 | 1279 / 1763 / 2585 |
 | (b) One in-order queue per worker, events only where lanes cross | 1 / 4 / 12 | 4.1 / 35.9 / 121.6 | 1088 / 867 / 925 | 18.9 / 66.5 / 316.7 | 1288 / 1630 / 1683 |
@@ -133,7 +133,8 @@ The owner ruled on the rest on 2026-11-14:
   At the top of each round, before it polls, the worker moves its landed entries into its
   `ActiveEventList`. Polling, successor release, the in-flight count and the quiescence latch are
   unchanged: a node in the funnel is in flight exactly as a node whose event the worker is
-  polling. A per-worker count of nodes still in a funnel keeps the worker from parking or exiting
+  polling. A funnelled dispatch releases its successors at completion, never at submit (see
+  [release at submit](../LAYERED_EXECUTION/README.md#release-at-submit)). A per-worker count of nodes still in a funnel keeps the worker from parking or exiting
   before they land.
 - **A full ring.** A worker whose push finds the record ring full keeps the record in a backlog
   of its own (`SubmitFunnels`, one per worker) and pushes it again at the top of each round,
@@ -222,7 +223,7 @@ keeps no `dispatch.submit` zone.
 | `modules/engine/execution` | GRAPH_REPLAY | `RuntimeSettings::submit_funnel`, off by default and copied into the pool settings; `ExecutionMetrics::tasks_funnelled` |
 | `modules/surface/api` | LAYERED_EXECUTION | The public `RuntimeConfig::submit_funnel` flag, copied into the settings; `RunCounters::tasks_funnelled`; `fill_run_report()` sets `RunReport::funnelled` |
 | `modules/foundation/report` | PROFILING | `RunReport::funnelled` |
-| `modules/engine/task` | LAYERED_EXECUTION | None: `submit_task` is called unchanged |
+| `modules/engine/task` | LAYERED_EXECUTION | None to the funnel: it calls `submit_task` through `submit_dispatch()`, which passes the node's `released_after()` (null for a funnelled node) |
 
 The scheduler and the public config belong to LAYERED_EXECUTION, so P6 keeps that topic's intent
 and does not change placement, the worker pool's size or its pinning.
