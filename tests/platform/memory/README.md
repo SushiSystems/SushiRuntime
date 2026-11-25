@@ -13,7 +13,7 @@ allocator tests derive from that fixture base and skip where SYCL reports no dev
 
 ## compile_memory_log_category.cpp, compile_residency_reader.cpp and compile_usm_request.cpp
 
-The files `compile_coherence_history.cpp`, `compile_handle_ports.cpp`, `compile_handle_registry.cpp`,
+The files `compile_coherence_history.cpp`, `compile_device_access_gate.cpp`, `compile_handle_ports.cpp`, `compile_handle_registry.cpp`,
 `compile_host_write_log.cpp`, `compile_residency_writer.cpp` and `compile_retire_source.cpp` are the same
 kind. `compile_handle_ports.cpp` also holds a consumer written against `HandlePorts` alone, which includes
 no execution header. `compile_residency_reader.cpp` and `compile_residency_writer.cpp` each include one
@@ -122,8 +122,8 @@ loop. Under ASan and TSan the same run surfaces races and use-after-free. The co
 ## test_host_usm_source.cpp and test_sycl_usm_source.cpp
 
 `USMSourceContract` (`tests/support/usm_source_contract.hpp`) runs as `Small_HostUSMSource` on
-`make_host_usm_source()` and as `Medium_SYCLUSMSource` on `make_sycl_usm_source()` over the program's
-queue.
+`make_host_usm_source()`, as `Small_GuardedUSMSource` on `make_guarded_usm_source()` over a host
+source, and as `Medium_SYCLUSMSource` on `make_sycl_usm_source()` over the program's queue.
 
 | Test | What it proves |
 | --- | --- |
@@ -136,6 +136,44 @@ queue.
 | `RefusesARequestOverTheLargestObjectSize` | The host source refuses a request over `PTRDIFF_MAX` bytes with its overhead with null, and never asks the heap. |
 | `TwoDevicesShareOneContext` | Every pair of host devices shares one context. |
 | `CountsTheDevicesItWasMadeWith` | A host source counts the devices it was made with. |
+
+## test_guarded_usm_source.cpp
+
+The cases run on `make_guarded_usm_source()` over a host source of one device. A case that reads or
+writes a guarded allocation through its address is a death test: the access faults, which kills the
+child process, so its suite is `Medium_GuardedUSMSourceDeathTest`.
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_GuardedUSMSourceDeathTest.AHostReadOfADeviceAllocationFaults` | A host read of a Device allocation outside runtime work kills the process. |
+| `Medium_GuardedUSMSourceDeathTest.AHostWriteOfADeviceAllocationFaults` | A host write of it kills the process. |
+| `Small_GuardedUSMSource.AKernelInsideAnOpenScopeReachesADeviceAllocation` | A host loop, the host form of a kernel, writes and reads the allocation inside a `DeviceAccessScope`. |
+| `Small_GuardedUSMSourceCopy.ACopyThroughTheAllocatorRoundTripsADeviceAllocation` | `USMAllocator::copy()`, the call `read_range()` and `write_range()` make, writes bytes into a Device allocation and reads the same bytes out. |
+| `Small_GuardedUSMSource.ASharedAllocationStaysHostAddressable` | A Shared request goes to the wrapped source, and the host writes it. |
+| `Small_GuardedUSMSource.ADeviceAllocationReportsTheDeviceKind` | `kind_of()` answers `USMKind::Device` for the last byte of a Device allocation. |
+
+## test_guarded_device_pages.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Small_GuardedDevicePages.ANestedCloseLeavesThePagesOpen` | After two opens and one close, the host reads and writes an allocation. |
+| `Medium_GuardedDevicePagesDeathTest.AnAllocationMadeInsideAWindowClosesWithIt` | An allocation made while the gate is open faults once the gate closes. |
+| `Small_GuardedDevicePages.RefusesAnAlignmentAboveThePageSize` | A request aligned to 1 GiB returns null. |
+
+## test_device_access_scope.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Small_DeviceAccessScope.OpensTheGateWhileItLives` | A scope's gate is open while the scope lives. |
+| `Small_DeviceAccessScope.ClosesTheGateWhenItEnds` | The gate is closed once the scope is destroyed. |
+
+## test_page_protection.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Small_PageProtection.ReadWritePagesStartZeroedAndTakeAWrite` | A read-write page starts at zero and keeps a byte written to it. |
+| `Small_PageProtection.PagesOpenedAgainKeepTheirBytes` | A page closed and opened again keeps its bytes, and both calls succeed. |
+| `Medium_PageProtectionDeathTest.AReadOfPagesWithNoAccessFaults` | A read of a page with no access kills the process. |
 
 ## test_residency_directory.cpp
 

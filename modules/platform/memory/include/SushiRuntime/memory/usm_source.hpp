@@ -44,8 +44,8 @@ namespace SushiRuntime
          * @brief Makes and frees the bytes of USM allocations on a fixed set of devices.
          *
          * USMAllocator keeps the records; a source only moves memory. make_sycl_usm_source() makes
-         * the device adapter and make_host_usm_source() the in-memory one; both pass
-         * USMSourceContract.
+         * the device adapter, make_host_usm_source() the in-memory one and make_guarded_usm_source()
+         * the guarded decorator; all three pass USMSourceContract.
          * @see modules/platform/memory/README.md
          */
         class USMSource

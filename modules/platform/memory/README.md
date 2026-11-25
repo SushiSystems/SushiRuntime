@@ -1,6 +1,6 @@
 # memory
 
-The USM allocator and its allocation owner, the residency directory with its retire observer and
+The USM allocator and its allocation owner, the guarded device memory a test runtime uses (`GuardedDevicePages`, `make_guarded_usm_source()`), the residency directory with its retire observer and
 coherence interval map, the horizon that retires coherence history (`CoherenceHorizon`), the memory spaces (`MemorySpace`, `DeviceMemorySpace`, `HostMemorySpace`, `FileMemorySpace`)
 and the pool sum `usable_pool_bytes`, and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
@@ -275,9 +275,9 @@ context, a device's name for a log line, and `kind_of()`, the kind of USM an add
 device, or nothing for memory the source does not know. `copy()` moves bytes on a device's memory
 engine and returns when they have arrived. The SYCL source answers `kind_of()` with
 `sycl::get_pointer_type` in the device's context; the host source keeps the range and kind of each
-live allocation to answer it, and a zero-byte allocation answers for its own address only. `USMAllocator::kind_of()` forwards the question. Both adapters
-pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource` and
-`Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
+live allocation to answer it, and a zero-byte allocation answers for its own address only. `USMAllocator::kind_of()` forwards the question. The three adapters
+pass `USMSourceContract` (`tests/support/usm_source_contract.hpp`): `Small_HostUSMSource`,
+`Small_GuardedUSMSource` and `Medium_SYCLUSMSource`. The adapter classes live in their source files; a caller makes one through
 its factory and holds it as a `USMSource`.
 
 ## sycl_usm_source.hpp
@@ -307,6 +307,70 @@ the allocator run on it. Every device shares one context, and an alignment that 
 two is refused with null, as is a request whose block, with the alignment and the stored word, would be
 over `PTRDIFF_MAX` bytes; the heap is not asked for it. It records the range and kind of each live
 allocation, so `kind_of()` answers.
+
+## guarded_usm_source.hpp
+
+### make_guarded_usm_source
+
+A decorator over any `USMSource`. A `USMKind::Device` request comes from a `GuardedDevicePages` the
+caller shares with the source; every other request, and `device_count()`, `shares_context()` and
+`device_name()`, go to the wrapped source. `free()` hands an address on the pages back to them and
+any other address to the wrapped source. `kind_of()` answers `USMKind::Device` for an address on the
+pages. `copy()` runs inside a `DeviceAccessScope` over the pages, so `USMAllocator::copy()`, and with
+it `Buffer::read_range()` and `write_range()`, reaches a guarded allocation while the host cannot.
+Neither the host source nor the SYCL source is edited to be guarded.
+
+The guard catches a host dereference of device memory on a backend whose device memory the host can
+address, where CUDA would fault. A runtime does not build it yet; the plan in
+`docs/agent/2026_11_25_HOST_DEVICE_ISOLATION/PLAN.md` holds the selector and the windows around
+kernels that come next.
+
+## guarded_device_pages.hpp
+
+### GuardedDevicePages
+
+Each allocation is mapped on pages of its own with `map_pages()`: whole pages, one page for a
+zero-byte request, starting on a page boundary. An alignment above the page size or not a power of
+two is refused with null. The pages are inaccessible while the gate is closed, so a host read or
+write faults at the instruction that made it, and read-write while it is open.
+
+The class implements `DeviceAccessGate`. `open()` and `close()` count, and the transition from 0 to
+1 or from 1 to 0 changes the access of every live allocation at once. Protection holds for the whole
+process: a page cannot be open to a thread that runs a kernel and closed to the host thread, and a
+kernel that captured raw addresses touches buffers no one listed. While the gate is open, host code
+on any thread reaches the pages too. An allocation made while the gate is open is mapped
+read-write and closes with the others.
+
+One mutex guards the table of allocations and the count. A refusal by the system to change the
+access stops the process through `SR_VERIFY`, as does `release()` of an address the pages do not
+hold and a `close()` with no open left. The destructor unmaps nothing, as `USMAllocator`'s frees
+nothing.
+
+## device_access_gate.hpp
+
+### DeviceAccessGate
+
+The port the runtime opens guarded device memory through while its own kernels and copies run.
+`open()` counts one holder and `close()` one less; the memory is open while the count is above 0.
+`GuardedDevicePages` is the one implementation. A runtime with no guard holds no gate.
+
+## device_access_scope.hpp
+
+### DeviceAccessScope
+
+Opens a gate when it is built and closes it when it is destroyed. A null gate does nothing, so a
+caller that may or may not guard writes one scope and pays a pointer test when there is no guard.
+
+## page_protection.hpp
+
+### The page calls
+
+`page_bytes()`, `map_pages()`, `protect_pages()` and `unmap_pages()` are the only calls of the
+module that differ by system. `page_protection_windows.cpp` implements them with `GetSystemInfo`,
+`VirtualAlloc`, `VirtualProtect` and `VirtualFree`; `page_protection_posix.cpp` with
+`sysconf(_SC_PAGESIZE)`, `mmap`, `mprotect` and `munmap`. Each file compiles to nothing on the other
+system. `PageAccess::None` is `PAGE_NOACCESS` or `PROT_NONE`, and `PageAccess::ReadWrite` is
+`PAGE_READWRITE` or `PROT_READ | PROT_WRITE`.
 
 ## usm_allocator.hpp
 

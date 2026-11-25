@@ -7,6 +7,7 @@ sushiruntime_add_module_tests(
     MODULE memory
     SOURCES
         compile_coherence_history.cpp
+        compile_device_access_gate.cpp
         compile_handle_ports.cpp
         compile_handle_registry.cpp
         compile_host_write_log.cpp
@@ -22,13 +23,17 @@ sushiruntime_add_module_tests(
         test_borrowed_index.cpp
         test_coherence_horizon.cpp
         test_coherence_intervals.cpp
+        test_device_access_scope.cpp
         test_device_memory_space.cpp
         test_epoch_reclamation.cpp
         test_file_memory_space.cpp
+        test_guarded_device_pages.cpp
+        test_guarded_usm_source.cpp
         test_host_memory_space.cpp
         test_host_usm_source.cpp
         test_host_write_table.cpp
         test_memory_pool_capacity.cpp
+        test_page_protection.cpp
         test_residency_directory.cpp
         test_residency_reader.cpp
         test_retire_observer.cpp
